@@ -20,6 +20,14 @@ interface ChatMessage {
   content: string;
 }
 
+interface PlanItem {
+  id: number;
+  description: string;
+  source_type: string;
+  status: string;
+  approved: boolean;
+}
+
 const EXTRACTION_MODES = [
   { value: 'nlp', label: 'NLP' },
   { value: 'llm', label: 'LLM' },
@@ -44,6 +52,10 @@ export default function CollectionsPage() {
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantError, setAssistantError] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Structured plan state
+  const [planItems, setPlanItems] = useState<PlanItem[]>([]);
+  const [planParsing, setPlanParsing] = useState(false);
 
   // File upload state
   const [fileUploadOpen, setFileUploadOpen] = useState(false);
@@ -100,6 +112,7 @@ export default function CollectionsPage() {
     setAssistantMessages(prev => [...prev, userMsg]);
     setAssistantLoading(true);
     setAssistantError(null);
+    setPlanItems([]);
     try {
       const res = await llmApi.query(
         [{ role: 'user', content: pir.trim() }],
@@ -108,6 +121,18 @@ export default function CollectionsPage() {
       const answer = res.data?.response || res.data?.answer || res.data?.content || JSON.stringify(res.data);
       const aiMsg: ChatMessage = { role: 'assistant', content: answer };
       setAssistantMessages(prev => [...prev, aiMsg]);
+
+      // Parse the plan into structured items
+      setPlanParsing(true);
+      try {
+        const planRes = await collectionsApi.parsePlan(answer);
+        setPlanItems(planRes.data.items || []);
+      } catch {
+        // If parsing fails, keep the raw text experience
+        console.error('Failed to parse plan');
+      } finally {
+        setPlanParsing(false);
+      }
     } catch (e) {
       setAssistantError(getErrorMessage(e));
     } finally {
@@ -115,18 +140,42 @@ export default function CollectionsPage() {
     }
   }
 
+  function togglePlanItem(itemId: number) {
+    setPlanItems(prev => prev.map(item =>
+      item.id === itemId ? { ...item, approved: !item.approved } : item
+    ));
+  }
+
+  function approveAllPlanItems() {
+    setPlanItems(prev => prev.map(item => ({ ...item, approved: true })));
+  }
+
+  function rejectAllPlanItems() {
+    setPlanItems(prev => prev.map(item => ({ ...item, approved: false })));
+  }
+
   async function acceptPlan() {
     if (!activeProject || assistantMessages.length === 0) return;
     // Get the last assistant message as the plan
     const lastAI = [...assistantMessages].reverse().find(m => m.role === 'assistant');
     if (!lastAI) return;
+
+    // Use approved plan items if available, otherwise fall back to raw text
+    const approvedItems = planItems.filter(item => item.approved);
+    const planData = approvedItems.length > 0 ? approvedItems : undefined;
     const planPir = `${pir.trim()}\n\n--- Collection Plan ---\n${lastAI.content}`;
+
     setLoading(true);
     setError(null);
     try {
-      await collectionsApi.create({ project_id: activeProject.id, pir: planPir });
+      await collectionsApi.create({
+        project_id: activeProject.id,
+        pir: planPir,
+        plan: planData,
+      });
       setPir('');
       setAssistantMessages([]);
+      setPlanItems([]);
       loadCollections();
     } catch (e) {
       setError(getErrorMessage(e));
@@ -300,13 +349,65 @@ export default function CollectionsPage() {
             {assistantError && (
               <p className="text-red-400 text-xs mb-3">{assistantError}</p>
             )}
+            {/* Structured Plan Checklist */}
+            {planParsing && (
+              <div className="flex items-center gap-2 text-xs text-gray-400 mb-3">
+                <LoadingSpinner size="sm" /> Parsing plan...
+              </div>
+            )}
+            {planItems.length > 0 && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Collection Plan Items</h4>
+                  <div className="flex gap-2">
+                    <button onClick={approveAllPlanItems} className="text-xs text-green-400 hover:text-green-300">Approve All</button>
+                    <button onClick={rejectAllPlanItems} className="text-xs text-red-400 hover:text-red-300">Reject All</button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {planItems.map(item => (
+                    <div
+                      key={item.id}
+                      className={`flex items-start gap-3 rounded-lg px-3 py-2 border cursor-pointer transition-colors ${
+                        item.approved
+                          ? 'bg-green-900/20 border-green-700/40'
+                          : 'bg-navy-700 border-navy-600 hover:border-navy-500'
+                      }`}
+                      onClick={() => togglePlanItem(item.id)}
+                    >
+                      <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+                        item.approved ? 'bg-green-600 border-green-500' : 'border-gray-500'
+                      }`}>
+                        {item.approved && <span className="text-white text-xs">&#10003;</span>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-200">{item.description}</p>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ${
+                        item.source_type === 'news' ? 'bg-purple-900/30 text-purple-400' :
+                        item.source_type === 'document' ? 'bg-blue-900/30 text-blue-400' :
+                        item.source_type === 'database' ? 'bg-yellow-900/30 text-yellow-400' :
+                        item.source_type === 'social_media' ? 'bg-pink-900/30 text-pink-400' :
+                        item.source_type === 'web_search' ? 'bg-cyan-900/30 text-cyan-400' :
+                        'bg-gray-900/30 text-gray-400'
+                      }`}>
+                        {item.source_type.replace('_', ' ')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {planItems.filter(i => i.approved).length} of {planItems.length} items approved
+                </p>
+              </div>
+            )}
             {assistantMessages.some(m => m.role === 'assistant') && (
               <button
                 onClick={acceptPlan}
-                disabled={loading}
+                disabled={loading || (planItems.length > 0 && planItems.filter(i => i.approved).length === 0)}
                 className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
               >
-                {loading ? 'Creating...' : 'Accept Plan'}
+                {loading ? 'Creating...' : planItems.length > 0 ? `Create Collection from ${planItems.filter(i => i.approved).length} Approved Items` : 'Accept Plan'}
               </button>
             )}
           </div>
