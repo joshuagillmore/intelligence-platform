@@ -1,8 +1,11 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
 import { geoApi, queryApi, entitiesApi } from '@/lib/api';
+
+const GeoMap = dynamic(() => import('@/components/GeoMap'), { ssr: false });
 
 interface GeoLocation {
   id: string;
@@ -29,12 +32,16 @@ export default function GeoPage() {
   const { activeProject } = useProject();
   const [locations, setLocations] = useState<GeoLocation[]>([]);
   const [loading, setLoading] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [expandedRels, setExpandedRels] = useState<LocationRelationship[]>([]);
+  const [selectedLocation, setSelectedLocation] = useState<GeoLocation | null>(null);
+  const [selectedRels, setSelectedRels] = useState<LocationRelationship[]>([]);
   const [relsLoading, setRelsLoading] = useState(false);
   const [queryInput, setQueryInput] = useState('');
   const [queryResult, setQueryResult] = useState<string | null>(null);
   const [queryLoading, setQueryLoading] = useState(false);
+
+  const getLat = (loc: GeoLocation) => loc.latitude ?? loc.lat ?? (loc.properties?.latitude as number | undefined);
+  const getLng = (loc: GeoLocation) => loc.longitude ?? loc.lng ?? (loc.properties?.longitude as number | undefined);
+  const isGeocoded = (loc: GeoLocation) => loc.geocoded ?? !!(getLat(loc) && getLng(loc));
 
   const loadLocations = useCallback(async () => {
     if (!activeProject) return;
@@ -50,7 +57,6 @@ export default function GeoPage() {
         setLocations([]);
       }
     } catch {
-      // Fallback: try loading Location entities directly
       try {
         const res = await entitiesApi.search(activeProject.id, undefined, 'Location');
         const entities = res.data || [];
@@ -75,20 +81,20 @@ export default function GeoPage() {
     loadLocations();
   }, [loadLocations]);
 
-  async function toggleExpand(loc: GeoLocation) {
-    if (expandedId === loc.id) {
-      setExpandedId(null);
-      setExpandedRels([]);
+  async function handleLocationClick(loc: GeoLocation) {
+    if (selectedLocation?.id === loc.id) {
+      setSelectedLocation(null);
+      setSelectedRels([]);
       return;
     }
-    setExpandedId(loc.id);
-    setExpandedRels([]);
+    setSelectedLocation(loc);
+    setSelectedRels([]);
     setRelsLoading(true);
     try {
       const res = await entitiesApi.get(loc.id);
-      setExpandedRels(res.data.relationships || []);
+      setSelectedRels(res.data.relationships || []);
     } catch {
-      setExpandedRels([]);
+      setSelectedRels([]);
     } finally {
       setRelsLoading(false);
     }
@@ -108,9 +114,6 @@ export default function GeoPage() {
     }
   }
 
-  const getLat = (loc: GeoLocation) => loc.latitude ?? loc.lat ?? (loc.properties?.latitude as number | undefined);
-  const getLng = (loc: GeoLocation) => loc.longitude ?? loc.lng ?? (loc.properties?.longitude as number | undefined);
-  const isGeocoded = (loc: GeoLocation) => loc.geocoded ?? !!(getLat(loc) && getLng(loc));
   const totalConnections = locations.reduce((sum, l) => sum + (l.connections || 0), 0);
   const geocodedCount = locations.filter(l => isGeocoded(l)).length;
 
@@ -131,133 +134,100 @@ export default function GeoPage() {
   return (
     <div className="flex">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8">
-        <h2 className="text-2xl font-bold mb-6">Geo-Intelligence</h2>
-
-        {/* Summary cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-navy-800 border border-navy-600 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-accent-blue">{locations.length}</div>
-            <div className="text-xs text-gray-400">Total Locations</div>
-          </div>
-          <div className="bg-navy-800 border border-navy-600 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-green-400">{geocodedCount}</div>
-            <div className="text-xs text-gray-400">Geocoded</div>
-          </div>
-          <div className="bg-navy-800 border border-navy-600 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-accent-blue">{totalConnections}</div>
-            <div className="text-xs text-gray-400">Total Connections</div>
+      <main className="ml-56 flex-1 p-6 flex flex-col h-screen">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold">Geo-Intelligence</h2>
+          <div className="flex gap-4 text-sm">
+            <span className="bg-navy-800 px-3 py-1 rounded border border-navy-600">
+              {locations.length} Locations
+            </span>
+            <span className="bg-navy-800 px-3 py-1 rounded border border-navy-600 text-accent-blue">
+              {geocodedCount} Geocoded
+            </span>
+            <span className="bg-navy-800 px-3 py-1 rounded border border-navy-600">
+              {totalConnections} Connections
+            </span>
           </div>
         </div>
 
-        {/* Query interface */}
-        <div className="bg-navy-800 border border-navy-600 rounded-lg p-4 mb-6">
-          <h3 className="text-sm font-semibold text-gray-400 mb-3">Ask about geographic relationships</h3>
-          <div className="flex gap-2">
-            <input
-              value={queryInput}
-              onChange={(e) => setQueryInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && askGeoQuery()}
-              placeholder="e.g., What locations are connected to...?"
-              className="flex-1 bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
-            />
-            <button
-              onClick={askGeoQuery}
-              disabled={queryLoading || !queryInput.trim()}
-              className="bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
-            >
-              {queryLoading ? 'Asking...' : 'Ask'}
-            </button>
+        <div className="flex flex-1 gap-4 min-h-0">
+          {/* Map */}
+          <div className="flex-1 bg-navy-800 border border-navy-600 rounded-lg overflow-hidden">
+            {loading ? (
+              <div className="w-full h-full flex items-center justify-center text-gray-500">Loading locations...</div>
+            ) : (
+              <GeoMap
+                locations={locations}
+                onLocationClick={handleLocationClick}
+                selectedLocationId={selectedLocation?.id}
+              />
+            )}
           </div>
-          {queryResult && (
-            <div className="mt-3 bg-navy-700 rounded p-3 text-sm text-gray-300 whitespace-pre-wrap max-h-48 overflow-y-auto">
-              {queryResult}
-            </div>
-          )}
-        </div>
 
-        {/* Locations table */}
-        <div className="bg-navy-800 border border-navy-600 rounded-lg">
-          <div className="p-4 border-b border-navy-600">
-            <h3 className="text-sm font-semibold text-gray-400">Locations</h3>
+          {/* Right panel */}
+          <div className="w-80 flex flex-col gap-4">
+            {/* Selected location detail */}
+            <div className="bg-navy-800 border border-navy-600 rounded-lg p-4 flex-1 overflow-y-auto">
+              {selectedLocation ? (
+                <>
+                  <h3 className="font-semibold text-lg mb-1">{selectedLocation.name}</h3>
+                  {getLat(selectedLocation) != null && (
+                    <p className="text-xs text-gray-500 mb-3">
+                      {Number(getLat(selectedLocation)).toFixed(4)}, {Number(getLng(selectedLocation)).toFixed(4)}
+                    </p>
+                  )}
+                  <h4 className="text-xs font-semibold text-gray-400 mb-2 uppercase">Relationships</h4>
+                  <div className="space-y-1">
+                    {relsLoading ? (
+                      <p className="text-xs text-gray-500">Loading relationships...</p>
+                    ) : selectedRels.length === 0 ? (
+                      <p className="text-xs text-gray-500">No relationships found.</p>
+                    ) : (
+                      selectedRels.map((rel, i) => (
+                        <div key={i} className="text-xs bg-navy-700 rounded px-2 py-1">
+                          <span className="text-accent-blue">{rel.rel_type}</span>
+                          <span className="text-gray-400"> &rarr; </span>
+                          <span className="text-gray-200">
+                            {rel.source_name === selectedLocation.name
+                              ? (rel.target_name || rel.target_id)
+                              : (rel.source_name || rel.source_id)}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-gray-500">Click a location on the map to see details</p>
+              )}
+            </div>
+
+            {/* RAG query */}
+            <div className="bg-navy-800 border border-navy-600 rounded-lg p-4">
+              <h4 className="text-xs font-semibold text-gray-400 mb-2 uppercase">Geographic Query</h4>
+              <div className="flex gap-2">
+                <input
+                  value={queryInput}
+                  onChange={e => setQueryInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && askGeoQuery()}
+                  placeholder="Ask about locations..."
+                  className="flex-1 bg-navy-700 border border-navy-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-accent-blue"
+                />
+                <button
+                  onClick={askGeoQuery}
+                  disabled={queryLoading || !queryInput.trim()}
+                  className="bg-accent-blue text-white px-3 py-1 rounded text-sm disabled:opacity-50"
+                >
+                  {queryLoading ? '...' : 'Ask'}
+                </button>
+              </div>
+              {queryResult && (
+                <div className="mt-3 text-xs text-gray-300 max-h-48 overflow-y-auto bg-navy-700 rounded p-2">
+                  <pre className="whitespace-pre-wrap">{queryResult}</pre>
+                </div>
+              )}
+            </div>
           </div>
-          {loading ? (
-            <div className="p-8 text-center text-gray-500 text-sm">Loading locations...</div>
-          ) : locations.length === 0 ? (
-            <div className="p-8 text-center text-gray-500 text-sm">
-              No location entities found. Ingest documents containing geographic references.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-navy-600 text-gray-400 text-xs">
-                    <th className="text-left py-3 px-4 font-medium">Name</th>
-                    <th className="text-left py-3 px-4 font-medium">Lat</th>
-                    <th className="text-left py-3 px-4 font-medium">Lng</th>
-                    <th className="text-left py-3 px-4 font-medium">Connections</th>
-                    <th className="text-left py-3 px-4 font-medium">Geocoded</th>
-                    <th className="text-left py-3 px-4 font-medium"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {locations.map(loc => (
-                    <>
-                      <tr
-                        key={loc.id}
-                        className="border-b border-navy-700 hover:bg-navy-700/50 cursor-pointer"
-                        onClick={() => toggleExpand(loc)}
-                      >
-                        <td className="py-2.5 px-4 text-gray-200 font-medium">{loc.name}</td>
-                        <td className="py-2.5 px-4 text-gray-400 font-mono text-xs">
-                          {getLat(loc) != null ? Number(getLat(loc)).toFixed(4) : '--'}
-                        </td>
-                        <td className="py-2.5 px-4 text-gray-400 font-mono text-xs">
-                          {getLng(loc) != null ? Number(getLng(loc)).toFixed(4) : '--'}
-                        </td>
-                        <td className="py-2.5 px-4 text-gray-400">{loc.connections ?? '--'}</td>
-                        <td className="py-2.5 px-4">
-                          {isGeocoded(loc) ? (
-                            <span className="text-xs px-2 py-0.5 rounded bg-green-900/30 text-green-400">Yes</span>
-                          ) : (
-                            <span className="text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-400">No</span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-4 text-xs text-gray-500">
-                          {expandedId === loc.id ? '▲' : '▼'}
-                        </td>
-                      </tr>
-                      {expandedId === loc.id && (
-                        <tr key={`${loc.id}-rels`}>
-                          <td colSpan={6} className="px-4 pb-3 pt-1">
-                            {relsLoading ? (
-                              <p className="text-xs text-gray-500">Loading relationships...</p>
-                            ) : expandedRels.length === 0 ? (
-                              <p className="text-xs text-gray-500">No relationships found.</p>
-                            ) : (
-                              <div className="bg-navy-900/50 rounded p-3 space-y-1">
-                                {expandedRels.map((rel, i) => (
-                                  <div key={i} className="flex items-center gap-2 text-xs">
-                                    <span className="text-accent-blue font-medium">{rel.rel_type}</span>
-                                    <span className="text-gray-500">&rarr;</span>
-                                    <span className="text-gray-300">
-                                      {rel.source_name === loc.name
-                                        ? (rel.target_name || rel.target_id)
-                                        : (rel.source_name || rel.source_id)}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
       </main>
     </div>
