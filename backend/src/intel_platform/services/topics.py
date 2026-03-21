@@ -1,5 +1,6 @@
 from __future__ import annotations
 from collections import defaultdict
+import networkx as nx
 from intel_platform.graph.store import GraphStore
 
 
@@ -8,131 +9,316 @@ class TopicTreeService:
         self._store = store
 
     def build_topic_tree(self, project_id: str) -> dict:
-        """Build a hierarchical topic tree from entities and their document sources."""
+        """Build a deep hierarchical topic tree using graph community structure."""
         entities = self._store.search_entities(project_id=project_id, limit=10000)
+        graph_data = self._store.get_full_graph(project_id=project_id, limit=10000)
 
-        # Separate documents from other entities
         documents = [e for e in entities if e.get("entity_type") == "Document"]
-        non_doc_entities = [e for e in entities if e.get("entity_type") != "Document"]
+        non_docs = [e for e in entities if e.get("entity_type") != "Document"]
+        entity_map = {e.get("id", ""): e for e in non_docs}
 
-        # Group entities by type for the type-based view
-        by_type: dict[str, list] = defaultdict(list)
-        for e in non_doc_entities:
-            etype = e.get("entity_type", "Unknown")
-            by_type[etype].append({
-                "id": e.get("id", ""),
-                "name": e.get("name", ""),
-                "entity_type": etype,
-            })
+        # Build NetworkX graph for community detection
+        G = nx.Graph()
+        for e in non_docs:
+            G.add_node(e["id"], **{k: v for k, v in e.items() if k != "id" and not isinstance(v, (dict, list))})
+        for edge in graph_data.get("edges", []):
+            sid, tid = edge.get("source_id", ""), edge.get("target_id", "")
+            if sid in entity_map and tid in entity_map:
+                G.add_edge(sid, tid)
 
-        # Build tree with two main branches: By Concept and By Type
         tree = {
             "name": "Knowledge Base",
             "id": "root",
-            "entity_count": len(non_doc_entities),
+            "entity_count": len(non_docs),
             "document_count": len(documents),
             "children": [],
         }
 
-        # Branch 1: By Document Source
-        doc_branch = {
-            "name": "By Source Document",
+        # Branch 1: Thematic Clusters (community-based)
+        themes_branch = self._build_theme_branch(G, entity_map, non_docs)
+        tree["children"].append(themes_branch)
+
+        # Branch 2: By Source Document (with entity drilldown)
+        doc_branch = self._build_document_branch(documents)
+        tree["children"].append(doc_branch)
+
+        # Branch 3: By Entity Type
+        type_branch = self._build_type_branch(non_docs)
+        tree["children"].append(type_branch)
+
+        # Branch 4: Geographic (locations grouped by region)
+        geo_branch = self._build_geo_branch(non_docs)
+        if geo_branch["children"]:
+            tree["children"].append(geo_branch)
+
+        # Branch 5: Actors & Organizations
+        actor_branch = self._build_actor_branch(non_docs, G)
+        if actor_branch["children"]:
+            tree["children"].append(actor_branch)
+
+        return tree
+
+    def _build_theme_branch(self, G: nx.Graph, entity_map: dict, all_entities: list) -> dict:
+        """Detect communities and name them by their most central entity."""
+        branch = {
+            "name": "Thematic Clusters",
+            "id": "branch-themes",
+            "entity_type": "branch",
+            "children": [],
+            "count": 0,
+        }
+
+        if len(G.nodes) < 2:
+            return branch
+
+        # Community detection
+        try:
+            import community as community_louvain
+            partition = community_louvain.best_partition(G)
+        except ImportError:
+            from networkx.algorithms.community import greedy_modularity_communities
+            communities = greedy_modularity_communities(G)
+            partition = {}
+            for i, comm in enumerate(communities):
+                for node in comm:
+                    partition[node] = i
+
+        # Group by community
+        comm_groups: dict[int, list[str]] = defaultdict(list)
+        for node_id, comm_id in partition.items():
+            comm_groups[comm_id].append(node_id)
+
+        # For each community, find the most central node as the "theme name"
+        # and create sub-groups by entity type within the community
+        for comm_id, node_ids in sorted(comm_groups.items(), key=lambda x: -len(x[1])):
+            if len(node_ids) < 2:
+                continue
+
+            # Find most connected node in this community
+            subgraph = G.subgraph(node_ids)
+            if not subgraph.nodes:
+                continue
+            central_node = max(subgraph.nodes, key=lambda n: subgraph.degree(n))
+            central_entity = entity_map.get(central_node, {})
+            theme_name = central_entity.get("name", f"Cluster {comm_id}")
+
+            # Group community members by type
+            by_type: dict[str, list] = defaultdict(list)
+            for nid in node_ids:
+                entity = entity_map.get(nid)
+                if entity:
+                    etype = entity.get("entity_type", "Unknown")
+                    by_type[etype].append({
+                        "id": nid,
+                        "name": entity.get("name", ""),
+                        "entity_type": etype,
+                    })
+
+            type_children = []
+            for etype, elist in sorted(by_type.items()):
+                type_children.append({
+                    "name": etype,
+                    "id": f"theme-{comm_id}-{etype}",
+                    "entity_type": "sub_category",
+                    "children": sorted(elist, key=lambda x: x["name"]),
+                    "count": len(elist),
+                })
+
+            theme = {
+                "name": f"{theme_name} Network",
+                "id": f"theme-{comm_id}",
+                "entity_type": "theme",
+                "central_entity": theme_name,
+                "children": type_children,
+                "count": len(node_ids),
+            }
+            branch["children"].append(theme)
+
+        branch["count"] = sum(c["count"] for c in branch["children"])
+        return branch
+
+    def _build_document_branch(self, documents: list) -> dict:
+        """Documents with their related entities."""
+        branch = {
+            "name": "Source Documents",
             "id": "branch-docs",
             "entity_type": "branch",
             "children": [],
             "count": len(documents),
         }
         for doc in documents:
-            doc_name = doc.get("name", "Unknown")
             doc_id = doc.get("id", "")
-            # Get entities related to this document
             rels = self._store.get_relationships(doc_id)
-            related_entities = []
+            related = []
             for rel in rels:
                 target = self._store.get_entity(rel.get("target_id", ""))
                 if target and target.get("entity_type") != "Document":
-                    related_entities.append({
+                    related.append({
                         "id": target.get("id", ""),
                         "name": target.get("name", ""),
                         "entity_type": target.get("entity_type", ""),
                     })
-            doc_branch["children"].append({
-                "name": doc_name,
+            branch["children"].append({
+                "name": doc.get("name", "Unknown"),
                 "id": doc_id,
                 "entity_type": "document_source",
                 "reliability": doc.get("reliability_rating", ""),
-                "children": related_entities,
-                "count": len(related_entities),
+                "children": related,
+                "count": len(related),
             })
-        tree["children"].append(doc_branch)
+        return branch
 
-        # Branch 2: By Entity Type
-        type_branch = {
+    def _build_type_branch(self, entities: list) -> dict:
+        """Entities grouped by type."""
+        by_type: dict[str, list] = defaultdict(list)
+        for e in entities:
+            etype = e.get("entity_type", "Unknown")
+            by_type[etype].append({
+                "id": e.get("id", ""),
+                "name": e.get("name", ""),
+                "entity_type": etype,
+            })
+        branch = {
             "name": "By Entity Type",
             "id": "branch-types",
             "entity_type": "branch",
             "children": [],
-            "count": len(non_doc_entities),
+            "count": len(entities),
         }
         for etype, elist in sorted(by_type.items()):
-            type_branch["children"].append({
+            branch["children"].append({
                 "name": etype,
                 "id": f"type-{etype}",
                 "entity_type": "category",
                 "children": sorted(elist, key=lambda x: x["name"]),
                 "count": len(elist),
             })
-        tree["children"].append(type_branch)
+        return branch
 
-        # Branch 3: Key Themes (auto-generated from high-degree entities)
-        stats_data = self._store.get_full_graph(project_id=project_id, limit=5000)
-        if stats_data.get("nodes"):
-            # Find entities with most connections as "themes"
-            degree_map: dict[str, int] = defaultdict(int)
-            for edge in stats_data.get("edges", []):
-                degree_map[edge.get("source_id", "")] += 1
-                degree_map[edge.get("target_id", "")] += 1
+    def _build_geo_branch(self, entities: list) -> dict:
+        """Locations grouped by region heuristics."""
+        REGIONS = {
+            "East Asia": {"china", "japan", "south korea", "north korea", "taiwan", "mongolia", "beijing", "tokyo", "seoul", "pyongyang", "shanghai", "hong kong"},
+            "Southeast Asia": {"vietnam", "philippines", "malaysia", "indonesia", "thailand", "myanmar", "singapore", "cambodia", "laos", "manila", "jakarta", "bangkok", "hanoi"},
+            "South Asia": {"india", "pakistan", "afghanistan", "bangladesh", "sri lanka", "nepal", "mumbai", "delhi", "islamabad", "kabul"},
+            "Central Asia": {"kazakhstan", "uzbekistan", "tajikistan", "turkmenistan", "kyrgyzstan"},
+            "Middle East": {"iran", "iraq", "syria", "yemen", "saudi arabia", "qatar", "uae", "dubai", "tehran", "baghdad", "riyadh", "istanbul", "turkey", "israel", "tel aviv", "jordan", "lebanon", "kuwait", "bahrain", "oman"},
+            "East Africa": {"djibouti", "ethiopia", "kenya", "tanzania", "somalia", "eritrea", "sudan", "south sudan", "uganda", "mozambique", "madagascar", "mombasa", "nairobi", "addis ababa", "dar es salaam"},
+            "West Africa": {"nigeria", "ghana", "senegal", "mali", "niger", "cameroon", "dakar", "lagos", "abuja"},
+            "North Africa": {"egypt", "libya", "tunisia", "algeria", "morocco", "cairo"},
+            "Southern Africa": {"south africa", "zimbabwe", "botswana", "namibia", "angola", "johannesburg", "cape town"},
+            "Europe": {"russia", "ukraine", "germany", "france", "united kingdom", "poland", "romania", "netherlands", "belgium", "spain", "italy", "sweden", "norway", "finland", "greece", "moscow", "london", "paris", "berlin", "brussels", "kyiv", "kharkiv"},
+            "North America": {"united states", "canada", "mexico", "washington", "washington dc", "new york", "california", "texas"},
+            "South America": {"brazil", "argentina", "colombia", "chile", "venezuela", "peru"},
+            "Oceania": {"australia", "new zealand", "darwin", "sydney"},
+            "Maritime": {"south china sea", "east china sea", "persian gulf", "red sea", "caspian sea", "black sea", "indian ocean", "pacific ocean", "atlantic ocean", "mediterranean", "strait of hormuz", "suez canal"},
+        }
 
-            # Top entities by degree become themes
-            entity_map = {e.get("id", ""): e for e in non_doc_entities}
-            top_entities = sorted(degree_map.items(), key=lambda x: x[1], reverse=True)[:10]
+        locations = [e for e in entities if e.get("entity_type") == "Location"]
+        branch = {
+            "name": "Geographic Regions",
+            "id": "branch-geo",
+            "entity_type": "branch",
+            "children": [],
+            "count": len(locations),
+        }
 
-            theme_branch = {
-                "name": "Key Themes",
-                "id": "branch-themes",
-                "entity_type": "branch",
-                "children": [],
-                "count": min(10, len(top_entities)),
-            }
-            for eid, degree in top_entities:
-                entity = entity_map.get(eid)
-                if entity:
-                    # Get connected entities for this theme
-                    rels = self._store.get_relationships(eid)
-                    connected = []
-                    for rel in rels[:15]:
-                        target = self._store.get_entity(rel.get("target_id", ""))
-                        if target and target.get("entity_type") != "Document" and target.get("id") != eid:
-                            connected.append({
-                                "id": target.get("id", ""),
-                                "name": target.get("name", ""),
-                                "entity_type": target.get("entity_type", ""),
-                                "relationship": rel.get("rel_type", ""),
-                            })
-                    theme_branch["children"].append({
-                        "name": entity.get("name", ""),
-                        "id": eid,
-                        "entity_type": entity.get("entity_type", ""),
-                        "degree": degree,
-                        "children": connected,
-                        "count": len(connected),
+        assigned = set()
+        for region_name, keywords in REGIONS.items():
+            region_locs = []
+            for loc in locations:
+                name_lower = loc.get("name", "").lower().strip()
+                # Strip "the " prefix
+                clean = name_lower
+                if clean.startswith("the "):
+                    clean = clean[4:]
+                if clean in keywords and loc["id"] not in assigned:
+                    region_locs.append({
+                        "id": loc.get("id", ""),
+                        "name": loc.get("name", ""),
+                        "entity_type": "Location",
                     })
-            tree["children"].append(theme_branch)
+                    assigned.add(loc["id"])
+            if region_locs:
+                branch["children"].append({
+                    "name": region_name,
+                    "id": f"geo-{region_name.lower().replace(' ', '-')}",
+                    "entity_type": "region",
+                    "children": sorted(region_locs, key=lambda x: x["name"]),
+                    "count": len(region_locs),
+                })
 
-        return tree
+        # Unassigned locations
+        unassigned = [
+            {"id": loc.get("id", ""), "name": loc.get("name", ""), "entity_type": "Location"}
+            for loc in locations if loc["id"] not in assigned
+        ]
+        if unassigned:
+            branch["children"].append({
+                "name": "Other Locations",
+                "id": "geo-other",
+                "entity_type": "region",
+                "children": sorted(unassigned, key=lambda x: x["name"]),
+                "count": len(unassigned),
+            })
+
+        return branch
+
+    def _build_actor_branch(self, entities: list, G: nx.Graph) -> dict:
+        """People and organizations with their connections, sorted by importance."""
+        actors = [e for e in entities if e.get("entity_type") in ("Person", "Organization", "ThreatActor")]
+        branch = {
+            "name": "Actors & Organizations",
+            "id": "branch-actors",
+            "entity_type": "branch",
+            "children": [],
+            "count": len(actors),
+        }
+
+        # Sort by degree (most connected first)
+        actor_with_degree = []
+        for a in actors:
+            aid = a.get("id", "")
+            degree = G.degree(aid) if aid in G else 0
+            actor_with_degree.append((a, degree))
+        actor_with_degree.sort(key=lambda x: -x[1])
+
+        # Group: People vs Organizations
+        people = []
+        orgs = []
+        for a, degree in actor_with_degree:
+            entry = {
+                "id": a.get("id", ""),
+                "name": a.get("name", ""),
+                "entity_type": a.get("entity_type", ""),
+                "connections": degree,
+            }
+            if a.get("entity_type") == "Person":
+                people.append(entry)
+            else:
+                orgs.append(entry)
+
+        if people:
+            branch["children"].append({
+                "name": "Key Personnel",
+                "id": "actors-people",
+                "entity_type": "category",
+                "children": people,
+                "count": len(people),
+            })
+        if orgs:
+            branch["children"].append({
+                "name": "Organizations",
+                "id": "actors-orgs",
+                "entity_type": "category",
+                "children": orgs,
+                "count": len(orgs),
+            })
+
+        return branch
 
     def get_topic_context(self, entity_id: str, project_id: str) -> dict:
-        """Get full context for an entity — relationships, documents, and graph position."""
+        """Get full context for an entity."""
         entity = self._store.get_entity(entity_id)
         if not entity:
             return {"error": "Entity not found"}
@@ -151,7 +337,7 @@ class TopicTreeService:
                     "id": target.get("id"),
                     "name": target.get("name"),
                     "reliability_rating": target.get("reliability_rating", ""),
-                    "content_preview": (target.get("content", "") or "")[:300],
+                    "content_preview": (target.get("content", "") or "")[:500],
                 })
             else:
                 connected.append({
