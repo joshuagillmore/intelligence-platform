@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import spacy
 
@@ -16,12 +17,93 @@ SPACY_TO_ENTITY_TYPE = {
     "NORP": "Organization",
 }
 
+# Regex patterns for cyber-specific entities
+IP_PATTERN = re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')
+DOMAIN_PATTERN = re.compile(r'\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+(?:com|org|net|io|gov|mil|edu|info|onion|ru|uk|de|nl|fr|ua|cn)\b')
+HASH_MD5 = re.compile(r'\b[a-fA-F0-9]{32}\b')
+HASH_SHA1 = re.compile(r'\b[a-fA-F0-9]{40}\b')
+HASH_SHA256 = re.compile(r'\b[a-fA-F0-9]{64}\b')
+CVE_PATTERN = re.compile(r'\bCVE-\d{4}-\d{4,}\b')
+MITRE_PATTERN = re.compile(r'\bT\d{4}(?:\.\d{3})?\b')
+BTC_PATTERN = re.compile(r'\b(?:bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b')
+
+# Words that spaCy commonly misidentifies as entities
+NOISE_WORDS = {
+    "NETWORK", "INFRASTRUCTURE", "ASSESSMENT", "ANALYSIS", "REPORT",
+    "NOTE", "SUBJECT", "SUMMARY", "FINDINGS", "GAPS", "KEY",
+    "Backup C2", "Primary", "Secondary", "Administrative",
+}
+
 
 def _get_nlp():
     global _nlp
     if _nlp is None:
         _nlp = spacy.load("en_core_web_sm")
     return _nlp
+
+
+def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
+    """Extract cyber-specific entities using regex patterns."""
+    cyber_entities = []
+    seen = set()
+
+    for match in IP_PATTERN.finditer(text):
+        ip = match.group()
+        # Validate octets
+        octets = ip.split(".")
+        if all(0 <= int(o) <= 255 for o in octets) and ip not in seen:
+            seen.add(ip)
+            cyber_entities.append({
+                "name": ip, "entity_type": "IPAddress",
+                "source": doc_id, "method": "regex", "confidence": 0.95,
+            })
+
+    for match in DOMAIN_PATTERN.finditer(text):
+        domain = match.group().lower()
+        if domain not in seen and "." in domain:
+            seen.add(domain)
+            cyber_entities.append({
+                "name": domain, "entity_type": "Domain",
+                "source": doc_id, "method": "regex", "confidence": 0.9,
+            })
+
+    for match in HASH_SHA256.finditer(text):
+        h = match.group().lower()
+        if h not in seen:
+            seen.add(h)
+            cyber_entities.append({
+                "name": h, "entity_type": "Hash",
+                "source": doc_id, "method": "regex", "confidence": 0.95,
+            })
+
+    for match in HASH_SHA1.finditer(text):
+        h = match.group().lower()
+        if h not in seen and len(h) == 40:
+            seen.add(h)
+            cyber_entities.append({
+                "name": h, "entity_type": "Hash",
+                "source": doc_id, "method": "regex", "confidence": 0.9,
+            })
+
+    for match in CVE_PATTERN.finditer(text):
+        cve = match.group()
+        if cve not in seen:
+            seen.add(cve)
+            cyber_entities.append({
+                "name": cve, "entity_type": "Vulnerability",
+                "source": doc_id, "method": "regex", "confidence": 0.95,
+            })
+
+    for match in MITRE_PATTERN.finditer(text):
+        ttp = match.group()
+        if ttp not in seen:
+            seen.add(ttp)
+            cyber_entities.append({
+                "name": ttp, "entity_type": "TTP",
+                "source": doc_id, "method": "regex", "confidence": 0.9,
+            })
+
+    return cyber_entities
 
 
 def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]]:
@@ -34,12 +116,22 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
     seen_names: dict[str, dict] = {}
     entities = []
 
+    # 1. Extract cyber entities via regex first
+    cyber_entities = _extract_cyber_entities(text, doc_id)
+    for ce in cyber_entities:
+        if ce["name"] not in seen_names:
+            seen_names[ce["name"]] = ce
+            entities.append(ce)
+
+    # 2. Extract NLP entities
     for ent in doc.ents:
         entity_type = SPACY_TO_ENTITY_TYPE.get(ent.label_)
         if not entity_type:
             continue
-        name = ent.text.strip()
+        name = ent.text.strip().strip("'\"")
         if not name or len(name) < 2:
+            continue
+        if name in NOISE_WORDS:
             continue
         if name in seen_names:
             continue

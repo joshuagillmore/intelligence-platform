@@ -17,9 +17,28 @@ class GraphStore:
     def __init__(self, driver: Driver):
         self._driver = driver
 
+    @staticmethod
+    def _serialize_props(props: dict) -> dict:
+        """Ensure all property values are Neo4j-compatible primitives."""
+        clean = {}
+        for k, v in props.items():
+            if v is None:
+                continue
+            if isinstance(v, dict):
+                import json
+                clean[k] = json.dumps(v)
+            elif isinstance(v, (list, tuple)):
+                # Neo4j supports lists of primitives
+                clean[k] = [str(item) for item in v]
+            elif hasattr(v, 'isoformat'):
+                clean[k] = v.isoformat()
+            else:
+                clean[k] = v
+        return clean
+
     def create_entity(self, entity: Entity) -> dict:
         label = _validate_label(entity.entity_type.value)
-        props = entity.model_dump(exclude={"entity_type"})
+        props = self._serialize_props(entity.model_dump(exclude={"entity_type"}))
         props["entity_type"] = label
         with self._driver.session() as session:
             result = session.run(
@@ -62,7 +81,7 @@ class GraphStore:
     def create_relationship(self, rel) -> dict:
         if rel.rel_type not in self.VALID_REL_TYPES:
             raise ValueError(f"Invalid relationship type: {rel.rel_type}")
-        props = rel.model_dump(exclude={"source_id", "target_id", "rel_type"})
+        props = self._serialize_props(rel.model_dump(exclude={"source_id", "target_id", "rel_type"}))
         with self._driver.session() as session:
             result = session.run(
                 """
