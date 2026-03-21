@@ -24,6 +24,11 @@ export default function Sidebar() {
   const { activeProject } = useProject();
   const [searchQuery, setSearchQuery] = useState('');
 
+  const isActive = (href: string) => {
+    if (href === '/' && (pathname === '/' || pathname.startsWith('/project/'))) return true;
+    return pathname === href || pathname.startsWith(href + '/');
+  };
+
   function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' && searchQuery.trim()) {
       router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
@@ -46,10 +51,11 @@ export default function Sidebar() {
       <div className="px-4 py-2 border-b border-navy-600">
         <input
           type="text"
+          data-search-input
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={handleSearchKeyDown}
-          placeholder="Search... (Enter)"
+          placeholder="Search... (Ctrl+K)"
           className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-accent-blue"
         />
       </div>
@@ -59,7 +65,7 @@ export default function Sidebar() {
             key={item.href}
             href={item.href}
             className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
-              pathname === item.href
+              isActive(item.href)
                 ? 'bg-navy-700 text-accent-blue border-r-2 border-accent-blue'
                 : 'text-gray-400 hover:text-gray-200 hover:bg-navy-700'
             }`}

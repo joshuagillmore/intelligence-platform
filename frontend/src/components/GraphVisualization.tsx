@@ -405,6 +405,30 @@ export default function GraphVisualization({
       });
     }
 
+    // Keyboard / interaction hints
+    const hints = ['Shift+Click: Multi-select', 'Scroll: Zoom', 'Drag: Pan'];
+    const hintsG = svg.append('g')
+      .attr('transform', `translate(${width - 140}, ${height - hints.length * 16 - 12})`);
+
+    hintsG.append('rect')
+      .attr('x', -6)
+      .attr('y', -6)
+      .attr('width', 140)
+      .attr('height', hints.length * 16 + 12)
+      .attr('rx', 6)
+      .attr('fill', 'rgba(15, 23, 42, 0.85)')
+      .attr('stroke', '#334155')
+      .attr('stroke-width', 1);
+
+    hints.forEach((hint, i) => {
+      hintsG.append('text')
+        .attr('x', 4)
+        .attr('y', i * 16 + 10)
+        .attr('font-size', '9px')
+        .attr('fill', '#9ca3af')
+        .text(hint);
+    });
+
     function tick() {
       link
         .attr('x1', d => (d.source as GraphNode).x || 0)
