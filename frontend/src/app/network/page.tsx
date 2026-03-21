@@ -3,7 +3,9 @@ import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import GraphVisualization from '@/components/GraphVisualization';
 import { useProject } from '@/lib/ProjectContext';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errorMessages';
 
 interface Entity {
   id: string;
@@ -130,15 +132,22 @@ export default function NetworkPage() {
   const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
   const [mergeModalOpen, setMergeModalOpen] = useState(false);
   const [mergePrimaryId, setMergePrimaryId] = useState<string>('');
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState<string | null>(null);
 
   const loadGraph = useCallback(async () => {
     if (!activeProject) return;
+    setGraphLoading(true);
+    setGraphError(null);
     try {
       const res = await graphApi.full(activeProject.id);
       setGraphNodes(res.data.nodes || []);
       setGraphEdges(res.data.edges || []);
     } catch (e) {
       console.error('Failed to load graph', e);
+      setGraphError(getErrorMessage(e));
+    } finally {
+      setGraphLoading(false);
     }
   }, [activeProject]);
 
@@ -781,7 +790,18 @@ export default function NetworkPage() {
             ) : (
               <>
                 <div className="flex-1 relative">
-                  {filteredGraphNodes.length > 0 ? (
+                  {graphLoading ? (
+                    <div className="flex items-center justify-center h-full">
+                      <LoadingSpinner size="lg" />
+                    </div>
+                  ) : graphError ? (
+                    <div className="flex items-center justify-center h-full text-red-400">
+                      <div className="text-center">
+                        <p className="mb-2">{graphError}</p>
+                        <button onClick={loadGraph} className="text-xs text-accent-blue hover:underline">Retry</button>
+                      </div>
+                    </div>
+                  ) : filteredGraphNodes.length > 0 ? (
                     <GraphVisualization
                       nodes={filteredGraphNodes}
                       edges={filteredGraphEdges}
