@@ -1,28 +1,36 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useProject } from '@/lib/ProjectContext';
 
 const navItems = [
-  { name: 'Projects', href: '/', icon: '📁' },
-  { name: 'Collections', href: '/collections', icon: '📡' },
-  { name: 'Data Sources', href: '/data-sources', icon: '🌳' },
-  { name: 'Network Analysis', href: '/network', icon: '🔗' },
-  { name: 'Geo-Intelligence', href: '/geo', icon: '🌍' },
-  { name: 'Cyber', href: '/cyber', icon: '🛡️' },
-  { name: 'Products', href: '/products', icon: '📄' },
-  { name: 'LLM Hub', href: '/llm-hub', icon: '🤖' },
-  { name: 'Admin', href: '/admin', icon: '⚙️' },
+  { name: 'Projects', href: '/', icon: 'P' },
+  { name: 'Collections', href: '/collections', icon: 'C' },
+  { name: 'Data Sources', href: '/data-sources', icon: 'D' },
+  { name: 'Network Analysis', href: '/network', icon: 'N' },
+  { name: 'Geo-Intelligence', href: '/geo', icon: 'G' },
+  { name: 'Cyber', href: '/cyber', icon: 'S' },
+  { name: 'Products', href: '/products', icon: 'R' },
+  { name: 'LLM Hub', href: '/llm-hub', icon: 'L' },
+  { name: 'Admin', href: '/admin', icon: 'A' },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { activeProject } = useProject();
   return (
     <aside className="w-56 bg-navy-800 border-r border-navy-600 flex flex-col h-screen fixed left-0 top-0">
       <div className="p-4 border-b border-navy-600">
         <h1 className="text-lg font-bold text-accent-blue">Intel Platform</h1>
         <p className="text-xs text-gray-500 mt-1">Analyst Workbench</p>
       </div>
-      <nav className="flex-1 py-2">
+      <div className="px-4 py-2 border-b border-navy-600">
+        <p className="text-xs text-gray-500">Active Project</p>
+        <p className="text-sm font-medium text-gray-200 truncate">
+          {activeProject ? activeProject.name : 'No project selected'}
+        </p>
+      </div>
+      <nav className="flex-1 py-2 overflow-y-auto">
         {navItems.map((item) => (
           <Link
             key={item.href}
@@ -33,7 +41,7 @@ export default function Sidebar() {
                 : 'text-gray-400 hover:text-gray-200 hover:bg-navy-700'
             }`}
           >
-            <span>{item.icon}</span>
+            <span className="w-5 h-5 bg-navy-600 rounded text-xs flex items-center justify-center font-mono">{item.icon}</span>
             <span>{item.name}</span>
           </Link>
         ))}

@@ -65,4 +65,19 @@ export const ingestApi = {
   },
 };
 
+export const collectionsApi = {
+  create: (data: { project_id: string; pir: string }) => api.post('/collections', data),
+  list: () => api.get('/collections'),
+  status: (id: string) => api.get(`/collections/${id}/status`),
+};
+
+export const assessApi = {
+  assess: (entityId: string, projectId: string, judgment: string, probability: number) =>
+    api.post(`/entities/${entityId}/assess`, { entity_id: entityId, project_id: projectId, judgment, probability }),
+};
+
+export const healthApi = {
+  check: () => axios.get(`${API_BASE}/health`, { headers: { 'Authorization': `Bearer ${API_KEY}` } }),
+};
+
 export default api;
