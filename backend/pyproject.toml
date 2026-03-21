@@ -23,6 +23,7 @@ dependencies = [
     "redis>=5.0",
     "beautifulsoup4>=4.12",
     "aiohttp>=3.9",
+    "mcp[cli]>=1.12.0",
 ]
 
 [project.optional-dependencies]
