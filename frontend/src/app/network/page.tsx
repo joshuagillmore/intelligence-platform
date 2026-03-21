@@ -325,15 +325,43 @@ export default function NetworkPage() {
     if (!selectedEntity || !activeProject) return;
     setAiLoading(true);
     try {
-      const res = await llmApi.query(
-        [{ role: 'user', content: `Generate an intelligence assessment for entity "${selectedEntity.name}" (type: ${selectedEntity.entity_type}). Include analysis of significance, connections, and potential implications.` }],
-        'entity_assessment'
-      );
-      setAiResult(res.data.response || res.data.content || JSON.stringify(res.data));
+      const res = await assessApi.generate(selectedEntity.id, {
+        entity_id: selectedEntity.id,
+        project_id: activeProject.id,
+        judgment: '',
+        probability: 0.5,
+      });
+      setAiResult(res.data.assessment || res.data.error || JSON.stringify(res.data));
     } catch {
       setAiResult('Failed to generate assessment.');
     } finally {
       setAiLoading(false);
+    }
+  }
+
+  async function generateAssessmentFromModal() {
+    if (!activeProject || multiSelected.length === 0) return;
+    setAssessLoading(true);
+    try {
+      const results: string[] = [];
+      for (const entity of multiSelected) {
+        const res = await assessApi.generate(entity.id, {
+          entity_id: entity.id,
+          project_id: activeProject.id,
+          judgment: assessJudgment || undefined,
+          probability: assessProbability,
+        });
+        results.push(res.data.assessment || res.data.error || 'No response');
+      }
+      setAssessModalOpen(false);
+      setAssessJudgment('');
+      setAssessProbability(0.5);
+      setAssessAnalyst('');
+      setAiResult(results.join('\n\n---\n\n'));
+    } catch {
+      setAiResult('Failed to generate AI assessment.');
+    } finally {
+      setAssessLoading(false);
     }
   }
 
@@ -729,6 +757,13 @@ export default function NetworkPage() {
                       className="flex-1 bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
                     >
                       {assessLoading ? 'Submitting...' : 'Submit Assessment'}
+                    </button>
+                    <button
+                      onClick={generateAssessmentFromModal}
+                      disabled={assessLoading}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
+                    >
+                      {assessLoading ? 'Generating...' : 'Generate with AI'}
                     </button>
                     <button
                       onClick={() => setAssessModalOpen(false)}

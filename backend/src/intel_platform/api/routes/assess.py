@@ -1,9 +1,13 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.assessment import AssessmentService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -44,6 +48,84 @@ class MultiAssessmentRequest(BaseModel):
     probability: float = 0.5
     analyst: str = "system"
     methodology: str = ""
+
+
+@router.post("/assess/generate")
+async def generate_assessment(req: CreateAssessmentRequest, store: GraphStore = Depends(get_graph_store)):
+    """Use LLM to generate an assessment for an entity based on graph context."""
+    from intel_platform.services.graph_rag import GraphRAGPipeline
+    from intel_platform.config import settings
+
+    # Get entity and its context
+    entity = store.get_entity(req.entity_id)
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+
+    # Build context using Graph RAG
+    pipeline = GraphRAGPipeline(store)
+    rag_result = pipeline.query(f"What do we know about {entity.get('name', '')}?", req.project_id)
+    context = rag_result.get("context", "")
+
+    # Get LLM provider
+    provider = None
+    if settings.cohere_api_key:
+        from intel_platform.llm.cohere_provider import CohereProvider
+        provider = CohereProvider(api_key=settings.cohere_api_key)
+    elif settings.anthropic_api_key:
+        from intel_platform.llm.anthropic import AnthropicProvider
+        provider = AnthropicProvider(api_key=settings.anthropic_api_key)
+
+    if not provider:
+        return {"error": "No LLM provider configured", "entity_name": entity.get("name")}
+
+    # Load threat assessment skill
+    from intel_platform.llm.skills.loader import SkillsLoader
+    loader = SkillsLoader()
+    system = loader.get_system_prompt("threat_assessment", include_foundation=True) or ""
+
+    entity_name = entity.get("name", "Unknown")
+    entity_type = entity.get("entity_type", "Unknown")
+
+    prompt = f"""Generate a structured threat assessment for the following entity:
+
+Entity: {entity_name}
+Type: {entity_type}
+
+Graph Context:
+{context}
+
+Additional analyst input: {req.judgment if req.judgment else 'None provided'}
+
+Provide: Entity Overview, Key Relationships, Threat Profile, Assessment with probability rating, Gaps, and Recommendations."""
+
+    try:
+        result = await provider.generate(
+            messages=[{"role": "user", "content": prompt}],
+            system=system,
+            temperature=0.3,
+            max_tokens=4096,
+        )
+
+        # Save the assessment
+        svc = AssessmentService(store)
+        saved = svc.create_assessment(
+            entity_id=req.entity_id,
+            project_id=req.project_id,
+            judgment=result.content,
+            probability=req.probability,
+            analyst=req.analyst or "llm",
+            methodology="LLM-generated threat assessment with Graph RAG context",
+        )
+
+        return {
+            "assessment": result.content,
+            "model": result.model,
+            "tokens_used": result.total_tokens,
+            **saved,
+        }
+    except Exception as e:
+        logger.exception("Failed to generate assessment for entity %s", req.entity_id)
+        return {"error": str(e), "entity_name": entity_name}
 
 
 @router.post("/assess/multi")
