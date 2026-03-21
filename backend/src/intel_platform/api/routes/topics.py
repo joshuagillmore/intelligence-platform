@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from intel_platform.api.cache import cached
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.topics import TopicTreeService
@@ -7,6 +8,7 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
 @router.get("/topics")
+@cached(ttl=30)
 def get_topic_tree(project_id: str, store: GraphStore = Depends(get_graph_store)):
     svc = TopicTreeService(store)
     return svc.build_topic_tree(project_id)
