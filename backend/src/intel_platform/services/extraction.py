@@ -42,7 +42,17 @@ KNOWN_LOCATIONS = {
     "mariupol", "kherson", "dnipro", "odesa", "zaporizhzhia",
     "isfahan", "tehran", "bandar anzali", "bandar abbas",
     "tartus", "latakia", "aleppo", "homs",
+    "tatarstan", "north ossetia", "dagestan", "chechnya",
+    "mozdok", "mozdok airbase", "naha air base",
+    "kyiv", "kharkiv", "odesa", "lviv", "donetsk", "luhansk",
 }
+
+# Keywords that indicate an entity is a location, not a person
+LOCATION_KEYWORDS = [
+    "Airbase", "Air Base", "Port", "Island", "Islands", "Reef",
+    "Strait", "Gulf", "Sea", "Ocean", "Bay", "Province", "Region",
+    "District", "Base", "Camp",
+]
 
 # Known intelligence-domain organizations that spaCy commonly misclassifies
 KNOWN_ORGANIZATIONS = {
@@ -66,7 +76,7 @@ ORG_KEYWORDS = [
 NOISE_WORDS = {
     "NETWORK", "INFRASTRUCTURE", "ASSESSMENT", "ANALYSIS", "REPORT",
     "NOTE", "SUBJECT", "SUMMARY", "FINDINGS", "GAPS", "KEY",
-    "Backup C2", "Primary", "Secondary", "Administrative",
+    "Backup C2", "Primary", "Secondary", "Administrative", "Sea",
     "LIKELY", "UNLIKELY", "VERY LIKELY", "ALMOST CERTAIN", "ROUGHLY EVEN CHANCE",
     "VERY UNLIKELY", "ALMOST NO CHANCE",
     "Defense", "INTELLIGENCE", "OPEN SOURCE", "TECHNICAL",
@@ -169,6 +179,9 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         # Force known organizations
         elif name_lower in KNOWN_ORGANIZATIONS:
             e["entity_type"] = "Organization"
+        # Heuristic: location keywords (Airbase, Port, Island, etc.)
+        elif any(kw in name for kw in LOCATION_KEYWORDS):
+            e["entity_type"] = "Location"
         # Heuristic: org keywords
         elif any(kw in name for kw in ORG_KEYWORDS):
             e["entity_type"] = "Organization"
