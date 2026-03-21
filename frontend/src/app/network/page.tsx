@@ -6,7 +6,7 @@ import GraphVisualization, { LayoutMode, ColorMode } from '@/components/GraphVis
 import { useProject } from '@/lib/ProjectContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useRouter } from 'next/navigation';
-import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi, documentsApi } from '@/lib/api';
+import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 
 interface Entity {
@@ -149,6 +149,17 @@ export default function NetworkPage() {
   // Evidence chain: source documents for selected entity
   const [evidenceDocs, setEvidenceDocs] = useState<Array<{ id: string; name: string; reliability_rating: string }>>([]);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
+  // Snapshots (bins)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [snapshots, setSnapshots] = useState<any[]>([]);
+  const [snapshotNameInput, setSnapshotNameInput] = useState('');
+  const [snapshotFormOpen, setSnapshotFormOpen] = useState(false);
+  const [activeSnapshotId, setActiveSnapshotId] = useState<string | null>(null);
+  // Relationship evidence
+  const [relEvidenceOpen, setRelEvidenceOpen] = useState<Record<number, boolean>>({});
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [relEvidenceData, setRelEvidenceData] = useState<Record<number, any[]>>({});
+  const [relEvidenceLoading, setRelEvidenceLoading] = useState<Record<number, boolean>>({});
   const networkRouter = useRouter();
 
   const loadGraph = useCallback(async () => {
@@ -223,12 +234,115 @@ export default function NetworkPage() {
     }
   }, [activeProject]);
 
+  const loadSnapshots = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      const res = await snapshotsApi.list(activeProject.id);
+      setSnapshots(res.data.snapshots || []);
+    } catch (e) {
+      console.error('Failed to load snapshots', e);
+    }
+  }, [activeProject]);
+
+  async function saveSnapshot() {
+    if (!activeProject || !snapshotNameInput.trim() || multiSelected.length === 0) return;
+    try {
+      await snapshotsApi.create({
+        project_id: activeProject.id,
+        name: snapshotNameInput.trim(),
+        entity_ids: multiSelected.map(e => e.id),
+      });
+      setSnapshotNameInput('');
+      setSnapshotFormOpen(false);
+      loadSnapshots();
+    } catch {
+      console.error('Failed to save snapshot');
+    }
+  }
+
+  async function loadSnapshotView(snapshotId: string) {
+    try {
+      const res = await snapshotsApi.get(snapshotId);
+      const snap = res.data;
+      const snapEntityIds = new Set(snap.entity_ids || []);
+      setFilteredGraphNodes(graphNodes.filter(n => snapEntityIds.has(n.id)));
+      setFilteredGraphEdges(graphEdges.filter(e => {
+        const srcId = e.source_id || e.source;
+        const tgtId = e.target_id || e.target;
+        return snapEntityIds.has(srcId) && snapEntityIds.has(tgtId);
+      }));
+      setActiveSnapshotId(snapshotId);
+    } catch {
+      console.error('Failed to load snapshot');
+    }
+  }
+
+  function clearSnapshotView() {
+    setActiveSnapshotId(null);
+    // Re-trigger the filter effect by resetting island threshold
+    setIslandThreshold(islandThreshold);
+  }
+
+  async function deleteSnapshot(snapshotId: string) {
+    try {
+      await snapshotsApi.delete(snapshotId);
+      if (activeSnapshotId === snapshotId) clearSnapshotView();
+      loadSnapshots();
+    } catch {
+      console.error('Failed to delete snapshot');
+    }
+  }
+
+  async function toggleRelEvidence(relIndex: number, rel: Relationship) {
+    if (relEvidenceOpen[relIndex]) {
+      setRelEvidenceOpen(prev => ({ ...prev, [relIndex]: false }));
+      return;
+    }
+    setRelEvidenceOpen(prev => ({ ...prev, [relIndex]: true }));
+    if (relEvidenceData[relIndex]) return; // Already loaded
+
+    if (!activeProject) return;
+    setRelEvidenceLoading(prev => ({ ...prev, [relIndex]: true }));
+    try {
+      const docsRes = await documentsApi.list(activeProject.id);
+      const allDocs = docsRes.data.documents || [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const passages: any[] = [];
+      const sourceName = rel.source_name || '';
+      const targetName = rel.target_name || '';
+      for (const doc of allDocs) {
+        try {
+          // Check for source entity
+          if (sourceName) {
+            const evRes = await documentsApi.evidence(doc.id, sourceName);
+            if (evRes.data.count > 0) {
+              // Also check if target is mentioned in same passages
+              for (const p of evRes.data.passages) {
+                if (targetName && p.text.includes(targetName)) {
+                  passages.push({ ...p, document_name: doc.name, document_id: doc.id });
+                }
+              }
+            }
+          }
+        } catch {
+          // skip
+        }
+      }
+      setRelEvidenceData(prev => ({ ...prev, [relIndex]: passages }));
+    } catch {
+      setRelEvidenceData(prev => ({ ...prev, [relIndex]: [] }));
+    } finally {
+      setRelEvidenceLoading(prev => ({ ...prev, [relIndex]: false }));
+    }
+  }
+
   useEffect(() => {
     loadGraph();
     loadEntities();
     loadStatistics();
     loadCommunities();
-  }, [loadGraph, loadEntities, loadStatistics, loadCommunities]);
+    loadSnapshots();
+  }, [loadGraph, loadEntities, loadStatistics, loadCommunities, loadSnapshots]);
 
   // Derive all unique relationship types from graph edges
   const allRelTypes = Array.from(new Set(graphEdges.map(e => e.rel_type).filter(Boolean))).sort();
@@ -346,6 +460,9 @@ export default function NetworkPage() {
     setAiResult(null);
     setTypeDropdownOpen(false);
     setEvidenceDocs([]);
+    setRelEvidenceOpen({});
+    setRelEvidenceData({});
+    setRelEvidenceLoading({});
     checkWatchlistStatus(entity.id);
     try {
       const res = await entitiesApi.get(entity.id);
@@ -941,6 +1058,87 @@ export default function NetworkPage() {
                     <p className="text-xs text-gray-500 p-3">No entities found.</p>
                   )}
                 </div>
+                {/* Snapshots (Bins) Section */}
+                <div className="flex-none border-t border-navy-600">
+                  <div className="px-3 py-2 flex items-center justify-between">
+                    <h4 className="text-xs font-semibold text-gray-400">Snapshots</h4>
+                    {activeSnapshotId && (
+                      <button
+                        onClick={clearSnapshotView}
+                        className="text-[10px] text-accent-blue hover:underline"
+                      >
+                        Clear Filter
+                      </button>
+                    )}
+                  </div>
+                  {multiSelected.length > 0 && (
+                    <div className="px-3 pb-2">
+                      {snapshotFormOpen ? (
+                        <div className="space-y-1.5">
+                          <input
+                            value={snapshotNameInput}
+                            onChange={(e) => setSnapshotNameInput(e.target.value)}
+                            placeholder="Snapshot name..."
+                            className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-blue"
+                            onKeyDown={(e) => e.key === 'Enter' && saveSnapshot()}
+                          />
+                          <div className="flex gap-1">
+                            <button
+                              onClick={saveSnapshot}
+                              disabled={!snapshotNameInput.trim()}
+                              className="flex-1 bg-accent-blue hover:bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-medium disabled:opacity-50"
+                            >
+                              Save ({multiSelected.length} entities)
+                            </button>
+                            <button
+                              onClick={() => setSnapshotFormOpen(false)}
+                              className="px-2 py-1 bg-navy-600 hover:bg-navy-700 text-gray-300 rounded text-[10px]"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setSnapshotFormOpen(true)}
+                          className="w-full bg-navy-700 hover:bg-navy-600 border border-navy-600 text-gray-300 px-2 py-1.5 rounded text-xs transition-colors"
+                        >
+                          Save Snapshot ({multiSelected.length} selected)
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <div className="max-h-40 overflow-y-auto">
+                    {snapshots.length === 0 ? (
+                      <p className="text-[10px] text-gray-500 px-3 pb-2">No snapshots saved.</p>
+                    ) : (
+                      snapshots.map((snap) => (
+                        <div
+                          key={snap.id}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border-b border-navy-700 hover:bg-navy-700 cursor-pointer transition-colors ${
+                            activeSnapshotId === snap.id ? 'bg-navy-700 text-accent-blue' : 'text-gray-300'
+                          }`}
+                        >
+                          <div
+                            className="flex-1 min-w-0"
+                            onClick={() => loadSnapshotView(snap.id)}
+                          >
+                            <div className="truncate font-medium">{snap.name}</div>
+                            <div className="text-[10px] text-gray-500">
+                              {snap.entity_count} entities &middot; {new Date(snap.created_at).toLocaleDateString()}
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteSnapshot(snap.id); }}
+                            className="text-red-400 hover:text-red-300 text-[10px] flex-none"
+                          >
+                            Del
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </>
             ) : (
               <div className="flex-1 overflow-y-auto p-3">
@@ -1371,6 +1569,28 @@ export default function NetworkPage() {
                           <div className="text-gray-400 mt-0.5">
                             {rel.source_name || rel.source_id} &rarr; {rel.target_name || rel.target_id}
                           </div>
+                          <button
+                            onClick={() => toggleRelEvidence(i, rel)}
+                            className="text-[10px] text-accent-blue hover:underline mt-1"
+                          >
+                            {relEvidenceOpen[i] ? 'Hide Evidence' : 'Show Evidence'}
+                          </button>
+                          {relEvidenceOpen[i] && (
+                            <div className="mt-1.5 space-y-1">
+                              {relEvidenceLoading[i] ? (
+                                <p className="text-[10px] text-gray-500">Loading evidence...</p>
+                              ) : relEvidenceData[i] && relEvidenceData[i].length > 0 ? (
+                                relEvidenceData[i].map((passage: { text: string; document_name: string; document_id: string }, pi: number) => (
+                                  <div key={pi} className="bg-navy-800 rounded p-1.5 text-[10px]">
+                                    <div className="text-gray-500 mb-0.5 font-medium">{passage.document_name}</div>
+                                    <div className="text-gray-400 leading-relaxed">&ldquo;{passage.text}&rdquo;</div>
+                                  </div>
+                                ))
+                              ) : (
+                                <p className="text-[10px] text-gray-500">No co-occurring passages found in source documents.</p>
+                              )}
+                            </div>
+                          )}
                         </div>
                         );
                       })}
