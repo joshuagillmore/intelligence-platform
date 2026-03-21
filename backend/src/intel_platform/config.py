@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     chunk_size: int = 2000
     chunk_overlap: int = 50
 
+    # LLM providers
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    ollama_base_url: str = "http://localhost:11434"
+    default_llm_provider: str = "anthropic"
+    default_llm_model: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
