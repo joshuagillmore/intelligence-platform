@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import GraphVisualization from '@/components/GraphVisualization';
 import { useProject } from '@/lib/ProjectContext';
-import { entitiesApi, graphApi, queryApi, llmApi } from '@/lib/api';
+import { entitiesApi, graphApi, queryApi, llmApi, assessApi } from '@/lib/api';
 
 interface Entity {
   id: string;
@@ -109,6 +109,15 @@ export default function NetworkPage() {
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<Set<string>>(new Set());
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [highlightedEdgeKeys, setHighlightedEdgeKeys] = useState<Set<string>>(new Set());
+  const [multiSelected, setMultiSelected] = useState<Entity[]>([]);
+  const [assessModalOpen, setAssessModalOpen] = useState(false);
+  const [assessJudgment, setAssessJudgment] = useState('');
+  const [assessProbability, setAssessProbability] = useState(0.5);
+  const [assessAnalyst, setAssessAnalyst] = useState('');
+  const [assessLoading, setAssessLoading] = useState(false);
+  const [islandThreshold, setIslandThreshold] = useState(0);
+  const [filteredGraphNodes, setFilteredGraphNodes] = useState<GraphNode[]>([]);
+  const [filteredGraphEdges, setFilteredGraphEdges] = useState<GraphEdge[]>([]);
 
   const loadGraph = useCallback(async () => {
     if (!activeProject) return;
@@ -151,6 +160,76 @@ export default function NetworkPage() {
     loadStatistics();
   }, [loadGraph, loadEntities, loadStatistics]);
 
+  // Island method: filter graph by degree threshold
+  useEffect(() => {
+    if (islandThreshold === 0) {
+      setFilteredGraphNodes(graphNodes);
+      setFilteredGraphEdges(graphEdges);
+      return;
+    }
+    // Count degree per node
+    const degreeMap: Record<string, number> = {};
+    for (const node of graphNodes) {
+      degreeMap[node.id] = 0;
+    }
+    for (const edge of graphEdges) {
+      const srcId = edge.source_id || edge.source;
+      const tgtId = edge.target_id || edge.target;
+      if (degreeMap[srcId] !== undefined) degreeMap[srcId]++;
+      if (degreeMap[tgtId] !== undefined) degreeMap[tgtId]++;
+    }
+    const visibleIds = new Set(graphNodes.filter(n => degreeMap[n.id] >= islandThreshold).map(n => n.id));
+    setFilteredGraphNodes(graphNodes.filter(n => visibleIds.has(n.id)));
+    setFilteredGraphEdges(graphEdges.filter(e => {
+      const srcId = e.source_id || e.source;
+      const tgtId = e.target_id || e.target;
+      return visibleIds.has(srcId) && visibleIds.has(tgtId);
+    }));
+  }, [graphNodes, graphEdges, islandThreshold]);
+
+  function handleShiftNodeClick(node: GraphNode, shiftKey: boolean) {
+    if (shiftKey) {
+      const entity = { id: node.id, name: node.name, entity_type: node.entity_type };
+      setMultiSelected(prev => {
+        const exists = prev.find(e => e.id === node.id);
+        if (exists) return prev.filter(e => e.id !== node.id);
+        return [...prev, entity];
+      });
+    }
+  }
+
+  async function submitAssessment() {
+    if (!activeProject || !assessJudgment.trim()) return;
+    setAssessLoading(true);
+    try {
+      if (multiSelected.length === 1) {
+        await assessApi.create(multiSelected[0].id, {
+          entity_id: multiSelected[0].id,
+          project_id: activeProject.id,
+          judgment: assessJudgment,
+          probability: assessProbability,
+          analyst: assessAnalyst || undefined,
+        });
+      } else if (multiSelected.length > 1) {
+        await assessApi.multi({
+          entity_ids: multiSelected.map(e => e.id),
+          project_id: activeProject.id,
+          judgment: assessJudgment,
+          probability: assessProbability,
+        });
+      }
+      setAssessModalOpen(false);
+      setAssessJudgment('');
+      setAssessProbability(0.5);
+      setAssessAnalyst('');
+      setAiResult('Assessment submitted successfully.');
+    } catch {
+      setAiResult('Failed to submit assessment.');
+    } finally {
+      setAssessLoading(false);
+    }
+  }
+
   async function selectEntity(entity: Entity) {
     setSelectedEntity(entity);
     setAiResult(null);
@@ -167,8 +246,13 @@ export default function NetworkPage() {
     }
   }
 
-  function handleNodeClick(node: GraphNode) {
+  function handleNodeClick(node: GraphNode, event?: MouseEvent) {
     const entity = { id: node.id, name: node.name, entity_type: node.entity_type };
+    // Shift+click for multi-select
+    if (event?.shiftKey) {
+      handleShiftNodeClick(node, true);
+      return;
+    }
     selectEntity(entity);
     // Track selections for shortest path (toggle: add if not present, remove if already selected)
     setSelectedEntities(prev => {
@@ -361,7 +445,24 @@ export default function NetworkPage() {
                 )}
               </div>
             )}
-            <span className="text-sm text-gray-400">{graphNodes.length} nodes, {graphEdges.length} edges</span>
+            {multiSelected.length > 0 && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-gray-400">{multiSelected.length} selected</span>
+                <button
+                  onClick={() => setAssessModalOpen(true)}
+                  className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs font-medium transition-colors"
+                >
+                  Generate Assessment
+                </button>
+                <button
+                  onClick={() => setMultiSelected([])}
+                  className="text-gray-500 hover:text-gray-300 text-xs"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+            <span className="text-sm text-gray-400">{filteredGraphNodes.length} nodes, {filteredGraphEdges.length} edges</span>
           </div>
         </div>
 
@@ -445,6 +546,28 @@ export default function NetworkPage() {
                         <div className="text-xs text-gray-400">Components</div>
                       </div>
                     </div>
+                    {/* Island Method */}
+                    <div className="bg-navy-700 rounded p-3">
+                      <label className="text-xs text-gray-400 font-medium block mb-2">
+                        Island Method &mdash; Minimum Degree
+                      </label>
+                      <input
+                        type="range"
+                        min={0}
+                        max={Math.max(maxVals.degree, 1)}
+                        value={islandThreshold}
+                        onChange={(e) => setIslandThreshold(Number(e.target.value))}
+                        className="w-full accent-accent-blue"
+                      />
+                      <div className="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>0</span>
+                        <span className="text-accent-blue font-medium">{islandThreshold}</span>
+                        <span>{maxVals.degree}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Showing nodes with degree &ge; {islandThreshold}
+                      </p>
+                    </div>
                     <p className="text-xs text-gray-500">See full statistics table in expanded view by clicking a column header to sort.</p>
                   </div>
                 ) : (
@@ -504,10 +627,10 @@ export default function NetworkPage() {
             ) : (
               <>
                 <div className="flex-1 relative">
-                  {graphNodes.length > 0 ? (
+                  {filteredGraphNodes.length > 0 ? (
                     <GraphVisualization
-                      nodes={graphNodes}
-                      edges={graphEdges}
+                      nodes={filteredGraphNodes}
+                      edges={filteredGraphEdges}
                       onNodeClick={handleNodeClick}
                       selectedNodeId={selectedEntity?.id}
                     />
@@ -558,6 +681,66 @@ export default function NetworkPage() {
               </>
             )}
           </div>
+
+          {/* Assessment modal */}
+          {assessModalOpen && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-navy-800 border border-navy-600 rounded-lg p-6 w-full max-w-md">
+                <h3 className="text-lg font-bold mb-4">Generate Assessment</h3>
+                <p className="text-xs text-gray-400 mb-4">
+                  Assessing {multiSelected.length} entit{multiSelected.length === 1 ? 'y' : 'ies'}:{' '}
+                  {multiSelected.map(e => e.name).join(', ')}
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Judgment</label>
+                    <textarea
+                      value={assessJudgment}
+                      onChange={(e) => setAssessJudgment(e.target.value)}
+                      placeholder="Enter your analyst judgment..."
+                      className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm h-24 focus:outline-none focus:border-accent-blue"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Probability: {(assessProbability * 100).toFixed(0)}%</label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={assessProbability}
+                      onChange={(e) => setAssessProbability(Number(e.target.value))}
+                      className="w-full accent-accent-blue"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Analyst (optional)</label>
+                    <input
+                      value={assessAnalyst}
+                      onChange={(e) => setAssessAnalyst(e.target.value)}
+                      placeholder="Analyst name..."
+                      className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
+                    />
+                  </div>
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      onClick={submitAssessment}
+                      disabled={assessLoading || !assessJudgment.trim()}
+                      className="flex-1 bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
+                    >
+                      {assessLoading ? 'Submitting...' : 'Submit Assessment'}
+                    </button>
+                    <button
+                      onClick={() => setAssessModalOpen(false)}
+                      className="px-4 py-2 bg-navy-600 hover:bg-navy-700 text-gray-300 rounded text-sm transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Right sidebar - Detail panel */}
           <div className="w-80 flex-none bg-navy-800 border-l border-navy-600 overflow-y-auto">

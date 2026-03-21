@@ -24,7 +24,7 @@ interface GraphEdge {
 interface Props {
   nodes: GraphNode[];
   edges: GraphEdge[];
-  onNodeClick: (node: GraphNode) => void;
+  onNodeClick: (node: GraphNode, event?: MouseEvent) => void;
   selectedNodeId?: string | null;
 }
 
@@ -121,8 +121,8 @@ export default function GraphVisualization({ nodes, edges, onNodeClick, selected
       .attr('stroke', d => d.id === selectedNodeId ? '#ffffff' : 'transparent')
       .attr('stroke-width', d => d.id === selectedNodeId ? 3 : 0)
       .attr('cursor', 'pointer')
-      .on('click', (_event, d) => {
-        onNodeClick(d);
+      .on('click', (event, d) => {
+        onNodeClick(d, event as unknown as MouseEvent);
       })
       .call(d3.drag<SVGCircleElement, GraphNode>()
         .on('start', (event, d) => {
