@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 
+from intel_platform.api.cache import cached
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.enrichment import (
@@ -15,6 +16,7 @@ def get_full_graph(project_id: str, limit: int = 500, store: GraphStore = Depend
 
 
 @router.get("/communities")
+@cached(ttl=30)
 def get_communities(project_id: str, store: GraphStore = Depends(get_graph_store)):
     return detect_communities(store, project_id)
 
@@ -25,5 +27,6 @@ def get_centrality(project_id: str, store: GraphStore = Depends(get_graph_store)
 
 
 @router.get("/graph/statistics")
+@cached(ttl=30)
 def get_statistics(project_id: str, store: GraphStore = Depends(get_graph_store)):
     return compute_all_statistics(store, project_id)
