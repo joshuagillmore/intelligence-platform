@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import GraphVisualization from '@/components/GraphVisualization';
 import { useProject } from '@/lib/ProjectContext';
-import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi } from '@/lib/api';
+import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi } from '@/lib/api';
 
 interface Entity {
   id: string;
@@ -125,6 +125,11 @@ export default function NetworkPage() {
   const [noteContent, setNoteContent] = useState('');
   const [noteType, setNoteType] = useState('observation');
   const [noteFormOpen, setNoteFormOpen] = useState(false);
+  const [isWatchlisted, setIsWatchlisted] = useState(false);
+  const [watchlistLoading, setWatchlistLoading] = useState(false);
+  const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
+  const [mergeModalOpen, setMergeModalOpen] = useState(false);
+  const [mergePrimaryId, setMergePrimaryId] = useState<string>('');
 
   const loadGraph = useCallback(async () => {
     if (!activeProject) return;
@@ -240,6 +245,8 @@ export default function NetworkPage() {
   async function selectEntity(entity: Entity) {
     setSelectedEntity(entity);
     setAiResult(null);
+    setTypeDropdownOpen(false);
+    checkWatchlistStatus(entity.id);
     try {
       const res = await entitiesApi.get(entity.id);
       if (res.data.relationships) {
@@ -431,6 +438,67 @@ export default function NetworkPage() {
     }
   }
 
+  const ENTITY_TYPE_OPTIONS = ['Person', 'Organization', 'Location', 'IPAddress', 'Domain', 'Hash', 'ThreatActor', 'TTP', 'Vulnerability', 'Malware', 'Campaign'];
+
+  async function checkWatchlistStatus(entityId: string) {
+    if (!activeProject) return;
+    try {
+      const res = await watchlistApi.list(activeProject.id);
+      const watchedIds = (res.data || []).map((e: { id: string }) => e.id);
+      setIsWatchlisted(watchedIds.includes(entityId));
+    } catch {
+      setIsWatchlisted(false);
+    }
+  }
+
+  async function toggleWatchlist() {
+    if (!activeProject || !selectedEntity) return;
+    setWatchlistLoading(true);
+    try {
+      if (isWatchlisted) {
+        await watchlistApi.remove(activeProject.id, selectedEntity.id);
+        setIsWatchlisted(false);
+      } else {
+        await watchlistApi.add(activeProject.id, selectedEntity.id);
+        setIsWatchlisted(true);
+      }
+    } catch {
+      console.error('Failed to toggle watchlist');
+    } finally {
+      setWatchlistLoading(false);
+    }
+  }
+
+  async function changeEntityType(newType: string) {
+    if (!selectedEntity) return;
+    try {
+      await entityMgmtApi.updateType(selectedEntity.id, newType);
+      setSelectedEntity({ ...selectedEntity, entity_type: newType });
+      setTypeDropdownOpen(false);
+      loadGraph();
+      loadEntities();
+    } catch {
+      console.error('Failed to update entity type');
+    }
+  }
+
+  async function mergeEntities() {
+    if (!activeProject || multiSelected.length < 2 || !mergePrimaryId) return;
+    try {
+      const mergeIds = multiSelected.filter(e => e.id !== mergePrimaryId).map(e => e.id);
+      await entityMgmtApi.merge(mergePrimaryId, mergeIds, activeProject.id);
+      setMergeModalOpen(false);
+      setMergePrimaryId('');
+      setMultiSelected([]);
+      loadGraph();
+      loadEntities();
+      loadStatistics();
+      setAiResult('Entities merged successfully.');
+    } catch {
+      setAiResult('Failed to merge entities.');
+    }
+  }
+
   function handleSort(key: SortKey) {
     if (sortKey === key) {
       setSortAsc(!sortAsc);
@@ -532,6 +600,14 @@ export default function NetworkPage() {
                 >
                   Generate Assessment
                 </button>
+                {multiSelected.length >= 2 && (
+                  <button
+                    onClick={() => { setMergePrimaryId(multiSelected[0].id); setMergeModalOpen(true); }}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-xs font-medium transition-colors"
+                  >
+                    Merge Entities
+                  </button>
+                )}
                 <button
                   onClick={() => setMultiSelected([])}
                   className="text-gray-500 hover:text-gray-300 text-xs"
@@ -922,6 +998,50 @@ export default function NetworkPage() {
             </div>
           )}
 
+          {/* Merge modal */}
+          {mergeModalOpen && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-navy-800 border border-navy-600 rounded-lg p-6 w-full max-w-md">
+                <h3 className="text-lg font-bold mb-4">Merge Entities</h3>
+                <p className="text-xs text-gray-400 mb-4">
+                  Select the primary entity. All other selected entities will be merged into it.
+                </p>
+                <div className="space-y-2 mb-4">
+                  {multiSelected.map((e) => (
+                    <label key={e.id} className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded hover:bg-navy-700">
+                      <input
+                        type="radio"
+                        name="mergePrimary"
+                        checked={mergePrimaryId === e.id}
+                        onChange={() => setMergePrimaryId(e.id)}
+                        className="accent-accent-blue"
+                      />
+                      <span className={`w-2 h-2 rounded-full ${TYPE_COLORS[e.entity_type] || 'bg-gray-500'}`} />
+                      <span className="text-gray-200">{e.name}</span>
+                      <span className="text-xs text-gray-500">{e.entity_type}</span>
+                      {mergePrimaryId === e.id && <span className="text-xs text-accent-blue ml-auto">Primary</span>}
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={mergeEntities}
+                    disabled={!mergePrimaryId}
+                    className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
+                  >
+                    Merge
+                  </button>
+                  <button
+                    onClick={() => setMergeModalOpen(false)}
+                    className="px-4 py-2 bg-navy-600 hover:bg-navy-700 text-gray-300 rounded text-sm transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Right sidebar - Detail panel */}
           <div className="w-80 flex-none bg-navy-800 border-l border-navy-600 overflow-y-auto">
             {selectedEntity ? (
@@ -982,6 +1102,46 @@ export default function NetworkPage() {
                   >
                     Gap Analysis
                   </button>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold text-gray-400">Entity Actions</h4>
+                  <button
+                    onClick={toggleWatchlist}
+                    disabled={watchlistLoading}
+                    className={`w-full px-3 py-2 rounded text-xs font-medium transition-colors disabled:opacity-50 ${
+                      isWatchlisted
+                        ? 'bg-yellow-600 hover:bg-yellow-700 text-white'
+                        : 'bg-navy-600 hover:bg-navy-700 text-gray-200 border border-navy-600'
+                    }`}
+                  >
+                    {watchlistLoading ? 'Updating...' : isWatchlisted ? '\u2605 Remove from Watchlist' : '\u2606 Add to Watchlist'}
+                  </button>
+
+                  <div className="relative">
+                    <button
+                      onClick={() => setTypeDropdownOpen(!typeDropdownOpen)}
+                      className="w-full bg-navy-600 hover:bg-navy-700 text-gray-200 px-3 py-2 rounded text-xs font-medium border border-navy-600 text-left flex justify-between items-center"
+                    >
+                      <span>Change Type: {selectedEntity.entity_type}</span>
+                      <span className="text-gray-500">{typeDropdownOpen ? '\u25B2' : '\u25BC'}</span>
+                    </button>
+                    {typeDropdownOpen && (
+                      <div className="absolute z-10 mt-1 w-full bg-navy-700 border border-navy-600 rounded shadow-lg max-h-48 overflow-y-auto">
+                        {ENTITY_TYPE_OPTIONS.map((t) => (
+                          <button
+                            key={t}
+                            onClick={() => changeEntityType(t)}
+                            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-navy-600 transition-colors ${
+                              selectedEntity.entity_type === t ? 'text-accent-blue font-medium' : 'text-gray-300'
+                            }`}
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {aiResult && (

@@ -140,6 +140,21 @@ export const exportApi = {
   report: (reportId: string) => api.get(`/export/report/${reportId}`),
 };
 
+export const watchlistApi = {
+  add: (projectId: string, entityId: string) =>
+    api.post('/watchlist/add', { project_id: projectId, entity_id: entityId }),
+  remove: (projectId: string, entityId: string) =>
+    api.post('/watchlist/remove', { project_id: projectId, entity_id: entityId }),
+  list: (projectId: string) => api.get('/watchlist', { params: { project_id: projectId } }),
+};
+
+export const entityMgmtApi = {
+  merge: (primaryId: string, mergeIds: string[], projectId: string) =>
+    api.post('/entities/merge', { primary_id: primaryId, merge_ids: mergeIds, project_id: projectId }),
+  updateType: (entityId: string, entityType: string) =>
+    api.put(`/entities/${entityId}/type`, { entity_type: entityType }),
+};
+
 export const healthApi = {
   check: () => axios.get(`${API_BASE}/health`, { headers: { 'Authorization': `Bearer ${API_KEY}` } }),
 };
