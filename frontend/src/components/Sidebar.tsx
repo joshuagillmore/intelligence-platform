@@ -10,6 +10,7 @@ const navItems = [
   { name: 'Data Sources', href: '/data-sources', icon: 'D' },
   { name: 'Network Analysis', href: '/network', icon: 'N' },
   { name: 'Timeline', href: '/timeline', icon: 'T' },
+  { name: 'Watchlist', href: '/watchlist', icon: '\u2B50' },
   { name: 'Geo-Intelligence', href: '/geo', icon: 'G' },
   { name: 'Cyber', href: '/cyber', icon: 'S' },
   { name: 'Products', href: '/products', icon: 'R' },

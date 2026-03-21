@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
-import { projectsApi, type Project } from '@/lib/api';
+import { projectsApi, watchlistApi, type Project } from '@/lib/api';
 import { useProject } from '@/lib/ProjectContext';
 
 export default function ProjectsPage() {
@@ -11,12 +11,31 @@ export default function ProjectsPage() {
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [watchedEntities, setWatchedEntities] = useState<any[]>([]);
   const { activeProject, setActiveProject } = useProject();
   const router = useRouter();
 
   useEffect(() => {
     loadProjects();
   }, []);
+
+  useEffect(() => {
+    if (activeProject) {
+      loadWatchedEntities(activeProject.id);
+    } else {
+      setWatchedEntities([]);
+    }
+  }, [activeProject]);
+
+  async function loadWatchedEntities(projectId: string) {
+    try {
+      const res = await watchlistApi.list(projectId);
+      setWatchedEntities(res.data || []);
+    } catch {
+      setWatchedEntities([]);
+    }
+  }
 
   useEffect(() => {
     if (toast) {
@@ -144,6 +163,31 @@ export default function ProjectsPage() {
             <p className="text-gray-500 col-span-3">No projects yet. Create one to get started.</p>
           )}
         </div>
+
+        {activeProject && watchedEntities.length > 0 && (
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold mb-3">Watched Entities</h3>
+            <div className="bg-navy-800 border border-navy-600 rounded-lg divide-y divide-navy-700">
+              {watchedEntities.map((entity: { id: string; name: string; entity_type: string; relationship_count?: number }) => (
+                <div key={entity.id} className="flex items-center justify-between px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-gray-200">{entity.name}</span>
+                    <span className="text-xs px-2 py-0.5 rounded bg-navy-600 text-gray-400">{entity.entity_type}</span>
+                    {entity.relationship_count !== undefined && (
+                      <span className="text-xs text-gray-500">{entity.relationship_count} relationships</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => router.push(`/network?entity=${entity.id}`)}
+                    className="text-xs text-accent-blue hover:text-blue-400 transition-colors"
+                  >
+                    View in Graph
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {toast && (
           <div className="fixed bottom-6 right-6 bg-accent-blue text-white px-4 py-2 rounded-lg shadow-lg text-sm animate-pulse">
