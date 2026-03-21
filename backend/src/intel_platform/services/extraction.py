@@ -77,6 +77,8 @@ NOISE_WORDS = {
     "NETWORK", "INFRASTRUCTURE", "ASSESSMENT", "ANALYSIS", "REPORT",
     "NOTE", "SUBJECT", "SUMMARY", "FINDINGS", "GAPS", "KEY",
     "Backup C2", "Primary", "Secondary", "Administrative", "Sea",
+    "Bitcoin", "Monero", "Ethereum", "Cryptocurrency",
+    "VPS", "CDN", "API", "HTTP", "HTTPS", "DNS", "TCP", "UDP",
     "LIKELY", "UNLIKELY", "VERY LIKELY", "ALMOST CERTAIN", "ROUGHLY EVEN CHANCE",
     "VERY UNLIKELY", "ALMOST NO CHANCE",
     "Defense", "INTELLIGENCE", "OPEN SOURCE", "TECHNICAL",
