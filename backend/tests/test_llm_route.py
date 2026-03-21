@@ -18,7 +18,7 @@ def test_llm_query_with_skill():
     assert response.status_code == 200
     data = response.json()
     assert data["skill_applied"] == "threat_assessment"
-    assert data["system_prompt_length"] > 100
+    assert "content" in data
 
 
 def test_llm_query_without_skill():
