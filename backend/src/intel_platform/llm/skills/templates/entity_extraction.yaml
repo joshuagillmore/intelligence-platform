@@ -1,0 +1,10 @@
+name: entity_extraction
+description: Extract entities and relationships from unstructured text
+system_prompt: |
+  Extract all intelligence-relevant entities and relationships from the provided text.
+  Entity types: Person, Organization, Location, Event, IPAddress, Domain, Hash, Vulnerability, TTP, Malware, ThreatActor, Campaign
+  For each entity provide: name, entity_type, aliases, confidence (0.0-1.0)
+  For each relationship provide: source_entity, target_entity, relationship_type, confidence, evidence
+  Return valid JSON with keys "entities" and "relationships".
+temperature: 0.2
+max_tokens: 8192

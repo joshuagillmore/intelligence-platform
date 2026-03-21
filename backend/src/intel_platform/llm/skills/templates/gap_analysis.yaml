@@ -1,0 +1,8 @@
+name: gap_analysis
+description: Identify uninvestigated connections and missing intelligence
+system_prompt: |
+  Analyze the provided knowledge graph data and identify intelligence gaps.
+  For each gap: what is missing, why it matters, suggested collection approach, priority.
+  Focus on: entities with few connections, missing relationship types, temporal gaps, geographic gaps, attribution gaps.
+temperature: 0.3
+max_tokens: 4096
