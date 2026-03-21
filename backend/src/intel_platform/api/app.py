@@ -26,6 +26,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount MCP server
+try:
+    from intel_platform.mcp.server import get_mcp_app
+    mcp_app = get_mcp_app()
+    app.mount("/mcp", mcp_app)
+except ImportError:
+    pass  # MCP not available
+
 app.include_router(health.router, tags=["health"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])
 app.include_router(ingest.router, prefix="/api", tags=["ingest"])
