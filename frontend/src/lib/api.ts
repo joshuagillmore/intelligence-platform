@@ -113,6 +113,18 @@ export const reportsApi = {
   delete: (id: string) => api.delete(`/reports/${id}`),
 };
 
+export const timelineApi = {
+  get: (projectId: string) => api.get('/timeline', { params: { project_id: projectId } }),
+};
+
+export const notebookApi = {
+  create: (data: { project_id: string; title: string; content: string; entity_ids?: string[]; note_type?: string }) =>
+    api.post('/notebook', data),
+  list: (projectId: string) => api.get('/notebook', { params: { project_id: projectId } }),
+  get: (id: string) => api.get(`/notebook/${id}`),
+  delete: (id: string) => api.delete(`/notebook/${id}`),
+};
+
 export const geoApi = {
   locations: (projectId: string) => api.get('/geo/locations', { params: { project_id: projectId } }),
 };
