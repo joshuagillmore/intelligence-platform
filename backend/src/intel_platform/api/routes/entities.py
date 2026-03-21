@@ -30,3 +30,8 @@ def get_entity(entity_id: str, store: GraphStore = Depends(get_graph_store)):
 @router.get("/subgraph/{entity_id}")
 def get_subgraph(entity_id: str, hops: int = 1, store: GraphStore = Depends(get_graph_store)):
     return store.get_subgraph(entity_id, hops=hops)
+
+
+@router.get("/paths/{entity_id_1}/{entity_id_2}")
+def find_shortest_path(entity_id_1: str, entity_id_2: str, store: GraphStore = Depends(get_graph_store)):
+    return store.find_shortest_path(entity_id_1, entity_id_2)
