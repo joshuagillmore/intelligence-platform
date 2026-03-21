@@ -102,6 +102,13 @@ export default function NetworkPage() {
   const [stats, setStats] = useState<GraphStats | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('pagerank');
   const [sortAsc, setSortAsc] = useState(false);
+  const [selectedEntities, setSelectedEntities] = useState<Entity[]>([]);
+  const [pathResult, setPathResult] = useState<{ path: string[]; length: number } | null>(null);
+  const [pathLoading, setPathLoading] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [highlightedNodeIds, setHighlightedNodeIds] = useState<Set<string>>(new Set());
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [highlightedEdgeKeys, setHighlightedEdgeKeys] = useState<Set<string>>(new Set());
 
   const loadGraph = useCallback(async () => {
     if (!activeProject) return;
@@ -161,7 +168,56 @@ export default function NetworkPage() {
   }
 
   function handleNodeClick(node: GraphNode) {
-    selectEntity({ id: node.id, name: node.name, entity_type: node.entity_type });
+    const entity = { id: node.id, name: node.name, entity_type: node.entity_type };
+    selectEntity(entity);
+    // Track selections for shortest path (toggle: add if not present, remove if already selected)
+    setSelectedEntities(prev => {
+      const exists = prev.find(e => e.id === node.id);
+      if (exists) {
+        return prev.filter(e => e.id !== node.id);
+      }
+      const updated = [...prev, entity];
+      if (updated.length > 2) {
+        return [updated[1], updated[2]];
+      }
+      return updated;
+    });
+  }
+
+  async function findShortestPath() {
+    if (selectedEntities.length !== 2) return;
+    setPathLoading(true);
+    setPathResult(null);
+    setHighlightedNodeIds(new Set());
+    setHighlightedEdgeKeys(new Set());
+    try {
+      const res = await entitiesApi.shortestPath(selectedEntities[0].id, selectedEntities[1].id);
+      const path = res.data.path || res.data.nodes || [];
+      const length = res.data.length ?? res.data.path_length ?? path.length - 1;
+      setPathResult({ path, length });
+      // Highlight path nodes
+      const nodeIds = new Set<string>(path.map((p: string | { id: string }) => typeof p === 'string' ? p : p.id));
+      setHighlightedNodeIds(nodeIds);
+      // Highlight path edges
+      const edgeKeys = new Set<string>();
+      const pathIds = Array.from(nodeIds);
+      for (let i = 0; i < pathIds.length - 1; i++) {
+        edgeKeys.add(`${pathIds[i]}-${pathIds[i + 1]}`);
+        edgeKeys.add(`${pathIds[i + 1]}-${pathIds[i]}`);
+      }
+      setHighlightedEdgeKeys(edgeKeys);
+    } catch {
+      setPathResult({ path: [], length: -1 });
+    } finally {
+      setPathLoading(false);
+    }
+  }
+
+  function clearPath() {
+    setSelectedEntities([]);
+    setPathResult(null);
+    setHighlightedNodeIds(new Set());
+    setHighlightedEdgeKeys(new Set());
   }
 
   async function sendChat() {
@@ -277,7 +333,36 @@ export default function NetworkPage() {
         {/* Top bar */}
         <div className="flex-none px-4 py-2 border-b border-navy-600 bg-navy-800 flex items-center justify-between">
           <h2 className="text-lg font-bold">Network Analysis</h2>
-          <span className="text-sm text-gray-400">{graphNodes.length} nodes, {graphEdges.length} edges</span>
+          <div className="flex items-center gap-4">
+            {selectedEntities.length > 0 && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-gray-400">Path:</span>
+                {selectedEntities.map((e, i) => (
+                  <span key={e.id}>
+                    <span className="text-accent-blue">{e.name}</span>
+                    {i < selectedEntities.length - 1 && <span className="text-gray-500 mx-1">&rarr;</span>}
+                  </span>
+                ))}
+                {selectedEntities.length === 2 && (
+                  <button
+                    onClick={findShortestPath}
+                    disabled={pathLoading}
+                    className="ml-2 bg-accent-blue hover:bg-blue-600 text-white px-3 py-1 rounded text-xs disabled:opacity-50"
+                  >
+                    {pathLoading ? 'Finding...' : 'Find Path'}
+                  </button>
+                )}
+                <button onClick={clearPath} className="text-gray-500 hover:text-gray-300 text-xs ml-1">Clear</button>
+                {pathResult && pathResult.length >= 0 && (
+                  <span className="text-green-400 ml-2">Path length: {pathResult.length}</span>
+                )}
+                {pathResult && pathResult.length < 0 && (
+                  <span className="text-red-400 ml-2">No path found</span>
+                )}
+              </div>
+            )}
+            <span className="text-sm text-gray-400">{graphNodes.length} nodes, {graphEdges.length} edges</span>
+          </div>
         </div>
 
         {/* Main content area */}

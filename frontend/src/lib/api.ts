@@ -36,6 +36,7 @@ export const entitiesApi = {
     api.get('/entities', { params: { project_id: projectId, query, entity_type: entityType } }),
   get: (id: string) => api.get(`/entities/${id}`),
   subgraph: (id: string, hops?: number) => api.get(`/subgraph/${id}`, { params: { hops } }),
+  shortestPath: (id1: string, id2: string) => api.get(`/paths/${id1}/${id2}`),
 };
 
 export const graphApi = {
@@ -63,6 +64,22 @@ export const ingestApi = {
     formData.append('content', content);
     if (reliabilityRating) formData.append('reliability_rating', reliabilityRating);
     return api.post('/ingest', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  file: (projectId: string, file: File, reliabilityRating?: string, extractionMode?: string) => {
+    const formData = new FormData();
+    formData.append('project_id', projectId);
+    formData.append('file', file);
+    if (reliabilityRating) formData.append('reliability_rating', reliabilityRating);
+    if (extractionMode) formData.append('extraction_mode', extractionMode);
+    return api.post('/ingest', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  batch: (projectId: string, files: File[], reliabilityRating?: string, extractionMode?: string) => {
+    const formData = new FormData();
+    formData.append('project_id', projectId);
+    files.forEach(f => formData.append('files', f));
+    if (reliabilityRating) formData.append('reliability_rating', reliabilityRating);
+    if (extractionMode) formData.append('extraction_mode', extractionMode);
+    return api.post('/ingest/batch', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
 };
 
