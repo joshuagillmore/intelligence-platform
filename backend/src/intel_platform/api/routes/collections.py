@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 from intel_platform.api.deps import verify_api_key
 from intel_platform.collection.tasks import CollectionManager
+from intel_platform.services.collection_planner import parse_collection_plan
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -58,6 +59,14 @@ def cancel_collection(task_id: str):
     if not _manager.cancel_task(task_id):
         raise HTTPException(status_code=400, detail="Cannot cancel this task")
     return {"status": "cancelled"}
+
+
+@router.post("/collections/parse-plan")
+def parse_plan(data: dict):
+    """Parse an LLM-generated collection plan into structured items."""
+    plan_text = data.get("plan_text", "")
+    items = parse_collection_plan(plan_text)
+    return {"items": items, "count": len(items)}
 
 
 @router.get("/collections")

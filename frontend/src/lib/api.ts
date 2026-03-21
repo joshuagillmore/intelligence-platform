@@ -29,6 +29,7 @@ export const projectsApi = {
     api.post<Project>('/projects', data),
   get: (id: string) => api.get<Project>(`/projects/${id}`),
   delete: (id: string) => api.delete(`/projects/${id}`),
+  activity: (id: string, limit?: number) => api.get(`/projects/${id}/activity`, { params: { limit } }),
 };
 
 export const entitiesApi = {
@@ -84,9 +85,11 @@ export const ingestApi = {
 };
 
 export const collectionsApi = {
-  create: (data: { project_id: string; pir: string }) => api.post('/collections', data),
+  create: (data: { project_id: string; pir: string; plan?: unknown[] }) => api.post('/collections', data),
   list: () => api.get('/collections'),
   status: (id: string) => api.get(`/collections/${id}/status`),
+  parsePlan: (planText: string) => api.post('/collections/parse-plan', { plan_text: planText }),
+  approve: (id: string) => api.post(`/collections/${id}/approve`),
 };
 
 export const assessApi = {

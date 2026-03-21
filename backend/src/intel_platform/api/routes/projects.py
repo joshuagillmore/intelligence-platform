@@ -60,3 +60,47 @@ def update_project(project_id: str, req: CreateProjectRequest, store: GraphStore
 def delete_project(project_id: str, store: GraphStore = Depends(get_graph_store)):
     store.delete_entity(project_id)
     return {"status": "deleted"}
+
+
+@router.get("/projects/{project_id}/activity")
+def get_project_activity(project_id: str, limit: int = 20, store: GraphStore = Depends(get_graph_store)):
+    """Get recent activity for a project."""
+    entities = store.search_entities(project_id=project_id, limit=limit)
+
+    activity = []
+    for e in entities:
+        created = e.get("created_at", "")
+        if isinstance(created, dict):
+            dt = created.get("_DateTime__date", {})
+            tm = created.get("_DateTime__time", {})
+            year = dt.get("_Date__year", 2026)
+            month = dt.get("_Date__month", 1)
+            day = dt.get("_Date__day", 1)
+            hour = tm.get("_Time__hour", 0)
+            minute = tm.get("_Time__minute", 0)
+            created = f"{year}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00Z"
+        elif hasattr(created, "isoformat"):
+            created = created.isoformat()
+        else:
+            created = str(created) if created else ""
+
+        etype = e.get("entity_type", "")
+        if etype == "Document":
+            action = "Document ingested"
+        elif etype == "Report":
+            action = "Report generated"
+        elif etype == "Assessment":
+            action = "Assessment created"
+        else:
+            action = f"{etype} extracted"
+
+        activity.append({
+            "id": e.get("id", ""),
+            "action": action,
+            "entity_name": e.get("name", ""),
+            "entity_type": etype,
+            "timestamp": created,
+        })
+
+    activity.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    return {"activity": activity[:limit], "count": len(activity)}
