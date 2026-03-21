@@ -56,7 +56,10 @@ export default function CollectionsPage() {
 
   // Poll active tasks
   useEffect(() => {
-    const activeTasks = collections.filter(c => c.status === 'pending' || c.status === 'running');
+    const activeTasks = collections.filter(c => {
+      const s = c.status?.toUpperCase();
+      return s === 'PENDING' || s === 'STARTED' || s === 'PROGRESS' || s === 'RUNNING';
+    });
     if (activeTasks.length === 0) return;
     const interval = setInterval(async () => {
       for (const task of activeTasks) {
@@ -147,11 +150,12 @@ export default function CollectionsPage() {
   }
 
   const statusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return 'bg-green-900/30 text-green-400';
-      case 'running': return 'bg-yellow-900/30 text-yellow-400';
-      case 'pending': return 'bg-blue-900/30 text-blue-400';
-      case 'failed': return 'bg-red-900/30 text-red-400';
+    switch (status?.toUpperCase()) {
+      case 'SUCCESS': case 'COMPLETED': return 'bg-green-900/30 text-green-400';
+      case 'STARTED': case 'PROGRESS': case 'RUNNING': return 'bg-yellow-900/30 text-yellow-400';
+      case 'PENDING': return 'bg-blue-900/30 text-blue-400';
+      case 'FAILURE': case 'FAILED': return 'bg-red-900/30 text-red-400';
+      case 'REVOKED': case 'CANCELLED': return 'bg-gray-900/30 text-gray-400';
       default: return 'bg-gray-900/30 text-gray-400';
     }
   };
