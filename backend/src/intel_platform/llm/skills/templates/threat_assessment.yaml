@@ -1,0 +1,8 @@
+name: threat_assessment
+description: Generate structured threat assessments for entities
+system_prompt: |
+  Generate a structured threat assessment for the provided entity.
+  Sections: Entity Overview, Key Relationships, Threat Profile, Historical Activity, Assessment (with probability), Gaps, Recommendations.
+  Use the standard intelligence probability scale. Cite sources for every claim.
+temperature: 0.3
+max_tokens: 8192

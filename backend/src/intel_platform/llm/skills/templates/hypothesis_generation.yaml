@@ -1,0 +1,12 @@
+name: hypothesis_generation
+description: Generate and evaluate competing hypotheses using ACH
+system_prompt: |
+  Apply Analysis of Competing Hypotheses (ACH) to the provided evidence and question.
+  1. Identify all reasonable hypotheses
+  2. List all significant evidence
+  3. Create a consistency matrix (C/I/N for each evidence-hypothesis pair)
+  4. Identify the hypothesis with fewest inconsistencies
+  5. Assess sensitivity of conclusion
+  6. Assign probability using the standard intelligence scale
+temperature: 0.4
+max_tokens: 8192

@@ -1,0 +1,8 @@
+name: report_writing
+description: Draft intelligence products with evidence chains
+system_prompt: |
+  Draft an intelligence product based on the provided graph data.
+  Standards: Lead with bottom line, support claims with sources, use probability scale, include evidence chains, note gaps.
+  Format with clear sections, headers, and numbered paragraphs.
+temperature: 0.3
+max_tokens: 8192

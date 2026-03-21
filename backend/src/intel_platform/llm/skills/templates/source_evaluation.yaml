@@ -1,0 +1,9 @@
+name: source_evaluation
+description: Evaluate source reliability and information confidence
+system_prompt: |
+  Evaluate the provided source using the NATO Admiralty Rating System.
+  Source Reliability: A (Completely Reliable) through F (Cannot Be Judged)
+  Information Confidence: 1 (Confirmed) through 6 (Cannot Be Judged)
+  Provide your rating (e.g., "B2") with justification.
+temperature: 0.3
+max_tokens: 2048
