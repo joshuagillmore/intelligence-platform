@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from intel_platform.api.deps import get_neo4j_driver
-from intel_platform.api.routes import health, projects, ingest, entities, graph, llm
+from intel_platform.api.routes import health, projects, ingest, entities, graph, llm, collections
 from intel_platform.graph.schema import initialize_schema
 
 
@@ -32,3 +32,4 @@ app.include_router(ingest.router, prefix="/api", tags=["ingest"])
 app.include_router(entities.router, prefix="/api", tags=["entities"])
 app.include_router(graph.router, prefix="/api", tags=["graph"])
 app.include_router(llm.router, prefix="/api", tags=["llm"])
+app.include_router(collections.router, prefix="/api", tags=["collections"])
