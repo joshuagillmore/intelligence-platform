@@ -122,6 +122,32 @@ export default function ProjectDashboard() {
           ))}
         </div>
 
+        {/* Quick Actions */}
+        <div className="grid grid-cols-5 gap-3 mb-6">
+          {[
+            { label: 'Ingest Document', icon: '📄', href: '/collections' },
+            { label: 'Analyze Network', icon: '🔗', href: '/network' },
+            { label: 'View Data Sources', icon: '🗄️', href: '/data-sources' },
+            { label: 'Generate Report', icon: '📊', href: '/products' },
+            { label: 'Export STIX', icon: '🛡️', action: 'stix' },
+          ].map((action) => (
+            <button
+              key={action.label}
+              onClick={() => {
+                if (action.action === 'stix') {
+                  window.open(`http://localhost:8000/api/projects/${projectId}/export/stix`, '_blank');
+                } else if (action.href) {
+                  router.push(action.href);
+                }
+              }}
+              className="bg-navy-800 border border-navy-600 rounded-lg p-3 flex items-center gap-3 hover:bg-navy-700 hover:border-accent-blue transition-colors text-left"
+            >
+              <span className="text-lg">{action.icon}</span>
+              <span className="text-sm text-gray-300">{action.label}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-3 gap-4">
           {/* Top Entities */}
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-4">
