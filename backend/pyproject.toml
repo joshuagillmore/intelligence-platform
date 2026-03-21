@@ -14,6 +14,7 @@ dependencies = [
     "pypdf>=4.0",
     "thefuzz[speedup]>=0.22",
     "networkx>=3.2",
+    "scipy>=1.12",
     "python-louvain>=0.16",
     "jellyfish>=1.0",
     "anthropic>=0.40.0",

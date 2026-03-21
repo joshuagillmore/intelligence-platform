@@ -90,9 +90,11 @@ export default function CollectionsPage() {
     setUploadMsg(null);
     try {
       const res = await ingestApi.text(activeProject.id, uploadContent.trim(), uploadReliability);
-      const entityCount = res.data?.entity_count ?? res.data?.entities_extracted ?? 0;
+      const d = res.data;
+      const entityCount = d?.entities_created ?? d?.entity_count ?? 0;
+      const relCount = d?.relationships_created ?? 0;
       setUploadContent('');
-      setUploadMsg(`Document ingested successfully. ${entityCount} entities extracted.`);
+      setUploadMsg(`Document ingested successfully. ${entityCount} entities created, ${relCount} relationships found.`);
     } catch {
       setUploadMsg('Failed to ingest document.');
     } finally {
@@ -128,13 +130,12 @@ export default function CollectionsPage() {
     try {
       if (selectedFiles.length === 1) {
         const res = await ingestApi.file(activeProject.id, selectedFiles[0], fileReliability, extractionMode);
-        const entityCount = res.data?.entity_count ?? res.data?.entities_extracted ?? 0;
-        setFileUploadMsg(`File ingested successfully. ${entityCount} entities extracted.`);
+        const d = res.data;
+        setFileUploadMsg(`"${d?.document_name}" ingested. ${d?.entities_created ?? 0} entities created, ${d?.relationships_created ?? 0} relationships, ${d?.chunks ?? 0} chunks.`);
       } else {
         const res = await ingestApi.batch(activeProject.id, selectedFiles, fileReliability, extractionMode);
-        const totalEntities = res.data?.total_entities ?? res.data?.entity_count ?? 0;
-        const fileCount = res.data?.files_processed ?? selectedFiles.length;
-        setFileUploadMsg(`${fileCount} files ingested successfully. ${totalEntities} total entities extracted.`);
+        const d = res.data;
+        setFileUploadMsg(`${d?.documents_processed ?? selectedFiles.length} files ingested. ${d?.total_entities_created ?? 0} entities, ${d?.total_relationships_created ?? 0} relationships.`);
       }
       setSelectedFiles([]);
       if (fileInputRef.current) fileInputRef.current.value = '';

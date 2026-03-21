@@ -3,7 +3,7 @@ from intel_platform.llm.base import LLMProvider, LLMResponse
 
 
 class CohereProvider(LLMProvider):
-    def __init__(self, api_key: str, model: str = "command-r-plus"):
+    def __init__(self, api_key: str, model: str = "command-a-03-2025"):
         import cohere
         self._client = cohere.AsyncClientV2(api_key=api_key)
         self._model = model
