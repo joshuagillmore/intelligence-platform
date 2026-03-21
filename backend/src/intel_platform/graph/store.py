@@ -147,6 +147,33 @@ class GraphStore:
             return {"nodes": nodes, "edges": edges,
                     "node_count": len(nodes), "edge_count": len(edges)}
 
+    def find_shortest_path(self, entity_id_1: str, entity_id_2: str) -> dict:
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH path = shortestPath((a {id: $id1})-[*..10]-(b {id: $id2}))
+                RETURN [n IN nodes(path) | properties(n)] as nodes,
+                       [r IN relationships(path) | {
+                           rel_type: type(r),
+                           source_id: startNode(r).id,
+                           target_id: endNode(r).id,
+                           props: properties(r)
+                       }] as edges,
+                       length(path) as path_length
+                """,
+                id1=entity_id_1,
+                id2=entity_id_2,
+            )
+            record = result.single()
+            if not record:
+                return {"nodes": [], "edges": [], "path_length": -1, "found": False}
+            return {
+                "nodes": record["nodes"],
+                "edges": record["edges"],
+                "path_length": record["path_length"],
+                "found": True,
+            }
+
     def delete_entity(self, entity_id: str) -> None:
         with self._driver.session() as session:
             session.run("MATCH (n {id: $id}) DETACH DELETE n", id=entity_id)

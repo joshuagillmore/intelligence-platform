@@ -89,6 +89,58 @@ def assess_entity(entity_id: str, project_id: str, judgment: str, probability: f
     )
 
 
+@mcp.tool()
+async def ingest_document(project_id: str, content: str, source_name: str = "mcp_input", reliability_rating: str = "C3") -> dict:
+    """Ingest a document into the knowledge graph with entity extraction."""
+    from intel_platform.api.deps import get_neo4j_driver
+    from intel_platform.graph.store import GraphStore
+    from intel_platform.models.entities import Document
+    from intel_platform.services.ingestion import ingest_text
+    from intel_platform.services.extraction import extract_entities_nlp
+    from intel_platform.services.graph_builder import build_graph_from_extractions
+    from intel_platform.config import settings
+
+    driver = get_neo4j_driver()
+    store = GraphStore(driver)
+
+    chunks = ingest_text(content, settings.chunk_size, settings.chunk_overlap)
+    doc = Document(
+        name=source_name, content=content,
+        reliability_rating=reliability_rating, project_id=project_id,
+    )
+    store.create_entity(doc)
+
+    all_entities, all_rels = [], []
+    for chunk in chunks:
+        entities, rels = extract_entities_nlp(chunk["content"], doc.id)
+        all_entities.extend(entities)
+        all_rels.extend(rels)
+
+    result = build_graph_from_extractions(store, all_entities, all_rels, project_id)
+    return {"document_id": doc.id, "chunks": len(chunks), **result}
+
+
+@mcp.tool()
+def get_graph_stats(project_id: str) -> dict:
+    """Get graph statistics including node count, edge count, density, and centrality metrics."""
+    from intel_platform.api.deps import get_neo4j_driver
+    from intel_platform.graph.store import GraphStore
+    from intel_platform.services.enrichment import compute_all_statistics
+    driver = get_neo4j_driver()
+    store = GraphStore(driver)
+    return compute_all_statistics(store, project_id)
+
+
+@mcp.tool()
+def find_shortest_path(entity_id_1: str, entity_id_2: str) -> dict:
+    """Find the shortest path between two entities in the knowledge graph."""
+    from intel_platform.api.deps import get_neo4j_driver
+    from intel_platform.graph.store import GraphStore
+    driver = get_neo4j_driver()
+    store = GraphStore(driver)
+    return store.find_shortest_path(entity_id_1, entity_id_2)
+
+
 def get_mcp_app():
     """Get the MCP Starlette app for mounting in FastAPI."""
     return mcp.streamable_http_app()
