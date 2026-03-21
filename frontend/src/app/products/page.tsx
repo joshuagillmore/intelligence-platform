@@ -29,7 +29,7 @@ export default function ProductsPage() {
         [{ role: 'user', content: prompt }],
         'report_writing'
       );
-      setGeneratedReport(res.data.response || res.data.content || JSON.stringify(res.data));
+      setGeneratedReport(res.data.content || res.data.response || JSON.stringify(res.data));
     } catch {
       setGeneratedReport('Failed to generate report. Check that the LLM service is configured.');
     } finally {

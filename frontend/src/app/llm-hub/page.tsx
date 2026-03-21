@@ -49,7 +49,7 @@ export default function LlmHubPage() {
         [{ role: 'user', content: prompt.trim() }],
         selectedSkill || undefined
       );
-      setResult(res.data.response || res.data.content || JSON.stringify(res.data, null, 2));
+      setResult(res.data.content || res.data.response || JSON.stringify(res.data, null, 2));
     } catch {
       setResult('Failed to query LLM.');
     } finally {

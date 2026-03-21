@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
-import { collectionsApi } from '@/lib/api';
+import { collectionsApi, ingestApi } from '@/lib/api';
 
 interface Collection {
   id: string;
@@ -19,6 +19,11 @@ export default function CollectionsPage() {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadContent, setUploadContent] = useState('');
+  const [uploadReliability, setUploadReliability] = useState('C3');
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
 
   const loadCollections = useCallback(async () => {
     try {
@@ -60,6 +65,22 @@ export default function CollectionsPage() {
       setError('Failed to create collection task.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function uploadDocument() {
+    if (!uploadContent.trim() || !activeProject) return;
+    setUploading(true);
+    setUploadMsg(null);
+    try {
+      const res = await ingestApi.text(activeProject.id, uploadContent.trim(), uploadReliability);
+      const entityCount = res.data?.entity_count ?? res.data?.entities_extracted ?? 0;
+      setUploadContent('');
+      setUploadMsg(`Document ingested successfully. ${entityCount} entities extracted.`);
+    } catch {
+      setUploadMsg('Failed to ingest document.');
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -109,6 +130,64 @@ export default function CollectionsPage() {
           >
             {loading ? 'Creating...' : 'Create Collection'}
           </button>
+        </div>
+
+        {/* Manual Document Upload */}
+        <div className="bg-navy-800 border border-navy-600 rounded-lg mb-6">
+          <button
+            onClick={() => setUploadOpen(!uploadOpen)}
+            className="w-full flex items-center justify-between p-4 text-left"
+          >
+            <h3 className="text-sm font-semibold text-gray-400">Manual Document Upload</h3>
+            <span className="text-gray-500 text-xs">{uploadOpen ? '▲' : '▼'}</span>
+          </button>
+          {uploadOpen && (
+            <div className="px-6 pb-6">
+              <textarea
+                value={uploadContent}
+                onChange={(e) => setUploadContent(e.target.value)}
+                placeholder="Paste document text here for ingestion and entity extraction..."
+                className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm h-40 focus:outline-none focus:border-accent-blue resize-none font-mono"
+              />
+              <div className="flex items-center gap-4 mt-3">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-400">Reliability:</label>
+                  <select
+                    value={uploadReliability}
+                    onChange={(e) => setUploadReliability(e.target.value)}
+                    className="bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-blue"
+                  >
+                    <option value="A1">A1 - Reliable, Confirmed</option>
+                    <option value="A2">A2 - Reliable, Probably True</option>
+                    <option value="A3">A3 - Reliable, Possibly True</option>
+                    <option value="B1">B1 - Usually Reliable, Confirmed</option>
+                    <option value="B2">B2 - Usually Reliable, Probably True</option>
+                    <option value="B3">B3 - Usually Reliable, Possibly True</option>
+                    <option value="C1">C1 - Fairly Reliable, Confirmed</option>
+                    <option value="C2">C2 - Fairly Reliable, Probably True</option>
+                    <option value="C3">C3 - Fairly Reliable, Possibly True</option>
+                    <option value="D4">D4 - Not Usually Reliable, Doubtful</option>
+                    <option value="D5">D5 - Not Usually Reliable, Improbable</option>
+                    <option value="E5">E5 - Unreliable, Improbable</option>
+                    <option value="E6">E6 - Unreliable, Cannot Be Judged</option>
+                    <option value="F6">F6 - Cannot Be Judged</option>
+                  </select>
+                </div>
+                <button
+                  onClick={uploadDocument}
+                  disabled={uploading || !uploadContent.trim()}
+                  className="bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
+                >
+                  {uploading ? 'Uploading...' : 'Upload Document'}
+                </button>
+              </div>
+              {uploadMsg && (
+                <p className={`text-xs mt-2 ${uploadMsg.includes('success') ? 'text-green-400' : 'text-red-400'}`}>
+                  {uploadMsg}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <h3 className="text-lg font-semibold mb-4">Collection Tasks</h3>
