@@ -141,6 +141,29 @@ def find_shortest_path(entity_id_1: str, entity_id_2: str) -> dict:
     return store.find_shortest_path(entity_id_1, entity_id_2)
 
 
+@mcp.tool()
+def get_topic_tree(project_id: str) -> dict:
+    """Get the topic tree showing all entities organized by type."""
+    from intel_platform.api.deps import get_neo4j_driver
+    from intel_platform.graph.store import GraphStore
+    from intel_platform.services.topics import TopicTreeService
+    driver = get_neo4j_driver()
+    store = GraphStore(driver)
+    return TopicTreeService(store).build_topic_tree(project_id)
+
+
+@mcp.tool()
+def get_geo_locations(project_id: str) -> dict:
+    """Get all geocoded locations with their relationships."""
+    from intel_platform.api.deps import get_neo4j_driver
+    from intel_platform.graph.store import GraphStore
+    from intel_platform.services.geocoding import geocode_all_locations
+    driver = get_neo4j_driver()
+    store = GraphStore(driver)
+    locations = geocode_all_locations(store, project_id)
+    return {"locations": locations, "total": len(locations)}
+
+
 def get_mcp_app():
     """Get the MCP Starlette app for mounting in FastAPI."""
     return mcp.streamable_http_app()
