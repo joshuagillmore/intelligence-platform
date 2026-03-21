@@ -509,6 +509,26 @@ export default function ProductsPage() {
             >
               Export Entities (CSV)
             </button>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await exportApi.stix(activeProject.id);
+                  const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `stix-export-${activeProject.id.substring(0, 8)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  setToast(`STIX 2.1 bundle exported (${res.data.objects?.length || 0} objects).`);
+                } catch {
+                  setToast('Failed to export STIX bundle.');
+                }
+              }}
+              className="bg-navy-700 hover:bg-navy-600 text-gray-300 border border-navy-600 px-4 py-2 rounded text-sm transition-colors"
+            >
+              Export STIX 2.1
+            </button>
           </div>
         </div>
 

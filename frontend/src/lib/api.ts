@@ -138,6 +138,11 @@ export const exportApi = {
   graph: (projectId: string) => api.get('/export/graph', { params: { project_id: projectId } }),
   entities: (projectId: string) => api.get('/export/entities', { params: { project_id: projectId } }),
   report: (reportId: string) => api.get(`/export/report/${reportId}`),
+  stix: (projectId: string) => api.get('/export/stix', { params: { project_id: projectId } }),
+};
+
+export const adminApi = {
+  config: () => api.get('/admin/config'),
 };
 
 export const watchlistApi = {
