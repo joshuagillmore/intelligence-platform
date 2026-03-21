@@ -3,8 +3,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from intel_platform.api.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
+
 from intel_platform.api.deps import get_neo4j_driver
-from intel_platform.api.routes import health, projects, ingest, entities, graph, llm, collections, query, assess, topics, reports, geo, timeline, notebook, search, export, watchlist, admin_config
+from intel_platform.api.routes import health, projects, ingest, entities, graph, llm, collections, query, assess, topics, reports, geo, timeline, notebook, search, export, watchlist, admin_config, personas
 from intel_platform.graph.schema import initialize_schema
 
 
@@ -25,6 +27,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(RateLimitMiddleware, requests_per_minute=120)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Mount MCP server
 try:
@@ -52,3 +57,4 @@ app.include_router(search.router, prefix="/api", tags=["search"])
 app.include_router(export.router, prefix="/api", tags=["export"])
 app.include_router(watchlist.router, prefix="/api", tags=["watchlist"])
 app.include_router(admin_config.router, prefix="/api", tags=["admin"])
+app.include_router(personas.router, prefix="/api", tags=["personas"])
