@@ -11,25 +11,49 @@ class GraphRAGPipeline:
 
     def understand_query(self, query: str, project_id: str) -> dict:
         """Extract target entities and intent from natural language query.
-        For now, simple keyword extraction. LLM-based understanding added when provider is configured."""
-        words = query.lower().split()
-        # Search for entities matching query words
+        Searches with the full query, multi-word phrases, and individual keywords."""
         candidates = []
+
+        # 1. Search with the full query
+        results = self._store.search_entities(project_id=project_id, query=query.strip(), limit=10)
+        candidates.extend(results)
+
+        # 2. Search with significant phrases (2-3 word combos)
+        words = query.split()
+        for n in (3, 2):
+            for i in range(len(words) - n + 1):
+                phrase = " ".join(words[i:i + n])
+                if len(phrase) >= 4:
+                    results = self._store.search_entities(project_id=project_id, query=phrase, limit=5)
+                    candidates.extend(results)
+
+        # 3. Search individual words (skip common/short words)
+        stop_words = {"the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
+                      "her", "was", "one", "our", "out", "what", "with", "about", "this",
+                      "that", "from", "have", "how", "who", "which", "their", "been", "know",
+                      "tell", "show", "find", "does"}
         for word in words:
-            if len(word) < 3:
-                continue
-            results = self._store.search_entities(project_id=project_id, query=word, limit=5)
-            candidates.extend(results)
+            clean = word.strip("?.,!;:'\"").lower()
+            if len(clean) >= 3 and clean not in stop_words:
+                results = self._store.search_entities(project_id=project_id, query=clean, limit=5)
+                candidates.extend(results)
+
+        # 4. If still nothing found, get all entities as fallback context
+        if not candidates:
+            candidates = self._store.search_entities(project_id=project_id, limit=20)
+
         # Deduplicate by id
         seen = set()
         entities = []
         for c in candidates:
-            if c["id"] not in seen:
-                seen.add(c["id"])
+            eid = c.get("id", "")
+            if eid and eid not in seen:
+                seen.add(eid)
                 entities.append(c)
+
         return {
             "query": query,
-            "target_entities": entities[:10],
+            "target_entities": entities[:15],
             "intent": "general_query",
         }
 
