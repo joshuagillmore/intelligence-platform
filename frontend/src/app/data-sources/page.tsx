@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
 import { topicsApi, queryApi } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
@@ -85,6 +86,7 @@ const reliabilityColor = (r?: string) => {
 
 export default function DataSourcesPage() {
   const { activeProject } = useProject();
+  const router = useRouter();
   const [tree, setTree] = useState<TopicTree>({});
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -270,7 +272,10 @@ export default function DataSourcesPage() {
                           <span className="text-xs text-gray-500">
                             {expandedNodes.has(`doc-${doc.id}`) ? '▼' : '▶'}
                           </span>
-                          <span className="text-xs text-gray-300 truncate flex-1">{doc.name}</span>
+                          <span
+                            className="text-xs text-accent-blue hover:underline truncate flex-1 cursor-pointer"
+                            onClick={(e) => { e.stopPropagation(); router.push(`/documents/${doc.id}`); }}
+                          >{doc.name}</span>
                           {doc.reliability && (
                             <span className={`text-[10px] px-1.5 py-0.5 rounded border ${reliabilityColor(doc.reliability)}`}>
                               {doc.reliability}
@@ -462,7 +467,10 @@ export default function DataSourcesPage() {
                     {entityContext.source_documents.map((doc, i) => (
                       <div key={i} className="bg-navy-700 rounded p-3">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm text-gray-200 font-medium">{doc.name}</span>
+                          <span
+                            className="text-sm text-accent-blue font-medium hover:underline cursor-pointer"
+                            onClick={() => router.push(`/documents/${doc.id}`)}
+                          >{doc.name}</span>
                           {doc.reliability && (
                             <span className={`text-[10px] px-1.5 py-0.5 rounded border ${reliabilityColor(doc.reliability)}`}>
                               {doc.reliability}

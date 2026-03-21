@@ -169,6 +169,13 @@ export const personasApi = {
   active: () => api.get('/personas/active'),
 };
 
+export const documentsApi = {
+  list: (projectId: string) => api.get('/documents', { params: { project_id: projectId } }),
+  get: (docId: string) => api.get(`/documents/${docId}`),
+  evidence: (docId: string, entityName: string) =>
+    api.get(`/documents/${docId}/evidence`, { params: { entity_name: entityName } }),
+};
+
 export const healthApi = {
   check: () => axios.get(`${API_BASE}/health`, { headers: { 'Authorization': `Bearer ${API_KEY}` } }),
 };
