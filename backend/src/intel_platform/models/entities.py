@@ -70,7 +70,8 @@ class Organization(Entity):
 
 class Location(Entity):
     entity_type: EntityType = EntityType.LOCATION
-    coordinates: tuple[float, float] | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     location_type: str = ""
 
 
@@ -91,7 +92,7 @@ class Domain(Entity):
     entity_type: EntityType = EntityType.DOMAIN
     registrant: str = ""
     registration_date: str = ""
-    dns_records: dict = Field(default_factory=dict)
+    dns_records: str = ""  # JSON string — Neo4j can't store nested dicts
 
 
 class Hash(Entity):
