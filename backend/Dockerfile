@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS backend
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -8,7 +8,7 @@ COPY pyproject.toml .
 COPY src/ src/
 
 RUN uv sync --no-dev
-RUN uv run python -m spacy download en_core_web_sm
+RUN uv pip install --python .venv/bin/python https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 
 EXPOSE 8000
 
