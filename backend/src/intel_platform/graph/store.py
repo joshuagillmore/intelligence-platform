@@ -74,8 +74,8 @@ class GraphStore:
     VALID_REL_TYPES = {
         "ASSOCIATED_WITH", "BELONGS_TO", "LOCATED_AT", "COMMUNICATES_WITH",
         "RESOLVES_TO", "EXPLOITS", "USES", "TARGETS", "ATTRIBUTED_TO",
-        "MENTIONED_IN", "PARENT_OF", "RELATED_TO", "ASSESSES", "SUPPORTED_BY",
-        "SHARED_WITH",
+        "MENTIONED_IN", "MENTIONS", "PARENT_OF", "RELATED_TO", "ASSESSES",
+        "SUPPORTED_BY", "SHARED_WITH",
     }
 
     def create_relationship(self, rel) -> dict:
