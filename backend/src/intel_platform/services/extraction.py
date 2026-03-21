@@ -27,6 +27,41 @@ CVE_PATTERN = re.compile(r'\bCVE-\d{4}-\d{4,}\b')
 MITRE_PATTERN = re.compile(r'\bT\d{4}(?:\.\d{3})?\b')
 BTC_PATTERN = re.compile(r'\b(?:bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b')
 
+# Known intelligence-domain locations that spaCy commonly misclassifies
+KNOWN_LOCATIONS = {
+    "caspian sea", "black sea", "red sea", "mediterranean", "south china sea",
+    "east china sea", "persian gulf", "gulf of aden", "indian ocean", "pacific ocean",
+    "atlantic ocean", "arctic ocean", "strait of hormuz", "strait of malacca",
+    "bab el-mandeb", "suez canal", "panama canal",
+    # Countries commonly misclassified
+    "iran", "iraq", "syria", "yemen", "libya", "sudan", "somalia",
+    "azerbaijan", "georgia", "armenia", "kazakhstan", "uzbekistan",
+    "tajikistan", "turkmenistan", "kyrgyzstan", "belarus", "moldova",
+    # Cities commonly misclassified
+    "alabuga", "astrakhan", "voronezh", "mozdok", "sevastopol",
+    "mariupol", "kherson", "dnipro", "odesa", "zaporizhzhia",
+    "isfahan", "tehran", "bandar anzali", "bandar abbas",
+    "tartus", "latakia", "aleppo", "homs",
+}
+
+# Known intelligence-domain organizations that spaCy commonly misclassifies
+KNOWN_ORGANIZATIONS = {
+    "irgc", "fsb", "gru", "svr", "cia", "nsa", "fbi", "mi6", "mi5",
+    "mossad", "dgse", "bnd", "isi", "raw", "asis",
+    "nato", "aukus", "five eyes", "quad",
+    "united nations", "african union", "european union", "asean",
+    "plan", "pla", "plaaf",
+}
+
+# Keywords that indicate an entity is an organization, not a person
+ORG_KEYWORDS = [
+    "Force", "Ministry", "Guard", "Corps", "Command", "Agency", "Bureau",
+    "Department", "Institute", "University", "Company", "Corp", "Inc",
+    "Committee", "Council", "Union", "Alliance", "Coalition",
+    "Industries", "Aviation", "Fleet", "Navy", "Army", "Air Force",
+    "Brigade", "Division", "Regiment", "Battalion",
+]
+
 # Words that spaCy commonly misidentifies as entities
 NOISE_WORDS = {
     "NETWORK", "INFRASTRUCTURE", "ASSESSMENT", "ANALYSIS", "REPORT",
@@ -110,6 +145,38 @@ def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
     return cyber_entities
 
 
+def _postprocess_entities(entities: list[dict]) -> list[dict]:
+    """Fix common spaCy misclassifications for intelligence documents."""
+    corrected = []
+    for e in entities:
+        name = e["name"]
+        name_lower = name.lower().strip()
+
+        # Skip all-caps headers (likely document section headings)
+        if name.isupper() and len(name) > 3:
+            continue
+
+        # Fix trailing parenthetical fragments
+        if "(" in name and ")" not in name:
+            name = name.split("(")[0].strip()
+            e["name"] = name
+            if not name:
+                continue
+
+        # Force known locations
+        if name_lower in KNOWN_LOCATIONS:
+            e["entity_type"] = "Location"
+        # Force known organizations
+        elif name_lower in KNOWN_ORGANIZATIONS:
+            e["entity_type"] = "Organization"
+        # Heuristic: org keywords
+        elif any(kw in name for kw in ORG_KEYWORDS):
+            e["entity_type"] = "Organization"
+
+        corrected.append(e)
+    return corrected
+
+
 def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]]:
     if not text.strip():
         return [], []
@@ -145,6 +212,12 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
         }
         seen_names[name] = entity
         entities.append(entity)
+
+    # 3. Postprocess to fix misclassifications
+    entities = _postprocess_entities(entities)
+
+    # Rebuild seen_names after postprocessing (names may have changed)
+    seen_names = {e["name"]: e for e in entities}
 
     relationships = []
     for sent in doc.sents:
