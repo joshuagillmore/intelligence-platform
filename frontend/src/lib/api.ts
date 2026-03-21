@@ -172,6 +172,14 @@ export const personasApi = {
   active: () => api.get('/personas/active'),
 };
 
+export const snapshotsApi = {
+  create: (data: { project_id: string; name: string; entity_ids: string[]; description?: string }) =>
+    api.post('/snapshots', data),
+  list: (projectId: string) => api.get('/snapshots', { params: { project_id: projectId } }),
+  get: (id: string) => api.get(`/snapshots/${id}`),
+  delete: (id: string) => api.delete(`/snapshots/${id}`),
+};
+
 export const documentsApi = {
   list: (projectId: string) => api.get('/documents', { params: { project_id: projectId } }),
   get: (docId: string) => api.get(`/documents/${docId}`),
