@@ -33,10 +33,27 @@ async def ingest_document(
     extraction_mode: str = Form("nlp"),
     store: GraphStore = Depends(get_graph_store),
 ):
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.md', '.csv', '.json'}
+
     if file:
+        # Check extension
+        ext = '.' + (file.filename or '').rsplit('.', 1)[-1].lower() if '.' in (file.filename or '') else ''
+        if ext and ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(status_code=400, detail=f"File type {ext} not supported. Allowed: {ALLOWED_EXTENSIONS}")
+
         file_bytes = await file.read()
-        chunks = process_file(file.filename or "upload", file_bytes, settings.chunk_size, settings.chunk_overlap)
-        source_name = file.filename or "uploaded_file"
+
+        # Check size
+        if len(file_bytes) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB")
+
+        # Sanitize filename
+        import re
+        safe_name = re.sub(r'[^\w\-.]', '_', file.filename or 'upload')
+
+        chunks = process_file(safe_name, file_bytes, settings.chunk_size, settings.chunk_overlap)
+        source_name = safe_name
     elif content:
         chunks = ingest_text(content, settings.chunk_size, settings.chunk_overlap)
         source_name = "text_input"
@@ -70,14 +87,31 @@ async def ingest_batch(
     extraction_mode: str = Form("nlp"),
     store: GraphStore = Depends(get_graph_store),
 ):
+    import re
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.md', '.csv', '.json'}
+
     results = []
     total_entities = 0
     total_relationships = 0
 
     for file in files:
+        # Check extension
+        ext = '.' + (file.filename or '').rsplit('.', 1)[-1].lower() if '.' in (file.filename or '') else ''
+        if ext and ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(status_code=400, detail=f"File type {ext} not supported. Allowed: {ALLOWED_EXTENSIONS}")
+
         file_bytes = await file.read()
-        chunks = process_file(file.filename or "upload", file_bytes, settings.chunk_size, settings.chunk_overlap)
-        source_name = file.filename or "uploaded_file"
+
+        # Check size
+        if len(file_bytes) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail=f"File too large: {file.filename}. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB")
+
+        # Sanitize filename
+        safe_name = re.sub(r'[^\w\-.]', '_', file.filename or 'upload')
+
+        chunks = process_file(safe_name, file_bytes, settings.chunk_size, settings.chunk_overlap)
+        source_name = safe_name
 
         doc = Document(
             name=source_name,

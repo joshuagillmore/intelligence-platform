@@ -83,7 +83,7 @@ export default function ProjectsPage() {
   function selectProject(project: Project) {
     setActiveProject(project);
     setToast(`Selected: ${project.name}`);
-    router.push('/collections');
+    router.push(`/project/${project.id}`);
   }
 
   return (
