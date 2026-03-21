@@ -129,6 +129,17 @@ export const geoApi = {
   locations: (projectId: string) => api.get('/geo/locations', { params: { project_id: projectId } }),
 };
 
+export const searchApi = {
+  search: (projectId: string, query: string) =>
+    api.get('/search', { params: { project_id: projectId, q: query } }),
+};
+
+export const exportApi = {
+  graph: (projectId: string) => api.get('/export/graph', { params: { project_id: projectId } }),
+  entities: (projectId: string) => api.get('/export/entities', { params: { project_id: projectId } }),
+  report: (reportId: string) => api.get(`/export/report/${reportId}`),
+};
+
 export const healthApi = {
   check: () => axios.get(`${API_BASE}/health`, { headers: { 'Authorization': `Bearer ${API_KEY}` } }),
 };

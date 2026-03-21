@@ -2,7 +2,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
-import { llmApi, entitiesApi, reportsApi } from '@/lib/api';
+import { llmApi, entitiesApi, reportsApi, exportApi } from '@/lib/api';
 
 const REPORT_TYPES = [
   { value: 'threat_assessment', label: 'Threat Assessment', skill: 'threat_assessment' },
@@ -461,6 +461,54 @@ export default function ProductsPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Export Section */}
+        <div className="mt-6 bg-navy-800 border border-navy-600 rounded-lg p-6">
+          <h3 className="text-sm font-semibold text-gray-400 mb-4">Export Data</h3>
+          <div className="flex gap-3">
+            <button
+              onClick={async () => {
+                try {
+                  const res = await exportApi.graph(activeProject.id);
+                  const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `graph-export-${activeProject.id.substring(0, 8)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  setToast('Graph exported as JSON.');
+                } catch {
+                  setToast('Failed to export graph.');
+                }
+              }}
+              className="bg-navy-700 hover:bg-navy-600 text-gray-300 border border-navy-600 px-4 py-2 rounded text-sm transition-colors"
+            >
+              Export Graph (JSON)
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await exportApi.entities(activeProject.id);
+                  const csvContent = res.data.csv || '';
+                  const blob = new Blob([csvContent], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `entities-export-${activeProject.id.substring(0, 8)}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  setToast(`Entities exported (${res.data.count || 0} records).`);
+                } catch {
+                  setToast('Failed to export entities.');
+                }
+              }}
+              className="bg-navy-700 hover:bg-navy-600 text-gray-300 border border-navy-600 px-4 py-2 rounded text-sm transition-colors"
+            >
+              Export Entities (CSV)
+            </button>
           </div>
         </div>
 
