@@ -42,6 +42,7 @@ export const graphApi = {
   full: (projectId: string) => api.get('/graph', { params: { project_id: projectId } }),
   communities: (projectId: string) => api.get('/communities', { params: { project_id: projectId } }),
   centrality: (projectId: string) => api.get('/graph/centrality', { params: { project_id: projectId } }),
+  statistics: (projectId: string) => api.get('/graph/statistics', { params: { project_id: projectId } }),
 };
 
 export const queryApi = {

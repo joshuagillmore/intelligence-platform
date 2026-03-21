@@ -38,6 +38,24 @@ interface GraphEdge {
   target: string;
 }
 
+interface EntityStats {
+  entity: string;
+  type: string;
+  degree: number;
+  betweenness: number;
+  eigenvector: number;
+  pagerank: number;
+  closeness: number;
+}
+
+interface GraphStats {
+  total_nodes: number;
+  total_edges: number;
+  density: number;
+  connected_components: number;
+  entity_statistics: EntityStats[];
+}
+
 const ENTITY_TYPES = ['All', 'Person', 'Organization', 'Location', 'ThreatActor', 'Document', 'IPAddress', 'Domain', 'Event', 'Hash', 'Vulnerability'];
 
 const TYPE_COLORS: Record<string, string> = {
@@ -52,6 +70,18 @@ const TYPE_COLORS: Record<string, string> = {
   Hash: 'bg-pink-500',
   Vulnerability: 'bg-rose-500',
 };
+
+type SortKey = 'entity' | 'type' | 'degree' | 'betweenness' | 'eigenvector' | 'pagerank' | 'closeness';
+
+function intensityClass(value: number, max: number): string {
+  if (max === 0) return 'text-gray-400';
+  const ratio = value / max;
+  if (ratio > 0.8) return 'text-blue-300 font-bold';
+  if (ratio > 0.6) return 'text-blue-400 font-semibold';
+  if (ratio > 0.4) return 'text-blue-400';
+  if (ratio > 0.2) return 'text-blue-500';
+  return 'text-gray-400';
+}
 
 export default function NetworkPage() {
   const { activeProject } = useProject();
@@ -68,6 +98,10 @@ export default function NetworkPage() {
   const [bottomPanelOpen, setBottomPanelOpen] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<string | null>(null);
+  const [leftTab, setLeftTab] = useState<'entities' | 'statistics'>('entities');
+  const [stats, setStats] = useState<GraphStats | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>('pagerank');
+  const [sortAsc, setSortAsc] = useState(false);
 
   const loadGraph = useCallback(async () => {
     if (!activeProject) return;
@@ -94,10 +128,21 @@ export default function NetworkPage() {
     }
   }, [activeProject, searchQuery, typeFilter]);
 
+  const loadStatistics = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      const res = await graphApi.statistics(activeProject.id);
+      setStats(res.data);
+    } catch (e) {
+      console.error('Failed to load statistics', e);
+    }
+  }, [activeProject]);
+
   useEffect(() => {
     loadGraph();
     loadEntities();
-  }, [loadGraph, loadEntities]);
+    loadStatistics();
+  }, [loadGraph, loadEntities, loadStatistics]);
 
   async function selectEntity(entity: Entity) {
     setSelectedEntity(entity);
@@ -168,6 +213,44 @@ export default function NetworkPage() {
     }
   }
 
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortKey(key);
+      setSortAsc(false);
+    }
+  }
+
+  function getSortedStats(): EntityStats[] {
+    if (!stats?.entity_statistics) return [];
+    const arr = [...stats.entity_statistics];
+    arr.sort((a, b) => {
+      let va: string | number = a[sortKey];
+      let vb: string | number = b[sortKey];
+      if (typeof va === 'string' && typeof vb === 'string') {
+        return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+      }
+      va = Number(va); vb = Number(vb);
+      return sortAsc ? va - vb : vb - va;
+    });
+    return arr;
+  }
+
+  function getMaxValues(): Record<string, number> {
+    if (!stats?.entity_statistics || stats.entity_statistics.length === 0) {
+      return { degree: 0, betweenness: 0, eigenvector: 0, pagerank: 0, closeness: 0 };
+    }
+    const es = stats.entity_statistics;
+    return {
+      degree: Math.max(...es.map(e => e.degree)),
+      betweenness: Math.max(...es.map(e => e.betweenness)),
+      eigenvector: Math.max(...es.map(e => e.eigenvector)),
+      pagerank: Math.max(...es.map(e => e.pagerank)),
+      closeness: Math.max(...es.map(e => e.closeness)),
+    };
+  }
+
   if (!activeProject) {
     return (
       <div className="flex">
@@ -183,6 +266,10 @@ export default function NetworkPage() {
     );
   }
 
+  const sortedStats = getSortedStats();
+  const maxVals = getMaxValues();
+  const sortArrow = (key: SortKey) => sortKey === key ? (sortAsc ? ' ▲' : ' ▼') : '';
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
@@ -195,99 +282,196 @@ export default function NetworkPage() {
 
         {/* Main content area */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Left sidebar - Entity list */}
+          {/* Left sidebar - Entity list / Statistics */}
           <div className="w-64 flex-none bg-navy-800 border-r border-navy-600 flex flex-col overflow-hidden">
-            <div className="p-3 border-b border-navy-600 space-y-2">
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search entities..."
-                className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-accent-blue"
-              />
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-accent-blue"
+            {/* Tab toggle */}
+            <div className="flex border-b border-navy-600">
+              <button
+                onClick={() => setLeftTab('entities')}
+                className={`flex-1 py-2 text-xs font-medium transition-colors ${leftTab === 'entities' ? 'text-accent-blue border-b-2 border-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}
               >
-                {ENTITY_TYPES.map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
+                Entities
+              </button>
+              <button
+                onClick={() => setLeftTab('statistics')}
+                className={`flex-1 py-2 text-xs font-medium transition-colors ${leftTab === 'statistics' ? 'text-accent-blue border-b-2 border-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}
+              >
+                Statistics
+              </button>
             </div>
-            <div className="flex-1 overflow-y-auto">
-              {entities.map((entity) => (
-                <button
-                  key={entity.id}
-                  onClick={() => selectEntity(entity)}
-                  className={`w-full text-left px-3 py-2 text-sm border-b border-navy-700 hover:bg-navy-700 transition-colors flex items-center gap-2 ${
-                    selectedEntity?.id === entity.id ? 'bg-navy-700 text-accent-blue' : 'text-gray-300'
-                  }`}
-                >
-                  <span className={`w-2 h-2 rounded-full flex-none ${TYPE_COLORS[entity.entity_type] || 'bg-gray-500'}`} />
-                  <span className="truncate">{entity.name}</span>
-                  <span className="text-xs text-gray-500 flex-none">{entity.entity_type}</span>
-                </button>
-              ))}
-              {entities.length === 0 && (
-                <p className="text-xs text-gray-500 p-3">No entities found.</p>
-              )}
-            </div>
+
+            {leftTab === 'entities' ? (
+              <>
+                <div className="p-3 border-b border-navy-600 space-y-2">
+                  <input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search entities..."
+                    className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-accent-blue"
+                  />
+                  <select
+                    value={typeFilter}
+                    onChange={(e) => setTypeFilter(e.target.value)}
+                    className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-accent-blue"
+                  >
+                    {ENTITY_TYPES.map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {entities.map((entity) => (
+                    <button
+                      key={entity.id}
+                      onClick={() => selectEntity(entity)}
+                      className={`w-full text-left px-3 py-2 text-sm border-b border-navy-700 hover:bg-navy-700 transition-colors flex items-center gap-2 ${
+                        selectedEntity?.id === entity.id ? 'bg-navy-700 text-accent-blue' : 'text-gray-300'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full flex-none ${TYPE_COLORS[entity.entity_type] || 'bg-gray-500'}`} />
+                      <span className="truncate">{entity.name}</span>
+                      <span className="text-xs text-gray-500 flex-none">{entity.entity_type}</span>
+                    </button>
+                  ))}
+                  {entities.length === 0 && (
+                    <p className="text-xs text-gray-500 p-3">No entities found.</p>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 overflow-y-auto p-3">
+                {stats ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-navy-700 rounded p-2 text-center">
+                        <div className="text-lg font-bold text-accent-blue">{stats.total_nodes}</div>
+                        <div className="text-xs text-gray-400">Nodes</div>
+                      </div>
+                      <div className="bg-navy-700 rounded p-2 text-center">
+                        <div className="text-lg font-bold text-accent-blue">{stats.total_edges}</div>
+                        <div className="text-xs text-gray-400">Edges</div>
+                      </div>
+                      <div className="bg-navy-700 rounded p-2 text-center">
+                        <div className="text-lg font-bold text-accent-blue">{typeof stats.density === 'number' ? stats.density.toFixed(4) : stats.density}</div>
+                        <div className="text-xs text-gray-400">Density</div>
+                      </div>
+                      <div className="bg-navy-700 rounded p-2 text-center">
+                        <div className="text-lg font-bold text-accent-blue">{stats.connected_components}</div>
+                        <div className="text-xs text-gray-400">Components</div>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500">See full statistics table in expanded view by clicking a column header to sort.</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">Loading statistics...</p>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Center - Graph */}
+          {/* Center - Graph or Statistics Table */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex-1 relative">
-              {graphNodes.length > 0 ? (
-                <GraphVisualization
-                  nodes={graphNodes}
-                  edges={graphEdges}
-                  onNodeClick={handleNodeClick}
-                  selectedNodeId={selectedEntity?.id}
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full text-gray-500">
-                  <p>No graph data. Ingest documents to populate the knowledge graph.</p>
+            {leftTab === 'statistics' && stats?.entity_statistics ? (
+              <div className="flex-1 overflow-auto p-4">
+                <div className="flex items-center gap-4 mb-4">
+                  <h3 className="text-sm font-semibold text-gray-400">Entity Statistics</h3>
+                  <span className="text-xs text-gray-500">{sortedStats.length} entities</span>
                 </div>
-              )}
-            </div>
-
-            {/* Bottom chat panel */}
-            <div className={`flex-none border-t border-navy-600 bg-navy-800 transition-all ${bottomPanelOpen ? 'h-48' : 'h-8'}`}>
-              <button
-                onClick={() => setBottomPanelOpen(!bottomPanelOpen)}
-                className="w-full h-8 flex items-center justify-center text-xs text-gray-400 hover:text-gray-200 border-b border-navy-600"
-              >
-                {bottomPanelOpen ? 'Hide' : 'Show'} Graph RAG Chat
-              </button>
-              {bottomPanelOpen && (
-                <div className="flex flex-col h-40">
-                  <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                    {chatMessages.map((msg, i) => (
-                      <div key={i} className={`text-xs p-2 rounded ${msg.role === 'user' ? 'bg-navy-700 text-gray-200' : 'bg-navy-600 text-gray-300'}`}>
-                        <span className="font-bold text-accent-blue">{msg.role === 'user' ? 'You' : 'AI'}:</span> {msg.content}
-                      </div>
-                    ))}
-                    {chatLoading && <div className="text-xs text-gray-400 p-2">Thinking...</div>}
-                  </div>
-                  <div className="flex gap-2 p-2 border-t border-navy-600">
-                    <input
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && sendChat()}
-                      placeholder="Ask about the knowledge graph..."
-                      className="flex-1 bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-blue"
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-navy-600">
+                        {([
+                          ['entity', 'Entity'],
+                          ['type', 'Type'],
+                          ['degree', 'Degree'],
+                          ['betweenness', 'Betweenness'],
+                          ['eigenvector', 'Eigenvector'],
+                          ['pagerank', 'PageRank'],
+                          ['closeness', 'Closeness'],
+                        ] as [SortKey, string][]).map(([key, label]) => (
+                          <th
+                            key={key}
+                            onClick={() => handleSort(key)}
+                            className="py-2 px-2 text-left text-gray-400 font-medium cursor-pointer hover:text-accent-blue select-none whitespace-nowrap"
+                          >
+                            {label}{sortArrow(key)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedStats.map((row, i) => (
+                        <tr key={i} className="border-b border-navy-700 hover:bg-navy-700/50">
+                          <td className="py-1.5 px-2 text-gray-200 font-medium truncate max-w-[120px]">{row.entity}</td>
+                          <td className="py-1.5 px-2 text-gray-400">{row.type}</td>
+                          <td className={`py-1.5 px-2 ${intensityClass(row.degree, maxVals.degree)}`}>{row.degree}</td>
+                          <td className={`py-1.5 px-2 ${intensityClass(row.betweenness, maxVals.betweenness)}`}>{row.betweenness.toFixed(4)}</td>
+                          <td className={`py-1.5 px-2 ${intensityClass(row.eigenvector, maxVals.eigenvector)}`}>{row.eigenvector.toFixed(4)}</td>
+                          <td className={`py-1.5 px-2 ${intensityClass(row.pagerank, maxVals.pagerank)}`}>{row.pagerank.toFixed(4)}</td>
+                          <td className={`py-1.5 px-2 ${intensityClass(row.closeness, maxVals.closeness)}`}>{row.closeness.toFixed(4)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex-1 relative">
+                  {graphNodes.length > 0 ? (
+                    <GraphVisualization
+                      nodes={graphNodes}
+                      edges={graphEdges}
+                      onNodeClick={handleNodeClick}
+                      selectedNodeId={selectedEntity?.id}
                     />
-                    <button
-                      onClick={sendChat}
-                      disabled={chatLoading}
-                      className="bg-accent-blue hover:bg-blue-600 text-white px-3 py-1 rounded text-xs disabled:opacity-50"
-                    >
-                      Send
-                    </button>
-                  </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-gray-500">
+                      <p>No graph data. Ingest documents to populate the knowledge graph.</p>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+
+                {/* Bottom chat panel */}
+                <div className={`flex-none border-t border-navy-600 bg-navy-800 transition-all ${bottomPanelOpen ? 'h-48' : 'h-8'}`}>
+                  <button
+                    onClick={() => setBottomPanelOpen(!bottomPanelOpen)}
+                    className="w-full h-8 flex items-center justify-center text-xs text-gray-400 hover:text-gray-200 border-b border-navy-600"
+                  >
+                    {bottomPanelOpen ? 'Hide' : 'Show'} Graph RAG Chat
+                  </button>
+                  {bottomPanelOpen && (
+                    <div className="flex flex-col h-40">
+                      <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                        {chatMessages.map((msg, i) => (
+                          <div key={i} className={`text-xs p-2 rounded ${msg.role === 'user' ? 'bg-navy-700 text-gray-200' : 'bg-navy-600 text-gray-300'}`}>
+                            <span className="font-bold text-accent-blue">{msg.role === 'user' ? 'You' : 'AI'}:</span> {msg.content}
+                          </div>
+                        ))}
+                        {chatLoading && <div className="text-xs text-gray-400 p-2">Thinking...</div>}
+                      </div>
+                      <div className="flex gap-2 p-2 border-t border-navy-600">
+                        <input
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && sendChat()}
+                          placeholder="Ask about the knowledge graph..."
+                          className="flex-1 bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-blue"
+                        />
+                        <button
+                          onClick={sendChat}
+                          disabled={chatLoading}
+                          className="bg-accent-blue hover:bg-blue-600 text-white px-3 py-1 rounded text-xs disabled:opacity-50"
+                        >
+                          Send
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Right sidebar - Detail panel */}
