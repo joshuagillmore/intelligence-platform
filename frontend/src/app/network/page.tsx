@@ -5,7 +5,8 @@ import Sidebar from '@/components/Sidebar';
 import GraphVisualization, { LayoutMode, ColorMode } from '@/components/GraphVisualization';
 import { useProject } from '@/lib/ProjectContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
-import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi, documentsApi } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 
 interface Entity {
@@ -145,6 +146,10 @@ export default function NetworkPage() {
   // Color mode and community data
   const [colorMode, setColorMode] = useState<ColorMode>('type');
   const [communityMap, setCommunityMap] = useState<Record<string, number>>({});
+  // Evidence chain: source documents for selected entity
+  const [evidenceDocs, setEvidenceDocs] = useState<Array<{ id: string; name: string; reliability_rating: string }>>([]);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const networkRouter = useRouter();
 
   const loadGraph = useCallback(async () => {
     if (!activeProject) return;
@@ -340,6 +345,7 @@ export default function NetworkPage() {
     setSelectedEntity(entity);
     setAiResult(null);
     setTypeDropdownOpen(false);
+    setEvidenceDocs([]);
     checkWatchlistStatus(entity.id);
     try {
       const res = await entitiesApi.get(entity.id);
@@ -351,6 +357,31 @@ export default function NetworkPage() {
       }
     } catch (e) {
       console.error('Failed to load entity details', e);
+    }
+    // Load evidence chain: source documents mentioning this entity
+    if (activeProject) {
+      setEvidenceLoading(true);
+      try {
+        const docsRes = await documentsApi.list(activeProject.id);
+        const allDocs = docsRes.data.documents || [];
+        // Check which documents mention this entity by fetching evidence
+        const matched: Array<{ id: string; name: string; reliability_rating: string }> = [];
+        for (const doc of allDocs) {
+          try {
+            const evRes = await documentsApi.evidence(doc.id, entity.name);
+            if (evRes.data.count > 0) {
+              matched.push({ id: doc.id, name: doc.name, reliability_rating: doc.reliability_rating || '' });
+            }
+          } catch {
+            // skip docs that fail
+          }
+        }
+        setEvidenceDocs(matched);
+      } catch {
+        setEvidenceDocs([]);
+      } finally {
+        setEvidenceLoading(false);
+      }
     }
   }
 
@@ -1346,6 +1377,33 @@ export default function NetworkPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Evidence Chain: Source Documents */}
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-400 mb-2">Evidence Chain</h4>
+                  {evidenceLoading ? (
+                    <p className="text-xs text-gray-500">Loading source documents...</p>
+                  ) : evidenceDocs.length > 0 ? (
+                    <div className="space-y-1">
+                      {evidenceDocs.map((doc) => (
+                        <div
+                          key={doc.id}
+                          onClick={() => networkRouter.push(`/documents/${doc.id}`)}
+                          className="text-xs bg-navy-700 rounded p-2 cursor-pointer hover:bg-navy-600 transition-colors flex items-center gap-2"
+                        >
+                          <span className="text-accent-blue hover:underline flex-1 truncate">{doc.name}</span>
+                          {doc.reliability_rating && (
+                            <span className="text-[10px] px-1 py-0.5 rounded bg-navy-600 text-gray-400 flex-none">
+                              {doc.reliability_rating}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">No source documents found.</p>
+                  )}
+                </div>
 
                 <div className="space-y-2">
                   <h4 className="text-sm font-semibold text-gray-400">AI Actions</h4>
