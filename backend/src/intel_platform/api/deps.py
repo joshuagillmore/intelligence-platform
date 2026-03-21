@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import Depends, Header, HTTPException
 from neo4j import Driver, GraphDatabase
 
@@ -23,7 +25,9 @@ def get_graph_store(driver: Driver = Depends(get_neo4j_driver)) -> GraphStore:
     return GraphStore(driver)
 
 
-def verify_api_key(authorization: str = Header(...)) -> str:
+def verify_api_key(authorization: Optional[str] = Header(None)) -> str:
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
     if authorization != f"Bearer {settings.api_key}":
         raise HTTPException(status_code=401, detail="Invalid API key")
     return authorization

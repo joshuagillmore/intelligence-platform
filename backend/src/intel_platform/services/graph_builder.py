@@ -17,19 +17,43 @@ ENTITY_TYPE_MAP = {
 }
 
 
-def resolve_entity_name(name: str, existing_names: list[str], threshold: float = 0.85) -> str | None:
-    """Resolve entity name using Jaro-Winkler similarity. Threshold is 0.0-1.0."""
+def resolve_entity_name(name: str, existing_names: list[str], threshold: float = 0.92) -> str | None:
+    """Resolve entity name using Jaro-Winkler similarity + substring matching."""
     if not existing_names:
         return None
+
     best_match = None
     best_score = 0.0
+    name_lower = name.lower().strip()
+
     for existing in existing_names:
-        score = jellyfish.jaro_winkler_similarity(name.lower(), existing.lower())
+        existing_lower = existing.lower().strip()
+
+        # Exact match
+        if name_lower == existing_lower:
+            return existing
+
+        # Jaro-Winkler similarity
+        score = jellyfish.jaro_winkler_similarity(name_lower, existing_lower)
         if score > best_score:
             best_score = score
             best_match = existing
+
     if best_score >= threshold:
         return best_match
+
+    # Fallback: substring matching for partial names
+    # "Putin" should match "Vladimir Putin"
+    import re as _re
+    for existing in existing_names:
+        existing_lower = existing.lower().strip()
+        shorter = min(name_lower, existing_lower, key=len)
+        longer = max(name_lower, existing_lower, key=len)
+        # Shorter must be at least 4 chars, appear as a whole word in the longer string,
+        # and be a significant portion of the longer string
+        if len(shorter) >= 4 and _re.search(r'\b' + _re.escape(shorter) + r'\b', longer) and len(shorter) / len(longer) > 0.3:
+            return existing
+
     return None
 
 
@@ -48,7 +72,7 @@ def build_graph_from_extractions(
         name = ent_data["name"]
         entity_type = ent_data["entity_type"]
 
-        match = resolve_entity_name(name, existing_names, threshold=0.93)
+        match = resolve_entity_name(name, existing_names, threshold=0.92)
         if match:
             name_to_id[name] = existing_name_to_id[match]
             merged += 1
