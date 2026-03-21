@@ -2,7 +2,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
-import { llmApi, entitiesApi } from '@/lib/api';
+import { llmApi, entitiesApi, reportsApi } from '@/lib/api';
 
 const REPORT_TYPES = [
   { value: 'threat_assessment', label: 'Threat Assessment', skill: 'threat_assessment' },
@@ -25,6 +25,15 @@ interface ReportHistoryItem {
   timestamp: Date;
 }
 
+interface SavedReport {
+  id: string;
+  title: string;
+  content: string;
+  report_type: string;
+  created_at?: string;
+  entity_ids?: string[];
+}
+
 export default function ProductsPage() {
   const { activeProject } = useProject();
   const [reportType, setReportType] = useState('threat_assessment');
@@ -36,6 +45,13 @@ export default function ProductsPage() {
   const [searching, setSearching] = useState(false);
   const [reportHistory, setReportHistory] = useState<ReportHistoryItem[]>([]);
   const [viewingHistoryId, setViewingHistoryId] = useState<string | null>(null);
+  const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
+  const [savedReportsLoading, setSavedReportsLoading] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveTitle, setSaveTitle] = useState('');
+  const [showSaveForm, setShowSaveForm] = useState(false);
+  const [viewingSavedReport, setViewingSavedReport] = useState<SavedReport | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const searchEntities = useCallback(async (query: string) => {
     if (!query.trim() || !activeProject) {
@@ -53,12 +69,36 @@ export default function ProductsPage() {
     }
   }, [activeProject]);
 
+  const loadSavedReports = useCallback(async () => {
+    if (!activeProject) return;
+    setSavedReportsLoading(true);
+    try {
+      const res = await reportsApi.list(activeProject.id);
+      setSavedReports(Array.isArray(res.data) ? res.data : res.data.reports || []);
+    } catch {
+      setSavedReports([]);
+    } finally {
+      setSavedReportsLoading(false);
+    }
+  }, [activeProject]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       searchEntities(entitySearch);
     }, 300);
     return () => clearTimeout(timer);
   }, [entitySearch, searchEntities]);
+
+  useEffect(() => {
+    loadSavedReports();
+  }, [loadSavedReports]);
+
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [toast]);
 
   function addEntity(entity: SearchedEntity) {
     if (!selectedEntities.find(e => e.id === entity.id)) {
@@ -77,6 +117,7 @@ export default function ProductsPage() {
     setLoading(true);
     setGeneratedReport(null);
     setViewingHistoryId(null);
+    setViewingSavedReport(null);
     try {
       const rt = REPORT_TYPES.find(r => r.value === reportType);
       const entityContext = selectedEntities.map(e => `${e.name} (${e.entity_type})`).join(', ');
@@ -104,6 +145,61 @@ export default function ProductsPage() {
     }
   }
 
+  async function saveReport() {
+    if (!generatedReport || !activeProject || !saveTitle.trim()) return;
+    setSaveLoading(true);
+    try {
+      await reportsApi.save({
+        project_id: activeProject.id,
+        title: saveTitle,
+        content: generatedReport,
+        report_type: reportType,
+        entity_ids: selectedEntities.map(e => e.id),
+      });
+      setShowSaveForm(false);
+      setSaveTitle('');
+      setToast('Report saved successfully.');
+      loadSavedReports();
+    } catch {
+      setToast('Failed to save report.');
+    } finally {
+      setSaveLoading(false);
+    }
+  }
+
+  async function deleteSavedReport(id: string) {
+    if (!confirm('Are you sure you want to delete this saved report?')) return;
+    try {
+      await reportsApi.delete(id);
+      setSavedReports(prev => prev.filter(r => r.id !== id));
+      if (viewingSavedReport?.id === id) {
+        setViewingSavedReport(null);
+        setGeneratedReport(null);
+      }
+      setToast('Report deleted.');
+    } catch {
+      setToast('Failed to delete report.');
+    }
+  }
+
+  async function viewSavedReport(report: SavedReport) {
+    setViewingSavedReport(report);
+    setViewingHistoryId(null);
+    // If content is available directly, use it
+    if (report.content) {
+      setGeneratedReport(report.content);
+    } else {
+      // Fetch full content
+      try {
+        const res = await reportsApi.get(report.id);
+        const full = res.data;
+        setGeneratedReport(full.content || JSON.stringify(full));
+      } catch {
+        setGeneratedReport('Failed to load report content.');
+      }
+    }
+  }
+
   function exportAsText() {
     if (!generatedReport) return;
     const blob = new Blob([generatedReport], { type: 'text/plain' });
@@ -118,6 +214,7 @@ export default function ProductsPage() {
   function viewHistoryItem(item: ReportHistoryItem) {
     setGeneratedReport(item.content);
     setViewingHistoryId(item.id);
+    setViewingSavedReport(null);
   }
 
   if (!activeProject) {
@@ -234,9 +331,17 @@ export default function ProductsPage() {
               <div className="bg-navy-800 border border-navy-600 rounded-lg p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-semibold text-gray-400">
-                    {viewingHistoryId ? 'Report (from history)' : 'Generated Report'}
+                    {viewingSavedReport ? `Saved: ${viewingSavedReport.title}` : viewingHistoryId ? 'Report (from history)' : 'Generated Report'}
                   </h3>
                   <div className="flex items-center gap-2">
+                    {!viewingSavedReport && (
+                      <button
+                        onClick={() => setShowSaveForm(!showSaveForm)}
+                        className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded transition-colors"
+                      >
+                        Save Report
+                      </button>
+                    )}
                     <button
                       onClick={() => navigator.clipboard.writeText(generatedReport)}
                       className="text-xs bg-navy-700 hover:bg-navy-600 text-gray-300 px-3 py-1 rounded transition-colors"
@@ -251,6 +356,32 @@ export default function ProductsPage() {
                     </button>
                   </div>
                 </div>
+
+                {/* Save form */}
+                {showSaveForm && (
+                  <div className="mb-4 bg-navy-700 rounded p-3 flex gap-2 items-center">
+                    <input
+                      value={saveTitle}
+                      onChange={(e) => setSaveTitle(e.target.value)}
+                      placeholder="Report title..."
+                      className="flex-1 bg-navy-600 border border-navy-500 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-accent-blue"
+                    />
+                    <button
+                      onClick={saveReport}
+                      disabled={saveLoading || !saveTitle.trim()}
+                      className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+                    >
+                      {saveLoading ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => { setShowSaveForm(false); setSaveTitle(''); }}
+                      className="text-gray-400 hover:text-gray-200 px-2 py-1.5 text-xs"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
                 <div className="prose prose-invert prose-sm max-w-none">
                   <pre className="whitespace-pre-wrap text-sm text-gray-300 font-sans leading-relaxed bg-navy-900/50 rounded p-4 max-h-[600px] overflow-y-auto">
                     {generatedReport}
@@ -260,14 +391,58 @@ export default function ProductsPage() {
             )}
           </div>
 
-          {/* Right: Report History */}
+          {/* Right: Report History + Saved Reports */}
           <div className="space-y-6">
+            {/* Saved Reports */}
             <div className="bg-navy-800 border border-navy-600 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-gray-400 mb-3">Report History</h3>
+              <h3 className="text-sm font-semibold text-gray-400 mb-3">Saved Reports</h3>
+              {savedReportsLoading ? (
+                <p className="text-xs text-gray-500">Loading...</p>
+              ) : savedReports.length === 0 ? (
+                <p className="text-xs text-gray-500">No saved reports yet.</p>
+              ) : (
+                <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                  {savedReports.map(report => (
+                    <div
+                      key={report.id}
+                      className={`p-3 rounded text-xs border transition-colors ${
+                        viewingSavedReport?.id === report.id
+                          ? 'bg-accent-blue/10 border-accent-blue/30'
+                          : 'bg-navy-700 border-navy-700 hover:border-navy-500'
+                      }`}
+                    >
+                      <div className="font-medium text-gray-200 truncate">{report.title}</div>
+                      <div className="text-gray-500 mt-1">{report.report_type}</div>
+                      {report.created_at && (
+                        <div className="text-gray-500 mt-0.5">{new Date(report.created_at).toLocaleString()}</div>
+                      )}
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => viewSavedReport(report)}
+                          className="text-accent-blue hover:text-blue-400 text-xs"
+                        >
+                          View
+                        </button>
+                        <button
+                          onClick={() => deleteSavedReport(report.id)}
+                          className="text-red-400 hover:text-red-300 text-xs"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Session Report History */}
+            <div className="bg-navy-800 border border-navy-600 rounded-lg p-4">
+              <h3 className="text-sm font-semibold text-gray-400 mb-3">Session History</h3>
               {reportHistory.length === 0 ? (
                 <p className="text-xs text-gray-500">No reports generated yet this session.</p>
               ) : (
-                <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                <div className="space-y-2 max-h-[300px] overflow-y-auto">
                   {reportHistory.map(item => (
                     <button
                       key={item.id}
@@ -288,6 +463,12 @@ export default function ProductsPage() {
             </div>
           </div>
         </div>
+
+        {toast && (
+          <div className="fixed bottom-6 right-6 bg-accent-blue text-white px-4 py-2 rounded-lg shadow-lg text-sm animate-pulse">
+            {toast}
+          </div>
+        )}
       </main>
     </div>
   );

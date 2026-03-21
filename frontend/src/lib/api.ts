@@ -92,6 +92,27 @@ export const collectionsApi = {
 export const assessApi = {
   assess: (entityId: string, projectId: string, judgment: string, probability: number) =>
     api.post(`/entities/${entityId}/assess`, { entity_id: entityId, project_id: projectId, judgment, probability }),
+  create: (entityId: string, data: { entity_id: string; project_id: string; judgment: string; probability: number; analyst?: string; methodology?: string }) =>
+    api.post(`/entities/${entityId}/assess`, data),
+  multi: (data: { entity_ids: string[]; project_id: string; judgment?: string; probability?: number }) =>
+    api.post('/assess/multi', data),
+};
+
+export const topicsApi = {
+  tree: (projectId: string) => api.get('/topics', { params: { project_id: projectId } }),
+  context: (entityId: string, projectId: string) => api.get(`/topics/${entityId}`, { params: { project_id: projectId } }),
+};
+
+export const reportsApi = {
+  save: (data: { project_id: string; title: string; content: string; report_type: string; entity_ids?: string[] }) =>
+    api.post('/reports', data),
+  list: (projectId: string) => api.get('/reports', { params: { project_id: projectId } }),
+  get: (id: string) => api.get(`/reports/${id}`),
+  delete: (id: string) => api.delete(`/reports/${id}`),
+};
+
+export const geoApi = {
+  locations: (projectId: string) => api.get('/geo/locations', { params: { project_id: projectId } }),
 };
 
 export const healthApi = {

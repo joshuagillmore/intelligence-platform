@@ -47,6 +47,20 @@ export default function ProjectsPage() {
     }
   }
 
+  async function deleteProject(project: Project) {
+    if (!confirm(`Are you sure you want to delete this project? "${project.name}"`)) return;
+    try {
+      await projectsApi.delete(project.id);
+      if (activeProject?.id === project.id) {
+        setActiveProject(null);
+      }
+      loadProjects();
+      setToast(`Deleted: ${project.name}`);
+    } catch (e) {
+      console.error('Failed to delete project', e);
+    }
+  }
+
   function selectProject(project: Project) {
     setActiveProject(project);
     setToast(`Selected: ${project.name}`);
@@ -115,6 +129,13 @@ export default function ProjectsPage() {
                   className="ml-auto bg-accent-blue hover:bg-blue-600 text-white px-3 py-1 rounded text-xs font-medium transition-colors"
                 >
                   Select
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); deleteProject(project); }}
+                  className="text-gray-500 hover:text-red-400 px-2 py-1 rounded text-xs transition-colors"
+                  title="Delete project"
+                >
+                  &times;
                 </button>
               </div>
             </div>

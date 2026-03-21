@@ -1,192 +1,131 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
-import { entitiesApi } from '@/lib/api';
+import { topicsApi, queryApi } from '@/lib/api';
 
-interface DocumentEntity {
+interface TopicEntity {
   id: string;
   name: string;
   entity_type: string;
   properties?: Record<string, unknown>;
 }
 
-interface DocWithCount extends DocumentEntity {
-  entityCount: number;
-  entityNames: string[];
+interface TopicCategory {
+  type: string;
+  entities: TopicEntity[];
+}
+
+interface ConnectedEntity {
+  id: string;
+  name: string;
+  entity_type: string;
+  rel_type: string;
+  confidence?: number;
+}
+
+interface EntityContext {
+  entity: TopicEntity;
+  connected_entities?: ConnectedEntity[];
+  source_documents?: Array<{ id: string; name: string; content?: string }>;
 }
 
 export default function DataSourcesPage() {
   const { activeProject } = useProject();
-  const router = useRouter();
-  const [documents, setDocuments] = useState<DocWithCount[]>([]);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [searchFilter, setSearchFilter] = useState('');
-  const [groupByRating, setGroupByRating] = useState(false);
+  const [categories, setCategories] = useState<TopicCategory[]>([]);
+  const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set());
+  const [selectedEntity, setSelectedEntity] = useState<TopicEntity | null>(null);
+  const [entityContext, setEntityContext] = useState<EntityContext | null>(null);
   const [loading, setLoading] = useState(false);
+  const [contextLoading, setContextLoading] = useState(false);
+  const [queryInput, setQueryInput] = useState('');
+  const [queryResult, setQueryResult] = useState<string | null>(null);
+  const [queryLoading, setQueryLoading] = useState(false);
 
-  const loadDocuments = useCallback(async () => {
+  const loadTopics = useCallback(async () => {
     if (!activeProject) return;
     setLoading(true);
     try {
-      const res = await entitiesApi.search(activeProject.id, undefined, 'Document');
-      const docs: DocumentEntity[] = res.data || [];
-
-      // Load entity counts for each document
-      const docsWithCounts: DocWithCount[] = await Promise.all(
-        docs.map(async (doc) => {
-          try {
-            const detailRes = await entitiesApi.get(doc.id);
-            const rels = detailRes.data.relationships || [];
-            const entityNames = rels.map((r: { source_name?: string; target_name?: string }) =>
-              r.source_name || r.target_name || ''
-            ).filter(Boolean);
-            return { ...doc, entityCount: rels.length, entityNames };
-          } catch {
-            return { ...doc, entityCount: 0, entityNames: [] };
+      const res = await topicsApi.tree(activeProject.id);
+      const data = res.data;
+      // Expect either an array of categories or a flat entity list
+      if (Array.isArray(data)) {
+        // If flat array of entities, group by type
+        if (data.length > 0 && data[0].entity_type) {
+          const grouped: Record<string, TopicEntity[]> = {};
+          for (const entity of data) {
+            const type = entity.entity_type || 'Unknown';
+            if (!grouped[type]) grouped[type] = [];
+            grouped[type].push(entity);
           }
-        })
-      );
-      setDocuments(docsWithCounts);
+          setCategories(Object.entries(grouped).map(([type, entities]) => ({ type, entities })));
+        } else {
+          setCategories(data);
+        }
+      } else if (data.categories) {
+        setCategories(data.categories);
+      } else if (data.topics) {
+        // Handle {topics: [...]} format
+        const grouped: Record<string, TopicEntity[]> = {};
+        for (const entity of data.topics) {
+          const type = entity.entity_type || 'Unknown';
+          if (!grouped[type]) grouped[type] = [];
+          grouped[type].push(entity);
+        }
+        setCategories(Object.entries(grouped).map(([type, entities]) => ({ type, entities })));
+      } else {
+        setCategories([]);
+      }
     } catch (e) {
-      console.error('Failed to load documents', e);
+      console.error('Failed to load topics', e);
+      setCategories([]);
     } finally {
       setLoading(false);
     }
   }, [activeProject]);
 
   useEffect(() => {
-    loadDocuments();
-  }, [loadDocuments]);
+    loadTopics();
+  }, [loadTopics]);
 
-  function highlightEntities(text: string, entityNames: string[]) {
-    if (!entityNames || entityNames.length === 0) return text;
-    const sorted = [...entityNames].sort((a, b) => b.length - a.length);
-    const escaped = sorted.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
-    const parts = text.split(pattern);
-    return parts.map((part) => {
-      const isEntity = sorted.some(n => n.toLowerCase() === part.toLowerCase());
-      if (isEntity) {
-        return `<strong class="text-accent-blue">${part}</strong>`;
-      }
-      return part;
-    }).join('');
+  async function selectEntity(entity: TopicEntity) {
+    setSelectedEntity(entity);
+    setEntityContext(null);
+    setQueryResult(null);
+    setContextLoading(true);
+    try {
+      const res = await topicsApi.context(entity.id, activeProject!.id);
+      setEntityContext(res.data);
+    } catch (e) {
+      console.error('Failed to load entity context', e);
+      setEntityContext({ entity, connected_entities: [], source_documents: [] });
+    } finally {
+      setContextLoading(false);
+    }
   }
 
-  const reliabilityColor = (rating: string) => {
-    if (!rating) return 'bg-gray-700 text-gray-400';
-    const letter = rating.charAt(0).toUpperCase();
-    switch (letter) {
-      case 'A': return 'bg-green-900/40 text-green-400 border-green-800';
-      case 'B': return 'bg-blue-900/40 text-blue-400 border-blue-800';
-      case 'C': return 'bg-yellow-900/40 text-yellow-400 border-yellow-800';
-      case 'D': return 'bg-orange-900/40 text-orange-400 border-orange-800';
-      case 'E': return 'bg-red-900/40 text-red-400 border-red-800';
-      case 'F': return 'bg-red-900/40 text-red-400 border-red-800';
-      default: return 'bg-gray-700 text-gray-400 border-gray-600';
-    }
-  };
-
-  const reliabilityLabel = (letter: string) => {
-    switch (letter) {
-      case 'A': return 'A - Reliable';
-      case 'B': return 'B - Usually Reliable';
-      case 'C': return 'C - Fairly Reliable';
-      case 'D': return 'D - Not Usually Reliable';
-      case 'E': return 'E - Unreliable';
-      case 'F': return 'F - Cannot Be Judged';
-      default: return 'Unrated';
-    }
-  };
-
-  function navigateToGraph(docId: string) {
-    router.push(`/network?highlight=${docId}`);
+  function toggleType(type: string) {
+    setExpandedTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
   }
 
-  // Filter documents
-  const filteredDocs = documents.filter(doc => {
-    if (!searchFilter) return true;
-    const lf = searchFilter.toLowerCase();
-    return doc.name.toLowerCase().includes(lf) ||
-      (doc.properties?.content && String(doc.properties.content).toLowerCase().includes(lf));
-  });
-
-  // Group documents by reliability rating
-  function getGroupedDocs(): Record<string, DocWithCount[]> {
-    const groups: Record<string, DocWithCount[]> = {};
-    for (const doc of filteredDocs) {
-      const rating = doc.properties?.reliability_rating ? String(doc.properties.reliability_rating).charAt(0).toUpperCase() : 'Unrated';
-      if (!groups[rating]) groups[rating] = [];
-      groups[rating].push(doc);
+  async function askAboutEntity() {
+    if (!queryInput.trim() || !activeProject || !selectedEntity) return;
+    setQueryLoading(true);
+    setQueryResult(null);
+    try {
+      const scopedQuery = `Regarding entity "${selectedEntity.name}" (${selectedEntity.entity_type}): ${queryInput}`;
+      const res = await queryApi.rag(activeProject.id, scopedQuery);
+      setQueryResult(res.data.answer || res.data.response || JSON.stringify(res.data));
+    } catch {
+      setQueryResult('Failed to process query.');
+    } finally {
+      setQueryLoading(false);
     }
-    // Sort groups: A, B, C, D, E, F, Unrated
-    const order = ['A', 'B', 'C', 'D', 'E', 'F', 'Unrated'];
-    const sorted: Record<string, DocWithCount[]> = {};
-    for (const key of order) {
-      if (groups[key]) sorted[key] = groups[key];
-    }
-    return sorted;
-  }
-
-  function renderDocCard(doc: DocWithCount) {
-    const content = doc.properties?.content ? String(doc.properties.content) : '';
-    const reliability = doc.properties?.reliability_rating ? String(doc.properties.reliability_rating) : '';
-    const ingestionDate = (doc.properties?.ingestion_date || doc.properties?.created_at) as string | undefined;
-    const isExpanded = expandedId === doc.id;
-
-    return (
-      <div
-        key={doc.id}
-        className="bg-navy-800 border border-navy-600 rounded-lg transition-colors hover:border-navy-500"
-      >
-        <div
-          className="p-4 cursor-pointer"
-          onClick={() => setExpandedId(isExpanded ? null : doc.id)}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="font-medium text-sm flex-1 truncate">{doc.name}</h4>
-            <div className="flex items-center gap-2 flex-none">
-              <span className="text-xs bg-navy-700 text-gray-300 px-2 py-0.5 rounded">
-                {doc.entityCount} entities
-              </span>
-              {reliability && (
-                <span className={`text-xs px-2 py-0.5 rounded font-medium border ${reliabilityColor(reliability)}`}>
-                  {reliability}
-                </span>
-              )}
-              <button
-                onClick={(e) => { e.stopPropagation(); navigateToGraph(doc.id); }}
-                className="text-xs text-accent-blue hover:text-blue-400 px-2 py-0.5 rounded border border-accent-blue/30 hover:border-accent-blue/60 transition-colors"
-                title="View in Network Graph"
-              >
-                View in Graph
-              </button>
-              <span className="text-xs text-gray-500">{isExpanded ? '▲' : '▼'}</span>
-            </div>
-          </div>
-          {ingestionDate && (
-            <p className="text-xs text-gray-500 mb-2">
-              Ingested: {new Date(String(ingestionDate)).toLocaleString()}
-            </p>
-          )}
-          {!isExpanded && content && (
-            <p className="text-xs text-gray-400 line-clamp-3 font-mono">
-              {content.substring(0, 200)}{content.length > 200 ? '...' : ''}
-            </p>
-          )}
-        </div>
-        {isExpanded && content && (
-          <div className="border-t border-navy-600 p-4">
-            <div
-              className="text-sm text-gray-300 whitespace-pre-wrap font-mono leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: highlightEntities(content, doc.entityNames) }}
-            />
-          </div>
-        )}
-      </div>
-    );
   }
 
   if (!activeProject) {
@@ -194,7 +133,7 @@ export default function DataSourcesPage() {
       <div className="flex">
         <Sidebar />
         <main className="ml-56 flex-1 p-8">
-          <h2 className="text-2xl font-bold mb-4">Source Review</h2>
+          <h2 className="text-2xl font-bold mb-4">Topic Explorer</h2>
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
             <p>Select a project first.</p>
           </div>
@@ -203,73 +142,160 @@ export default function DataSourcesPage() {
     );
   }
 
-  const groupedDocs = getGroupedDocs();
-
   return (
-    <div className="flex">
+    <div className="flex h-screen overflow-hidden">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8">
-        <h2 className="text-2xl font-bold mb-6">Source Review</h2>
-
-        {/* Search and filter bar */}
-        <div className="bg-navy-800 border border-navy-600 rounded-lg p-4 mb-6 flex items-center gap-4 flex-wrap">
-          <div className="flex-1 min-w-[200px]">
-            <input
-              value={searchFilter}
-              onChange={(e) => setSearchFilter(e.target.value)}
-              placeholder="Search documents by name or content..."
-              className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
-            />
+      <div className="ml-56 flex-1 flex h-screen overflow-hidden">
+        {/* Left panel - Topic Tree */}
+        <div className="w-72 flex-none bg-navy-800 border-r border-navy-600 flex flex-col overflow-hidden">
+          <div className="p-4 border-b border-navy-600">
+            <h3 className="text-sm font-semibold text-gray-400">Topic Tree</h3>
           </div>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-400">Group by Rating</label>
-            <button
-              onClick={() => setGroupByRating(!groupByRating)}
-              className={`w-10 h-5 rounded-full transition-colors relative ${
-                groupByRating ? 'bg-accent-blue' : 'bg-navy-600'
-              }`}
-            >
-              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                groupByRating ? 'left-5' : 'left-0.5'
-              }`} />
-            </button>
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="p-4 text-center text-gray-500 text-sm">Loading topics...</div>
+            ) : categories.length === 0 ? (
+              <div className="p-4 text-center text-gray-500 text-sm">No topics found. Ingest documents to populate.</div>
+            ) : (
+              <div className="py-1">
+                {categories.map(cat => (
+                  <div key={cat.type}>
+                    <button
+                      onClick={() => toggleType(cat.type)}
+                      className="w-full text-left px-4 py-2 hover:bg-navy-700 transition-colors flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">{expandedTypes.has(cat.type) ? '▼' : '▶'}</span>
+                        <span className="text-sm font-medium text-gray-200">{cat.type}</span>
+                      </div>
+                      <span className="text-xs bg-navy-600 text-gray-400 px-2 py-0.5 rounded-full">
+                        {cat.entities.length}
+                      </span>
+                    </button>
+                    {expandedTypes.has(cat.type) && (
+                      <div className="ml-6">
+                        {cat.entities.map(entity => (
+                          <button
+                            key={entity.id}
+                            onClick={() => selectEntity(entity)}
+                            className={`w-full text-left px-3 py-1.5 text-xs transition-colors flex items-center gap-2 ${
+                              selectedEntity?.id === entity.id
+                                ? 'bg-accent-blue/20 text-accent-blue'
+                                : 'text-gray-300 hover:bg-navy-700'
+                            }`}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-accent-blue flex-none" />
+                            <span className="truncate">{entity.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <span className="text-sm text-gray-400">{filteredDocs.length} documents</span>
         </div>
 
-        {loading ? (
-          <div className="text-center text-gray-500 py-8">Loading documents...</div>
-        ) : groupByRating ? (
-          /* Grouped view */
-          <div className="space-y-6">
-            {Object.entries(groupedDocs).map(([rating, docs]) => (
-              <div key={rating}>
-                <div className="flex items-center gap-3 mb-3">
-                  <span className={`text-xs px-2 py-0.5 rounded font-medium border ${reliabilityColor(rating)}`}>
-                    {rating}
-                  </span>
-                  <h3 className="text-sm font-semibold text-gray-400">{reliabilityLabel(rating)}</h3>
-                  <span className="text-xs text-gray-500">({docs.length})</span>
-                </div>
-                <div className="space-y-3">
-                  {docs.map(doc => renderDocCard(doc))}
-                </div>
+        {/* Right panel - Entity Context */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {!selectedEntity ? (
+            <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+              <p>Select an entity from the topic tree to view its context.</p>
+            </div>
+          ) : contextLoading ? (
+            <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+              <p>Loading entity context...</p>
+            </div>
+          ) : (
+            <div className="space-y-6 max-w-4xl">
+              {/* Entity header */}
+              <div className="bg-navy-800 border border-navy-600 rounded-lg p-5">
+                <h2 className="text-xl font-bold text-gray-100">{entityContext?.entity?.name || selectedEntity.name}</h2>
+                <span className="inline-block mt-2 text-xs px-2 py-0.5 rounded bg-accent-blue/20 text-accent-blue border border-accent-blue/30">
+                  {entityContext?.entity?.entity_type || selectedEntity.entity_type}
+                </span>
+                {entityContext?.entity?.properties && Object.keys(entityContext.entity.properties).length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    {Object.entries(entityContext.entity.properties).map(([key, value]) => (
+                      <div key={key} className="text-xs">
+                        <span className="text-gray-500">{key}:</span>{' '}
+                        <span className="text-gray-300">{String(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))}
-            {Object.keys(groupedDocs).length === 0 && (
-              <p className="text-gray-500 text-sm">No documents match the filter.</p>
-            )}
-          </div>
-        ) : (
-          /* Flat view */
-          <div className="space-y-3">
-            {filteredDocs.map(doc => renderDocCard(doc))}
-            {filteredDocs.length === 0 && (
-              <p className="text-gray-500 text-sm">No documents found. Upload content via Collections to begin.</p>
-            )}
-          </div>
-        )}
-      </main>
+
+              {/* Connected entities */}
+              {entityContext?.connected_entities && entityContext.connected_entities.length > 0 && (
+                <div className="bg-navy-800 border border-navy-600 rounded-lg p-5">
+                  <h3 className="text-sm font-semibold text-gray-400 mb-3">
+                    Connected Entities ({entityContext.connected_entities.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {entityContext.connected_entities.map((ce, i) => (
+                      <div key={i} className="flex items-center gap-3 bg-navy-700 rounded p-2 text-xs">
+                        <span className="text-accent-blue font-medium">{ce.rel_type}</span>
+                        <span className="text-gray-300">{ce.name}</span>
+                        <span className="text-gray-500">({ce.entity_type})</span>
+                        {ce.confidence !== undefined && (
+                          <span className="ml-auto text-gray-500">{(ce.confidence * 100).toFixed(0)}%</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Source documents */}
+              {entityContext?.source_documents && entityContext.source_documents.length > 0 && (
+                <div className="bg-navy-800 border border-navy-600 rounded-lg p-5">
+                  <h3 className="text-sm font-semibold text-gray-400 mb-3">
+                    Source Documents ({entityContext.source_documents.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {entityContext.source_documents.map((doc, i) => (
+                      <div key={i} className="bg-navy-700 rounded p-3">
+                        <div className="text-sm text-gray-200 font-medium mb-1">{doc.name}</div>
+                        {doc.content && (
+                          <p className="text-xs text-gray-400 line-clamp-3">{doc.content.substring(0, 300)}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Query input */}
+              <div className="bg-navy-800 border border-navy-600 rounded-lg p-5">
+                <h3 className="text-sm font-semibold text-gray-400 mb-3">Ask about this topic</h3>
+                <div className="flex gap-2">
+                  <input
+                    value={queryInput}
+                    onChange={(e) => setQueryInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && askAboutEntity()}
+                    placeholder={`Ask about ${selectedEntity.name}...`}
+                    className="flex-1 bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
+                  />
+                  <button
+                    onClick={askAboutEntity}
+                    disabled={queryLoading || !queryInput.trim()}
+                    className="bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
+                  >
+                    {queryLoading ? 'Asking...' : 'Ask'}
+                  </button>
+                </div>
+                {queryResult && (
+                  <div className="mt-3 bg-navy-700 rounded p-3 text-sm text-gray-300 whitespace-pre-wrap max-h-64 overflow-y-auto">
+                    {queryResult}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
