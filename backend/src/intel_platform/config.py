@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # LLM providers
     anthropic_api_key: str = ""
     openai_api_key: str = ""
+    cohere_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434"
     default_llm_provider: str = "anthropic"
     default_llm_model: str = ""
