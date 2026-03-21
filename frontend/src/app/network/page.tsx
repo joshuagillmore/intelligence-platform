@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import GraphVisualization from '@/components/GraphVisualization';
 import { useProject } from '@/lib/ProjectContext';
-import { entitiesApi, graphApi, queryApi, llmApi, assessApi } from '@/lib/api';
+import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi } from '@/lib/api';
 
 interface Entity {
   id: string;
@@ -118,6 +118,13 @@ export default function NetworkPage() {
   const [islandThreshold, setIslandThreshold] = useState(0);
   const [filteredGraphNodes, setFilteredGraphNodes] = useState<GraphNode[]>([]);
   const [filteredGraphEdges, setFilteredGraphEdges] = useState<GraphEdge[]>([]);
+  const [bottomTab, setBottomTab] = useState<'chat' | 'notebook'>('chat');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [notes, setNotes] = useState<any[]>([]);
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteContent, setNoteContent] = useState('');
+  const [noteType, setNoteType] = useState('observation');
+  const [noteFormOpen, setNoteFormOpen] = useState(false);
 
   const loadGraph = useCallback(async () => {
     if (!activeProject) return;
@@ -378,6 +385,49 @@ export default function NetworkPage() {
       setAiResult('Failed to perform gap analysis.');
     } finally {
       setAiLoading(false);
+    }
+  }
+
+  const loadNotes = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      const res = await notebookApi.list(activeProject.id);
+      setNotes(res.data || []);
+    } catch (e) {
+      console.error('Failed to load notes', e);
+    }
+  }, [activeProject]);
+
+  useEffect(() => {
+    loadNotes();
+  }, [loadNotes]);
+
+  async function createNote() {
+    if (!activeProject || !noteTitle.trim() || !noteContent.trim()) return;
+    try {
+      await notebookApi.create({
+        project_id: activeProject.id,
+        title: noteTitle,
+        content: noteContent,
+        entity_ids: multiSelected.map(e => e.id),
+        note_type: noteType,
+      });
+      setNoteTitle('');
+      setNoteContent('');
+      setNoteType('observation');
+      setNoteFormOpen(false);
+      loadNotes();
+    } catch {
+      console.error('Failed to create note');
+    }
+  }
+
+  async function deleteNote(noteId: string) {
+    try {
+      await notebookApi.delete(noteId);
+      loadNotes();
+    } catch {
+      console.error('Failed to delete note');
     }
   }
 
@@ -669,16 +719,34 @@ export default function NetworkPage() {
                   )}
                 </div>
 
-                {/* Bottom chat panel */}
-                <div className={`flex-none border-t border-navy-600 bg-navy-800 transition-all ${bottomPanelOpen ? 'h-48' : 'h-8'}`}>
-                  <button
-                    onClick={() => setBottomPanelOpen(!bottomPanelOpen)}
-                    className="w-full h-8 flex items-center justify-center text-xs text-gray-400 hover:text-gray-200 border-b border-navy-600"
-                  >
-                    {bottomPanelOpen ? 'Hide' : 'Show'} Graph RAG Chat
-                  </button>
-                  {bottomPanelOpen && (
-                    <div className="flex flex-col h-40">
+                {/* Bottom panel with tabs */}
+                <div className={`flex-none border-t border-navy-600 bg-navy-800 transition-all ${bottomPanelOpen ? 'h-56' : 'h-8'}`}>
+                  <div className="h-8 flex items-center border-b border-navy-600">
+                    <button
+                      onClick={() => setBottomPanelOpen(!bottomPanelOpen)}
+                      className="px-3 h-full text-xs text-gray-400 hover:text-gray-200"
+                    >
+                      {bottomPanelOpen ? '\u25BC' : '\u25B2'}
+                    </button>
+                    {bottomPanelOpen && (
+                      <div className="flex">
+                        <button
+                          onClick={() => setBottomTab('chat')}
+                          className={`px-4 h-8 text-xs font-medium transition-colors ${bottomTab === 'chat' ? 'text-accent-blue border-b-2 border-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}
+                        >
+                          RAG Chat
+                        </button>
+                        <button
+                          onClick={() => setBottomTab('notebook')}
+                          className={`px-4 h-8 text-xs font-medium transition-colors ${bottomTab === 'notebook' ? 'text-accent-blue border-b-2 border-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}
+                        >
+                          Notebook
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {bottomPanelOpen && bottomTab === 'chat' && (
+                    <div className="flex flex-col" style={{ height: 'calc(100% - 2rem)' }}>
                       <div className="flex-1 overflow-y-auto p-2 space-y-2">
                         {chatMessages.map((msg, i) => (
                           <div key={i} className={`text-xs p-2 rounded ${msg.role === 'user' ? 'bg-navy-700 text-gray-200' : 'bg-navy-600 text-gray-300'}`}>
@@ -703,6 +771,83 @@ export default function NetworkPage() {
                           Send
                         </button>
                       </div>
+                    </div>
+                  )}
+                  {bottomPanelOpen && bottomTab === 'notebook' && (
+                    <div className="flex flex-col" style={{ height: 'calc(100% - 2rem)' }}>
+                      <div className="flex items-center justify-between px-3 py-1 border-b border-navy-600">
+                        <span className="text-xs text-gray-400">{notes.length} notes</span>
+                        <button
+                          onClick={() => setNoteFormOpen(!noteFormOpen)}
+                          className="text-xs bg-accent-blue hover:bg-blue-600 text-white px-3 py-1 rounded"
+                        >
+                          {noteFormOpen ? 'Cancel' : 'New Note'}
+                        </button>
+                      </div>
+                      {noteFormOpen ? (
+                        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                          <input
+                            value={noteTitle}
+                            onChange={(e) => setNoteTitle(e.target.value)}
+                            placeholder="Note title..."
+                            className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-blue"
+                          />
+                          <textarea
+                            value={noteContent}
+                            onChange={(e) => setNoteContent(e.target.value)}
+                            placeholder="Write your note..."
+                            className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs h-16 focus:outline-none focus:border-accent-blue resize-none"
+                          />
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={noteType}
+                              onChange={(e) => setNoteType(e.target.value)}
+                              className="bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-blue"
+                            >
+                              <option value="observation">Observation</option>
+                              <option value="hypothesis">Hypothesis</option>
+                              <option value="question">Question</option>
+                              <option value="conclusion">Conclusion</option>
+                            </select>
+                            {multiSelected.length > 0 && (
+                              <span className="text-xs text-gray-400">Linking {multiSelected.length} selected entities</span>
+                            )}
+                            <button
+                              onClick={createNote}
+                              disabled={!noteTitle.trim() || !noteContent.trim()}
+                              className="ml-auto bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs disabled:opacity-50"
+                            >
+                              Save Note
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                          {notes.length === 0 ? (
+                            <p className="text-xs text-gray-500 text-center mt-4">No notebook entries yet.</p>
+                          ) : (
+                            notes.map((note) => (
+                              <div key={note.id} className="bg-navy-700 rounded p-2 text-xs">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="font-medium text-gray-200">{note.name}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs px-1.5 py-0.5 rounded bg-navy-600 text-gray-400">
+                                      {note.note_type || 'note'}
+                                    </span>
+                                    <button
+                                      onClick={() => deleteNote(note.id)}
+                                      className="text-red-400 hover:text-red-300 text-xs"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </div>
+                                <p className="text-gray-400 truncate">{note.content || ''}</p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
