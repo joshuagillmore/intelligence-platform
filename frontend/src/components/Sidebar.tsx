@@ -1,6 +1,7 @@
 'use client';
+import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
 
 const navItems = [
@@ -18,7 +19,17 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { activeProject } = useProject();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter' && searchQuery.trim()) {
+      router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+      setSearchQuery('');
+    }
+  }
+
   return (
     <aside className="w-56 bg-navy-800 border-r border-navy-600 flex flex-col h-screen fixed left-0 top-0">
       <div className="p-4 border-b border-navy-600">
@@ -30,6 +41,16 @@ export default function Sidebar() {
         <p className="text-sm font-medium text-gray-200 truncate">
           {activeProject ? activeProject.name : 'No project selected'}
         </p>
+      </div>
+      <div className="px-4 py-2 border-b border-navy-600">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={handleSearchKeyDown}
+          placeholder="Search... (Enter)"
+          className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-accent-blue"
+        />
       </div>
       <nav className="flex-1 py-2 overflow-y-auto">
         {navItems.map((item) => (
