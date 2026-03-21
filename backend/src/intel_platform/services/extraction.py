@@ -72,6 +72,13 @@ ORG_KEYWORDS = [
     "Brigade", "Division", "Regiment", "Battalion",
 ]
 
+# Known intelligence-domain person names that spaCy commonly misclassifies
+KNOWN_PERSONS = {
+    "vasily nebenzya", "sergei lavrov", "vladimir putin", "joe biden",
+    "volodymyr zelensky", "xi jinping", "kim jong un", "ali khamenei",
+    "benjamin netanyahu", "antonio guterres", "jens stoltenberg",
+}
+
 # Words that spaCy commonly misidentifies as entities
 NOISE_WORDS = {
     "NETWORK", "INFRASTRUCTURE", "ASSESSMENT", "ANALYSIS", "REPORT",
@@ -175,8 +182,16 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
             if not name:
                 continue
 
+        # Force MITRE ATT&CK IDs to TTP type
+        mitre_re = re.compile(r'^T\d{4}(?:\.\d{3})?$')
+        if mitre_re.match(name):
+            e["entity_type"] = "TTP"
+
+        # Force known persons
+        if name_lower in KNOWN_PERSONS:
+            e["entity_type"] = "Person"
         # Force known locations
-        if name_lower in KNOWN_LOCATIONS:
+        elif name_lower in KNOWN_LOCATIONS:
             e["entity_type"] = "Location"
         # Force known organizations
         elif name_lower in KNOWN_ORGANIZATIONS:

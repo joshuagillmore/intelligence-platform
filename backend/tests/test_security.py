@@ -14,4 +14,4 @@ def test_unauthorized_access():
 
 def test_missing_auth():
     resp = client.get("/api/projects")
-    assert resp.status_code == 422  # Missing required header
+    assert resp.status_code == 401  # Missing authorization header
