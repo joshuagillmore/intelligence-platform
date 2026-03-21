@@ -96,6 +96,8 @@ export const assessApi = {
     api.post(`/entities/${entityId}/assess`, data),
   multi: (data: { entity_ids: string[]; project_id: string; judgment?: string; probability?: number }) =>
     api.post('/assess/multi', data),
+  generate: (entityId: string, data: { entity_id: string; project_id: string; judgment?: string; probability?: number }) =>
+    api.post('/assess/generate', { ...data, entity_id: entityId }),
 };
 
 export const topicsApi = {
