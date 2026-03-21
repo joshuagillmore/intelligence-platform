@@ -2,8 +2,9 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import GraphVisualization from '@/components/GraphVisualization';
 import { useProject } from '@/lib/ProjectContext';
-import { entitiesApi } from '@/lib/api';
+import { entitiesApi, graphApi } from '@/lib/api';
 
 interface IOCEntity {
   id: string;
@@ -20,6 +21,21 @@ interface Relationship {
   confidence?: number;
   source_name?: string;
   target_name?: string;
+}
+
+interface GraphNode {
+  id: string;
+  name: string;
+  entity_type: string;
+}
+
+interface GraphEdge {
+  source: string;
+  target: string;
+  source_id: string;
+  target_id: string;
+  rel_type: string;
+  confidence?: number;
 }
 
 const IOC_TYPES = ['IPAddress', 'Domain', 'Hash', 'TTP', 'Vulnerability'];
@@ -43,8 +59,8 @@ const FILTER_TABS = [
 
 function StatCard({ label, count, color }: { label: string; count: number; color: string }) {
   return (
-    <div className="bg-navy-800 border border-navy-600 rounded-lg p-4 flex flex-col items-center min-w-[100px]">
-      <span className={`text-2xl font-bold ${color}`}>{count}</span>
+    <div className="bg-navy-800 border border-navy-600 rounded-lg p-3 flex flex-col items-center min-w-[80px]">
+      <span className={`text-xl font-bold ${color}`}>{count}</span>
       <span className="text-xs text-gray-400 mt-1">{label}</span>
     </div>
   );
@@ -58,6 +74,9 @@ export default function CyberPage() {
   const [relationships, setRelationships] = useState<Record<string, Relationship[]>>({});
   const [expandedEntity, setExpandedEntity] = useState<Record<string, IOCEntity>>({});
   const [activeFilter, setActiveFilter] = useState('all');
+  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
+  const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
+  const [selectedGraphNode, setSelectedGraphNode] = useState<string | null>(null);
 
   const loadIOCs = useCallback(async () => {
     if (!activeProject) return;
@@ -71,9 +90,35 @@ export default function CyberPage() {
     setIocs(allIocs);
   }, [activeProject]);
 
+  const loadGraph = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      const res = await graphApi.full(activeProject.id);
+      const data = res.data;
+      const nodes: GraphNode[] = (data.nodes || []).filter((n: GraphNode) =>
+        IOC_TYPES.includes(n.entity_type)
+      );
+      const nodeIds = new Set(nodes.map(n => n.id));
+      const edges: GraphEdge[] = (data.edges || data.relationships || []).filter((e: GraphEdge) => {
+        const srcId = typeof e.source === 'string' ? e.source : e.source_id;
+        const tgtId = typeof e.target === 'string' ? e.target : e.target_id;
+        return nodeIds.has(srcId) && nodeIds.has(tgtId);
+      }).map((e: GraphEdge) => ({
+        ...e,
+        source: typeof e.source === 'string' ? e.source : e.source_id,
+        target: typeof e.target === 'string' ? e.target : e.target_id,
+      }));
+      setGraphNodes(nodes);
+      setGraphEdges(edges);
+    } catch (e) {
+      console.error('Failed to load graph', e);
+    }
+  }, [activeProject]);
+
   useEffect(() => {
     loadIOCs();
-  }, [loadIOCs]);
+    loadGraph();
+  }, [loadIOCs, loadGraph]);
 
   const filteredIocs = useMemo(() => {
     if (activeFilter === 'all') return iocs;
@@ -106,6 +151,10 @@ export default function CyberPage() {
 
   function getBadgeStyle(entityType: string): string {
     return TYPE_BADGE_STYLES[entityType] || 'bg-gray-900/30 text-gray-400';
+  }
+
+  function handleGraphNodeClick(node: GraphNode) {
+    setSelectedGraphNode(node.id);
   }
 
   if (!activeProject) {
@@ -155,105 +204,134 @@ export default function CyberPage() {
           ))}
         </div>
 
-        {/* IOC table */}
-        <div className="bg-navy-800 border border-navy-600 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-navy-600 text-left">
-                <th className="px-4 py-3 text-xs font-semibold text-gray-400">Indicator</th>
-                <th className="px-4 py-3 text-xs font-semibold text-gray-400">Type</th>
-                <th className="px-4 py-3 text-xs font-semibold text-gray-400">Relationships</th>
-                <th className="px-4 py-3 text-xs font-semibold text-gray-400">First Seen</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredIocs.map((ioc) => {
-                const isExpanded = expandedId === ioc.id;
-                const rels = relationships[ioc.id] || [];
-                const entity = expandedEntity[ioc.id] || ioc;
-                return (
-                  <React.Fragment key={ioc.id}>
-                    <tr
-                      onClick={() => toggleRow(ioc)}
-                      className={`border-b border-navy-700 cursor-pointer transition-colors ${
-                        isExpanded ? 'bg-navy-700' : 'hover:bg-navy-700/50'
-                      }`}
-                    >
-                      <td className="px-4 py-2 font-mono text-xs">{ioc.name}</td>
-                      <td className="px-4 py-2">
-                        <span className={`text-xs px-2 py-0.5 rounded ${getBadgeStyle(ioc.entity_type)}`}>
-                          {ioc.entity_type}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 text-xs text-gray-400">{ioc.relationship_count ?? '--'}</td>
-                      <td className="px-4 py-2 text-xs text-gray-400">
-                        {ioc.properties?.first_seen ? String(ioc.properties.first_seen) : '--'}
-                      </td>
-                    </tr>
+        {/* Split layout: IOC table + Graph */}
+        <div className="flex gap-6" style={{ height: 'calc(100vh - 320px)' }}>
 
-                    {/* Expanded detail row */}
-                    {isExpanded && (
-                      <tr className="bg-navy-750 border-b border-navy-700">
-                        <td colSpan={4} className="px-6 py-4">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Connected entities */}
-                            <div>
-                              <h4 className="text-xs font-semibold text-gray-400 mb-2">Connected Entities</h4>
-                              {rels.length > 0 ? (
-                                <div className="space-y-1 max-h-40 overflow-y-auto">
-                                  {rels.map((r, i) => (
-                                    <div key={i} className="text-xs bg-navy-800 rounded p-2 flex items-center gap-2">
-                                      <span className="text-accent-blue font-medium">{r.rel_type}</span>
-                                      {r.confidence !== undefined && (
-                                        <span className="text-gray-500">({(r.confidence * 100).toFixed(0)}%)</span>
-                                      )}
-                                      <span className="text-gray-400 ml-auto truncate">
-                                        {r.source_name || r.source_id} &rarr; {r.target_name || r.target_id}
-                                      </span>
+          {/* Left: IOC table (55%) */}
+          <div className="w-[55%] overflow-hidden flex flex-col">
+            <div className="bg-navy-800 border border-navy-600 rounded-lg overflow-hidden flex-1 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-navy-800 z-10">
+                  <tr className="border-b border-navy-600 text-left">
+                    <th className="px-4 py-3 text-xs font-semibold text-gray-400">Indicator</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-gray-400">Type</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-gray-400">Rels</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-gray-400">First Seen</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredIocs.map((ioc) => {
+                    const isExpanded = expandedId === ioc.id;
+                    const rels = relationships[ioc.id] || [];
+                    const entity = expandedEntity[ioc.id] || ioc;
+                    return (
+                      <React.Fragment key={ioc.id}>
+                        <tr
+                          onClick={() => toggleRow(ioc)}
+                          className={`border-b border-navy-700 cursor-pointer transition-colors ${
+                            isExpanded ? 'bg-navy-700' : 'hover:bg-navy-700/50'
+                          }`}
+                        >
+                          <td className="px-4 py-2 font-mono text-xs">{ioc.name}</td>
+                          <td className="px-4 py-2">
+                            <span className={`text-xs px-2 py-0.5 rounded ${getBadgeStyle(ioc.entity_type)}`}>
+                              {ioc.entity_type}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-xs text-gray-400">{ioc.relationship_count ?? '--'}</td>
+                          <td className="px-4 py-2 text-xs text-gray-400">
+                            {ioc.properties?.first_seen ? String(ioc.properties.first_seen) : '--'}
+                          </td>
+                        </tr>
+
+                        {/* Expanded detail row */}
+                        {isExpanded && (
+                          <tr className="bg-navy-750 border-b border-navy-700">
+                            <td colSpan={4} className="px-6 py-4">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <h4 className="text-xs font-semibold text-gray-400 mb-2">Connected Entities</h4>
+                                  {rels.length > 0 ? (
+                                    <div className="space-y-1 max-h-40 overflow-y-auto">
+                                      {rels.map((r, i) => (
+                                        <div key={i} className="text-xs bg-navy-800 rounded p-2 flex items-center gap-2">
+                                          <span className="text-accent-blue font-medium">{r.rel_type}</span>
+                                          {r.confidence !== undefined && (
+                                            <span className="text-gray-500">({(r.confidence * 100).toFixed(0)}%)</span>
+                                          )}
+                                          <span className="text-gray-400 ml-auto truncate">
+                                            {r.source_name || r.source_id} &rarr; {r.target_name || r.target_id}
+                                          </span>
+                                        </div>
+                                      ))}
                                     </div>
-                                  ))}
+                                  ) : (
+                                    <p className="text-xs text-gray-500">No relationships found.</p>
+                                  )}
                                 </div>
-                              ) : (
-                                <p className="text-xs text-gray-500">No relationships found.</p>
-                              )}
-                            </div>
-
-                            {/* Properties & actions */}
-                            <div>
-                              {entity.properties && Object.keys(entity.properties).length > 0 && (
-                                <div className="mb-3">
-                                  <h4 className="text-xs font-semibold text-gray-400 mb-2">Properties</h4>
-                                  {Object.entries(entity.properties).map(([k, v]) => (
-                                    <div key={k} className="text-xs mb-1">
-                                      <span className="text-gray-500">{k}:</span>{' '}
-                                      <span className="text-gray-300">{String(v)}</span>
+                                <div>
+                                  {entity.properties && Object.keys(entity.properties).length > 0 && (
+                                    <div className="mb-3">
+                                      <h4 className="text-xs font-semibold text-gray-400 mb-2">Properties</h4>
+                                      {Object.entries(entity.properties).map(([k, v]) => (
+                                        <div key={k} className="text-xs mb-1">
+                                          <span className="text-gray-500">{k}:</span>{' '}
+                                          <span className="text-gray-300">{String(v)}</span>
+                                        </div>
+                                      ))}
                                     </div>
-                                  ))}
+                                  )}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      router.push('/network');
+                                    }}
+                                    className="mt-2 px-3 py-1.5 text-xs bg-accent-blue/20 text-accent-blue border border-accent-blue/30 rounded hover:bg-accent-blue/30 transition-colors"
+                                  >
+                                    View in Graph &rarr;
+                                  </button>
                                 </div>
-                              )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {filteredIocs.length === 0 && (
+                <p className="text-gray-500 text-sm p-4 text-center">No IOCs found{activeFilter !== 'all' ? ` for type "${activeFilter}"` : ' in project'}.</p>
+              )}
+            </div>
+          </div>
 
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  router.push('/network');
-                                }}
-                                className="mt-2 px-3 py-1.5 text-xs bg-accent-blue/20 text-accent-blue border border-accent-blue/30 rounded hover:bg-accent-blue/30 transition-colors"
-                              >
-                                View in Graph &rarr;
-                              </button>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-          {filteredIocs.length === 0 && (
-            <p className="text-gray-500 text-sm p-4 text-center">No IOCs found{activeFilter !== 'all' ? ` for type "${activeFilter}"` : ' in project'}.</p>
-          )}
+          {/* Right: Cyber Relationship Graph (45%) */}
+          <div className="w-[45%] flex flex-col overflow-hidden">
+            <div className="bg-navy-800 border border-navy-600 rounded-lg flex-1 overflow-hidden flex flex-col">
+              <div className="px-4 py-3 border-b border-navy-600 flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Cyber Relationship Graph</h3>
+                <span className="text-xs text-gray-400">{graphNodes.length} nodes, {graphEdges.length} edges</span>
+              </div>
+              <div className="flex-1 relative">
+                {graphNodes.length > 0 ? (
+                  <GraphVisualization
+                    nodes={graphNodes}
+                    edges={graphEdges}
+                    onNodeClick={handleGraphNodeClick}
+                    selectedNodeId={selectedGraphNode}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                    <div className="text-center">
+                      <p>No cyber entities to visualize.</p>
+                      <p className="text-xs mt-1 text-gray-600">Ingest threat intelligence data to populate the graph.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </main>
     </div>

@@ -160,6 +160,15 @@ export const entityMgmtApi = {
     api.put(`/entities/${entityId}/type`, { entity_type: entityType }),
 };
 
+export const personasApi = {
+  list: () => api.get('/personas'),
+  create: (data: { id: string; name: string; description: string; skills: string[]; temperature?: number }) =>
+    api.post('/personas', data),
+  activate: (id: string) => api.post(`/personas/${id}/activate`),
+  delete: (id: string) => api.delete(`/personas/${id}`),
+  active: () => api.get('/personas/active'),
+};
+
 export const healthApi = {
   check: () => axios.get(`${API_BASE}/health`, { headers: { 'Authorization': `Bearer ${API_KEY}` } }),
 };
