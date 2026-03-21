@@ -1,7 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
-import GraphVisualization from '@/components/GraphVisualization';
+import GraphVisualization, { LayoutMode, ColorMode } from '@/components/GraphVisualization';
 import { useProject } from '@/lib/ProjectContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi } from '@/lib/api';
@@ -134,6 +135,16 @@ export default function NetworkPage() {
   const [mergePrimaryId, setMergePrimaryId] = useState<string>('');
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
+  // Relationship type filter
+  const [hiddenRelTypes, setHiddenRelTypes] = useState<Set<string>>(new Set());
+  const [relFilterOpen, setRelFilterOpen] = useState(false);
+  // Confidence threshold
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0);
+  // Layout mode
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('force');
+  // Color mode and community data
+  const [colorMode, setColorMode] = useState<ColorMode>('type');
+  const [communityMap, setCommunityMap] = useState<Record<string, number>>({});
 
   const loadGraph = useCallback(async () => {
     if (!activeProject) return;
@@ -175,38 +186,112 @@ export default function NetworkPage() {
     }
   }, [activeProject]);
 
+  const loadCommunities = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      const res = await graphApi.communities(activeProject.id);
+      const data = res.data;
+      // Expect array of { entity_id, community } or { nodes: [...] } or similar
+      const map: Record<string, number> = {};
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          if (item.entity_id && item.community !== undefined) {
+            map[item.entity_id] = item.community;
+          } else if (item.id && item.community !== undefined) {
+            map[item.id] = item.community;
+          }
+        }
+      } else if (data && typeof data === 'object') {
+        // Could be { communities: [...] } or { nodes: [...] }
+        const arr = data.communities || data.nodes || [];
+        for (const item of arr) {
+          if (item.entity_id !== undefined && item.community !== undefined) {
+            map[item.entity_id] = item.community;
+          } else if (item.id !== undefined && item.community !== undefined) {
+            map[item.id] = item.community;
+          }
+        }
+      }
+      setCommunityMap(map);
+    } catch (e) {
+      console.error('Failed to load communities', e);
+    }
+  }, [activeProject]);
+
   useEffect(() => {
     loadGraph();
     loadEntities();
     loadStatistics();
-  }, [loadGraph, loadEntities, loadStatistics]);
+    loadCommunities();
+  }, [loadGraph, loadEntities, loadStatistics, loadCommunities]);
 
-  // Island method: filter graph by degree threshold
+  // Derive all unique relationship types from graph edges
+  const allRelTypes = Array.from(new Set(graphEdges.map(e => e.rel_type).filter(Boolean))).sort();
+
+  function toggleRelType(relType: string) {
+    setHiddenRelTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(relType)) {
+        next.delete(relType);
+      } else {
+        next.add(relType);
+      }
+      return next;
+    });
+  }
+
+  // Combined filter: island threshold + relationship type + confidence
   useEffect(() => {
-    if (islandThreshold === 0) {
-      setFilteredGraphNodes(graphNodes);
-      setFilteredGraphEdges(graphEdges);
-      return;
+    // First filter edges by relationship type and confidence
+    let edges = graphEdges.filter(e => {
+      if (hiddenRelTypes.has(e.rel_type)) return false;
+      if (confidenceThreshold > 0 && (e.confidence === undefined || e.confidence < confidenceThreshold)) return false;
+      return true;
+    });
+
+    // Then apply island threshold
+    if (islandThreshold > 0) {
+      const degreeMap: Record<string, number> = {};
+      for (const node of graphNodes) {
+        degreeMap[node.id] = 0;
+      }
+      for (const edge of edges) {
+        const srcId = edge.source_id || edge.source;
+        const tgtId = edge.target_id || edge.target;
+        if (degreeMap[srcId] !== undefined) degreeMap[srcId]++;
+        if (degreeMap[tgtId] !== undefined) degreeMap[tgtId]++;
+      }
+      const visibleIds = new Set(graphNodes.filter(n => degreeMap[n.id] >= islandThreshold).map(n => n.id));
+      setFilteredGraphNodes(graphNodes.filter(n => visibleIds.has(n.id)));
+      edges = edges.filter(e => {
+        const srcId = e.source_id || e.source;
+        const tgtId = e.target_id || e.target;
+        return visibleIds.has(srcId) && visibleIds.has(tgtId);
+      });
+    } else {
+      // Still need to filter out orphan nodes if edges were removed
+      const connectedIds = new Set<string>();
+      for (const edge of edges) {
+        connectedIds.add(String(edge.source_id || edge.source));
+        connectedIds.add(String(edge.target_id || edge.target));
+      }
+      // Show all nodes if no edge filtering is active, otherwise show only connected + originally isolated
+      if (hiddenRelTypes.size === 0 && confidenceThreshold === 0) {
+        setFilteredGraphNodes(graphNodes);
+      } else {
+        // Show nodes that are connected after filtering, plus nodes that had no edges at all originally
+        const originallyConnected = new Set<string>();
+        for (const e of graphEdges) {
+          originallyConnected.add(String(e.source_id || e.source));
+          originallyConnected.add(String(e.target_id || e.target));
+        }
+        setFilteredGraphNodes(graphNodes.filter(n =>
+          connectedIds.has(n.id) || !originallyConnected.has(n.id)
+        ));
+      }
     }
-    // Count degree per node
-    const degreeMap: Record<string, number> = {};
-    for (const node of graphNodes) {
-      degreeMap[node.id] = 0;
-    }
-    for (const edge of graphEdges) {
-      const srcId = edge.source_id || edge.source;
-      const tgtId = edge.target_id || edge.target;
-      if (degreeMap[srcId] !== undefined) degreeMap[srcId]++;
-      if (degreeMap[tgtId] !== undefined) degreeMap[tgtId]++;
-    }
-    const visibleIds = new Set(graphNodes.filter(n => degreeMap[n.id] >= islandThreshold).map(n => n.id));
-    setFilteredGraphNodes(graphNodes.filter(n => visibleIds.has(n.id)));
-    setFilteredGraphEdges(graphEdges.filter(e => {
-      const srcId = e.source_id || e.source;
-      const tgtId = e.target_id || e.target;
-      return visibleIds.has(srcId) && visibleIds.has(tgtId);
-    }));
-  }, [graphNodes, graphEdges, islandThreshold]);
+    setFilteredGraphEdges(edges);
+  }, [graphNodes, graphEdges, islandThreshold, hiddenRelTypes, confidenceThreshold]);
 
   function handleShiftNodeClick(node: GraphNode, shiftKey: boolean) {
     if (shiftKey) {
@@ -629,6 +714,145 @@ export default function NetworkPage() {
           </div>
         </div>
 
+        {/* Toolbar row: filters, layout, coloring */}
+        <div className="flex-none px-4 py-1.5 border-b border-navy-600 bg-navy-800/80 flex items-center gap-3 flex-wrap">
+          {/* Relationship Filter */}
+          <div className="relative">
+            <button
+              onClick={() => setRelFilterOpen(!relFilterOpen)}
+              className="flex items-center gap-1.5 bg-navy-700 hover:bg-navy-600 border border-navy-600 rounded px-2.5 py-1 text-xs text-gray-300 transition-colors"
+            >
+              <span>Rel Filter</span>
+              {hiddenRelTypes.size > 0 && (
+                <span className="bg-accent-blue text-white rounded-full px-1.5 text-[10px] font-bold">{hiddenRelTypes.size}</span>
+              )}
+              <span className="text-gray-500 text-[10px]">{relFilterOpen ? '\u25B2' : '\u25BC'}</span>
+            </button>
+            {relFilterOpen && (
+              <div className="absolute z-20 mt-1 bg-navy-700 border border-navy-600 rounded shadow-lg max-h-56 overflow-y-auto w-56">
+                {allRelTypes.length === 0 ? (
+                  <p className="text-xs text-gray-500 p-2">No relationships found.</p>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between px-2 py-1 border-b border-navy-600">
+                      <button
+                        onClick={() => setHiddenRelTypes(new Set())}
+                        className="text-[10px] text-accent-blue hover:underline"
+                      >
+                        Show All
+                      </button>
+                      <button
+                        onClick={() => setHiddenRelTypes(new Set(allRelTypes))}
+                        className="text-[10px] text-gray-400 hover:underline"
+                      >
+                        Hide All
+                      </button>
+                    </div>
+                    {allRelTypes.map(rt => (
+                      <label key={rt} className="flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-navy-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!hiddenRelTypes.has(rt)}
+                          onChange={() => toggleRelType(rt)}
+                          className="accent-accent-blue rounded"
+                        />
+                        <span className={hiddenRelTypes.has(rt) ? 'text-gray-500 line-through' : 'text-gray-200'}>{rt}</span>
+                      </label>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Active filter chips */}
+          {hiddenRelTypes.size > 0 && (
+            <div className="flex items-center gap-1 flex-wrap">
+              {Array.from(hiddenRelTypes).map(rt => (
+                <button
+                  key={rt}
+                  onClick={() => toggleRelType(rt)}
+                  className="flex items-center gap-1 bg-red-900/40 text-red-300 border border-red-800/50 rounded-full px-2 py-0.5 text-[10px] hover:bg-red-900/60 transition-colors"
+                >
+                  <span>{rt}</span>
+                  <span className="font-bold">&times;</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Divider */}
+          <div className="w-px h-5 bg-navy-600" />
+
+          {/* Confidence Threshold */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-400 whitespace-nowrap">Min Confidence</label>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={confidenceThreshold}
+              onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
+              className="w-20 accent-accent-blue"
+            />
+            <span className="text-xs text-accent-blue font-medium w-8">{confidenceThreshold.toFixed(2)}</span>
+          </div>
+
+          {/* Divider */}
+          <div className="w-px h-5 bg-navy-600" />
+
+          {/* Layout Selector */}
+          <div className="flex items-center gap-1.5">
+            <label className="text-xs text-gray-400">Layout</label>
+            <div className="flex rounded overflow-hidden border border-navy-600">
+              {([
+                ['force', 'Force-Directed'],
+                ['radial', 'Radial'],
+                ['hierarchical', 'Hierarchical'],
+              ] as [LayoutMode, string][]).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  onClick={() => setLayoutMode(mode)}
+                  className={`px-2 py-1 text-[11px] transition-colors ${
+                    layoutMode === mode
+                      ? 'bg-accent-blue text-white'
+                      : 'bg-navy-700 text-gray-400 hover:bg-navy-600 hover:text-gray-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="w-px h-5 bg-navy-600" />
+
+          {/* Color Mode Toggle */}
+          <div className="flex items-center gap-1.5">
+            <label className="text-xs text-gray-400">Color by</label>
+            <div className="flex rounded overflow-hidden border border-navy-600">
+              {([
+                ['type', 'Type'],
+                ['community', 'Community'],
+              ] as [ColorMode, string][]).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  onClick={() => setColorMode(mode)}
+                  className={`px-2 py-1 text-[11px] transition-colors ${
+                    colorMode === mode
+                      ? 'bg-accent-blue text-white'
+                      : 'bg-navy-700 text-gray-400 hover:bg-navy-600 hover:text-gray-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
         {/* Main content area */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left sidebar - Entity list / Statistics */}
@@ -807,6 +1031,9 @@ export default function NetworkPage() {
                       edges={filteredGraphEdges}
                       onNodeClick={handleNodeClick}
                       selectedNodeId={selectedEntity?.id}
+                      layout={layoutMode}
+                      colorMode={colorMode}
+                      communityMap={communityMap}
                     />
                   ) : (
                     <div className="flex items-center justify-center h-full text-gray-500">
@@ -1091,17 +1318,31 @@ export default function NetworkPage() {
                   <div>
                     <h4 className="text-sm font-semibold text-gray-400 mb-2">Relationships ({entityRelationships.length})</h4>
                     <div className="space-y-1">
-                      {entityRelationships.map((rel, i) => (
+                      {entityRelationships.map((rel, i) => {
+                        const conf = rel.confidence;
+                        const confBarColor = conf !== undefined
+                          ? conf >= 0.8 ? 'bg-green-500'
+                          : conf >= 0.5 ? 'bg-accent-blue'
+                          : conf >= 0.3 ? 'bg-yellow-500'
+                          : 'bg-red-500'
+                          : '';
+                        return (
                         <div key={i} className="text-xs bg-navy-700 rounded p-2">
                           <span className="text-accent-blue">{rel.rel_type}</span>
-                          {rel.confidence !== undefined && (
-                            <span className="text-gray-500 ml-2">({(rel.confidence * 100).toFixed(0)}%)</span>
+                          {conf !== undefined && (
+                            <span className="text-gray-500 ml-2">({(conf * 100).toFixed(0)}%)</span>
+                          )}
+                          {conf !== undefined && (
+                            <div className="w-full bg-navy-800 rounded-full h-1.5 mt-1">
+                              <div className={`${confBarColor} h-1.5 rounded-full transition-all`} style={{ width: `${conf * 100}%` }} />
+                            </div>
                           )}
                           <div className="text-gray-400 mt-0.5">
                             {rel.source_name || rel.source_id} &rarr; {rel.target_name || rel.target_id}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
