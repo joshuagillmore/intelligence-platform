@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
 import { timelineApi } from '@/lib/api';
 
@@ -153,7 +154,7 @@ export default function TimelinePage() {
           {/* Timeline content */}
           <div className="flex-1 overflow-y-auto p-6">
             {loading && events.length === 0 ? (
-              <div className="text-center text-gray-500 mt-8">Loading timeline...</div>
+              <div className="mt-8"><LoadingSpinner size="lg" /></div>
             ) : filtered.length === 0 ? (
               <div className="text-center text-gray-500 mt-8">No events to display.</div>
             ) : (

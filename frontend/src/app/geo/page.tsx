@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
 import { geoApi, queryApi, entitiesApi } from '@/lib/api';
 
@@ -154,7 +155,7 @@ export default function GeoPage() {
           {/* Map */}
           <div className="flex-1 bg-navy-800 border border-navy-600 rounded-lg overflow-hidden">
             {loading ? (
-              <div className="w-full h-full flex items-center justify-center text-gray-500">Loading locations...</div>
+              <div className="w-full h-full flex items-center justify-center"><LoadingSpinner size="lg" /></div>
             ) : (
               <GeoMap
                 locations={locations}

@@ -3,6 +3,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import GraphVisualization from '@/components/GraphVisualization';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
 import { entitiesApi, graphApi } from '@/lib/api';
 
@@ -77,9 +78,11 @@ export default function CyberPage() {
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
   const [selectedGraphNode, setSelectedGraphNode] = useState<string | null>(null);
+  const [iocsLoading, setIocsLoading] = useState(false);
 
   const loadIOCs = useCallback(async () => {
     if (!activeProject) return;
+    setIocsLoading(true);
     const allIocs: IOCEntity[] = [];
     for (const type of IOC_TYPES) {
       try {
@@ -88,6 +91,7 @@ export default function CyberPage() {
       } catch { /* type may not exist */ }
     }
     setIocs(allIocs);
+    setIocsLoading(false);
   }, [activeProject]);
 
   const loadGraph = useCallback(async () => {
@@ -210,6 +214,9 @@ export default function CyberPage() {
           {/* Left: IOC table (55%) */}
           <div className="w-[55%] overflow-hidden flex flex-col">
             <div className="bg-navy-800 border border-navy-600 rounded-lg overflow-hidden flex-1 overflow-y-auto">
+              {iocsLoading ? (
+                <LoadingSpinner size="lg" />
+              ) : (
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-navy-800 z-10">
                   <tr className="border-b border-navy-600 text-left">
@@ -300,7 +307,8 @@ export default function CyberPage() {
                   })}
                 </tbody>
               </table>
-              {filteredIocs.length === 0 && (
+              )}
+              {!iocsLoading && filteredIocs.length === 0 && (
                 <p className="text-gray-500 text-sm p-4 text-center">No IOCs found{activeFilter !== 'all' ? ` for type "${activeFilter}"` : ' in project'}.</p>
               )}
             </div>

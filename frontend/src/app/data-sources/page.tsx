@@ -1,8 +1,10 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
 import { topicsApi, queryApi } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errorMessages';
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 
@@ -85,6 +87,7 @@ export default function DataSourcesPage() {
   const { activeProject } = useProject();
   const [tree, setTree] = useState<TopicTree>({});
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Expansion state: track which branches + sub-nodes are expanded
   const [expandedBranches, setExpandedBranches] = useState<Set<string>>(new Set());
@@ -103,6 +106,7 @@ export default function DataSourcesPage() {
   const loadTopics = useCallback(async () => {
     if (!activeProject) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await topicsApi.tree(activeProject.id);
       const data = res.data;
@@ -136,6 +140,7 @@ export default function DataSourcesPage() {
       }
     } catch (e) {
       console.error('Failed to load topics', e);
+      setLoadError(getErrorMessage(e));
       setTree({});
     } finally {
       setLoading(false);
@@ -234,7 +239,12 @@ export default function DataSourcesPage() {
           </div>
           <div className="flex-1 overflow-y-auto">
             {loading ? (
-              <div className="p-4 text-center text-gray-500 text-sm">Loading topics...</div>
+              <div className="p-4"><LoadingSpinner /></div>
+            ) : loadError ? (
+              <div className="p-4 text-center text-sm">
+                <p className="text-red-400 mb-2">{loadError}</p>
+                <button onClick={loadTopics} className="text-xs text-accent-blue hover:underline">Retry</button>
+              </div>
             ) : !hasData ? (
               <div className="p-4 text-center text-gray-500 text-sm">No topics found. Ingest documents to populate.</div>
             ) : (

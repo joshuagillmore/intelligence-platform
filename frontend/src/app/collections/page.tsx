@@ -1,8 +1,10 @@
 'use client';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { collectionsApi, ingestApi } from '@/lib/api';
+import { collectionsApi, ingestApi, llmApi } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errorMessages';
 
 interface Collection {
   id: string;
@@ -11,6 +13,11 @@ interface Collection {
   project_id: string;
   created_at?: string;
   results?: unknown;
+}
+
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 const EXTRACTION_MODES = [
@@ -23,6 +30,7 @@ export default function CollectionsPage() {
   const { activeProject } = useProject();
   const [pir, setPir] = useState('');
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [collectionsLoading, setCollectionsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -30,6 +38,12 @@ export default function CollectionsPage() {
   const [uploadReliability, setUploadReliability] = useState('C3');
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+
+  // PIR Assistant state
+  const [assistantMessages, setAssistantMessages] = useState<ChatMessage[]>([]);
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // File upload state
   const [fileUploadOpen, setFileUploadOpen] = useState(false);
@@ -42,17 +56,25 @@ export default function CollectionsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadCollections = useCallback(async () => {
+    setCollectionsLoading(true);
     try {
       const res = await collectionsApi.list();
       setCollections(res.data);
     } catch (e) {
       console.error('Failed to load collections', e);
+    } finally {
+      setCollectionsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     loadCollections();
   }, [loadCollections]);
+
+  // Scroll chat to bottom when new messages arrive
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [assistantMessages]);
 
   // Poll active tasks
   useEffect(() => {
@@ -72,6 +94,47 @@ export default function CollectionsPage() {
     return () => clearInterval(interval);
   }, [collections]);
 
+  async function refinePirWithAI() {
+    if (!pir.trim()) return;
+    const userMsg: ChatMessage = { role: 'user', content: pir.trim() };
+    setAssistantMessages(prev => [...prev, userMsg]);
+    setAssistantLoading(true);
+    setAssistantError(null);
+    try {
+      const res = await llmApi.query(
+        [{ role: 'user', content: pir.trim() }],
+        'collection_planning'
+      );
+      const answer = res.data?.response || res.data?.answer || res.data?.content || JSON.stringify(res.data);
+      const aiMsg: ChatMessage = { role: 'assistant', content: answer };
+      setAssistantMessages(prev => [...prev, aiMsg]);
+    } catch (e) {
+      setAssistantError(getErrorMessage(e));
+    } finally {
+      setAssistantLoading(false);
+    }
+  }
+
+  async function acceptPlan() {
+    if (!activeProject || assistantMessages.length === 0) return;
+    // Get the last assistant message as the plan
+    const lastAI = [...assistantMessages].reverse().find(m => m.role === 'assistant');
+    if (!lastAI) return;
+    const planPir = `${pir.trim()}\n\n--- Collection Plan ---\n${lastAI.content}`;
+    setLoading(true);
+    setError(null);
+    try {
+      await collectionsApi.create({ project_id: activeProject.id, pir: planPir });
+      setPir('');
+      setAssistantMessages([]);
+      loadCollections();
+    } catch (e) {
+      setError(getErrorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function createCollection() {
     if (!pir.trim() || !activeProject) return;
     setLoading(true);
@@ -80,8 +143,8 @@ export default function CollectionsPage() {
       await collectionsApi.create({ project_id: activeProject.id, pir: pir.trim() });
       setPir('');
       loadCollections();
-    } catch {
-      setError('Failed to create collection task.');
+    } catch (e) {
+      setError(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -98,8 +161,8 @@ export default function CollectionsPage() {
       const relCount = d?.relationships_created ?? 0;
       setUploadContent('');
       setUploadMsg(`Document ingested successfully. ${entityCount} entities created, ${relCount} relationships found.`);
-    } catch {
-      setUploadMsg('Failed to ingest document.');
+    } catch (e) {
+      setUploadMsg(getErrorMessage(e));
     } finally {
       setUploading(false);
     }
@@ -142,8 +205,8 @@ export default function CollectionsPage() {
       }
       setSelectedFiles([]);
       if (fileInputRef.current) fileInputRef.current.value = '';
-    } catch {
-      setFileUploadMsg('Failed to upload file(s). Check file format and try again.');
+    } catch (e) {
+      setFileUploadMsg(getErrorMessage(e));
     } finally {
       setFileUploading(false);
     }
@@ -189,14 +252,65 @@ export default function CollectionsPage() {
             className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm h-32 focus:outline-none focus:border-accent-blue resize-none"
           />
           {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
-          <button
-            onClick={createCollection}
-            disabled={loading || !pir.trim()}
-            className="mt-3 bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
-          >
-            {loading ? 'Creating...' : 'Create Collection'}
-          </button>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={createCollection}
+              disabled={loading || !pir.trim()}
+              className="bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
+            >
+              {loading ? 'Creating...' : 'Create Collection'}
+            </button>
+            <button
+              onClick={refinePirWithAI}
+              disabled={assistantLoading || !pir.trim()}
+              className="bg-navy-600 hover:bg-navy-500 text-accent-blue border border-accent-blue/30 px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
+            >
+              {assistantLoading ? 'Refining...' : 'Refine with AI'}
+            </button>
+          </div>
         </div>
+
+        {/* PIR Assistant Chat */}
+        {(assistantMessages.length > 0 || assistantLoading || assistantError) && (
+          <div className="bg-navy-800 border border-navy-600 rounded-lg p-6 mb-6">
+            <h3 className="text-sm font-semibold text-gray-400 mb-3">PIR Assistant</h3>
+            <div className="space-y-3 max-h-96 overflow-y-auto mb-3">
+              {assistantMessages.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`max-w-[80%] rounded-lg px-4 py-3 text-sm ${
+                      msg.role === 'user'
+                        ? 'bg-accent-blue/20 border border-accent-blue/30 text-gray-200'
+                        : 'bg-navy-700 border border-navy-600 text-gray-300'
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+                </div>
+              ))}
+              {assistantLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-navy-700 border border-navy-600 rounded-lg px-4 py-3">
+                    <LoadingSpinner size="sm" />
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+            {assistantError && (
+              <p className="text-red-400 text-xs mb-3">{assistantError}</p>
+            )}
+            {assistantMessages.some(m => m.role === 'assistant') && (
+              <button
+                onClick={acceptPlan}
+                disabled={loading}
+                className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
+              >
+                {loading ? 'Creating...' : 'Accept Plan'}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* File Upload Section */}
         <div className="bg-navy-800 border border-navy-600 rounded-lg mb-6">
@@ -295,7 +409,7 @@ export default function CollectionsPage() {
                 </button>
               </div>
               {fileUploadMsg && (
-                <p className={`text-xs mt-2 ${fileUploadMsg.includes('success') ? 'text-green-400' : 'text-red-400'}`}>
+                <p className={`text-xs mt-2 ${fileUploadMsg.includes('ingested') || fileUploadMsg.includes('success') ? 'text-green-400' : 'text-red-400'}`}>
                   {fileUploadMsg}
                 </p>
               )}
@@ -362,24 +476,31 @@ export default function CollectionsPage() {
         </div>
 
         <h3 className="text-lg font-semibold mb-4">Collection Tasks</h3>
-        <div className="space-y-3">
-          {collections.map((col) => (
-            <div key={col.id} className="bg-navy-800 border border-navy-600 rounded-lg p-4">
-              <div className="flex items-start justify-between">
-                <p className="text-sm text-gray-200 flex-1">{col.pir}</p>
-                <span className={`text-xs px-2 py-0.5 rounded ml-3 flex-none ${statusColor(col.status)}`}>
-                  {col.status}
-                </span>
+        {collectionsLoading ? (
+          <LoadingSpinner />
+        ) : (
+          <div className="space-y-3">
+            {collections.map((col) => (
+              <div key={col.id} className="bg-navy-800 border border-navy-600 rounded-lg p-4">
+                <div className="flex items-start justify-between">
+                  <p className="text-sm text-gray-200 flex-1">{col.pir}</p>
+                  <span className={`text-xs px-2 py-0.5 rounded ml-3 flex-none ${statusColor(col.status)}`}>
+                    {col.status}
+                  </span>
+                </div>
+                {col.created_at && (
+                  <p className="text-xs text-gray-500 mt-2">{new Date(col.created_at).toLocaleString()}</p>
+                )}
               </div>
-              {col.created_at && (
-                <p className="text-xs text-gray-500 mt-2">{new Date(col.created_at).toLocaleString()}</p>
-              )}
-            </div>
-          ))}
-          {collections.length === 0 && (
-            <p className="text-gray-500 text-sm">No collection tasks yet.</p>
-          )}
-        </div>
+            ))}
+            {collections.length === 0 && (
+              <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center">
+                <p className="text-gray-500 text-sm mb-2">No collection tasks yet.</p>
+                <p className="text-gray-600 text-xs">Enter a PIR above and click &quot;Create Collection&quot; or use &quot;Refine with AI&quot; to build a structured plan.</p>
+              </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );
