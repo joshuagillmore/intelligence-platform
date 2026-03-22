@@ -396,7 +396,7 @@ PIR: ${pir.trim()}` }],
     return (
       <div className="flex">
         <Sidebar />
-        <main className="ml-56 flex-1 p-8">
+        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
           <h2 className="text-2xl font-bold mb-4">Collections</h2>
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
             <p>Select a project first.</p>
@@ -409,7 +409,7 @@ PIR: ${pir.trim()}` }],
   return (
     <div className="flex">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8 overflow-y-auto h-screen space-y-8">
+      <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8 overflow-y-auto h-screen space-y-8">
 
         {/* Section 1: Collection Initiation (Chat Interface) */}
         <section className="max-w-5xl mx-auto">
@@ -471,14 +471,14 @@ PIR: ${pir.trim()}` }],
                       if (pir.trim()) createCollection();
                     }
                   }}
-                  className="w-full bg-[#1a1f2e] border-none focus:ring-1 focus:ring-[#adc6ff] text-sm py-4 pl-6 pr-48 rounded font-medium placeholder:text-gray-600 placeholder:italic transition-all"
+                  className="w-full bg-[#1a1f2e] border-none focus:ring-1 focus:ring-[#adc6ff] text-sm py-4 pl-4 pr-4 md:pl-6 md:pr-48 rounded font-medium placeholder:text-gray-600 placeholder:italic transition-all"
                   placeholder="Enter your Priority Intelligence Requirement..."
                 />
-                <div className="absolute right-2 top-2 bottom-2 flex gap-2">
+                <div className="relative mt-2 flex gap-2 md:absolute md:mt-0 md:right-2 md:top-2 md:bottom-2">
                   <button
                     onClick={refinePirWithAI}
                     disabled={assistantLoading || !pir.trim()}
-                    className="bg-[#252a39] hover:bg-[#2f3444] text-[#adc6ff] border border-[#adc6ff]/30 px-3 rounded text-[10px] font-bold transition-all disabled:opacity-50 uppercase tracking-wider"
+                    className="bg-[#252a39] hover:bg-[#2f3444] text-[#adc6ff] border border-[#adc6ff]/30 px-3 py-2 md:py-0 rounded text-[10px] font-bold transition-all disabled:opacity-50 uppercase tracking-wider"
                   >
                     Refine
                   </button>
@@ -492,7 +492,7 @@ PIR: ${pir.trim()}` }],
                   <button
                     onClick={createCollection}
                     disabled={loading || !pir.trim()}
-                    className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-4 rounded text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-2"
+                    className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-4 py-2 md:py-0 rounded text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-2"
                   >
                     EXECUTE
                     <span className="material-symbols-outlined text-xs">send</span>
@@ -522,8 +522,8 @@ PIR: ${pir.trim()}` }],
                 <LoadingSpinner size="sm" /> Parsing plan...
               </div>
             ) : (
-              <div className="bg-[#161b2a] rounded overflow-hidden">
-                <table className="w-full text-left border-separate border-spacing-y-1">
+              <div className="bg-[#161b2a] rounded overflow-x-auto">
+                <table className="w-full text-left border-separate border-spacing-y-1 min-w-[600px]">
                   <thead className="bg-[#2f3444]">
                     <tr>
                       <th className="px-6 py-3 text-[10px] font-bold text-gray-400 tracking-widest uppercase">Source Type</th>
@@ -565,14 +565,14 @@ PIR: ${pir.trim()}` }],
                     ))}
                   </tbody>
                 </table>
-                <div className="p-6 bg-[#161b2a] flex justify-between items-center">
+                <div className="p-4 md:p-6 bg-[#161b2a] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                   <div className="flex gap-4">
                     <div className="flex flex-col">
                       <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Approved Items</span>
                       <span className="text-xs font-mono text-[#adc6ff]">{planItems.filter(i => i.approved).length} of {planItems.length}</span>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button onClick={approveAllPlanItems} className="bg-[#252a39] border border-green-500/30 text-green-400 px-4 py-2 rounded text-[10px] font-bold tracking-widest uppercase hover:bg-green-900/20 transition-all">
                       Approve All
                     </button>
@@ -819,7 +819,7 @@ PIR: ${pir.trim()}` }],
 
                     {isExpanded && (
                       <div className="border-t border-[#252a39] p-4 space-y-4 bg-[#0d1220]">
-                        <div className="grid grid-cols-2 gap-4 text-xs">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                           <div>
                             <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">PIR</span>
                             <p className="text-gray-300 whitespace-pre-wrap">{col.pir}</p>

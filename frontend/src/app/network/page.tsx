@@ -166,6 +166,8 @@ function NetworkPageInner() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [relEvidenceData, setRelEvidenceData] = useState<Record<number, any[]>>({});
   const [relEvidenceLoading, setRelEvidenceLoading] = useState<Record<number, boolean>>({});
+  const [mobileLeftOpen, setMobileLeftOpen] = useState(false);
+  const [mobileRightOpen, setMobileRightOpen] = useState(false);
   const networkRouter = useRouter();
   const searchParams = useSearchParams();
   const selectParam = searchParams.get('select');
@@ -903,7 +905,7 @@ function NetworkPageInner() {
     return (
       <div className="flex">
         <Sidebar />
-        <main className="ml-56 flex-1 p-8">
+        <main className="md:ml-56 flex-1 p-8 pt-14 md:pt-8">
           <h2 className="text-2xl font-bold mb-4">Network Analysis</h2>
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
             <p className="text-lg mb-2">No Project Selected</p>
@@ -921,7 +923,7 @@ function NetworkPageInner() {
   return (
     <div className="flex overflow-hidden" style={{ height: 'calc(100vh - 28px)' }}>
       <Sidebar />
-      <div className="ml-56 flex-1 flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 28px)' }}>
+      <div className="md:ml-56 flex-1 flex flex-col overflow-hidden pt-14 md:pt-0" style={{ height: 'calc(100vh - 28px)' }}>
         {/* Top bar */}
         <div className="flex-none px-4 py-2 border-b border-navy-600 bg-navy-800 flex items-center justify-between">
           <h2 className="text-lg font-bold">Network Analysis</h2>
@@ -1155,7 +1157,11 @@ function NetworkPageInner() {
         {/* Main content area */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left sidebar - Entity list / Statistics */}
-          <div className="w-64 flex-none bg-navy-800 border-r border-navy-600 flex flex-col overflow-hidden">
+          <div className={`${mobileLeftOpen ? 'fixed inset-0 z-40 w-full' : 'hidden'} md:relative md:block md:w-64 flex-none bg-navy-800 border-r border-navy-600 flex flex-col overflow-hidden`}>
+            {/* Mobile close button */}
+            <button onClick={() => setMobileLeftOpen(false)} className="md:hidden absolute top-2 right-2 z-50 text-gray-400 hover:text-white p-1">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+            </button>
             {/* Tab toggle */}
             <div className="flex border-b border-navy-600">
               <button

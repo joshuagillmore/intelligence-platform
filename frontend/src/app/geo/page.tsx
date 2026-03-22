@@ -229,7 +229,7 @@ export default function GeoPage() {
     return (
       <div className="flex">
         <Sidebar />
-        <main className="ml-56 flex-1 p-8">
+        <main className="md:ml-56 flex-1 p-8 pt-14 md:pt-8">
           <h2 className="text-2xl font-bold mb-4">Geo-Intelligence</h2>
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
             <p>Select a project first.</p>
@@ -242,9 +242,9 @@ export default function GeoPage() {
   return (
     <div className="flex">
       <Sidebar />
-      <main className="ml-56 flex-1 flex h-screen overflow-hidden" style={{ background: C.surface }}>
+      <main className="md:ml-56 flex-1 flex flex-col md:flex-row h-screen overflow-hidden pt-14 md:pt-0" style={{ background: C.surface }}>
         {/* ═══════════════ MAP AREA (75%) ═══════════════ */}
-        <div className="relative" style={{ width: '75%' }}>
+        <div className="relative w-full md:w-[75%] min-h-[50vh] md:min-h-0 md:h-full">
           {/* Map */}
           <div className="w-full h-full">
             {loading ? (
@@ -271,7 +271,7 @@ export default function GeoPage() {
 
           {/* ── Layer Control (floating top-left) ── */}
           <div
-            className="absolute top-4 left-4 rounded-lg p-4 w-52 shadow-xl"
+            className="absolute top-4 left-4 rounded-lg p-4 w-52 shadow-xl hidden md:block"
             style={{ background: C.elevated, border: `1px solid ${C.border}` }}
           >
             <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: C.textDim }}>
@@ -306,7 +306,7 @@ export default function GeoPage() {
 
           {/* ── Temporal Window (below layer control) ── */}
           <div
-            className="absolute top-64 left-4 rounded-lg p-4 w-52 shadow-xl"
+            className="absolute top-64 left-4 rounded-lg p-4 w-52 shadow-xl hidden md:block"
             style={{ background: C.elevated, border: `1px solid ${C.border}` }}
           >
             <h4 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: C.textDim }}>
@@ -342,7 +342,7 @@ export default function GeoPage() {
           </div>
 
           {/* ── Stats overlay (top-right of map) ── */}
-          <div className="absolute top-4 right-4 flex gap-2 text-xs">
+          <div className="absolute top-4 right-4 flex flex-wrap gap-2 text-xs">
             <span className="px-3 py-1.5 rounded-md" style={{ background: C.elevated, border: `1px solid ${C.border}`, color: C.textDim }}>
               {locations.length} Locations
             </span>
@@ -444,8 +444,8 @@ export default function GeoPage() {
 
         {/* ═══════════════ RIGHT SIDEBAR (25%) ═══════════════ */}
         <div
-          className="flex flex-col h-full overflow-y-auto"
-          style={{ width: '25%', background: C.sidebarBg, borderLeft: `1px solid ${C.border}` }}
+          className="flex flex-col w-full md:w-[25%] h-auto md:h-full overflow-y-auto pb-16 md:pb-0 border-t md:border-t-0 md:border-l"
+          style={{ background: C.sidebarBg, borderColor: C.border }}
         >
           <div className="p-5 flex flex-col gap-5 flex-1">
             {selectedLocation ? (
