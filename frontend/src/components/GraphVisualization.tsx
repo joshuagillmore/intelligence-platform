@@ -1,8 +1,8 @@
 'use client';
-import { useEffect, useRef, useCallback, useMemo } from 'react';
+import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
-interface GraphNode {
+interface GraphNode extends d3.SimulationNodeDatum {
   id: string;
   name: string;
   entity_type: string;
@@ -12,19 +12,14 @@ interface GraphNode {
   degree?: number;
   members?: string[];
   isCommunity?: boolean;
-  x?: number;
-  y?: number;
-  fx?: number | null;
-  fy?: number | null;
 }
 
-interface GraphEdge {
-  source: string | GraphNode;
-  target: string | GraphNode;
+interface GraphEdge extends d3.SimulationLinkDatum<GraphNode> {
   source_id: string;
   target_id: string;
   rel_type: string;
   confidence?: number;
+  weight?: number;
 }
 
 export type LayoutMode = 'force' | 'radial' | 'hierarchical';
@@ -41,521 +36,160 @@ interface Props {
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  Person: '#f97316',
-  Organization: '#3b82f6',
-  Location: '#22c55e',
-  IPAddress: '#06b6d4',
-  Domain: '#a855f7',
-  Hash: '#ec4899',
-  ThreatActor: '#ef4444',
-  TTP: '#eab308',
-  Vulnerability: '#f43f5e',
-  Document: '#6b7280',
-  Assessment: '#14b8a6',
-  Technology: '#06b6d4',
-  Weapon: '#f43f5e',
-  Vehicle: '#8b5cf6',
-  Facility: '#84cc16',
-  Financial: '#f59e0b',
-  Infrastructure: '#64748b',
-  Software: '#0ea5e9',
-  Hardware: '#78716c',
-  MilitaryUnit: '#dc2626',
-  GovernmentAgency: '#2563eb',
-  Country: '#16a34a',
-  City: '#65a30d',
-  Region: '#059669',
-  Campaign: '#d946ef',
-  Malware: '#be123c',
-  Topic: '#7c3aed',
-  Report: '#475569',
-  Product: '#ea580c',
-  Custom: '#78716c',
-  Community: '#8b5cf6',
-};
-
-const CATEGORY_COLORS: Record<string, string> = {
-  Person: '#f97316',
-  Organization: '#3b82f6',
-  Location: '#22c55e',
-  Cyber: '#06b6d4',
-  Equipment: '#f43f5e',
-  Event: '#eab308',
-  Financial: '#f59e0b',
-  Intelligence: '#6b7280',
-  Campaign: '#ef4444',
-  Other: '#78716c',
+  Person: '#f97316', Organization: '#3b82f6', Location: '#22c55e',
+  IPAddress: '#06b6d4', Domain: '#a855f7', Hash: '#ec4899',
+  ThreatActor: '#ef4444', TTP: '#eab308', Vulnerability: '#f43f5e',
+  Document: '#6b7280', Assessment: '#14b8a6', Malware: '#be123c',
+  Campaign: '#d946ef', Community: '#8b5cf6', Technology: '#06b6d4',
+  Weapon: '#f43f5e', Facility: '#84cc16', Software: '#0ea5e9',
+  MilitaryUnit: '#dc2626', GovernmentAgency: '#2563eb',
+  Country: '#16a34a', City: '#65a30d', Custom: '#78716c',
 };
 
 const COMMUNITY_PALETTE = [
   '#f97316', '#3b82f6', '#22c55e', '#ef4444', '#a855f7',
   '#06b6d4', '#eab308', '#ec4899', '#14b8a6', '#f43f5e',
-  '#84cc16', '#8b5cf6', '#f59e0b', '#10b981', '#6366f1',
-  '#e11d48', '#0ea5e9', '#d946ef', '#78716c', '#fb923c',
 ];
 
-function getColor(entityType: string, entityCategory?: string): string {
-  return TYPE_COLORS[entityType] || CATEGORY_COLORS[entityCategory || ''] || CATEGORY_COLORS['Other'];
-}
-
-function getCommunityColor(communityId: number): string {
-  return COMMUNITY_PALETTE[communityId % COMMUNITY_PALETTE.length];
-}
-
-// Hierarchical Y tiers by entity type
-const HIERARCHY_TIERS: Record<string, number> = {
-  Person: 0,
-  ThreatActor: 0,
-  Organization: 1,
-  Event: 1,
-  Campaign: 1,
-  TTP: 2,
-  Vulnerability: 2,
-  Document: 2,
-  Hash: 3,
-  Malware: 3,
-  IPAddress: 4,
-  Domain: 4,
-  Location: 4,
-};
-
 export default function GraphVisualization({
-  nodes,
-  edges,
-  onNodeClick,
-  selectedNodeId,
-  layout = 'force',
-  colorMode = 'type',
-  communityMap,
+  nodes, edges, onNodeClick, selectedNodeId,
+  layout = 'force', colorMode = 'type', communityMap,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const simulationRef = useRef<d3.Simulation<GraphNode, GraphEdge> | null>(null);
+  const onClickRef = useRef(onNodeClick);
+  onClickRef.current = onNodeClick;
 
-  // Stable refs to avoid re-renders when parent creates new function/array references
-  const onNodeClickRef = useRef(onNodeClick);
-  onNodeClickRef.current = onNodeClick;
-  const nodesRef = useRef(nodes);
-  nodesRef.current = nodes;
-  const edgesRef = useRef(edges);
-  edgesRef.current = edges;
-
-  // Memoize node/edge identity strings - only changes when actual data changes
-  const nodeIdentity = useMemo(() => nodes.map(n => n.id).sort().join(','), [nodes]);
-  const edgeIdentity = useMemo(() => edges.map(e => (e.source_id || '') + '-' + (e.target_id || '')).sort().join(','), [edges]);
-
-  const render = useCallback(() => {
-    const nodes = nodesRef.current;
-    const edges = edgesRef.current;
+  useEffect(() => {
     if (!svgRef.current || nodes.length === 0) return;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
 
-    const width = svgRef.current.clientWidth;
-    const height = svgRef.current.clientHeight;
+    const width = svgRef.current.clientWidth || 800;
+    const height = svgRef.current.clientHeight || 600;
 
-    // Define glow filter for selected nodes
-    const defs = svg.append('defs');
-    const filter = defs.append('filter').attr('id', 'glow');
-    filter.append('feGaussianBlur').attr('stdDeviation', '3').attr('result', 'coloredBlur');
-    const feMerge = filter.append('feMerge');
-    feMerge.append('feMergeNode').attr('in', 'coloredBlur');
-    feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
-
-    // Container for zoom
-    const g = svg.append('g');
-
-    // Zoom behavior
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 4])
-      .on('zoom', (event) => {
-        g.attr('transform', event.transform);
-      });
-    svg.call(zoom);
-
-    // Prepare edge data mapping source_id/target_id to source/target for d3
-    const edgeData: GraphEdge[] = edges.map(e => ({
+    // DEEP COPY data to prevent D3 from mutating React state
+    const simNodes: GraphNode[] = nodes.map(n => ({ ...n }));
+    const simEdges: GraphEdge[] = edges.map(e => ({
       ...e,
       source: e.source_id,
       target: e.target_id,
     }));
 
     // Build degree map
-    const degreeMap: Record<string, number> = {};
+    const deg: Record<string, number> = {};
     edges.forEach(e => {
-      degreeMap[e.source_id] = (degreeMap[e.source_id] || 0) + 1;
-      degreeMap[e.target_id] = (degreeMap[e.target_id] || 0) + 1;
+      deg[e.source_id] = (deg[e.source_id] || 0) + 1;
+      deg[e.target_id] = (deg[e.target_id] || 0) + 1;
     });
+    const maxDeg = Math.max(1, ...Object.values(deg));
 
-    // Scale radius: min 5, max 20, based on degree
-    const maxDegree = Math.max(1, ...Object.values(degreeMap));
-    function nodeRadius(d: GraphNode): number {
-      if (d.isCommunity) {
-        const memberCount = d.members?.length || 2;
-        return Math.min(40, 15 + memberCount * 1.5);
-      }
-      const degree = degreeMap[d.id] || 0;
-      return 5 + (degree / maxDegree) * 15;
+    function radius(d: GraphNode): number {
+      if (d.isCommunity) return Math.min(35, 12 + (d.members?.length || 2) * 1.5);
+      return 5 + ((deg[d.id] || 0) / maxDeg) * 15;
     }
 
-    // Node color function based on colorMode
-    function nodeColor(d: GraphNode): string {
-      if (colorMode === 'community' && communityMap && communityMap[d.id] !== undefined) {
-        return getCommunityColor(communityMap[d.id]);
+    function color(d: GraphNode): string {
+      if (colorMode === 'community') {
+        const cid = communityMap?.[d.id] ?? d.community_id;
+        if (cid != null && cid >= 0) return COMMUNITY_PALETTE[cid % COMMUNITY_PALETTE.length];
       }
-      return getColor(d.entity_type, d.entity_category);
+      return TYPE_COLORS[d.entity_type] || '#78716c';
     }
 
-    // --- Layout-specific positioning ---
-    if (layout === 'radial') {
-      // Find center node: highest degree (proxy for PageRank when stats unavailable)
-      const sortedByDegree = [...nodes].sort((a, b) => (degreeMap[b.id] || 0) - (degreeMap[a.id] || 0));
-      const centerNode = sortedByDegree[0];
+    // Container with zoom
+    const g = svg.append('g');
+    svg.call(
+      d3.zoom<SVGSVGElement, unknown>()
+        .scaleExtent([0.1, 4])
+        .on('zoom', (event) => g.attr('transform', event.transform))
+    );
 
-      // BFS to assign rings
-      const visited = new Set<string>();
-      const ringMap: Record<string, number> = {};
-      const queue: { id: string; ring: number }[] = [{ id: centerNode.id, ring: 0 }];
-      visited.add(centerNode.id);
-      ringMap[centerNode.id] = 0;
-
-      // Build adjacency
-      const adj: Record<string, string[]> = {};
-      edges.forEach(e => {
-        if (!adj[e.source_id]) adj[e.source_id] = [];
-        if (!adj[e.target_id]) adj[e.target_id] = [];
-        adj[e.source_id].push(e.target_id);
-        adj[e.target_id].push(e.source_id);
-      });
-
-      while (queue.length > 0) {
-        const { id, ring } = queue.shift()!;
-        const neighbors = adj[id] || [];
-        for (const nid of neighbors) {
-          if (!visited.has(nid)) {
-            visited.add(nid);
-            ringMap[nid] = ring + 1;
-            queue.push({ id: nid, ring: ring + 1 });
-          }
-        }
-      }
-      // Assign unvisited nodes to max ring + 1
-      const maxRing = Math.max(0, ...Object.values(ringMap));
-      for (const node of nodes) {
-        if (ringMap[node.id] === undefined) {
-          ringMap[node.id] = maxRing + 1;
-        }
-      }
-
-      // Position nodes in concentric circles
-      const ringRadius = Math.min(width, height) / (2 * (maxRing + 2));
-      const ringCounts: Record<number, number> = {};
-      const ringIndices: Record<string, number> = {};
-      for (const node of nodes) {
-        const r = ringMap[node.id];
-        if (!ringCounts[r]) ringCounts[r] = 0;
-        ringIndices[node.id] = ringCounts[r];
-        ringCounts[r]++;
-      }
-
-      for (const node of nodes) {
-        const r = ringMap[node.id];
-        if (r === 0) {
-          node.fx = width / 2;
-          node.fy = height / 2;
-        } else {
-          const count = ringCounts[r];
-          const angle = (2 * Math.PI * ringIndices[node.id]) / count;
-          node.fx = width / 2 + r * ringRadius * Math.cos(angle);
-          node.fy = height / 2 + r * ringRadius * Math.sin(angle);
-        }
-        node.x = node.fx!;
-        node.y = node.fy!;
-      }
-    } else if (layout === 'hierarchical') {
-      // Group by tier
-      const tiers: Record<number, GraphNode[]> = {};
-      let maxTier = 0;
-      for (const node of nodes) {
-        const tier = HIERARCHY_TIERS[node.entity_type] ?? 2;
-        if (!tiers[tier]) tiers[tier] = [];
-        tiers[tier].push(node);
-        if (tier > maxTier) maxTier = tier;
-      }
-
-      const tierKeys = Object.keys(tiers).map(Number).sort((a, b) => a - b);
-      const rowHeight = height / (tierKeys.length + 1);
-
-      for (let ti = 0; ti < tierKeys.length; ti++) {
-        const tier = tierKeys[ti];
-        const row = tiers[tier];
-        const colWidth = width / (row.length + 1);
-        for (let ci = 0; ci < row.length; ci++) {
-          const node = row[ci];
-          node.fx = colWidth * (ci + 1);
-          node.fy = rowHeight * (ti + 1);
-          node.x = node.fx;
-          node.y = node.fy;
-        }
-      }
-    } else {
-      // Force layout: clear fixed positions
-      for (const node of nodes) {
-        node.fx = null;
-        node.fy = null;
-      }
-    }
-
-    const simulation = d3.forceSimulation<GraphNode>(nodes)
-      .force('link', d3.forceLink<GraphNode, GraphEdge>(edgeData).id(d => d.id).distance(80))
+    // Simulation
+    const sim = d3.forceSimulation<GraphNode>(simNodes)
+      .force('link', d3.forceLink<GraphNode, GraphEdge>(simEdges).id(d => d.id).distance(80))
       .force('charge', d3.forceManyBody().strength(-200))
       .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide<GraphNode>().radius(d => nodeRadius(d) + 10));
+      .force('collide', d3.forceCollide<GraphNode>().radius(d => radius(d) + 5));
 
-    // For non-force layouts, run simulation briefly then stop (edges still need linking)
-    if (layout !== 'force') {
-      simulation.alpha(0).stop();
-    }
-
-    simulationRef.current = simulation;
-
-    // Draw edges
+    // Edges
     const link = g.append('g')
       .selectAll('line')
-      .data(edgeData)
+      .data(simEdges)
       .join('line')
       .attr('stroke', '#4b5563')
-      .attr('stroke-width', 1)
+      .attr('stroke-width', d => Math.min(3, d.weight || 1))
       .attr('stroke-opacity', 0.5);
 
-    // Edge labels - hidden by default, shown on hover
-    const linkLabel = g.append('g')
-      .selectAll('text')
-      .data(edgeData)
-      .join('text')
-      .text(d => d.rel_type || '')
-      .attr('font-size', '8px')
-      .attr('fill', '#9ca3af')
-      .attr('text-anchor', 'middle')
-      .attr('pointer-events', 'none')
-      .attr('opacity', 0);
-
-    // Hover zones on edges to show labels
-    g.append('g')
-      .selectAll('line')
-      .data(edgeData)
-      .join('line')
-      .attr('stroke', 'transparent')
-      .attr('stroke-width', 12)
-      .attr('cursor', 'default')
-      .on('mouseenter', (_event, d) => {
-        linkLabel.filter(l => l === d).attr('opacity', 1);
-        link.filter(l => l === d).attr('stroke', '#9ca3af').attr('stroke-width', 2);
-      })
-      .on('mouseleave', (_event, d) => {
-        linkLabel.filter(l => l === d).attr('opacity', 0);
-        link.filter(l => l === d).attr('stroke', '#4b5563').attr('stroke-width', 1);
-      });
-
-    // Store hover zones reference for tick updates
-    const linkHover = g.selectAll<SVGLineElement, GraphEdge>('g:last-child line');
-
-    // Draw nodes
+    // Nodes
     const node = g.append('g')
       .selectAll<SVGCircleElement, GraphNode>('circle')
-      .data(nodes)
+      .data(simNodes)
       .join('circle')
-      .attr('r', d => nodeRadius(d))
-      .attr('fill', d => nodeColor(d))
-      .attr('stroke', d => d.id === selectedNodeId ? '#ffffff' : d.isCommunity ? '#8b5cf6' : 'transparent')
+      .attr('r', d => radius(d))
+      .attr('fill', d => color(d))
+      .attr('stroke', d => d.id === selectedNodeId ? '#fff' : d.isCommunity ? '#8b5cf6' : 'none')
       .attr('stroke-width', d => d.id === selectedNodeId ? 3 : d.isCommunity ? 2 : 0)
       .attr('stroke-dasharray', d => d.isCommunity ? '4,2' : 'none')
-      .attr('filter', d => d.id === selectedNodeId ? 'url(#glow)' : 'none')
       .attr('cursor', 'pointer')
-      .on('click', (event, d) => {
-        onNodeClickRef.current(d, event as unknown as MouseEvent);
-      })
+      .on('click', (event, d) => onClickRef.current(d, event as unknown as MouseEvent))
       .call(d3.drag<SVGCircleElement, GraphNode>()
         .on('start', (event, d) => {
-          if (!event.active) simulation.alphaTarget(0.3).restart();
-          d.fx = d.x;
-          d.fy = d.y;
+          if (!event.active) sim.alphaTarget(0.3).restart();
+          d.fx = d.x; d.fy = d.y;
         })
-        .on('drag', (event, d) => {
-          d.fx = event.x;
-          d.fy = event.y;
-        })
+        .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
         .on('end', (event, d) => {
-          if (!event.active) simulation.alphaTarget(0);
-          // For non-force layouts, keep fixed position after drag
-          if (layout === 'force') {
-            d.fx = null;
-            d.fy = null;
-          }
+          if (!event.active) sim.alphaTarget(0);
+          if (layout === 'force') { d.fx = null; d.fy = null; }
         })
       );
 
-    // Node labels
+    // Labels
     const label = g.append('g')
       .selectAll('text')
-      .data(nodes)
+      .data(simNodes)
       .join('text')
-      .text(d => d.name)
-      .attr('font-size', '10px')
-      .attr('fill', '#e5e7eb')
+      .text(d => d.name.length > 25 ? d.name.slice(0, 22) + '...' : d.name)
+      .attr('font-size', '9px')
+      .attr('fill', '#d1d5db')
       .attr('text-anchor', 'middle')
-      .attr('dy', d => -(nodeRadius(d) + 4))
+      .attr('dy', d => -(radius(d) + 3))
       .attr('pointer-events', 'none');
 
-    // Sublabels for community nodes (member count)
-    const subLabel = g.append('g')
-      .selectAll('text')
-      .data(nodes.filter(n => n.isCommunity))
-      .join('text')
-      .text(d => `${d.members?.length || 0} members`)
-      .attr('font-size', '8px')
-      .attr('fill', '#9ca3af')
-      .attr('text-anchor', 'middle')
-      .attr('dy', d => nodeRadius(d) + 12)
-      .attr('pointer-events', 'none');
-
-    // Legend
-    if (colorMode === 'type') {
-      const legendTypes = Object.keys(TYPE_COLORS);
-      const legendG = svg.append('g')
-        .attr('transform', `translate(12, ${height - legendTypes.length * 18 - 12})`);
-
-      legendG.append('rect')
-        .attr('x', -6)
-        .attr('y', -6)
-        .attr('width', 120)
-        .attr('height', legendTypes.length * 18 + 12)
-        .attr('rx', 6)
-        .attr('fill', 'rgba(15, 23, 42, 0.85)')
-        .attr('stroke', '#334155')
-        .attr('stroke-width', 1);
-
-      legendTypes.forEach((type, i) => {
-        const row = legendG.append('g').attr('transform', `translate(4, ${i * 18 + 6})`);
-        row.append('circle').attr('r', 5).attr('cx', 5).attr('cy', 4).attr('fill', TYPE_COLORS[type]);
-        row.append('text')
-          .attr('x', 16)
-          .attr('y', 8)
-          .attr('font-size', '9px')
-          .attr('fill', '#d1d5db')
-          .text(type);
-      });
-    } else if (colorMode === 'community' && communityMap) {
-      // Community color legend
-      const communityIds = Array.from(new Set(Object.values(communityMap))).sort((a, b) => a - b);
-      const legendG = svg.append('g')
-        .attr('transform', `translate(12, ${height - communityIds.length * 18 - 12})`);
-
-      legendG.append('rect')
-        .attr('x', -6)
-        .attr('y', -6)
-        .attr('width', 130)
-        .attr('height', communityIds.length * 18 + 12)
-        .attr('rx', 6)
-        .attr('fill', 'rgba(15, 23, 42, 0.85)')
-        .attr('stroke', '#334155')
-        .attr('stroke-width', 1);
-
-      communityIds.forEach((cid, i) => {
-        const row = legendG.append('g').attr('transform', `translate(4, ${i * 18 + 6})`);
-        row.append('circle').attr('r', 5).attr('cx', 5).attr('cy', 4).attr('fill', getCommunityColor(cid));
-        row.append('text')
-          .attr('x', 16)
-          .attr('y', 8)
-          .attr('font-size', '9px')
-          .attr('fill', '#d1d5db')
-          .text(`Community ${cid}`);
-      });
-    }
-
-    // Keyboard / interaction hints
-    const hints = ['Shift+Click: Multi-select', 'Scroll: Zoom', 'Drag: Pan'];
-    const hintsG = svg.append('g')
-      .attr('transform', `translate(${width - 140}, ${height - hints.length * 16 - 12})`);
-
-    hintsG.append('rect')
-      .attr('x', -6)
-      .attr('y', -6)
-      .attr('width', 140)
-      .attr('height', hints.length * 16 + 12)
-      .attr('rx', 6)
-      .attr('fill', 'rgba(15, 23, 42, 0.85)')
-      .attr('stroke', '#334155')
-      .attr('stroke-width', 1);
-
-    hints.forEach((hint, i) => {
-      hintsG.append('text')
-        .attr('x', 4)
-        .attr('y', i * 16 + 10)
-        .attr('font-size', '9px')
-        .attr('fill', '#9ca3af')
-        .text(hint);
+    // Legend — only show types that exist in this graph
+    const usedTypes = Array.from(new Set(simNodes.map(n => n.entity_type))).sort();
+    const legendG = svg.append('g').attr('transform', `translate(10, ${Math.max(10, height - usedTypes.length * 16 - 10)})`);
+    legendG.append('rect')
+      .attr('x', -4).attr('y', -4)
+      .attr('width', 110).attr('height', usedTypes.length * 16 + 8)
+      .attr('rx', 4).attr('fill', 'rgba(15,23,42,0.85)').attr('stroke', '#334155');
+    usedTypes.forEach((t, i) => {
+      const row = legendG.append('g').attr('transform', `translate(2, ${i * 16 + 4})`);
+      row.append('circle').attr('r', 4).attr('cx', 4).attr('cy', 4).attr('fill', TYPE_COLORS[t] || '#78716c');
+      row.append('text').attr('x', 14).attr('y', 7).attr('font-size', '8px').attr('fill', '#d1d5db').text(t);
     });
 
-    function tick() {
+    // Tick
+    sim.on('tick', () => {
       link
         .attr('x1', d => (d.source as GraphNode).x || 0)
         .attr('y1', d => (d.source as GraphNode).y || 0)
         .attr('x2', d => (d.target as GraphNode).x || 0)
         .attr('y2', d => (d.target as GraphNode).y || 0);
+      node.attr('cx', d => d.x || 0).attr('cy', d => d.y || 0);
+      label.attr('x', d => d.x || 0).attr('y', d => (d.y || 0) - radius(d) - 3);
+    });
 
-      linkHover
-        .attr('x1', d => (d.source as GraphNode).x || 0)
-        .attr('y1', d => (d.source as GraphNode).y || 0)
-        .attr('x2', d => (d.target as GraphNode).x || 0)
-        .attr('y2', d => (d.target as GraphNode).y || 0);
-
-      linkLabel
-        .attr('x', d => (((d.source as GraphNode).x || 0) + ((d.target as GraphNode).x || 0)) / 2)
-        .attr('y', d => (((d.source as GraphNode).y || 0) + ((d.target as GraphNode).y || 0)) / 2);
-
-      node
-        .attr('cx', d => d.x || 0)
-        .attr('cy', d => d.y || 0);
-
-      label
-        .attr('x', d => d.x || 0)
-        .attr('y', d => d.y || 0);
-
-      subLabel
-        .attr('x', d => d.x || 0)
-        .attr('y', d => d.y || 0);
-    }
-
-    if (layout === 'force') {
-      simulation.on('tick', tick);
-    } else {
-      // For static layouts, manually run tick once to position everything
-      // Need to resolve link references first
-      simulation.tick(1);
-      tick();
-    }
-
-    return () => {
-      simulation.stop();
-    };
-  // Using nodeIdentity/edgeIdentity instead of nodes/edges to avoid re-render on reference changes only
-  // onNodeClick is accessed via onNodeClickRef to avoid re-renders from parent function recreation
+    return () => { sim.stop(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeIdentity, edgeIdentity, selectedNodeId, layout, colorMode, communityMap]);
-
-  useEffect(() => {
-    render();
-    return () => {
-      if (simulationRef.current) simulationRef.current.stop();
-    };
-  }, [render]);
+  }, [
+    // Only re-render when actual data content changes
+    nodes.length, edges.length, selectedNodeId, layout, colorMode,
+    nodes.map(n => n.id).join(','),
+  ]);
 
   return (
-    <svg
-      ref={svgRef}
-      className="w-full h-full bg-navy-900 rounded-lg"
-      style={{ minHeight: '400px' }}
-    />
+    <svg ref={svgRef} className="w-full h-full bg-navy-900 rounded-lg" style={{ minHeight: '400px' }} />
   );
 }
