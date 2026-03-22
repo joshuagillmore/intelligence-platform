@@ -75,7 +75,7 @@ async def ingest_document(
         all_entities.extend(entities)
         all_relationships.extend(relationships)
 
-    result = build_graph_from_extractions(store, all_entities, all_relationships, project_id)
+    result = build_graph_from_extractions(store, all_entities, all_relationships, project_id, source_doc_id=doc.id)
     return {"document_id": doc.id, "document_name": source_name, "chunks": len(chunks), **result}
 
 
@@ -128,7 +128,7 @@ async def ingest_batch(
             all_entities.extend(entities)
             all_relationships.extend(relationships)
 
-        build_result = build_graph_from_extractions(store, all_entities, all_relationships, project_id)
+        build_result = build_graph_from_extractions(store, all_entities, all_relationships, project_id, source_doc_id=doc.id)
         total_entities += build_result["entities_created"]
         total_relationships += build_result["relationships_created"]
 
