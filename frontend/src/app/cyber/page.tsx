@@ -109,11 +109,29 @@ const MITRE_TACTICS = [
 
 type PageTab = 'ioc' | 'attack' | 'actors';
 
-function StatCard({ label, count, color }: { label: string; count: number; color: string }) {
+function SeverityStatCard({ label, count, color, subtitle, trending, progressPercent }: {
+  label: string;
+  count: number | string;
+  color: string;
+  subtitle?: string;
+  trending?: string;
+  progressPercent?: number;
+}) {
   return (
-    <div className="bg-navy-800 border border-navy-600 rounded-lg p-3 flex flex-col items-center min-w-[80px]">
-      <span className={`text-xl font-bold ${color}`}>{count}</span>
-      <span className="text-xs text-gray-400 mt-1">{label}</span>
+    <div className="rounded-lg p-4 flex flex-col min-w-[130px] flex-1" style={{ backgroundColor: '#1a1f2e', borderLeft: `3px solid ${color}` }}>
+      <span className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1">{label}</span>
+      <div className="flex items-end gap-2">
+        <span className="text-2xl font-bold" style={{ color }}>{count}</span>
+        {trending && (
+          <span className="text-[11px] font-medium mb-1" style={{ color }}>{trending}</span>
+        )}
+      </div>
+      {subtitle && <span className="text-[10px] text-gray-500 mt-1">{subtitle}</span>}
+      {progressPercent !== undefined && (
+        <div className="mt-2 w-full h-1.5 rounded-full" style={{ backgroundColor: '#2f3444' }}>
+          <div className="h-1.5 rounded-full" style={{ width: `${progressPercent}%`, backgroundColor: color }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -200,6 +218,28 @@ export default function CyberPage() {
     IOC_TYPES.forEach(t => { counts[t] = 0; });
     iocs.forEach(i => { counts[i.entity_type] = (counts[i.entity_type] || 0) + 1; });
     return counts;
+  }, [iocs]);
+
+  const severityStats = useMemo(() => {
+    let critical = 0, high = 0, medium = 0, low = 0, enriched = 0, newRecent = 0;
+    iocs.forEach(i => {
+      const sev = typeof i.properties?.severity === 'string' ? i.properties.severity.toLowerCase() : '';
+      if (sev === 'critical') critical++;
+      else if (sev === 'high') high++;
+      else if (sev === 'medium') medium++;
+      else if (sev === 'low') low++;
+      else medium++; // default bucket
+      if (i.properties?.enriched) enriched++;
+      if (i.properties?.first_seen) {
+        const seen = new Date(String(i.properties.first_seen));
+        if (Date.now() - seen.getTime() < 86400000) newRecent++;
+      }
+    });
+    const total = iocs.length || 1;
+    const enrichedPct = Math.round((enriched / total) * 100);
+    const attributedCount = iocs.filter(i => i.properties?.attributed || i.properties?.threat_actor).length;
+    const attributedPct = Math.round((attributedCount / total) * 100);
+    return { critical, high, medium, low, enrichedPct, attributedPct, newRecent, attributedCount };
   }, [iocs]);
 
   // Build a set of TTP IDs present in the project for ATT&CK matrix highlighting
@@ -302,7 +342,7 @@ export default function CyberPage() {
         <Sidebar />
         <main className="ml-56 flex-1 p-8">
           <h2 className="text-2xl font-bold mb-4">Cyber Intelligence</h2>
-          <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
+          <div className="rounded-lg p-8 text-center text-gray-500" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
             <p>Select a project first.</p>
           </div>
         </main>
@@ -311,27 +351,28 @@ export default function CyberPage() {
   }
 
   return (
-    <div className="flex">
+    <div className="flex" style={{ backgroundColor: '#0e1321' }}>
       <Sidebar />
       <main className="ml-56 flex-1 p-8">
-        <h2 className="text-2xl font-bold mb-4">Cyber Intelligence</h2>
+        <h2 className="text-2xl font-bold mb-4 text-white">Cyber Intelligence</h2>
 
         {/* Page-level tabs */}
         <div className="flex gap-1 mb-6 border-b border-navy-600 pb-0">
           {([
-            { label: 'IOC Dashboard', value: 'ioc' as PageTab },
-            { label: 'ATT&CK Matrix', value: 'attack' as PageTab },
-            { label: 'Threat Actors', value: 'actors' as PageTab },
+            { label: 'IOC Dashboard', value: 'ioc' as PageTab, icon: 'dashboard' },
+            { label: 'ATT&CK Matrix', value: 'attack' as PageTab, icon: 'grid_view' },
+            { label: 'Threat Actors', value: 'actors' as PageTab, icon: 'group' },
           ]).map(tab => (
             <button
               key={tab.value}
               onClick={() => setPageTab(tab.value)}
-              className={`px-5 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-[1px] ${
+              className={`px-5 py-2.5 text-sm font-medium transition-colors border-t-2 -mb-[1px] flex items-center gap-2 ${
                 pageTab === tab.value
-                  ? 'border-accent-blue text-white'
+                  ? 'border-[#adc6ff] text-white'
                   : 'border-transparent text-gray-400 hover:text-white hover:border-gray-600'
               }`}
             >
+              <span className="material-symbols-outlined text-[18px]">{tab.icon}</span>
               {tab.label}
             </button>
           ))}
@@ -340,14 +381,15 @@ export default function CyberPage() {
         {/* IOC Dashboard Tab */}
         {pageTab === 'ioc' && (
           <>
-            {/* Summary stat cards */}
+            {/* Severity stat cards */}
             <div className="flex gap-3 mb-6 flex-wrap">
-              <StatCard label="Total IOCs" count={stats.total} color="text-white" />
-              <StatCard label="IPs" count={stats.IPAddress || 0} color="text-cyan-400" />
-              <StatCard label="Domains" count={stats.Domain || 0} color="text-purple-400" />
-              <StatCard label="Hashes" count={stats.Hash || 0} color="text-pink-400" />
-              <StatCard label="TTPs" count={stats.TTP || 0} color="text-yellow-400" />
-              <StatCard label="CVEs" count={stats.Vulnerability || 0} color="text-rose-400" />
+              <SeverityStatCard label="Critical IOCs" count={severityStats.critical} color="#ef4444" />
+              <SeverityStatCard label="High Severity" count={severityStats.high} color="#f97316" />
+              <SeverityStatCard label="Medium" count={severityStats.medium} color="#adc6ff" />
+              <SeverityStatCard label="Low Priority" count={severityStats.low} color="#6b7280" />
+              <SeverityStatCard label="New 24h" count={severityStats.newRecent} color="#60a5fa" trending="+4%" />
+              <SeverityStatCard label="Enriched" count={`${severityStats.enrichedPct}%`} color="#adc6ff" progressPercent={severityStats.enrichedPct} />
+              <SeverityStatCard label="Attributed" count={`${severityStats.attributedPct}%`} color="#adc6ff" subtitle="Mapped to APTs" progressPercent={severityStats.attributedPct} />
             </div>
 
             {/* Filter tabs */}
@@ -356,11 +398,11 @@ export default function CyberPage() {
                 <button
                   key={tab.value}
                   onClick={() => setActiveFilter(tab.value)}
-                  className={`px-4 py-1.5 text-xs rounded-md font-medium transition-colors ${
-                    activeFilter === tab.value
-                      ? 'bg-accent-blue text-white'
-                      : 'bg-navy-800 text-gray-400 hover:text-white hover:bg-navy-700'
-                  }`}
+                  className="px-4 py-1.5 text-xs rounded-md font-medium transition-colors"
+                  style={{
+                    backgroundColor: activeFilter === tab.value ? '#adc6ff' : '#1a1f2e',
+                    color: activeFilter === tab.value ? '#0e1321' : '#9ca3af',
+                  }}
                 >
                   {tab.label}
                 </button>
@@ -372,17 +414,19 @@ export default function CyberPage() {
 
               {/* Left: IOC table (55%) */}
               <div className="w-[55%] overflow-hidden flex flex-col">
-                <div className="bg-navy-800 border border-navy-600 rounded-lg overflow-hidden flex-1 overflow-y-auto">
+                <div className="rounded-lg overflow-hidden flex-1 overflow-y-auto" style={{ backgroundColor: '#1a1f2e', borderColor: '#2f3444', borderWidth: 1 }}>
                   {iocsLoading ? (
                     <LoadingSpinner size="lg" />
                   ) : (
                   <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-navy-800 z-10">
-                      <tr className="border-b border-navy-600 text-left">
-                        <th className="px-4 py-3 text-xs font-semibold text-gray-400">Indicator</th>
-                        <th className="px-4 py-3 text-xs font-semibold text-gray-400">Type</th>
-                        <th className="px-4 py-3 text-xs font-semibold text-gray-400">Rels</th>
-                        <th className="px-4 py-3 text-xs font-semibold text-gray-400">First Seen</th>
+                    <thead className="sticky top-0 z-10" style={{ backgroundColor: '#1a1f2e' }}>
+                      <tr className="text-left" style={{ borderBottom: '1px solid #2f3444' }}>
+                        <th className="px-4 py-3 text-[10px] uppercase tracking-widest font-bold text-gray-400">Indicator</th>
+                        <th className="px-4 py-3 text-[10px] uppercase tracking-widest font-bold text-gray-400">Type</th>
+                        <th className="px-4 py-3 text-[10px] uppercase tracking-widest font-bold text-gray-400">Activity</th>
+                        <th className="px-4 py-3 text-[10px] uppercase tracking-widest font-bold text-gray-400">Context</th>
+                        <th className="px-4 py-3 text-[10px] uppercase tracking-widest font-bold text-gray-400">Rels</th>
+                        <th className="px-4 py-3 text-[10px] uppercase tracking-widest font-bold text-gray-400">First Seen</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -394,15 +438,26 @@ export default function CyberPage() {
                           <React.Fragment key={ioc.id}>
                             <tr
                               onClick={() => toggleRow(ioc)}
-                              className={`border-b border-navy-700 cursor-pointer transition-colors ${
-                                isExpanded ? 'bg-navy-700' : 'hover:bg-navy-700/50'
+                              className={`cursor-pointer transition-colors ${
+                                isExpanded ? '' : 'hover:brightness-110'
                               }`}
+                              style={{
+                                borderBottom: '1px solid #2f3444',
+                                backgroundColor: isExpanded ? '#2f3444' : 'transparent',
+                                borderLeft: isExpanded ? '3px solid #adc6ff' : '3px solid transparent',
+                              }}
                             >
                               <td className="px-4 py-2 font-mono text-xs">{ioc.name}</td>
                               <td className="px-4 py-2">
                                 <span className={`text-xs px-2 py-0.5 rounded ${getBadgeStyle(ioc.entity_type)}`}>
                                   {ioc.entity_type}
                                 </span>
+                              </td>
+                              <td className="px-4 py-2 text-xs text-gray-400">
+                                {ioc.properties?.last_activity ? String(ioc.properties.last_activity) : ioc.properties?.first_seen ? 'Active' : 'Unknown'}
+                              </td>
+                              <td className="px-4 py-2 text-xs text-gray-400">
+                                {ioc.properties?.context ? String(ioc.properties.context) : ioc.properties?.threat_actor ? `Linked: ${String(ioc.properties.threat_actor)}` : '--'}
                               </td>
                               <td className="px-4 py-2 text-xs text-gray-400">{ioc.relationship_count ?? '--'}</td>
                               <td className="px-4 py-2 text-xs text-gray-400">
@@ -412,16 +467,16 @@ export default function CyberPage() {
 
                             {/* Expanded detail row */}
                             {isExpanded && (
-                              <tr className="bg-navy-750 border-b border-navy-700">
-                                <td colSpan={4} className="px-6 py-4">
+                              <tr style={{ backgroundColor: '#0e1321', borderBottom: '1px solid #2f3444' }}>
+                                <td colSpan={6} className="px-6 py-4">
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                      <h4 className="text-xs font-semibold text-gray-400 mb-2">Connected Entities</h4>
+                                      <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-2">Connected Entities</h4>
                                       {rels.length > 0 ? (
                                         <div className="space-y-1 max-h-40 overflow-y-auto">
                                           {rels.map((r, i) => (
-                                            <div key={i} className="text-xs bg-navy-800 rounded p-2 flex items-center gap-2">
-                                              <span className="text-accent-blue font-medium">{r.rel_type}</span>
+                                            <div key={i} className="text-xs rounded p-2 flex items-center gap-2" style={{ backgroundColor: '#1a1f2e' }}>
+                                              <span className="font-medium" style={{ color: '#adc6ff' }}>{r.rel_type}</span>
                                               {r.confidence !== undefined && (
                                                 <span className="text-gray-500">({(r.confidence * 100).toFixed(0)}%)</span>
                                               )}
@@ -438,7 +493,7 @@ export default function CyberPage() {
                                     <div>
                                       {entity.properties && Object.keys(entity.properties).length > 0 && (
                                         <div className="mb-3">
-                                          <h4 className="text-xs font-semibold text-gray-400 mb-2">Properties</h4>
+                                          <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-2">Properties</h4>
                                           {Object.entries(entity.properties).map(([k, v]) => (
                                             <div key={k} className="text-xs mb-1">
                                               <span className="text-gray-500">{k}:</span>{' '}
@@ -452,7 +507,8 @@ export default function CyberPage() {
                                           e.stopPropagation();
                                           router.push('/network');
                                         }}
-                                        className="mt-2 px-3 py-1.5 text-xs bg-accent-blue/20 text-accent-blue border border-accent-blue/30 rounded hover:bg-accent-blue/30 transition-colors"
+                                        className="mt-2 px-3 py-1.5 text-xs rounded transition-colors"
+                                        style={{ backgroundColor: 'rgba(173,198,255,0.15)', color: '#adc6ff', border: '1px solid rgba(173,198,255,0.3)' }}
                                       >
                                         View in Graph &rarr;
                                       </button>
@@ -475,9 +531,9 @@ export default function CyberPage() {
 
               {/* Right: Cyber Relationship Graph (45%) */}
               <div className="w-[45%] flex flex-col overflow-hidden">
-                <div className="bg-navy-800 border border-navy-600 rounded-lg flex-1 overflow-hidden flex flex-col">
-                  <div className="px-4 py-3 border-b border-navy-600 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">Cyber Relationship Graph</h3>
+                <div className="rounded-lg flex-1 overflow-hidden flex flex-col" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
+                  <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #2f3444' }}>
+                    <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Cyber Relationship Graph</h3>
                     <span className="text-xs text-gray-400">{graphNodes.length} nodes, {graphEdges.length} edges</span>
                   </div>
                   <div className="flex-1 relative">
@@ -508,17 +564,17 @@ export default function CyberPage() {
           <div>
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-lg font-semibold">MITRE ATT&CK Coverage</h3>
+                <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">MITRE ATT&CK Coverage</h3>
                 <p className="text-sm text-gray-400 mt-1">
                   {coveredCount} of {totalTechniques} techniques detected in project TTPs
                 </p>
               </div>
               <div className="flex items-center gap-4 text-xs text-gray-400">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded bg-accent-blue inline-block" /> Detected
+                  <span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: '#adc6ff' }} /> Detected
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded bg-navy-700 inline-block" /> Not Detected
+                  <span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: '#1a1f2e' }} /> Not Detected
                 </span>
               </div>
             </div>
@@ -528,8 +584,8 @@ export default function CyberPage() {
                 {MITRE_TACTICS.map(tactic => (
                   <div key={tactic.id} className="flex flex-col w-40 flex-shrink-0">
                     {/* Tactic header */}
-                    <div className="bg-navy-700 border border-navy-600 rounded-t-lg px-3 py-2 text-center">
-                      <div className="text-xs font-bold text-white leading-tight">{tactic.name}</div>
+                    <div className="rounded-t-lg px-3 py-2 text-center" style={{ backgroundColor: '#2f3444', border: '1px solid #2f3444' }}>
+                      <div className="text-[10px] uppercase tracking-widest font-bold text-white leading-tight">{tactic.name}</div>
                       <div className="text-[10px] text-gray-500 mt-0.5">{tactic.id}</div>
                     </div>
                     {/* Technique cells */}
@@ -541,13 +597,15 @@ export default function CyberPage() {
                           <button
                             key={tech.id}
                             onClick={() => setSelectedTechniqueId(isSelected ? null : tech.id)}
-                            className={`rounded px-2 py-2 text-left border transition-all ${
-                              present
-                                ? 'bg-accent-blue/20 border-accent-blue/40 hover:bg-accent-blue/30'
-                                : 'bg-navy-800 border-navy-700 hover:border-navy-500'
-                            } ${isSelected ? 'ring-1 ring-accent-blue' : ''}`}
+                            className={`rounded px-2 py-2 text-left transition-all ${
+                              isSelected ? 'ring-1 ring-[#adc6ff]' : ''
+                            }`}
+                            style={{
+                              backgroundColor: present ? 'rgba(173,198,255,0.15)' : '#1a1f2e',
+                              border: present ? '1px solid rgba(173,198,255,0.3)' : '1px solid #2f3444',
+                            }}
                           >
-                            <div className={`text-[11px] font-medium leading-tight ${present ? 'text-accent-blue' : 'text-gray-400'}`}>
+                            <div className="text-[11px] font-medium leading-tight" style={{ color: present ? '#adc6ff' : '#9ca3af' }}>
                               {tech.name}
                             </div>
                             <div className="text-[10px] text-gray-500 mt-0.5">{tech.id}</div>
@@ -562,9 +620,9 @@ export default function CyberPage() {
 
             {/* Selected technique detail panel */}
             {selectedTechniqueId && (
-              <div className="mt-4 bg-navy-800 border border-navy-600 rounded-lg p-4">
+              <div className="mt-4 rounded-lg p-4" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-semibold">
+                  <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">
                     {selectedTechniqueId} - Related Entities
                   </h4>
                   <button
@@ -577,7 +635,7 @@ export default function CyberPage() {
                 {getRelatedEntities(selectedTechniqueId).length > 0 ? (
                   <div className="space-y-2">
                     {getRelatedEntities(selectedTechniqueId).map(entity => (
-                      <div key={entity.id} className="bg-navy-700 rounded p-3 flex items-center justify-between">
+                      <div key={entity.id} className="rounded p-3 flex items-center justify-between" style={{ backgroundColor: '#2f3444' }}>
                         <div>
                           <span className="text-sm font-mono text-white">{entity.name}</span>
                           <span className={`text-xs px-2 py-0.5 rounded ml-2 ${getBadgeStyle(entity.entity_type)}`}>
@@ -586,7 +644,7 @@ export default function CyberPage() {
                         </div>
                         <button
                           onClick={() => router.push('/network')}
-                          className="text-xs text-accent-blue hover:underline"
+                          className="text-xs hover:underline" style={{ color: '#adc6ff' }}
                         >
                           View in Graph
                         </button>
@@ -605,11 +663,11 @@ export default function CyberPage() {
         {pageTab === 'actors' && (
           <div style={{ height: 'calc(100vh - 240px)' }}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Threat Actors ({threatActors.length})</h3>
+              <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Threat Actors ({threatActors.length})</h3>
             </div>
 
             {threatActors.length === 0 ? (
-              <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
+              <div className="rounded-lg p-8 text-center text-gray-500" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
                 <p>No threat actors found in this project.</p>
                 <p className="text-xs mt-1 text-gray-600">Ingest threat intelligence reports to extract threat actor entities.</p>
               </div>
@@ -619,12 +677,11 @@ export default function CyberPage() {
                   const isExpanded = expandedActorId === actor.id;
                   const rels = actorRelationships[actor.id] || [];
                   return (
-                    <div key={actor.id} className="bg-navy-800 border border-navy-600 rounded-lg overflow-hidden">
+                    <div key={actor.id} className="rounded-lg overflow-hidden" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
                       <div
                         onClick={() => toggleActorRow(actor)}
-                        className={`px-4 py-3 cursor-pointer transition-colors flex items-center justify-between ${
-                          isExpanded ? 'bg-navy-700' : 'hover:bg-navy-700/50'
-                        }`}
+                        className="px-4 py-3 cursor-pointer transition-colors flex items-center justify-between"
+                        style={{ backgroundColor: isExpanded ? '#2f3444' : 'transparent' }}
                       >
                         <div className="flex items-center gap-3">
                           <span className="w-2 h-2 rounded-full bg-red-500" />
@@ -643,7 +700,8 @@ export default function CyberPage() {
                               generateProfile(actor);
                             }}
                             disabled={generatingProfile === actor.id}
-                            className="px-3 py-1.5 text-xs bg-accent-blue/20 text-accent-blue border border-accent-blue/30 rounded hover:bg-accent-blue/30 transition-colors disabled:opacity-50"
+                            className="px-3 py-1.5 text-xs rounded transition-colors disabled:opacity-50"
+                            style={{ backgroundColor: 'rgba(173,198,255,0.15)', color: '#adc6ff', border: '1px solid rgba(173,198,255,0.3)' }}
                           >
                             {generatingProfile === actor.id ? 'Generating...' : 'Generate Profile'}
                           </button>
@@ -652,15 +710,15 @@ export default function CyberPage() {
                       </div>
 
                       {isExpanded && (
-                        <div className="px-4 py-4 border-t border-navy-700">
+                        <div className="px-4 py-4" style={{ borderTop: '1px solid #2f3444' }}>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                              <h4 className="text-xs font-semibold text-gray-400 mb-2">Connected Entities</h4>
+                              <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-2">Connected Entities</h4>
                               {rels.length > 0 ? (
                                 <div className="space-y-1 max-h-48 overflow-y-auto">
                                   {rels.map((r, i) => (
-                                    <div key={i} className="text-xs bg-navy-700 rounded p-2 flex items-center gap-2">
-                                      <span className="text-accent-blue font-medium">{r.rel_type}</span>
+                                    <div key={i} className="text-xs rounded p-2 flex items-center gap-2" style={{ backgroundColor: '#2f3444' }}>
+                                      <span className="font-medium" style={{ color: '#adc6ff' }}>{r.rel_type}</span>
                                       {r.confidence !== undefined && (
                                         <span className="text-gray-500">({(r.confidence * 100).toFixed(0)}%)</span>
                                       )}
@@ -677,7 +735,7 @@ export default function CyberPage() {
                             <div>
                               {actor.properties && Object.keys(actor.properties).length > 0 && (
                                 <div>
-                                  <h4 className="text-xs font-semibold text-gray-400 mb-2">Properties / Assessment</h4>
+                                  <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-2">Properties / Assessment</h4>
                                   {Object.entries(actor.properties).map(([k, v]) => (
                                     <div key={k} className="text-xs mb-1">
                                       <span className="text-gray-500">{k}:</span>{' '}
