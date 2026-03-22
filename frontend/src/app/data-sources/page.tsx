@@ -623,7 +623,7 @@ export default function DataSourcesPage() {
                   )}
 
                   {/* AI Summary */}
-                  <div className="bg-[#161b2a]/50 rounded-xl p-6 border border-[#adc6ff]/10 relative overflow-hidden mb-4">
+                  <div className="bg-[#161b2a]/50 rounded-xl p-6 border border-[#adc6ff]/10 relative overflow-y-auto max-h-[60vh] mb-4">
                     <div className="absolute top-0 right-0 p-4 opacity-5">
                       <span className="material-symbols-outlined text-6xl">auto_awesome</span>
                     </div>
@@ -669,7 +669,7 @@ export default function DataSourcesPage() {
 
                   {/* Conversation thread */}
                   {conversation.length > 1 && (
-                    <div className="mb-4 space-y-3 max-h-48 overflow-y-auto">
+                    <div className="mb-4 space-y-3 max-h-96 overflow-y-auto">
                       {conversation.slice(1).map((msg, i) => (
                         <div
                           key={i}
