@@ -1,9 +1,15 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { projectsApi, watchlistApi, type Project } from '@/lib/api';
 import { useProject } from '@/lib/ProjectContext';
+
+function useHydrated() {
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => { setHydrated(true); }, []);
+  return hydrated;
+}
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return '--';
@@ -41,6 +47,9 @@ export default function ProjectsPage() {
   const [batchDeleting, setBatchDeleting] = useState(false);
   const { activeProject, setActiveProject } = useProject();
   const router = useRouter();
+
+  const hydrated = useHydrated();
+  const formRef = useRef<HTMLDivElement>(null);
 
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [sortBy, setSortBy] = useState<SortKey>('modified');
@@ -218,12 +227,24 @@ export default function ProjectsPage() {
         </div>
 
         {showCreate && (
-          <div className="bg-navy-800 border border-navy-600 rounded-lg p-6 mb-6">
+          <div
+            ref={formRef}
+            className="bg-navy-800 border border-navy-600 rounded-lg p-6 mb-6"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setShowCreate(false);
+                setNewName('');
+                setNewDesc('');
+              }
+            }}
+          >
             <input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && createProject()}
               placeholder="Project name"
               className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm mb-3 focus:outline-none focus:border-accent-blue"
+              autoFocus
             />
             <textarea
               value={newDesc}
@@ -231,9 +252,17 @@ export default function ProjectsPage() {
               placeholder="Description"
               className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm mb-3 h-20 focus:outline-none focus:border-accent-blue"
             />
-            <button onClick={createProject} className="bg-accent-blue text-white px-4 py-2 rounded text-sm">
-              Create
-            </button>
+            <div className="flex gap-2">
+              <button onClick={createProject} className="bg-accent-blue text-white px-4 py-2 rounded text-sm">
+                Create
+              </button>
+              <button
+                onClick={() => { setShowCreate(false); setNewName(''); setNewDesc(''); }}
+                className="text-gray-400 hover:text-gray-200 px-4 py-2 rounded text-sm transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         )}
 
@@ -306,14 +335,14 @@ export default function ProjectsPage() {
                     <h3 className="font-semibold text-lg mb-1">{project.name}</h3>
                     <p className="text-gray-400 text-sm mb-3">{project.description || 'No description'}</p>
                     <div className="flex gap-4 text-xs text-gray-500 mb-1">
-                      <span>{project.entity_count} entities</span>
-                      <span>{project.relationship_count} relationships</span>
-                      <span>{project.document_count} documents</span>
-                      {(project.collection_count ?? 0) > 0 && <span>{project.collection_count} collections</span>}
+                      <span>{project.entity_count} {project.entity_count === 1 ? 'entity' : 'entities'}</span>
+                      <span>{project.relationship_count} {project.relationship_count === 1 ? 'relationship' : 'relationships'}</span>
+                      <span>{project.document_count} {project.document_count === 1 ? 'document' : 'documents'}</span>
+                      {(project.collection_count ?? 0) > 0 && <span>{project.collection_count} {project.collection_count === 1 ? 'collection' : 'collections'}</span>}
                     </div>
                     <div className="flex gap-4 text-[10px] text-gray-600 mb-3">
-                      <span>Created: {formatDate(project.created_at)}</span>
-                      <span>Modified: {formatDate(project.updated_at)}</span>
+                      <span suppressHydrationWarning>Created: {hydrated ? formatDate(project.created_at) : '--'}</span>
+                      <span suppressHydrationWarning>Modified: {hydrated ? formatDate(project.updated_at) : '--'}</span>
                     </div>
                     <div className="flex gap-2 items-center">
                       <span className={`text-xs px-2 py-0.5 rounded ${
@@ -455,8 +484,8 @@ export default function ProjectsPage() {
                       <td className="px-3 py-2 text-right text-xs text-gray-400">{project.relationship_count}</td>
                       <td className="px-3 py-2 text-right text-xs text-gray-400">{project.document_count}</td>
                       <td className="px-3 py-2 text-right text-xs text-gray-400">{project.collection_count ?? 0}</td>
-                      <td className="px-3 py-2 text-[10px] text-gray-500 whitespace-nowrap">{formatDate(project.created_at)}</td>
-                      <td className="px-3 py-2 text-[10px] text-gray-500 whitespace-nowrap">{formatDate(project.updated_at)}</td>
+                      <td className="px-3 py-2 text-[10px] text-gray-500 whitespace-nowrap" suppressHydrationWarning>{hydrated ? formatDate(project.created_at) : '--'}</td>
+                      <td className="px-3 py-2 text-[10px] text-gray-500 whitespace-nowrap" suppressHydrationWarning>{hydrated ? formatDate(project.updated_at) : '--'}</td>
                       <td className="px-3 py-2 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button

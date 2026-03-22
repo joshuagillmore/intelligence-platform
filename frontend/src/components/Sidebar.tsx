@@ -171,7 +171,7 @@ export default function Sidebar() {
                       <button onClick={() => removeNotification(n.id)} className="text-gray-600 hover:text-gray-400 text-[10px] flex-shrink-0">&times;</button>
                     </div>
                     <p className="text-[10px] text-gray-500 mt-0.5 ml-4.5 line-clamp-2">{n.message}</p>
-                    <p className="text-[9px] text-gray-600 mt-0.5 ml-4.5">{formatTimeAgo(n.timestamp)}</p>
+                    <p className="text-[9px] text-gray-600 mt-0.5 ml-4.5" suppressHydrationWarning>{formatTimeAgo(n.timestamp)}</p>
                   </div>
                 ))
               )}
@@ -254,12 +254,12 @@ export default function Sidebar() {
             onClick={() => setShowUserMenu(!showUserMenu)}
             className="w-full px-4 py-3 flex items-center gap-3 hover:bg-[#1a1f2e]/50 transition-colors text-left"
           >
-            <div className="w-8 h-8 rounded-full bg-[#3b82f6] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-[#3b82f6] flex items-center justify-center text-white text-sm font-bold flex-shrink-0" suppressHydrationWarning>
               {initials}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-200 truncate">{username || 'Analyst'}</p>
-              <p className="text-[10px] text-gray-500">{role || 'analyst'}</p>
+              <p className="text-sm font-medium text-gray-200 truncate" suppressHydrationWarning>{username || 'Analyst'}</p>
+              <p className="text-[10px] text-gray-500" suppressHydrationWarning>{role || 'analyst'}</p>
             </div>
             <svg className="w-3 h-3 text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
