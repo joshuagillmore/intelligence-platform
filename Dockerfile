@@ -1,27 +1,33 @@
-# Frontend build stage
+# ── Stage 1: Frontend build ──
 FROM node:20-slim AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 COPY frontend/ .
+RUN mkdir -p public
 RUN npm run build
 
-# Backend stage
+# ── Stage 2: Backend + serve frontend ──
 FROM python:3.12-slim
 
 WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Copy backend
+# Install backend dependencies
 COPY backend/pyproject.toml ./
 COPY backend/src/ src/
 RUN uv sync --no-dev
-RUN uv run python -m spacy download en_core_web_sm
+RUN uv pip install --python .venv/bin/python https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 
-# Copy frontend build
-COPY --from=frontend-build /app/frontend/out ./static
+# Copy frontend standalone build
+COPY --from=frontend-build /app/frontend/.next/standalone /app/frontend-server
+COPY --from=frontend-build /app/frontend/.next/static /app/frontend-server/.next/static
 
-EXPOSE 8000
+# Install Node.js for frontend server
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/*
 
-CMD ["uv", "run", "uvicorn", "intel_platform.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8000 3000
+
+# Start both services
+CMD ["sh", "-c", "cd /app/frontend-server && PORT=3000 node server.js & uv run uvicorn intel_platform.api.app:app --host 0.0.0.0 --port ${PORT:-8000}"]
