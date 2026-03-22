@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
@@ -8,9 +9,30 @@ from intel_platform.models.responses import ProjectResponse
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
+class BatchDeleteRequest(BaseModel):
+    project_ids: list[str]
+
+
 @router.get("/projects")
 def list_projects(store: GraphStore = Depends(get_graph_store)):
-    return store.list_projects()
+    projects = store.list_projects()
+    result = []
+    for p in projects:
+        pid = p.get("id", "")
+        try:
+            stats = store.get_project_stats(pid)
+        except Exception:
+            stats = {"entity_count": 0, "relationship_count": 0, "document_count": 0}
+        result.append({
+            "id": pid,
+            "name": p.get("name", ""),
+            "description": p.get("description", ""),
+            "classification_level": p.get("classification_level", "UNCLASSIFIED"),
+            "priority": p.get("priority", "medium"),
+            "status": p.get("status", "active"),
+            **stats,
+        })
+    return result
 
 
 @router.post("/projects", response_model=ProjectResponse)
@@ -56,10 +78,30 @@ def update_project(project_id: str, req: CreateProjectRequest, store: GraphStore
     )
 
 
+@router.post("/projects/batch-delete")
+def batch_delete_projects(req: BatchDeleteRequest, store: GraphStore = Depends(get_graph_store)):
+    deleted = 0
+    for pid in req.project_ids:
+        project = store.get_project(pid)
+        if project:
+            # Delete all entities in the project first
+            entities = store.search_entities(project_id=pid, limit=10000)
+            for e in entities:
+                store.delete_entity(e.get("id", ""))
+            store.delete_entity(pid)
+            deleted += 1
+    return {"deleted": deleted}
+
+
 @router.delete("/projects/{project_id}")
 def delete_project(project_id: str, store: GraphStore = Depends(get_graph_store)):
+    # Delete all entities in the project
+    entities = store.search_entities(project_id=project_id, limit=10000)
+    for e in entities:
+        store.delete_entity(e.get("id", ""))
+    # Delete the project itself
     store.delete_entity(project_id)
-    return {"status": "deleted"}
+    return {"status": "deleted", "entities_removed": len(entities)}
 
 
 @router.get("/projects/{project_id}/activity")
