@@ -223,10 +223,11 @@ class TopicTreeService:
         """Entities grouped by type."""
         by_type: dict[str, list] = defaultdict(list)
         for e in entities:
-            etype = e.get("entity_type", "Unknown")
+            etype = e.get("entity_type") or "Unknown"
+            name = e.get("name") or "Unnamed"
             by_type[etype].append({
                 "id": e.get("id", ""),
-                "name": e.get("name", ""),
+                "name": name,
                 "entity_type": etype,
             })
         branch = {
