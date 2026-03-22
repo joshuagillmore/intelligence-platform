@@ -8,6 +8,7 @@ from intel_platform.models.entities import (
     Vulnerability, TTP, Malware, ThreatActor, Campaign,
 )
 from intel_platform.models.relationships import Relationship
+from intel_platform.models.type_hierarchy import normalize_entity_type
 
 ENTITY_TYPE_MAP = {
     "Person": Person, "Organization": Organization, "Location": Location,
@@ -70,7 +71,7 @@ def build_graph_from_extractions(
 
     for ent_data in entities:
         name = ent_data["name"]
-        entity_type = ent_data["entity_type"]
+        raw_type = ent_data["entity_type"]
 
         match = resolve_entity_name(name, existing_names, threshold=0.92)
         if match:
@@ -78,14 +79,18 @@ def build_graph_from_extractions(
             merged += 1
             continue
 
-        cls = ENTITY_TYPE_MAP.get(entity_type)
+        # Normalize the entity type using the hierarchy
+        specific_type, parent_category = normalize_entity_type(raw_type)
+
+        # Try to find a Pydantic class for the specific type, then parent category
+        cls = ENTITY_TYPE_MAP.get(specific_type) or ENTITY_TYPE_MAP.get(parent_category)
         if cls:
             entity = cls(name=name, project_id=project_id)
         else:
             # Generic entity for unknown types
             from intel_platform.models.entities import Entity, EntityType
             try:
-                et = EntityType(entity_type)
+                et = EntityType(specific_type)
             except ValueError:
                 et = EntityType.CUSTOM
             entity = Entity(name=name, entity_type=et, project_id=project_id)

@@ -38,9 +38,15 @@ class GraphStore:
         return clean
 
     def create_entity(self, entity: Entity) -> dict:
-        label = _validate_label(entity.entity_type.value)
+        from intel_platform.models.type_hierarchy import normalize_entity_type
+
+        specific_type = entity.entity_type.value
+        _, parent_category = normalize_entity_type(specific_type)
+
+        label = _validate_label(specific_type)
         props = self._serialize_props(entity.model_dump(exclude={"entity_type"}))
-        props["entity_type"] = label
+        props["entity_type"] = specific_type
+        props["entity_category"] = parent_category
         with self._driver.session() as session:
             result = session.run(
                 f"CREATE (n:{label} $props) RETURN n",
