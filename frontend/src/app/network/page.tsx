@@ -956,7 +956,7 @@ function NetworkPageInner() {
               </div>
             )}
             {multiSelected.length > 0 && (
-              <div className="flex items-center gap-2 text-xs">
+              <div className="hidden md:flex items-center gap-2 text-xs">
                 <span className="text-gray-400">{multiSelected.length} selected</span>
                 <button
                   onClick={() => setAssessModalOpen(true)}
@@ -980,8 +980,8 @@ function NetworkPageInner() {
                 </button>
               </div>
             )}
-            <span className="text-sm text-gray-400">{displayData.nodes.length} nodes, {displayData.edges.length} edges{collapseCommunities ? ' (collapsed)' : ''}</span>
-            <div className="flex items-center gap-2">
+            <span className="text-xs md:text-sm text-gray-400">{displayData.nodes.length} nodes, {displayData.edges.length} edges{collapseCommunities ? ' (collapsed)' : ''}</span>
+            <div className="hidden md:flex items-center gap-2">
               <button
                 onClick={() => {
                   const allEntities = filteredGraphNodes.map(n => ({ id: n.id, name: n.name, entity_type: n.entity_type }));
@@ -1021,7 +1021,7 @@ function NetworkPageInner() {
         </div>
 
         {/* Toolbar row: filters, layout, coloring */}
-        <div className="flex-none px-4 py-1.5 border-b border-navy-600 bg-navy-800/80 flex items-center gap-3 flex-wrap">
+        <div className="flex-none px-4 py-1.5 border-b border-navy-600 bg-navy-800/80 hidden md:flex items-center gap-3 flex-wrap">
           {/* Relationship Filter */}
           <div className="relative">
             <button
