@@ -96,6 +96,39 @@ const TYPE_COLORS: Record<string, string> = {
   Vulnerability: 'bg-rose-500',
 };
 
+interface StructuralHoleEntry {
+  id: string;
+  name: string;
+  entity_type: string;
+  constraint: number;
+  effective_size: number;
+  degree: number;
+  is_broker: boolean;
+}
+
+interface EgoNetworkData {
+  center: string;
+  hops: number;
+  node_count: number;
+  edge_count: number;
+  nodes: Array<{ id: string; name: string; entity_type: string; hop_distance: number; local_pagerank: number; local_betweenness: number }>;
+  edges: Array<{ source_id: string; target_id: string; rel_type: string; confidence: number; weight: number }>;
+}
+
+interface InfluenceStep {
+  step: number;
+  newly_activated: Array<{ id: string; name: string; entity_type: string }>;
+  cumulative_count: number;
+}
+
+interface InfluenceResult {
+  seeds: string[];
+  steps: InfluenceStep[];
+  total_activated: number;
+  reach_ratio: number;
+  total_nodes: number;
+}
+
 type SortKey = 'entity' | 'type' | 'degree' | 'betweenness' | 'eigenvector' | 'pagerank' | 'closeness';
 
 function intensityClass(value: number, max: number): string {
@@ -124,7 +157,7 @@ function NetworkPageInner() {
   const [bottomPanelOpen, setBottomPanelOpen] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<string | null>(null);
-  const [leftTab, setLeftTab] = useState<'entities' | 'statistics'>('entities');
+  const [leftTab, setLeftTab] = useState<'entities' | 'statistics' | 'analysis'>('entities');
   const [expandedEntityTypes, setExpandedEntityTypes] = useState<Set<string>>(new Set());
   const [stats, setStats] = useState<GraphStats | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('pagerank');
@@ -187,6 +220,15 @@ function NetworkPageInner() {
   const [relEvidenceLoading, setRelEvidenceLoading] = useState<Record<number, boolean>>({});
   const [mobileLeftOpen, setMobileLeftOpen] = useState(false);
   const [mobileRightOpen, setMobileRightOpen] = useState(false);
+  // SNA advanced analysis state
+  const [structuralHoles, setStructuralHoles] = useState<StructuralHoleEntry[]>([]);
+  const [egoNetwork, setEgoNetwork] = useState<EgoNetworkData | null>(null);
+  const [egoLoading, setEgoLoading] = useState(false);
+  const [egoHops, setEgoHops] = useState(2);
+  const [influenceResult, setInfluenceResult] = useState<InfluenceResult | null>(null);
+  const [influenceLoading, setInfluenceLoading] = useState(false);
+  const [influenceSteps, setInfluenceSteps] = useState(3);
+  const [influenceThreshold, setInfluenceThreshold] = useState(0.3);
   // Temporal range filter for graph edges (P0.5)
   const [temporalRange, setTemporalRange] = useState<[string | null, string | null]>([null, null]);
   // Selected edge for detail panel
@@ -337,6 +379,42 @@ function NetworkPageInner() {
     }
   }, [activeProject]);
 
+  const loadStructuralHoles = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      const res = await graphApi.structuralHoles(activeProject.id, 20);
+      setStructuralHoles(res.data || []);
+    } catch (e) {
+      console.error('Failed to load structural holes', e);
+    }
+  }, [activeProject]);
+
+  async function loadEgoNetwork(entityId: string) {
+    if (!activeProject) return;
+    setEgoLoading(true);
+    try {
+      const res = await graphApi.egoNetwork(entityId, activeProject.id, egoHops);
+      setEgoNetwork(res.data);
+    } catch (e) {
+      console.error('Failed to load ego network', e);
+    } finally {
+      setEgoLoading(false);
+    }
+  }
+
+  async function runInfluencePropagation(seedIds: string[]) {
+    if (!activeProject || seedIds.length === 0) return;
+    setInfluenceLoading(true);
+    try {
+      const res = await graphApi.influence(activeProject.id, seedIds, influenceSteps, influenceThreshold);
+      setInfluenceResult(res.data);
+    } catch (e) {
+      console.error('Failed to run influence propagation', e);
+    } finally {
+      setInfluenceLoading(false);
+    }
+  }
+
   async function saveSnapshot() {
     if (!activeProject || !snapshotNameInput.trim() || multiSelected.length === 0) return;
     try {
@@ -462,7 +540,8 @@ function NetworkPageInner() {
     loadStatistics();
     loadCommunities();
     loadSnapshots();
-  }, [loadGraph, loadEntities, loadStatistics, loadCommunities, loadSnapshots]);
+    loadStructuralHoles();
+  }, [loadGraph, loadEntities, loadStatistics, loadCommunities, loadSnapshots, loadStructuralHoles]);
 
   // Auto-select entity from URL param (e.g., from Cyber "View in Graph")
   useEffect(() => {
@@ -1335,6 +1414,12 @@ function NetworkPageInner() {
               >
                 Statistics
               </button>
+              <button
+                onClick={() => setLeftTab('analysis')}
+                className={`flex-1 py-2 text-xs font-medium transition-colors ${leftTab === 'analysis' ? 'text-accent-blue border-b-2 border-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}
+              >
+                Analysis
+              </button>
             </div>
 
             {leftTab === 'entities' ? (
@@ -1487,7 +1572,7 @@ function NetworkPageInner() {
                   </div>
                 </div>
               </>
-            ) : (
+            ) : leftTab === 'statistics' ? (
               <div className="flex-1 overflow-y-auto p-3">
                 {stats ? (
                   <div className="space-y-3">
@@ -1574,7 +1659,102 @@ function NetworkPageInner() {
                   <p className="text-xs text-gray-500">Loading statistics...</p>
                 )}
               </div>
-            )}
+            ) : leftTab === 'analysis' ? (
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                {/* Structural Holes / Brokers */}
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-400 mb-2">Structural Holes (Brokers)</h4>
+                  <p className="text-[10px] text-gray-500 mb-2">Low constraint + high effective size = broker bridging groups.</p>
+                  {structuralHoles.length > 0 ? (
+                    <div className="space-y-1">
+                      {structuralHoles.slice(0, 10).map((sh) => (
+                        <div
+                          key={sh.id}
+                          className={`text-xs rounded p-2 cursor-pointer transition-colors ${sh.is_broker ? 'bg-purple-900/40 border border-purple-700/50' : 'bg-navy-700'} hover:bg-navy-600`}
+                          onClick={() => selectEntity({ id: sh.id, name: sh.name, entity_type: sh.entity_type })}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-200 font-medium truncate">{sh.name}</span>
+                            {sh.is_broker && <span className="text-[9px] px-1.5 py-0.5 bg-purple-600 text-white rounded">Broker</span>}
+                          </div>
+                          <div className="flex gap-3 mt-1 text-[10px] text-gray-400">
+                            <span>Constraint: <span className={sh.constraint < 0.5 ? 'text-green-400' : 'text-gray-300'}>{sh.constraint.toFixed(3)}</span></span>
+                            <span>Eff. Size: <span className={sh.effective_size > 1.5 ? 'text-blue-400' : 'text-gray-300'}>{sh.effective_size.toFixed(2)}</span></span>
+                            <span>Deg: {sh.degree}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-gray-500">No data available.</p>
+                  )}
+                </div>
+
+                {/* Influence Propagation */}
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-400 mb-2">Influence Propagation</h4>
+                  <p className="text-[10px] text-gray-500 mb-2">Simulate how influence spreads from selected entities.</p>
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <label className="text-[10px] text-gray-500">Steps</label>
+                        <input type="number" min={1} max={10} value={influenceSteps} onChange={(e) => setInfluenceSteps(Number(e.target.value))}
+                          className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs" />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] text-gray-500">Threshold</label>
+                        <input type="number" min={0} max={1} step={0.1} value={influenceThreshold} onChange={(e) => setInfluenceThreshold(Number(e.target.value))}
+                          className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs" />
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const seeds = multiSelected.length > 0 ? multiSelected.map(e => e.id) : selectedEntity ? [selectedEntity.id] : [];
+                        if (seeds.length > 0) runInfluencePropagation(seeds);
+                      }}
+                      disabled={influenceLoading || (!selectedEntity && multiSelected.length === 0)}
+                      className="w-full bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+                    >
+                      {influenceLoading ? 'Running...' : `Run from ${multiSelected.length > 0 ? multiSelected.length + ' selected' : selectedEntity?.name || 'no entity'}`}
+                    </button>
+                  </div>
+
+                  {influenceResult && (
+                    <div className="mt-2 space-y-1.5">
+                      <div className="flex gap-2 text-[10px]">
+                        <span className="bg-navy-700 rounded px-2 py-1">
+                          Reach: <span className="text-orange-400 font-bold">{(influenceResult.reach_ratio * 100).toFixed(1)}%</span>
+                        </span>
+                        <span className="bg-navy-700 rounded px-2 py-1">
+                          Activated: <span className="text-orange-400 font-bold">{influenceResult.total_activated}</span> / {influenceResult.total_nodes}
+                        </span>
+                      </div>
+                      {influenceResult.steps.map((step) => (
+                        <div key={step.step} className="bg-navy-700 rounded p-2">
+                          <div className="text-[10px] text-gray-400 mb-1">
+                            Step {step.step}: +{step.newly_activated.length} activated ({step.cumulative_count} total)
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {step.newly_activated.slice(0, 8).map((n) => (
+                              <span
+                                key={n.id}
+                                className="text-[9px] px-1.5 py-0.5 bg-navy-600 text-gray-300 rounded cursor-pointer hover:bg-navy-500"
+                                onClick={() => selectEntity({ id: n.id, name: n.name, entity_type: n.entity_type })}
+                              >
+                                {n.name}
+                              </span>
+                            ))}
+                            {step.newly_activated.length > 8 && (
+                              <span className="text-[9px] text-gray-500">+{step.newly_activated.length - 8} more</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {/* Center - Graph or Statistics Table */}
@@ -2045,6 +2225,72 @@ function NetworkPageInner() {
                     </div>
                   ) : (
                     <p className="text-xs text-gray-500">No source documents found.</p>
+                  )}
+                </div>
+
+                {/* Ego Network */}
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold text-gray-400">Ego Network</h4>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={egoHops}
+                      onChange={(e) => setEgoHops(Number(e.target.value))}
+                      className="bg-navy-700 border border-navy-600 rounded px-2 py-1.5 text-xs"
+                    >
+                      <option value={1}>1 hop</option>
+                      <option value={2}>2 hops</option>
+                      <option value={3}>3 hops</option>
+                      <option value={4}>4 hops</option>
+                    </select>
+                    <button
+                      onClick={() => loadEgoNetwork(selectedEntity.id)}
+                      disabled={egoLoading}
+                      className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+                    >
+                      {egoLoading ? 'Loading...' : 'Extract'}
+                    </button>
+                  </div>
+                  {egoNetwork && egoNetwork.center === selectedEntity.id && (
+                    <div className="bg-navy-700 rounded p-2 space-y-1.5">
+                      <div className="flex gap-2 text-[10px] text-gray-400">
+                        <span>{egoNetwork.node_count} nodes</span>
+                        <span>{egoNetwork.edge_count} edges</span>
+                        <span>{egoNetwork.hops} hops</span>
+                      </div>
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {egoNetwork.nodes.filter(n => n.id !== selectedEntity.id).slice(0, 15).map((n) => (
+                          <div
+                            key={n.id}
+                            className="flex items-center justify-between text-[10px] px-1.5 py-1 bg-navy-800 rounded cursor-pointer hover:bg-navy-600"
+                            onClick={() => selectEntity({ id: n.id, name: n.name, entity_type: n.entity_type })}
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className={`w-1.5 h-1.5 rounded-full flex-none ${n.hop_distance === 1 ? 'bg-blue-400' : n.hop_distance === 2 ? 'bg-blue-600' : 'bg-blue-800'}`} />
+                              <span className="text-gray-300 truncate">{n.name}</span>
+                            </div>
+                            <span className="text-gray-500 flex-none ml-1">h{n.hop_distance} pr:{n.local_pagerank.toFixed(3)}</span>
+                          </div>
+                        ))}
+                        {egoNetwork.nodes.length > 16 && (
+                          <p className="text-[10px] text-gray-500 text-center">+{egoNetwork.nodes.length - 16} more</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          // Focus the graph on the ego network by filtering
+                          const egoIds = new Set(egoNetwork.nodes.map(n => n.id));
+                          setFilteredGraphNodes(graphNodes.filter(n => egoIds.has(n.id)));
+                          setFilteredGraphEdges(graphEdges.filter(e => {
+                            const srcId = e.source_id || e.source;
+                            const tgtId = e.target_id || e.target;
+                            return egoIds.has(srcId) && egoIds.has(tgtId);
+                          }));
+                        }}
+                        className="w-full bg-navy-600 hover:bg-navy-500 text-gray-300 px-2 py-1 rounded text-[10px] transition-colors"
+                      >
+                        Focus Graph on Ego Network
+                      </button>
+                    </div>
                   )}
                 </div>
 
