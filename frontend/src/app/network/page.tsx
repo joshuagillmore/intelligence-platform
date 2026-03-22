@@ -6,7 +6,7 @@ import GraphVisualization, { LayoutMode, ColorMode } from '@/components/GraphVis
 import { useProject } from '@/lib/ProjectContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi } from '@/lib/api';
+import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi, reportsApi } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { collapseToCommunities } from '@/lib/graphLayout';
 import { useNotifications } from '@/components/NotificationProvider';
@@ -1413,7 +1413,7 @@ function NetworkPageInner() {
           </div>
 
           {/* Center - Graph or Statistics Table */}
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col overflow-hidden relative">
             {leftTab === 'statistics' && stats?.entity_statistics ? (
               <div className="flex-1 overflow-auto p-4">
                 <div className="flex items-center gap-4 mb-4">
@@ -1490,133 +1490,152 @@ function NetworkPageInner() {
                   )}
                 </div>
 
-                {/* Bottom panel with tabs */}
-                <div className={`flex-none border-t border-navy-600 bg-navy-800 transition-all ${bottomPanelOpen ? 'h-56' : 'h-8'}`}>
-                  <div className="h-8 flex items-center border-b border-navy-600">
+                {/* ═══ Floating Chat Overlay (Geo-style) ═══ */}
+                <div
+                  className="absolute bottom-2 left-2 right-2 rounded-lg shadow-2xl flex flex-col overflow-hidden z-10"
+                  style={{
+                    background: '#252a39',
+                    border: '1px solid #313849',
+                    maxHeight: bottomPanelOpen ? '340px' : '44px',
+                    transition: 'max-height 0.25s ease',
+                  }}
+                >
+                  {/* Header bar */}
+                  <div className="flex items-center shrink-0" style={{ borderBottom: bottomPanelOpen ? '1px solid #313849' : 'none' }}>
                     <button
                       onClick={() => setBottomPanelOpen(!bottomPanelOpen)}
-                      className="px-3 h-full text-xs text-gray-400 hover:text-gray-200"
+                      className="flex items-center gap-2 px-4 py-2.5 text-left"
                     >
-                      {bottomPanelOpen ? '\u25BC' : '\u25B2'}
+                      <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: '#adc6ff', color: '#0e1321' }}>
+                        AI
+                      </span>
+                      <span className="text-sm font-medium text-gray-200">Intelligence Assistant</span>
+                      <svg className="w-4 h-4 text-gray-400 transition-transform" style={{ transform: bottomPanelOpen ? 'rotate(180deg)' : 'rotate(0deg)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                      </svg>
                     </button>
                     {bottomPanelOpen && (
-                      <div className="flex">
-                        <button
-                          onClick={() => setBottomTab('chat')}
-                          className={`px-4 h-8 text-xs font-medium transition-colors ${bottomTab === 'chat' ? 'text-accent-blue border-b-2 border-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}
-                        >
+                      <div className="flex ml-auto pr-2 gap-1">
+                        <button onClick={() => setBottomTab('chat')} className={`px-3 py-1 rounded text-xs font-medium ${bottomTab === 'chat' ? 'bg-navy-600 text-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}>
                           RAG Chat
                         </button>
-                        <button
-                          onClick={() => setBottomTab('notebook')}
-                          className={`px-4 h-8 text-xs font-medium transition-colors ${bottomTab === 'notebook' ? 'text-accent-blue border-b-2 border-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}
-                        >
+                        <button onClick={() => setBottomTab('notebook')} className={`px-3 py-1 rounded text-xs font-medium ${bottomTab === 'notebook' ? 'bg-navy-600 text-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}>
                           Notebook
                         </button>
                       </div>
                     )}
                   </div>
+
                   {bottomPanelOpen && bottomTab === 'chat' && (
-                    <div className="flex flex-col" style={{ height: 'calc(100% - 2rem)' }}>
-                      <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                    <>
+                      <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0" style={{ maxHeight: '240px' }}>
+                        {chatMessages.length === 0 && (
+                          <p className="text-xs text-gray-500">Ask questions about the knowledge graph. The AI will reason over entities, relationships, and source documents.</p>
+                        )}
                         {chatMessages.map((msg, i) => (
-                          <div key={i} className={`text-xs p-2 rounded ${msg.role === 'user' ? 'bg-navy-700 text-gray-200' : 'bg-navy-600 text-gray-300'}`}>
-                            <span className="font-bold text-accent-blue">{msg.role === 'user' ? 'You' : 'AI'}:</span> {msg.content}
+                          <div key={i}>
+                            <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                              <div className={`max-w-[85%] rounded-lg px-3 py-2 text-xs ${msg.role === 'user' ? 'text-gray-900' : 'text-gray-200'}`}
+                                style={{ background: msg.role === 'user' ? '#adc6ff' : '#0e1321' }}>
+                                <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+                              </div>
+                            </div>
+                            {msg.role === 'assistant' && msg.content && msg.content.length > 50 && (
+                              <div className="flex justify-start mt-1 ml-1">
+                                <button
+                                  onClick={async () => {
+                                    if (!activeProject) return;
+                                    try {
+                                      await reportsApi.save({
+                                        project_id: activeProject.id,
+                                        title: `RAG Response: ${chatMessages[i - 1]?.content?.slice(0, 50) || 'Query'}...`,
+                                        content: msg.content,
+                                        report_type: 'RAG Analysis',
+                                      });
+                                      addNotification({ type: 'success', title: 'Saved', message: 'Response saved as product' });
+                                    } catch {
+                                      addNotification({ type: 'error', title: 'Failed', message: 'Could not save product' });
+                                    }
+                                  }}
+                                  className="text-[10px] px-2 py-0.5 rounded hover:opacity-80"
+                                  style={{ background: '#313849', color: '#adc6ff' }}
+                                >
+                                  Save as Product
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ))}
-                        {chatLoading && <div className="text-xs text-gray-400 p-2">Thinking...</div>}
+                        {chatLoading && (
+                          <div className="flex justify-start">
+                            <div className="rounded-lg px-3 py-2 text-xs" style={{ background: '#0e1321', color: '#6b7a99' }}>Thinking...</div>
+                          </div>
+                        )}
                       </div>
-                      <div className="flex gap-2 p-2 border-t border-navy-600">
+                      <div className="px-4 py-3 flex gap-2 shrink-0" style={{ borderTop: '1px solid #313849' }}>
                         <input
                           value={chatInput}
                           onChange={(e) => setChatInput(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && sendChat()}
                           placeholder="Ask about the knowledge graph..."
-                          className="flex-1 bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-blue"
+                          className="flex-1 rounded px-3 py-1.5 text-sm focus:outline-none"
+                          style={{ background: '#0e1321', border: '1px solid #313849', color: '#e5e7eb' }}
                         />
                         <button
                           onClick={sendChat}
-                          disabled={chatLoading}
-                          className="bg-accent-blue hover:bg-blue-600 text-white px-3 py-1 rounded text-xs disabled:opacity-50"
+                          disabled={chatLoading || !chatInput.trim()}
+                          className="px-4 py-1.5 rounded text-sm font-medium disabled:opacity-40"
+                          style={{ background: '#adc6ff', color: '#0e1321' }}
                         >
                           Send
                         </button>
                       </div>
-                    </div>
+                    </>
                   )}
+
                   {bottomPanelOpen && bottomTab === 'notebook' && (
-                    <div className="flex flex-col" style={{ height: 'calc(100% - 2rem)' }}>
-                      <div className="flex items-center justify-between px-3 py-1 border-b border-navy-600">
+                    <div className="flex flex-col" style={{ maxHeight: '290px' }}>
+                      <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid #313849' }}>
                         <span className="text-xs text-gray-400">{notes.length} notes</span>
-                        <button
-                          onClick={() => setNoteFormOpen(!noteFormOpen)}
-                          className="text-xs bg-accent-blue hover:bg-blue-600 text-white px-3 py-1 rounded"
-                        >
+                        <button onClick={() => setNoteFormOpen(!noteFormOpen)} className="text-xs px-3 py-1 rounded font-medium" style={{ background: '#adc6ff', color: '#0e1321' }}>
                           {noteFormOpen ? 'Cancel' : 'New Note'}
                         </button>
                       </div>
                       {noteFormOpen ? (
-                        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                          <input
-                            value={noteTitle}
-                            onChange={(e) => setNoteTitle(e.target.value)}
-                            placeholder="Note title..."
-                            className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-blue"
-                          />
-                          <textarea
-                            value={noteContent}
-                            onChange={(e) => setNoteContent(e.target.value)}
-                            placeholder="Write your note..."
-                            className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs h-16 focus:outline-none focus:border-accent-blue resize-none"
-                          />
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                          <input value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} placeholder="Note title..."
+                            className="w-full rounded px-3 py-1.5 text-xs focus:outline-none" style={{ background: '#0e1321', border: '1px solid #313849', color: '#e5e7eb' }} />
+                          <textarea value={noteContent} onChange={(e) => setNoteContent(e.target.value)} placeholder="Write your note..."
+                            className="w-full rounded px-3 py-1.5 text-xs h-16 focus:outline-none resize-none" style={{ background: '#0e1321', border: '1px solid #313849', color: '#e5e7eb' }} />
                           <div className="flex items-center gap-2">
-                            <select
-                              value={noteType}
-                              onChange={(e) => setNoteType(e.target.value)}
-                              className="bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-blue"
-                            >
+                            <select value={noteType} onChange={(e) => setNoteType(e.target.value)}
+                              className="rounded px-2 py-1 text-xs focus:outline-none" style={{ background: '#0e1321', border: '1px solid #313849', color: '#e5e7eb' }}>
                               <option value="observation">Observation</option>
                               <option value="hypothesis">Hypothesis</option>
                               <option value="question">Question</option>
                               <option value="conclusion">Conclusion</option>
                             </select>
-                            {multiSelected.length > 0 && (
-                              <span className="text-xs text-gray-400">Linking {multiSelected.length} selected entities</span>
-                            )}
-                            <button
-                              onClick={createNote}
-                              disabled={!noteTitle.trim() || !noteContent.trim()}
-                              className="ml-auto bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs disabled:opacity-50"
-                            >
-                              Save Note
-                            </button>
+                            {multiSelected.length > 0 && <span className="text-xs text-gray-400">Linking {multiSelected.length} entities</span>}
+                            <button onClick={createNote} disabled={!noteTitle.trim() || !noteContent.trim()}
+                              className="ml-auto px-3 py-1 rounded text-xs font-medium disabled:opacity-40" style={{ background: '#34d399', color: '#0e1321' }}>Save</button>
                           </div>
                         </div>
                       ) : (
-                        <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                        <div className="flex-1 overflow-y-auto p-3 space-y-2">
                           {notes.length === 0 ? (
-                            <p className="text-xs text-gray-500 text-center mt-4">No notebook entries yet.</p>
-                          ) : (
-                            notes.map((note) => (
-                              <div key={note.id} className="bg-navy-700 rounded p-2 text-xs">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="font-medium text-gray-200">{note.name}</span>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs px-1.5 py-0.5 rounded bg-navy-600 text-gray-400">
-                                      {note.note_type || 'note'}
-                                    </span>
-                                    <button
-                                      onClick={() => deleteNote(note.id)}
-                                      className="text-red-400 hover:text-red-300 text-xs"
-                                    >
-                                      Delete
-                                    </button>
-                                  </div>
+                            <p className="text-xs text-gray-500 text-center py-4">No notebook entries yet.</p>
+                          ) : notes.map((note) => (
+                            <div key={note.id} className="rounded-lg p-3 text-xs" style={{ background: '#0e1321' }}>
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="font-medium text-gray-200">{note.name}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: '#252a39', color: '#6b7a99' }}>{note.note_type || 'note'}</span>
+                                  <button onClick={() => deleteNote(note.id)} className="text-red-400 hover:text-red-300 text-[10px]">Delete</button>
                                 </div>
-                                <p className="text-gray-400 truncate">{note.content || ''}</p>
                               </div>
-                            ))
-                          )}
+                              <p className="text-gray-400 truncate">{note.content || ''}</p>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
