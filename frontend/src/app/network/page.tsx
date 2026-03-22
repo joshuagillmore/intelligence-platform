@@ -106,6 +106,7 @@ function NetworkPageInner() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<string | null>(null);
   const [leftTab, setLeftTab] = useState<'entities' | 'statistics'>('entities');
+  const [expandedEntityTypes, setExpandedEntityTypes] = useState<Set<string>>(new Set());
   const [stats, setStats] = useState<GraphStats | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('pagerank');
   const [sortAsc, setSortAsc] = useState(false);
@@ -1191,22 +1192,53 @@ function NetworkPageInner() {
                   </select>
                 </div>
                 <div className="flex-1 overflow-y-auto">
-                  {entities.map((entity) => (
-                    <button
-                      key={entity.id}
-                      onClick={() => selectEntity(entity)}
-                      className={`w-full text-left px-3 py-2 text-sm border-b border-navy-700 hover:bg-navy-700 transition-colors flex items-center gap-2 ${
-                        selectedEntity?.id === entity.id ? 'bg-navy-700 text-accent-blue' : 'text-gray-300'
-                      }`}
-                    >
-                      <span className={`w-2 h-2 rounded-full flex-none ${TYPE_COLORS[entity.entity_type] || 'bg-gray-500'}`} />
-                      <span className="truncate">{entity.name}</span>
-                      <span className="text-xs text-gray-500 flex-none">{entity.entity_type}</span>
-                    </button>
-                  ))}
-                  {entities.length === 0 && (
-                    <p className="text-xs text-gray-500 p-3">No entities found.</p>
-                  )}
+                  {(() => {
+                    // Group entities by type for collapsible hierarchy
+                    const grouped: Record<string, typeof entities> = {};
+                    entities.forEach(e => {
+                      const t = e.entity_type || 'Unknown';
+                      if (!grouped[t]) grouped[t] = [];
+                      grouped[t].push(e);
+                    });
+                    const sortedTypes = Object.keys(grouped).sort();
+
+                    if (entities.length === 0) {
+                      return <p className="text-xs text-gray-500 p-3">No entities found.</p>;
+                    }
+
+                    return sortedTypes.map(type => {
+                      const typeEntities = grouped[type];
+                      const isExpanded = expandedEntityTypes.has(type);
+                      return (
+                        <div key={type}>
+                          <button
+                            onClick={() => setExpandedEntityTypes(prev => {
+                              const next = new Set(prev);
+                              if (next.has(type)) next.delete(type); else next.add(type);
+                              return next;
+                            })}
+                            className="w-full text-left px-3 py-2 text-xs font-semibold border-b border-navy-700 hover:bg-navy-700 flex items-center gap-2 text-gray-400"
+                          >
+                            <span className="text-[10px]">{isExpanded ? '▼' : '▶'}</span>
+                            <span className={`w-2 h-2 rounded-full flex-none ${TYPE_COLORS[type] || 'bg-gray-500'}`} />
+                            <span className="flex-1">{type}</span>
+                            <span className="text-[10px] text-gray-500 bg-navy-600 px-1.5 py-0.5 rounded-full">{typeEntities.length}</span>
+                          </button>
+                          {isExpanded && typeEntities.map(entity => (
+                            <button
+                              key={entity.id}
+                              onClick={() => selectEntity(entity)}
+                              className={`w-full text-left pl-8 pr-3 py-1.5 text-xs border-b border-navy-700/50 hover:bg-navy-700 transition-colors flex items-center gap-2 ${
+                                selectedEntity?.id === entity.id ? 'bg-navy-700 text-accent-blue' : 'text-gray-300'
+                              }`}
+                            >
+                              <span className="truncate">{entity.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
                 {/* Snapshots (Bins) Section */}
                 <div className="flex-none border-t border-navy-600">
