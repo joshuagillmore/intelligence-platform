@@ -244,10 +244,15 @@ class GraphStore:
             record = result.single()
             return dict(record["p"]) if record else None
 
+    ALLOWED_PROJECT_FIELDS = {"name", "description", "classification_level", "priority", "status"}
+
     def update_project(self, project_id: str, **kwargs) -> None:
-        set_clauses = ", ".join(f"p.{k} = ${k}" for k in kwargs)
+        safe_kwargs = {k: v for k, v in kwargs.items() if k in self.ALLOWED_PROJECT_FIELDS}
+        if not safe_kwargs:
+            return
+        set_clauses = ", ".join(f"p.{k} = ${k}" for k in safe_kwargs)
         with self._driver.session() as session:
-            session.run(f"MATCH (p:Project {{id: $id}}) SET {set_clauses}", id=project_id, **kwargs)
+            session.run(f"MATCH (p:Project {{id: $id}}) SET {set_clauses}", id=project_id, **safe_kwargs)
 
     def get_project_stats(self, project_id: str) -> dict:
         with self._driver.session() as session:

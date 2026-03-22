@@ -82,26 +82,26 @@ def update_project(project_id: str, req: CreateProjectRequest, store: GraphStore
 def batch_delete_projects(req: BatchDeleteRequest, store: GraphStore = Depends(get_graph_store)):
     deleted = 0
     for pid in req.project_ids:
-        project = store.get_project(pid)
-        if project:
-            # Delete all entities in the project first
-            entities = store.search_entities(project_id=pid, limit=10000)
-            for e in entities:
-                store.delete_entity(e.get("id", ""))
-            store.delete_entity(pid)
-            deleted += 1
+        with store._driver.session() as session:
+            session.run("MATCH (n {project_id: $pid}) DETACH DELETE n", pid=pid)
+            session.run("MATCH (p:Project {id: $pid}) DETACH DELETE p", pid=pid)
+        deleted += 1
     return {"deleted": deleted}
 
 
 @router.delete("/projects/{project_id}")
 def delete_project(project_id: str, store: GraphStore = Depends(get_graph_store)):
-    # Delete all entities in the project
-    entities = store.search_entities(project_id=project_id, limit=10000)
-    for e in entities:
-        store.delete_entity(e.get("id", ""))
+    # Delete all entities in project with single query
+    with store._driver.session() as session:
+        result = session.run(
+            "MATCH (n {project_id: $pid}) DETACH DELETE n RETURN count(n) as deleted",
+            pid=project_id,
+        )
+        record = result.single()
+        entities_deleted = record["deleted"] if record else 0
     # Delete the project itself
     store.delete_entity(project_id)
-    return {"status": "deleted", "entities_removed": len(entities)}
+    return {"status": "deleted", "entities_removed": entities_deleted}
 
 
 @router.get("/projects/{project_id}/activity")
