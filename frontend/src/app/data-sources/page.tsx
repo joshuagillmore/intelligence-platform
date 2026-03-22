@@ -34,10 +34,16 @@ interface ConnectedEntity {
   confidence?: number;
 }
 
+interface DocumentExcerpt {
+  name: string;
+  content: string;
+}
+
 interface EntityContext {
   entity: { id: string; name: string; entity_type: string; properties?: Record<string, unknown> };
   connected_entities?: ConnectedEntity[];
   source_documents?: SourceDocument[];
+  document_excerpts?: DocumentExcerpt[];
   keywords?: string[];
 }
 
@@ -195,10 +201,14 @@ export default function DataSourcesPage() {
     setSummaryLoading(true);
     setSummary(null);
     try {
-      const res = await queryApi.rag(
-        activeProject.id,
-        `Provide a comprehensive intelligence summary about "${selectedNodeName}". What do we know from our sources?`
-      );
+      // Build query with document excerpts for topic nodes
+      const excerpts = entityContext?.document_excerpts || [];
+      let query = `Provide a comprehensive intelligence summary about "${selectedNodeName}". What do we know from our sources?`;
+      if (excerpts.length > 0) {
+        const excerptText = excerpts.map(e => `**${e.name}:**\n${e.content}`).join('\n\n---\n\n');
+        query = `Provide a comprehensive intelligence summary about "${selectedNodeName}" based on the following source documents.\n\n${excerptText}\n\nSummarize the key findings, themes, and intelligence value of these documents regarding "${selectedNodeName}".`;
+      }
+      const res = await queryApi.rag(activeProject.id, query);
       setSummary(res.data.answer || res.data.response || JSON.stringify(res.data));
     } catch {
       setSummary('Unable to generate summary at this time.');
