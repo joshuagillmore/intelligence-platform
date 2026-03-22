@@ -15,6 +15,7 @@ SPACY_TO_ENTITY_TYPE = {
     "FAC": "Location",
     "EVENT": "Event",
     "NORP": "Organization",
+    "DATE": "Date",
 }
 
 # Regex patterns for cyber-specific entities
@@ -26,6 +27,18 @@ HASH_SHA256 = re.compile(r'\b[a-fA-F0-9]{64}\b')
 CVE_PATTERN = re.compile(r'\bCVE-\d{4}-\d{4,}\b')
 MITRE_PATTERN = re.compile(r'\bT\d{4}(?:\.\d{3})?\b')
 BTC_PATTERN = re.compile(r'\b(?:bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b')
+
+# Date patterns for intelligence documents
+MONTH_NAMES = r'(?:January|February|March|April|May|June|July|August|September|October|November|December)'
+DATE_PATTERNS = [
+    # "May 7, 2021" or "May 2021"
+    re.compile(rf'\b{MONTH_NAMES}\s+\d{{1,2}},?\s+\d{{4}}\b'),
+    re.compile(rf'\b{MONTH_NAMES}\s+\d{{4}}\b'),
+    # "2021-05-07" ISO format
+    re.compile(r'\b\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])\b'),
+    # "Q1 2026", "Q3 2021"
+    re.compile(r'\bQ[1-4]\s+\d{4}\b'),
+]
 
 # Known intelligence-domain locations that spaCy commonly misclassifies
 KNOWN_LOCATIONS = {
@@ -168,6 +181,17 @@ def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
                 "source": doc_id, "method": "regex", "confidence": 0.9,
             })
 
+    # Date extraction
+    for pattern in DATE_PATTERNS:
+        for match in pattern.finditer(text):
+            date_str = match.group().strip()
+            if date_str not in seen and len(date_str) >= 4:
+                seen.add(date_str)
+                cyber_entities.append({
+                    "name": date_str, "entity_type": "Date",
+                    "source": doc_id, "method": "regex", "confidence": 0.95,
+                })
+
     return cyber_entities
 
 
@@ -261,20 +285,45 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
     # Rebuild seen_names after postprocessing (names may have changed)
     seen_names = {e["name"]: e for e in entities}
 
+    # Also match regex-extracted entities (dates, IPs, etc.) to sentences for relationship building
+    # Build a map of entity names that appear in each sentence
     relationships = []
     for sent in doc.sents:
-        sent_entities = [
-            seen_names[ent.text.strip()]
-            for ent in sent.ents
-            if ent.text.strip() in seen_names
-        ]
-        for i, e1 in enumerate(sent_entities):
-            for e2 in sent_entities[i + 1:]:
-                relationships.append({
-                    "source_name": e1["name"], "target_name": e2["name"],
-                    "rel_type": "ASSOCIATED_WITH", "confidence": 0.5,
-                    "source": doc_id, "method": "nlp",
-                })
+        sent_text = sent.text
+        sent_entities_list = []
+
+        # spaCy-detected entities in this sentence
+        for ent in sent.ents:
+            name = ent.text.strip()
+            if name in seen_names:
+                sent_entities_list.append(seen_names[name])
+
+        # Regex-extracted entities that appear in this sentence text
+        for e in entities:
+            if e.get("method") == "regex" and e["name"] in sent_text and e not in sent_entities_list:
+                sent_entities_list.append(e)
+
+        for i, e1 in enumerate(sent_entities_list):
+            for e2 in sent_entities_list[i + 1:]:
+                # Use more specific relationship type for dates
+                if e1.get("entity_type") == "Date" or e2.get("entity_type") == "Date":
+                    rel_type = "OCCURRED_ON"
+                    # Put non-date entity as source, date as target
+                    if e1.get("entity_type") == "Date":
+                        src, tgt = e2, e1
+                    else:
+                        src, tgt = e1, e2
+                    relationships.append({
+                        "source_name": src["name"], "target_name": tgt["name"],
+                        "rel_type": rel_type, "confidence": 0.7,
+                        "source": doc_id, "method": "nlp",
+                    })
+                else:
+                    relationships.append({
+                        "source_name": e1["name"], "target_name": e2["name"],
+                        "rel_type": "ASSOCIATED_WITH", "confidence": 0.5,
+                        "source": doc_id, "method": "nlp",
+                    })
 
     return entities, relationships
 

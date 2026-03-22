@@ -40,7 +40,7 @@ const TYPE_COLORS: Record<string, string> = {
   IPAddress: '#06b6d4', Domain: '#a855f7', Hash: '#ec4899',
   ThreatActor: '#ef4444', TTP: '#eab308', Vulnerability: '#f43f5e',
   Document: '#6b7280', Assessment: '#14b8a6', Malware: '#be123c',
-  Campaign: '#d946ef', Community: '#8b5cf6', Technology: '#06b6d4',
+  Campaign: '#d946ef', Community: '#8b5cf6', Date: '#94a3b8', Technology: '#06b6d4',
   Weapon: '#f43f5e', Facility: '#84cc16', Software: '#0ea5e9',
   MilitaryUnit: '#dc2626', GovernmentAgency: '#2563eb',
   Country: '#16a34a', City: '#65a30d', Custom: '#78716c',

@@ -204,7 +204,24 @@ export default function NetworkPage() {
     if (!activeProject) return;
     try {
       const res = await graphApi.statistics(activeProject.id);
-      setStats(res.data);
+      const raw = res.data;
+      // Normalize backend field names to frontend interface
+      const normalized: GraphStats = {
+        total_nodes: raw.total_nodes ?? raw.nodes ?? 0,
+        total_edges: raw.total_edges ?? raw.edges ?? 0,
+        density: raw.density ?? 0,
+        connected_components: raw.connected_components ?? raw.components ?? 0,
+        entity_statistics: (raw.entity_statistics ?? raw.entities ?? []).map((e: Record<string, unknown>) => ({
+          entity: (e.entity ?? e.name ?? '') as string,
+          type: (e.type ?? e.entity_type ?? '') as string,
+          degree: (e.degree ?? 0) as number,
+          betweenness: (e.betweenness ?? 0) as number,
+          eigenvector: (e.eigenvector ?? 0) as number,
+          pagerank: (e.pagerank ?? 0) as number,
+          closeness: (e.closeness ?? 0) as number,
+        })),
+      };
+      setStats(normalized);
     } catch (e) {
       console.error('Failed to load statistics', e);
     }
