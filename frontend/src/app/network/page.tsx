@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import Sidebar from '@/components/Sidebar';
 import GraphVisualization, { LayoutMode, ColorMode } from '@/components/GraphVisualization';
 import { useProject } from '@/lib/ProjectContext';
@@ -8,6 +8,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { useRouter } from 'next/navigation';
 import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
+import { collapseToCommunities } from '@/lib/graphLayout';
 import { useNotifications } from '@/components/NotificationProvider';
 
 interface Entity {
@@ -149,6 +150,7 @@ export default function NetworkPage() {
   // Color mode and community data
   const [colorMode, setColorMode] = useState<ColorMode>('type');
   const [communityMap, setCommunityMap] = useState<Record<string, number>>({});
+  const [collapseCommunities, setCollapseCommunities] = useState(false);
   // Evidence chain: source documents for selected entity
   const [evidenceDocs, setEvidenceDocs] = useState<Array<{ id: string; name: string; reliability_rating: string }>>([]);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
@@ -469,6 +471,17 @@ export default function NetworkPage() {
     }
     setFilteredGraphEdges(edges);
   }, [graphNodes, graphEdges, islandThreshold, islandMetric, hiddenRelTypes, confidenceThreshold, stats]);
+
+  // Community collapse: reduce many nodes into community super-nodes
+  const displayData = useMemo(() => {
+    if (collapseCommunities && filteredGraphNodes.length > 0) {
+      return collapseToCommunities(
+        filteredGraphNodes as unknown as Parameters<typeof collapseToCommunities>[0],
+        filteredGraphEdges as unknown as Parameters<typeof collapseToCommunities>[1]
+      );
+    }
+    return { nodes: filteredGraphNodes, edges: filteredGraphEdges };
+  }, [collapseCommunities, filteredGraphNodes, filteredGraphEdges]);
 
   function handleShiftNodeClick(node: GraphNode, shiftKey: boolean) {
     if (shiftKey) {
@@ -931,7 +944,7 @@ export default function NetworkPage() {
                 </button>
               </div>
             )}
-            <span className="text-sm text-gray-400">{filteredGraphNodes.length} nodes, {filteredGraphEdges.length} edges</span>
+            <span className="text-sm text-gray-400">{displayData.nodes.length} nodes, {displayData.edges.length} edges{collapseCommunities ? ' (collapsed)' : ''}</span>
           </div>
         </div>
 
@@ -1072,6 +1085,19 @@ export default function NetworkPage() {
               ))}
             </div>
           </div>
+
+          {/* Divider */}
+          <div className="w-px h-5 bg-navy-600" />
+
+          {/* Community Collapse Toggle */}
+          <button
+            onClick={() => setCollapseCommunities(!collapseCommunities)}
+            className={`px-3 py-1 rounded text-xs transition-colors ${
+              collapseCommunities ? 'bg-accent-blue text-white' : 'bg-navy-700 text-gray-300 border border-navy-600 hover:bg-navy-600'
+            }`}
+          >
+            {collapseCommunities ? 'Expand Communities' : 'Collapse Communities'}
+          </button>
         </div>
 
         {/* Main content area */}
@@ -1348,8 +1374,8 @@ export default function NetworkPage() {
                     </div>
                   ) : filteredGraphNodes.length > 0 ? (
                     <GraphVisualization
-                      nodes={filteredGraphNodes}
-                      edges={filteredGraphEdges}
+                      nodes={displayData.nodes as GraphNode[]}
+                      edges={displayData.edges as GraphEdge[]}
                       onNodeClick={handleNodeClick}
                       selectedNodeId={selectedEntity?.id}
                       layout={layoutMode}
