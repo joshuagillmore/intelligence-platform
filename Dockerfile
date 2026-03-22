@@ -29,5 +29,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends nodejs && rm -r
 
 EXPOSE 8000 3000
 
-# Shell form CMD — ensures $PORT is expanded by sh
-CMD cd /app/frontend-server && PORT=3000 node server.js & cd /app && exec uv run uvicorn intel_platform.api.app:app --host 0.0.0.0 --port ${PORT:-8000}
+# Use fixed port 8000 — Railway maps it via PORT env var
+CMD ["uv", "run", "uvicorn", "intel_platform.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
