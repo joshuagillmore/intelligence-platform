@@ -16,7 +16,7 @@ class QueryRequest(BaseModel):
 
 
 @router.post("/query")
-def graph_rag_query(req: QueryRequest, store: GraphStore = Depends(get_graph_store)):
+async def graph_rag_query(req: QueryRequest, store: GraphStore = Depends(get_graph_store)):
     pipeline = GraphRAGPipeline(store)
-    result = pipeline.query(req.query, req.project_id, max_hops=req.max_hops, token_budget=req.token_budget)
+    result = await pipeline.query(req.query, req.project_id, max_hops=req.max_hops, token_budget=req.token_budget)
     return result
