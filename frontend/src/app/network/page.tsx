@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
 import Sidebar from '@/components/Sidebar';
 import GraphVisualization, { LayoutMode, ColorMode } from '@/components/GraphVisualization';
 import { useProject } from '@/lib/ProjectContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { collapseToCommunities } from '@/lib/graphLayout';
@@ -89,7 +89,7 @@ function intensityClass(value: number, max: number): string {
   return 'text-gray-400';
 }
 
-export default function NetworkPage() {
+function NetworkPageInner() {
   const { activeProject } = useProject();
   const { addNotification, updateNotification } = useNotifications();
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -166,6 +166,8 @@ export default function NetworkPage() {
   const [relEvidenceData, setRelEvidenceData] = useState<Record<number, any[]>>({});
   const [relEvidenceLoading, setRelEvidenceLoading] = useState<Record<number, boolean>>({});
   const networkRouter = useRouter();
+  const searchParams = useSearchParams();
+  const selectParam = searchParams.get('select');
   const graphNodesRef = useRef<GraphNode[]>([]);
 
   const loadGraph = useCallback(async () => {
@@ -405,6 +407,17 @@ export default function NetworkPage() {
     loadCommunities();
     loadSnapshots();
   }, [loadGraph, loadEntities, loadStatistics, loadCommunities, loadSnapshots]);
+
+  // Auto-select entity from URL param (e.g., from Cyber "View in Graph")
+  useEffect(() => {
+    if (selectParam && graphNodes.length > 0) {
+      const node = graphNodes.find(n => n.id === selectParam);
+      if (node) {
+        selectEntity({ id: node.id, name: node.name, entity_type: node.entity_type });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectParam, graphNodes]);
 
   // Derive all unique relationship types from graph edges
   const allRelTypes = Array.from(new Set(graphEdges.map(e => e.rel_type).filter(Boolean))).sort();
@@ -965,6 +978,42 @@ export default function NetworkPage() {
               </div>
             )}
             <span className="text-sm text-gray-400">{displayData.nodes.length} nodes, {displayData.edges.length} edges{collapseCommunities ? ' (collapsed)' : ''}</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const allEntities = filteredGraphNodes.map(n => ({ id: n.id, name: n.name, entity_type: n.entity_type }));
+                  setMultiSelected(allEntities);
+                }}
+                className="text-[10px] px-2 py-0.5 rounded bg-navy-600 text-gray-300 hover:bg-navy-500"
+              >
+                Select All
+              </button>
+              {selectedEntity && communityMap[selectedEntity.id] !== undefined && (
+                <button
+                  onClick={() => {
+                    const cid = communityMap[selectedEntity.id];
+                    const communityEntities = filteredGraphNodes
+                      .filter(n => communityMap[n.id] === cid)
+                      .map(n => ({ id: n.id, name: n.name, entity_type: n.entity_type }));
+                    setMultiSelected(communityEntities);
+                  }}
+                  className="text-[10px] px-2 py-0.5 rounded bg-navy-600 text-gray-300 hover:bg-navy-500"
+                >
+                  Select Community ({filteredGraphNodes.filter(n => communityMap[n.id] === communityMap[selectedEntity.id]).length} members)
+                </button>
+              )}
+              {multiSelected.length > 0 && (
+                <>
+                  <span className="text-[10px] text-accent-blue font-medium">{multiSelected.length} selected</span>
+                  <button
+                    onClick={() => setMultiSelected([])}
+                    className="text-[10px] px-2 py-0.5 rounded bg-navy-600 text-gray-300 hover:bg-navy-500"
+                  >
+                    Clear
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1034,24 +1083,6 @@ export default function NetworkPage() {
               ))}
             </div>
           )}
-
-          {/* Divider */}
-          <div className="w-px h-5 bg-navy-600" />
-
-          {/* Confidence Threshold */}
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-400 whitespace-nowrap">Min Confidence</label>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={confidenceThreshold}
-              onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
-              className="w-20 accent-accent-blue"
-            />
-            <span className="text-xs text-accent-blue font-medium w-8">{confidenceThreshold.toFixed(2)}</span>
-          </div>
 
           {/* Divider */}
           <div className="w-px h-5 bg-navy-600" />
@@ -1279,6 +1310,24 @@ export default function NetworkPage() {
                       <div className="bg-navy-700 rounded p-2 text-center">
                         <div className="text-lg font-bold text-accent-blue">{stats.connected_components}</div>
                         <div className="text-xs text-gray-400">Components</div>
+                      </div>
+                    </div>
+                    {/* Min Confidence */}
+                    <div className="bg-navy-700 rounded p-3">
+                      <label className="text-xs text-gray-400 font-medium">Min Confidence</label>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={confidenceThreshold}
+                        onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
+                        className="w-full accent-accent-blue mt-2"
+                      />
+                      <div className="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>0</span>
+                        <span className="text-accent-blue font-medium">{confidenceThreshold.toFixed(2)}</span>
+                        <span>1.00</span>
                       </div>
                     </div>
                     {/* Island Method */}
@@ -1839,5 +1888,13 @@ export default function NetworkPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function NetworkPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen"><LoadingSpinner size="lg" /></div>}>
+      <NetworkPageInner />
+    </Suspense>
   );
 }

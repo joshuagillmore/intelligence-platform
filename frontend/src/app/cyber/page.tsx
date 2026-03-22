@@ -499,7 +499,7 @@ export default function CyberPage() {
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          router.push('/network');
+                                          router.push(`/network?select=${ioc.id}`);
                                         }}
                                         className="mt-2 px-3 py-1.5 text-xs rounded transition-colors"
                                         style={{ backgroundColor: 'rgba(173,198,255,0.15)', color: '#adc6ff', border: '1px solid rgba(173,198,255,0.3)' }}
@@ -637,7 +637,7 @@ export default function CyberPage() {
                           </span>
                         </div>
                         <button
-                          onClick={() => router.push('/network')}
+                          onClick={() => router.push(`/network?select=${entity.id}`)}
                           className="text-xs hover:underline" style={{ color: '#adc6ff' }}
                         >
                           View in Graph
