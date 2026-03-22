@@ -84,12 +84,18 @@ if _frontend_dir.exists() and (_frontend_dir / "server.js").exists():
         if request.url.query:
             url += f"?{request.url.query}"
         try:
+            # Don't forward Accept-Encoding to upstream — let httpx handle decompression
+            fwd_headers = {k: v for k, v in request.headers.items()
+                          if k.lower() not in ('host', 'accept-encoding')}
             async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=dict(request.headers), timeout=10)
+                resp = await client.get(url, headers=fwd_headers, timeout=10)
+                # Strip encoding/transfer headers — content is already decompressed by httpx
+                safe_headers = {k: v for k, v in resp.headers.items()
+                               if k.lower() not in ('content-encoding', 'transfer-encoding', 'content-length')}
                 return Response(
                     content=resp.content,
                     status_code=resp.status_code,
-                    headers=dict(resp.headers),
+                    headers=safe_headers,
                 )
         except Exception:
             return Response(content="Frontend not available", status_code=502)
