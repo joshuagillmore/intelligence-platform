@@ -5,12 +5,16 @@ import time
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, requests_per_minute: int = 120):
+    def __init__(self, app, requests_per_minute: int = 600):
         super().__init__(app)
         self.rpm = requests_per_minute
         self._requests: dict[str, list[float]] = defaultdict(list)
 
     async def dispatch(self, request: Request, call_next):
+        # Skip rate limiting for health checks and OPTIONS
+        if request.url.path in ("/health", "/openapi.json", "/docs") or request.method == "OPTIONS":
+            return await call_next(request)
+
         client_ip = request.client.host if request.client else "unknown"
         now = time.time()
 
