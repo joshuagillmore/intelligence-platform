@@ -8,7 +8,7 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
 @router.get("/topics")
-@cached(ttl=30)
+@cached(ttl=60)
 def get_topic_tree(project_id: str, store: GraphStore = Depends(get_graph_store)):
     svc = TopicTreeService(store)
     return svc.build_topic_tree(project_id)

@@ -2,6 +2,11 @@ from __future__ import annotations
 from collections import defaultdict
 import networkx as nx
 from intel_platform.graph.store import GraphStore
+from intel_platform.services.document_clustering import cluster_documents
+
+# Module-level caches — survive across per-request TopicTreeService instances
+_cluster_doc_map: dict[str, dict[str, list[str]]] = {}
+_cluster_keywords: dict[str, dict[str, list[str]]] = {}
 
 
 class TopicTreeService:
@@ -34,10 +39,11 @@ class TopicTreeService:
             "children": [],
         }
 
-        # Branch 1: Thematic Clusters (community-based) — primary topic view
-        themes_branch = self._build_theme_branch(G, entity_map, non_docs)
-        if themes_branch["children"]:
-            tree["children"].append(themes_branch)
+        # Branch 1: Topics (document clustering) — primary topic view
+        full_docs = self._store.search_entities(project_id=project_id, entity_type="Document", limit=500)
+        topic_branch = self._build_topic_branch(full_docs, project_id)
+        if topic_branch and topic_branch.get("children"):
+            tree["children"].append(topic_branch)
 
         # Branch 2: By Source Document (with entity drilldown)
         doc_branch = self._build_document_branch(documents)
@@ -55,6 +61,55 @@ class TopicTreeService:
             tree["children"].append(actor_branch)
 
         return tree
+
+    def _build_topic_branch(self, documents: list, project_id: str) -> dict | None:
+        """Cluster documents by content and return a Topics branch node."""
+        global _cluster_doc_map, _cluster_keywords
+
+        # Extract (doc_id, content) pairs — skip docs without content
+        doc_pairs: list[tuple[str, str]] = []
+        id_to_name: dict[str, str] = {}
+        for doc in documents:
+            doc_id = doc.get("id", "")
+            content = doc.get("content", "") or ""
+            name = doc.get("name", doc_id)
+            if doc_id and content.strip():
+                doc_pairs.append((doc_id, content))
+                id_to_name[doc_id] = name
+
+        if not doc_pairs:
+            return None
+
+        tree_node, doc_map, kw_map = cluster_documents(doc_pairs, project_id)
+        if tree_node is None:
+            return None
+
+        # Update module-level caches
+        _cluster_doc_map.update(doc_map)
+        _cluster_keywords.update(kw_map)
+
+        # Replace doc IDs in leaf nodes with display names (filenames)
+        def _replace_ids_with_names(node: dict) -> None:
+            if not node.get("children") and node.get("doc_ids"):
+                node["children"] = [
+                    {"id": did, "name": id_to_name.get(did, did), "entity_type": "Document"}
+                    for did in node["doc_ids"]
+                ]
+            for child in node.get("children", []):
+                if isinstance(child, dict) and "doc_ids" in child:
+                    _replace_ids_with_names(child)
+
+        _replace_ids_with_names(tree_node)
+
+        # Wrap in branch node
+        branch = {
+            "name": "Topics",
+            "id": "branch-themes",
+            "entity_type": "branch",
+            "children": tree_node.get("children", []) if tree_node.get("children") else [tree_node],
+            "count": tree_node.get("count", 0),
+        }
+        return branch
 
     def _build_theme_branch(self, G: nx.Graph, entity_map: dict, all_entities: list) -> dict:
         """Detect communities and name them by their most central entity."""
@@ -365,6 +420,59 @@ class TopicTreeService:
 
     def get_topic_context(self, entity_id: str, project_id: str) -> dict:
         """Get full context for an entity including source documents."""
+        global _cluster_doc_map, _cluster_keywords
+
+        # Handle topic cluster nodes
+        if entity_id.startswith("topic-"):
+            project_clusters = _cluster_doc_map.get(project_id, {})
+            doc_ids = project_clusters.get(entity_id, [])
+
+            # If cache expired, rebuild tree to repopulate
+            if not doc_ids:
+                self.build_topic_tree(project_id)
+                project_clusters = _cluster_doc_map.get(project_id, {})
+                doc_ids = project_clusters.get(entity_id, [])
+
+            keywords = _cluster_keywords.get(project_id, {}).get(entity_id, [])
+
+            documents = []
+            connected_entities = []
+            seen_entity_ids: set[str] = set()
+
+            for doc_id in doc_ids:
+                doc = self._store.get_entity(doc_id)
+                if doc and doc.get("entity_type") == "Document":
+                    documents.append({
+                        "id": doc.get("id"),
+                        "name": doc.get("name"),
+                        "reliability_rating": doc.get("reliability_rating", ""),
+                        "content_preview": (doc.get("content", "") or "")[:500],
+                    })
+                    # Find entities extracted from this document
+                    rels = self._store.get_relationships(doc_id)
+                    for rel in rels:
+                        target = self._store.get_entity(rel.get("target_id", ""))
+                        if target and target.get("entity_type") != "Document":
+                            eid = target.get("id", "")
+                            if eid not in seen_entity_ids:
+                                seen_entity_ids.add(eid)
+                                connected_entities.append({
+                                    "id": eid,
+                                    "name": target.get("name"),
+                                    "entity_type": target.get("entity_type"),
+                                    "rel_type": rel.get("rel_type", "ASSOCIATED_WITH"),
+                                    "confidence": rel.get("confidence"),
+                                })
+
+            return {
+                "entity": {"id": entity_id, "name": ", ".join(keywords) or "Topic Cluster", "entity_type": "topic"},
+                "documents": documents,
+                "source_documents": documents,
+                "connected_entities": connected_entities,
+                "keywords": keywords,
+                "document_count": len(documents),
+            }
+
         entity = self._store.get_entity(entity_id)
         if not entity:
             return {"error": "Entity not found"}
