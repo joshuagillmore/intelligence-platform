@@ -142,6 +142,20 @@ export default function Sidebar() {
 
       {/* Bottom section */}
       <div className="mt-auto border-t border-[#1a1f2e] px-4 py-3">
+        <p className="text-xs text-gray-400 truncate mb-2">
+          {typeof window !== 'undefined' ? localStorage.getItem('auth_user') || 'Not signed in' : ''}
+        </p>
+        <button
+          onClick={() => {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('auth_user');
+            localStorage.removeItem('auth_role');
+            window.location.href = '/login';
+          }}
+          className="w-full text-xs text-gray-500 hover:text-red-400 transition-colors text-left mb-2"
+        >
+          Sign Out
+        </button>
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
           <span className="text-[9px] tracking-widest text-gray-500 uppercase font-medium">System Nominal</span>

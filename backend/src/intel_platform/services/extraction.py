@@ -178,6 +178,11 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         name = e["name"]
         name_lower = name.lower().strip()
 
+        # Preserve regex-extracted entities (cyber entities should never be filtered)
+        if e.get("method") == "regex":
+            corrected.append(e)
+            continue
+
         # Skip all-caps headers (likely document section headings), but keep known acronyms
         if name.isupper() and len(name) > 3 and name not in KNOWN_ACRONYMS:
             continue

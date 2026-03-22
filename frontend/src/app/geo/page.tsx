@@ -52,6 +52,11 @@ export default function GeoPage() {
   const [queryInput, setQueryInput] = useState('');
   const [queryResult, setQueryResult] = useState<string | null>(null);
   const [queryLoading, setQueryLoading] = useState(false);
+  const [geoEdges, setGeoEdges] = useState<Array<{
+    source_coords?: number[]; target_coords?: number[];
+    source_name: string; target_name: string;
+    weight: number; shared_entities: string[];
+  }>>([]);
 
   /* ── layer control state ── */
   const [layers, setLayers] = useState({
@@ -84,6 +89,7 @@ export default function GeoPage() {
         setLocations(data);
       } else if (data && data.locations) {
         setLocations(data.locations);
+        if (data.edges) setGeoEdges(data.edges);
       } else {
         setLocations([]);
       }
@@ -209,6 +215,15 @@ export default function GeoPage() {
             ) : (
               <GeoMap
                 locations={locations}
+                connectionLines={geoEdges
+                  .filter(e => e.source_coords && e.target_coords)
+                  .map(e => ({
+                    from: [e.source_coords![0], e.source_coords![1]] as [number, number],
+                    to: [e.target_coords![0], e.target_coords![1]] as [number, number],
+                    names: `${e.source_name} ↔ ${e.target_name}`,
+                    weight: e.weight,
+                    shared_entities: e.shared_entities,
+                  }))}
                 onLocationClick={handleLocationClick}
                 selectedLocationId={selectedLocation?.id}
               />

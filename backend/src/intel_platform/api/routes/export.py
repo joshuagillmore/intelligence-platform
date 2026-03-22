@@ -1,7 +1,7 @@
 import uuid as uuid_mod
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
@@ -102,7 +102,7 @@ def export_report(report_id: str, store: GraphStore = Depends(get_graph_store)):
     """Export a specific report."""
     report = store.get_entity(report_id)
     if not report:
-        return {"error": "Report not found"}
+        raise HTTPException(status_code=404, detail="Report not found")
     return {
         "title": report.get("name", ""),
         "content": report.get("content", ""),

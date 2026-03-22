@@ -18,9 +18,25 @@ ENTITY_TYPE_MAP = {
 }
 
 
-def resolve_entity_name(name: str, existing_names: list[str], threshold: float = 0.92) -> str | None:
-    """Resolve entity name using Jaro-Winkler similarity + substring matching."""
+def resolve_entity_name(
+    name: str, existing_names: list[str], threshold: float = 0.92,
+    entity_type: str = "", existing_types: dict[str, str] | None = None,
+) -> str | None:
+    """Resolve entity name using Jaro-Winkler similarity + substring matching.
+
+    Only merges entities of compatible types when type info is available.
+    Cyber entities (IP, Domain, Hash, CVE, TTP) require exact match only.
+    """
     if not existing_names:
+        return None
+
+    # Cyber entity types should ONLY match exactly (no fuzzy matching)
+    EXACT_MATCH_TYPES = {"IPAddress", "Domain", "Hash", "Vulnerability", "TTP"}
+    if entity_type in EXACT_MATCH_TYPES:
+        name_lower = name.lower().strip()
+        for existing in existing_names:
+            if existing.lower().strip() == name_lower:
+                return existing
         return None
 
     best_match = None
@@ -29,6 +45,12 @@ def resolve_entity_name(name: str, existing_names: list[str], threshold: float =
 
     for existing in existing_names:
         existing_lower = existing.lower().strip()
+
+        # Skip type-incompatible entities if type info available
+        if existing_types and entity_type:
+            existing_type = existing_types.get(existing, "")
+            if existing_type in EXACT_MATCH_TYPES or entity_type in EXACT_MATCH_TYPES:
+                continue  # Don't fuzzy-match cyber entities
 
         # Exact match
         if name_lower == existing_lower:
@@ -43,17 +65,19 @@ def resolve_entity_name(name: str, existing_names: list[str], threshold: float =
     if best_score >= threshold:
         return best_match
 
-    # Fallback: substring matching for partial names
+    # Fallback: substring matching for partial names (Person names only)
     # "Putin" should match "Vladimir Putin"
-    import re as _re
-    for existing in existing_names:
-        existing_lower = existing.lower().strip()
-        shorter = min(name_lower, existing_lower, key=len)
-        longer = max(name_lower, existing_lower, key=len)
-        # Shorter must be at least 4 chars, appear as a whole word in the longer string,
-        # and be a significant portion of the longer string
-        if len(shorter) >= 4 and _re.search(r'\b' + _re.escape(shorter) + r'\b', longer) and len(shorter) / len(longer) > 0.3:
-            return existing
+    if entity_type in ("Person", "ThreatActor", ""):
+        import re as _re
+        for existing in existing_names:
+            existing_lower = existing.lower().strip()
+            # Skip cyber entities
+            if existing_types and existing_types.get(existing, "") in EXACT_MATCH_TYPES:
+                continue
+            shorter = min(name_lower, existing_lower, key=len)
+            longer = max(name_lower, existing_lower, key=len)
+            if len(shorter) >= 4 and _re.search(r'\b' + _re.escape(shorter) + r'\b', longer) and len(shorter) / len(longer) > 0.3:
+                return existing
 
     return None
 
@@ -68,12 +92,16 @@ def build_graph_from_extractions(
     existing = store.search_entities(project_id=project_id, limit=10000)
     existing_names = [e["name"] for e in existing]
     existing_name_to_id = {e["name"]: e["id"] for e in existing}
+    existing_name_to_type = {e["name"]: e.get("entity_type", "") for e in existing}
 
     for ent_data in entities:
         name = ent_data["name"]
         raw_type = ent_data["entity_type"]
 
-        match = resolve_entity_name(name, existing_names, threshold=0.92)
+        match = resolve_entity_name(
+            name, existing_names, threshold=0.92,
+            entity_type=raw_type, existing_types=existing_name_to_type,
+        )
         if match:
             name_to_id[name] = existing_name_to_id[match]
             merged += 1

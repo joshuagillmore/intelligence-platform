@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
@@ -39,7 +39,7 @@ def get_entity(entity_id: str, store: GraphStore = Depends(get_graph_store)):
 
 
 @router.get("/subgraph/{entity_id}")
-def get_subgraph(entity_id: str, hops: int = 1, store: GraphStore = Depends(get_graph_store)):
+def get_subgraph(entity_id: str, hops: int = Query(1, ge=1, le=5), store: GraphStore = Depends(get_graph_store)):
     return store.get_subgraph(entity_id, hops=hops)
 
 
