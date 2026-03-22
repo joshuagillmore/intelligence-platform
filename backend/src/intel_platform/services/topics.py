@@ -1,19 +1,24 @@
 from __future__ import annotations
+import hashlib
+import time
 from collections import defaultdict
 import networkx as nx
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.document_clustering import cluster_documents
+from intel_platform.services.text_utils import extract_relevant_passages, count_keyword_matches
 
 # Module-level caches — survive across per-request TopicTreeService instances
 _cluster_doc_map: dict[str, dict[str, list[str]]] = {}
 _cluster_keywords: dict[str, dict[str, list[str]]] = {}
+_summary_cache: dict[tuple[str, str, str], tuple[float, str]] = {}  # (project, node, hash) -> (timestamp, summary)
+_SUMMARY_TTL = 300  # 5 minutes
 
 
 class TopicTreeService:
     def __init__(self, store: GraphStore):
         self._store = store
 
-    def build_topic_tree(self, project_id: str) -> dict:
+    async def build_topic_tree(self, project_id: str) -> dict:
         """Build a deep hierarchical topic tree using graph community structure."""
         entities = self._store.search_entities(project_id=project_id, limit=10000)
         graph_data = self._store.get_full_graph(project_id=project_id, limit=10000)
@@ -41,13 +46,46 @@ class TopicTreeService:
 
         # Topics (document content clustering) — only branch in the tree
         full_docs = self._store.search_entities(project_id=project_id, entity_type="Document", limit=500)
-        topic_branch = self._build_topic_branch(full_docs, project_id)
+        topic_branch = await self._build_topic_branch(full_docs, project_id)
         if topic_branch and topic_branch.get("children"):
             tree["children"].extend(topic_branch.get("children", []))
 
+        # Detect cross-cutting themes: documents appearing in multiple topic clusters
+        cross_references = self._detect_cross_references(project_id, full_docs)
+        if cross_references:
+            tree["cross_references"] = cross_references
+
         return tree
 
-    def _build_topic_branch(self, documents: list, project_id: str) -> dict | None:
+    def _detect_cross_references(
+        self, project_id: str, documents: list,
+    ) -> list[dict]:
+        """Find documents that appear in multiple topic clusters."""
+        project_clusters = _cluster_doc_map.get(project_id, {})
+        if not project_clusters:
+            return []
+
+        # Build reverse map: doc_id -> list of topic_ids
+        doc_to_topics: dict[str, list[str]] = defaultdict(list)
+        for topic_id, doc_ids in project_clusters.items():
+            for doc_id in doc_ids:
+                doc_to_topics[doc_id].append(topic_id)
+
+        # Build name lookup
+        doc_name_map = {d.get("id", ""): d.get("name", "") for d in documents}
+
+        cross_refs = []
+        for doc_id, topic_ids in doc_to_topics.items():
+            if len(topic_ids) > 1:
+                cross_refs.append({
+                    "doc_id": doc_id,
+                    "doc_name": doc_name_map.get(doc_id, doc_id),
+                    "topic_ids": topic_ids,
+                })
+
+        return cross_refs
+
+    async def _build_topic_branch(self, documents: list, project_id: str) -> dict | None:
         """Cluster documents by content and return a Topics branch node."""
         global _cluster_doc_map, _cluster_keywords
 
@@ -68,6 +106,13 @@ class TopicTreeService:
         tree_node, doc_map, kw_map = cluster_documents(doc_pairs, project_id)
         if tree_node is None:
             return None
+
+        # Refine topic labels with LLM (falls back gracefully if no provider)
+        try:
+            from intel_platform.services.document_clustering import refine_labels_with_llm
+            await refine_labels_with_llm(tree_node, doc_pairs)
+        except Exception:
+            pass  # Keep keyword labels on any failure
 
         # Update module-level caches
         _cluster_doc_map.update(doc_map)
@@ -390,6 +435,100 @@ class TopicTreeService:
 
         return branch
 
+    async def stream_summary(
+        self,
+        entity_id: str,
+        project_id: str,
+        level: str = "topic",
+        conversation_history: list[dict] | None = None,
+    ):
+        """Stream an LLM-generated intelligence summary as SSE events."""
+        global _summary_cache
+
+        from intel_platform.config import settings
+
+        # Get context for this node
+        context = self.get_topic_context(entity_id, project_id)
+        excerpts = context.get("document_excerpts", [])
+        keywords = context.get("keywords", [])
+        entity_name = context.get("entity", {}).get("name", "Unknown")
+
+        # Check summary cache
+        content_hash = hashlib.md5(
+            str(sorted([e.get("name", "") for e in excerpts])).encode()
+        ).hexdigest()
+        cache_key = (project_id, entity_id, content_hash)
+        cached = _summary_cache.get(cache_key)
+        if cached and (time.time() - cached[0]) < _SUMMARY_TTL:
+            yield f"data: {cached[1]}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        # Build provider
+        provider = None
+        if settings.cohere_api_key:
+            from intel_platform.llm.cohere_provider import CohereProvider
+            provider = CohereProvider(api_key=settings.cohere_api_key)
+        elif settings.anthropic_api_key:
+            from intel_platform.llm.anthropic import AnthropicProvider
+            provider = AnthropicProvider(api_key=settings.anthropic_api_key)
+        elif settings.openai_api_key:
+            from intel_platform.llm.openai_provider import OpenAIProvider
+            provider = OpenAIProvider(api_key=settings.openai_api_key)
+
+        if not provider:
+            yield "data: No LLM provider configured.\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        from intel_platform.llm.skills.loader import SkillsLoader
+        loader = SkillsLoader()
+        system = loader.get_system_prompt("topic_summarization", include_foundation=True) or ""
+
+        # Build messages
+        level_instruction = {
+            "topic": f"Provide a TOPIC-level intelligence summary about \"{entity_name}\".",
+            "document": f"Provide a DOCUMENT-level analysis of \"{entity_name}\".",
+            "corpus": "Provide a CORPUS-level overview of all topics in this knowledge base.",
+        }.get(level, f"Summarize \"{entity_name}\".")
+
+        excerpt_text = ""
+        if excerpts:
+            excerpt_text = "\n\n---\n\n".join(
+                f"**{e['name']}:**\n{e['content']}" for e in excerpts[:10]
+            )
+
+        user_content = f"{level_instruction}\n\nKeywords: {', '.join(keywords)}\n\nSource documents:\n{excerpt_text}"
+
+        messages: list[dict] = []
+        if conversation_history:
+            messages.extend(conversation_history)
+        messages.append({"role": "user", "content": user_content})
+
+        # Generate and stream
+        full_response = ""
+        try:
+            result = await provider.generate(
+                messages=messages,
+                system=system,
+                temperature=0.3,
+                max_tokens=4096,
+            )
+            full_response = result.content
+            # Send in chunks to simulate streaming for non-streaming providers
+            chunk_size = 80
+            for i in range(0, len(full_response), chunk_size):
+                chunk = full_response[i:i + chunk_size]
+                yield f"data: {chunk}\n\n"
+        except Exception as e:
+            yield f"data: Error generating summary: {str(e)}\n\n"
+
+        # Cache the full response
+        if full_response:
+            _summary_cache[cache_key] = (time.time(), full_response)
+
+        yield "data: [DONE]\n\n"
+
     def get_topic_context(self, entity_id: str, project_id: str) -> dict:
         """Get full context for an entity including source documents."""
         global _cluster_doc_map, _cluster_keywords
@@ -416,11 +555,21 @@ class TopicTreeService:
                 doc = self._store.get_entity(doc_id)
                 if doc and doc.get("entity_type") == "Document":
                     full_content = doc.get("content", "") or ""
+
+                    # Extract relevant excerpts using topic keywords
+                    relevant = extract_relevant_passages(
+                        full_content, keywords, max_chars=1500, max_passages=3,
+                    ) if keywords else []
+                    kw_matches = count_keyword_matches(full_content, keywords) if keywords else {}
+
                     documents.append({
                         "id": doc.get("id"),
                         "name": doc.get("name"),
                         "reliability_rating": doc.get("reliability_rating", ""),
                         "content_preview": full_content[:500],
+                        "relevant_excerpts": relevant,
+                        "keyword_matches": kw_matches,
+                        "relevance_score": sum(kw_matches.values()),
                     })
                     # Include longer excerpt for LLM summary generation
                     if full_content:
@@ -443,6 +592,9 @@ class TopicTreeService:
                                     "rel_type": rel.get("rel_type", "ASSOCIATED_WITH"),
                                     "confidence": rel.get("confidence"),
                                 })
+
+            # Sort documents by relevance score (most keyword matches first)
+            documents.sort(key=lambda d: d.get("relevance_score", 0), reverse=True)
 
             return {
                 "entity": {"id": entity_id, "name": ", ".join(keywords) or "Topic Cluster", "entity_type": "topic"},
