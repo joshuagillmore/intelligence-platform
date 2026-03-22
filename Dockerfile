@@ -29,5 +29,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends nodejs && rm -r
 
 EXPOSE 8000 3000
 
-# Start both services
-CMD ["sh", "-c", "cd /app/frontend-server && PORT=3000 node server.js & uv run uvicorn intel_platform.api.app:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Copy startup script
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
+CMD ["/app/start.sh"]
