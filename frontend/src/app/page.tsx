@@ -184,8 +184,8 @@ export default function ProjectsPage() {
                 <input
                   type="checkbox"
                   checked={checkedIds.has(project.id)}
-                  onChange={() => toggleChecked(project.id)}
-                  className="mt-1.5 rounded border-navy-600 bg-navy-700 text-accent-blue focus:ring-accent-blue cursor-pointer"
+                  onChange={(e) => { e.stopPropagation(); toggleChecked(project.id); }}
+                  className="w-4 h-4 mt-1.5 rounded border-2 border-gray-500 bg-navy-700 accent-blue-500 cursor-pointer flex-shrink-0"
                 />
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-lg mb-1">{project.name}</h3>
