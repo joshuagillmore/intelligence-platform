@@ -39,6 +39,11 @@ export default function GeoPage() {
   const [queryInput, setQueryInput] = useState('');
   const [queryResult, setQueryResult] = useState<string | null>(null);
   const [queryLoading, setQueryLoading] = useState(false);
+  const [geoEdges, setGeoEdges] = useState<Array<{
+    source_coords?: number[]; target_coords?: number[];
+    source_name: string; target_name: string;
+    weight: number; shared_entities: string[];
+  }>>([]);
 
   const getLat = (loc: GeoLocation) => loc.latitude ?? loc.lat ?? (loc.properties?.latitude as number | undefined);
   const getLng = (loc: GeoLocation) => loc.longitude ?? loc.lng ?? (loc.properties?.longitude as number | undefined);
@@ -54,6 +59,7 @@ export default function GeoPage() {
         setLocations(data);
       } else if (data && data.locations) {
         setLocations(data.locations);
+        if (data.edges) setGeoEdges(data.edges);
       } else {
         setLocations([]);
       }
@@ -148,6 +154,9 @@ export default function GeoPage() {
             <span className="bg-navy-800 px-3 py-1 rounded border border-navy-600">
               {totalConnections} Connections
             </span>
+            <span className="bg-navy-800 px-3 py-1 rounded border border-navy-600 text-purple-400">
+              {geoEdges.length} Location Links
+            </span>
           </div>
         </div>
 
@@ -159,6 +168,15 @@ export default function GeoPage() {
             ) : (
               <GeoMap
                 locations={locations}
+                connectionLines={geoEdges
+                  .filter(e => e.source_coords && e.target_coords)
+                  .map(e => ({
+                    from: [e.source_coords![0], e.source_coords![1]] as [number, number],
+                    to: [e.target_coords![0], e.target_coords![1]] as [number, number],
+                    names: `${e.source_name} ↔ ${e.target_name}`,
+                    weight: e.weight,
+                    shared_entities: e.shared_entities,
+                  }))}
                 onLocationClick={handleLocationClick}
                 selectedLocationId={selectedLocation?.id}
               />
