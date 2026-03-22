@@ -35,6 +35,12 @@ def list_projects(store: GraphStore = Depends(get_graph_store)):
         except Exception:
             pass
 
+        try:
+            from intel_platform.api.routes.collections import _get_collection_count
+            coll_count = _get_collection_count(store, pid)
+        except Exception:
+            coll_count = 0
+
         result.append({
             "id": pid,
             "name": p.get("name", ""),
@@ -44,6 +50,7 @@ def list_projects(store: GraphStore = Depends(get_graph_store)):
             "status": p.get("status", "active"),
             "created_at": created_at or "",
             "updated_at": updated_at or "",
+            "collection_count": coll_count,
             **stats,
         })
     return result
@@ -91,12 +98,18 @@ def get_project(project_id: str, store: GraphStore = Depends(get_graph_store)):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     stats = store.get_project_stats(project_id)
+    try:
+        from intel_platform.api.routes.collections import _get_collection_count
+        coll_count = _get_collection_count(store, project_id)
+    except Exception:
+        coll_count = 0
     return ProjectResponse(
         id=project["id"], name=project["name"], description=project["description"],
         classification_level=project["classification_level"], priority=project["priority"],
         status=project["status"],
         created_at=_normalize_datetime(project.get("created_at", "")),
         updated_at=_normalize_datetime(project.get("updated_at", "")),
+        collection_count=coll_count,
         **stats,
     )
 

@@ -9,9 +9,14 @@ import { getErrorMessage } from '@/lib/errorMessages';
 interface Collection {
   id: string;
   pir: string;
+  refined_pir?: string;
+  refinement?: string;
+  plan?: PlanItem[];
   status: string;
   project_id: string;
+  documents_acquired?: number;
   created_at?: string;
+  updated_at?: string;
   results?: unknown;
 }
 
@@ -65,6 +70,12 @@ export default function CollectionsPage() {
   const [planItems, setPlanItems] = useState<PlanItem[]>([]);
   const [planParsing, setPlanParsing] = useState(false);
 
+  // Current active collection being built
+  const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
+
+  // Expanded collection cards
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
   // File upload state
   const [fileUploadOpen, setFileUploadOpen] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -76,16 +87,17 @@ export default function CollectionsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadCollections = useCallback(async () => {
+    if (!activeProject) return;
     setCollectionsLoading(true);
     try {
-      const res = await collectionsApi.list();
+      const res = await collectionsApi.list(activeProject.id);
       setCollections(res.data);
     } catch (e) {
       console.error('Failed to load collections', e);
     } finally {
       setCollectionsLoading(false);
     }
-  }, []);
+  }, [activeProject]);
 
   useEffect(() => {
     loadCollections();
@@ -112,13 +124,38 @@ export default function CollectionsPage() {
     return () => clearInterval(interval);
   }, [collections]);
 
+  function toggleExpanded(id: string) {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   async function refinePirWithAI() {
-    if (!pir.trim()) return;
+    if (!pir.trim() || !activeProject) return;
     const userMsg: ChatMessage = { role: 'user', content: pir.trim() };
     setAssistantMessages(prev => [...prev, userMsg]);
     setAssistantLoading(true);
     setAssistantError(null);
     setPlanItems([]);
+
+    // Create a collection record if we don't have one yet
+    let collId = activeCollectionId;
+    if (!collId) {
+      try {
+        const createRes = await collectionsApi.create({
+          project_id: activeProject.id,
+          pir: pir.trim(),
+        });
+        collId = createRes.data.id;
+        setActiveCollectionId(collId);
+      } catch (e) {
+        console.error('Failed to create collection', e);
+      }
+    }
+
     try {
       const refineResponse = await llmApi.query(
         [{ role: 'user', content: `As an intelligence analyst mentor, help me refine this Priority Intelligence Requirement (PIR). Do NOT answer the question. Instead:
@@ -135,6 +172,18 @@ PIR: ${pir.trim()}` }],
       const answer = refineResponse.data?.response || refineResponse.data?.answer || refineResponse.data?.content || JSON.stringify(refineResponse.data);
       const aiMsg: ChatMessage = { role: 'assistant', content: answer };
       setAssistantMessages(prev => [...prev, aiMsg]);
+
+      // Save refinement to collection
+      if (collId) {
+        try {
+          await collectionsApi.update(collId, {
+            refined_pir: pir.trim(),
+            refinement: answer,
+          });
+        } catch (e) {
+          console.error('Failed to save refinement', e);
+        }
+      }
     } catch (e) {
       setAssistantError(getErrorMessage(e));
     } finally {
@@ -143,10 +192,26 @@ PIR: ${pir.trim()}` }],
   }
 
   async function generateCollectionPlan() {
-    if (!pir.trim()) return;
+    if (!pir.trim() || !activeProject) return;
     setAssistantLoading(true);
     setAssistantError(null);
     setPlanItems([]);
+
+    // Create a collection record if we don't have one yet
+    let collId = activeCollectionId;
+    if (!collId) {
+      try {
+        const createRes = await collectionsApi.create({
+          project_id: activeProject.id,
+          pir: pir.trim(),
+        });
+        collId = createRes.data.id;
+        setActiveCollectionId(collId);
+      } catch (e) {
+        console.error('Failed to create collection', e);
+      }
+    }
+
     try {
       const res = await llmApi.query(
         [{ role: 'user', content: pir.trim() }],
@@ -159,7 +224,19 @@ PIR: ${pir.trim()}` }],
       setPlanParsing(true);
       try {
         const planRes = await collectionsApi.parsePlan(answer);
-        setPlanItems(planRes.data.items || []);
+        const items = planRes.data.items || [];
+        setPlanItems(items);
+
+        // Save plan to collection
+        if (collId) {
+          try {
+            await collectionsApi.update(collId, {
+              plan: items,
+            });
+          } catch (e) {
+            console.error('Failed to save plan', e);
+          }
+        }
       } catch {
         console.error('Failed to parse plan');
       } finally {
@@ -193,19 +270,29 @@ PIR: ${pir.trim()}` }],
 
     const approvedItems = planItems.filter(item => item.approved);
     const planData = approvedItems.length > 0 ? approvedItems : undefined;
-    const planPir = `${pir.trim()}\n\n--- Collection Plan ---\n${lastAI.content}`;
 
     setLoading(true);
     setError(null);
     try {
-      await collectionsApi.create({
-        project_id: activeProject.id,
-        pir: planPir,
-        plan: planData,
-      });
+      if (activeCollectionId) {
+        // Update existing collection
+        await collectionsApi.update(activeCollectionId, {
+          plan: planData,
+          status: 'APPROVED',
+        });
+      } else {
+        // Create new collection with full plan
+        const planPir = `${pir.trim()}\n\n--- Collection Plan ---\n${lastAI.content}`;
+        await collectionsApi.create({
+          project_id: activeProject.id,
+          pir: planPir,
+          plan: planData,
+        });
+      }
       setPir('');
       setAssistantMessages([]);
       setPlanItems([]);
+      setActiveCollectionId(null);
       loadCollections();
     } catch (e) {
       setError(getErrorMessage(e));
@@ -221,6 +308,9 @@ PIR: ${pir.trim()}` }],
     try {
       await collectionsApi.create({ project_id: activeProject.id, pir: pir.trim() });
       setPir('');
+      setAssistantMessages([]);
+      setPlanItems([]);
+      setActiveCollectionId(null);
       loadCollections();
     } catch (e) {
       setError(getErrorMessage(e));
@@ -299,7 +389,7 @@ PIR: ${pir.trim()}` }],
 
   const completedCollections = collections.filter(c => {
     const s = c.status?.toUpperCase();
-    return s === 'SUCCESS' || s === 'COMPLETED';
+    return s !== 'PENDING' && s !== 'STARTED' && s !== 'PROGRESS' && s !== 'RUNNING';
   });
 
   if (!activeProject) {
@@ -667,34 +757,122 @@ PIR: ${pir.trim()}` }],
           </div>
         </section>
 
-        {/* Completed Collection Tasks */}
-        {completedCollections.length > 0 && (
-          <section className="max-w-5xl mx-auto pb-12">
-            <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase mb-4 flex items-center gap-2">
-              <span className="material-symbols-outlined text-sm">check_circle</span>
-              Completed Tasks
-            </h2>
-            {collectionsLoading ? (
-              <LoadingSpinner />
-            ) : (
-              <div className="space-y-2">
-                {completedCollections.map((col) => (
-                  <div key={col.id} className="bg-[#1a1f2e] border border-[#252a39] rounded p-4">
-                    <div className="flex items-start justify-between">
-                      <p className="text-sm text-gray-300 flex-1">{col.pir}</p>
-                      <span className="text-[10px] px-2 py-0.5 rounded ml-3 flex-none bg-green-900/30 text-green-400 font-bold uppercase tracking-wider">
-                        {col.status}
-                      </span>
+        {/* Collection History */}
+        <section className="max-w-5xl mx-auto pb-12">
+          <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase mb-4 flex items-center gap-2">
+            <span className="material-symbols-outlined text-sm">history</span>
+            Collection History
+            <span className="text-gray-500 font-mono ml-2">({collections.length})</span>
+          </h2>
+          {collectionsLoading ? (
+            <LoadingSpinner />
+          ) : completedCollections.length === 0 ? (
+            <div className="bg-[#1a1f2e] border border-[#252a39] rounded p-8 text-center text-gray-500 text-sm">
+              No collection history yet. Create a PIR above to get started.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {completedCollections.map((col) => {
+                const isExpanded = expandedIds.has(col.id);
+                const statusColor = col.status?.toUpperCase() === 'SUCCESS' || col.status?.toUpperCase() === 'COMPLETED'
+                  ? 'bg-green-900/30 text-green-400'
+                  : col.status?.toUpperCase() === 'APPROVED'
+                  ? 'bg-blue-900/30 text-blue-400'
+                  : col.status?.toUpperCase() === 'REVOKED'
+                  ? 'bg-red-900/30 text-red-400'
+                  : 'bg-gray-900/30 text-gray-400';
+
+                return (
+                  <div key={col.id} className="bg-[#1a1f2e] border border-[#252a39] rounded overflow-hidden">
+                    <div
+                      className="p-4 cursor-pointer hover:bg-[#1e2436] transition-colors"
+                      onClick={() => toggleExpanded(col.id)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-300 truncate">{col.pir}</p>
+                          {col.refined_pir && (
+                            <p className="text-[10px] text-[#adc6ff] mt-1 truncate">Refined: {col.refined_pir}</p>
+                          )}
+                          <div className="flex items-center gap-3 mt-2">
+                            {col.created_at && (
+                              <span className="text-[10px] text-gray-500 font-mono">{new Date(col.created_at).toLocaleString()}</span>
+                            )}
+                            {col.plan && col.plan.length > 0 && (
+                              <span className="text-[10px] text-gray-500">{col.plan.length} plan items</span>
+                            )}
+                            {(col.documents_acquired ?? 0) > 0 && (
+                              <span className="text-[10px] text-gray-500">{col.documents_acquired} docs</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 ml-3 flex-none">
+                          <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${statusColor}`}>
+                            {col.status}
+                          </span>
+                          <span className="material-symbols-outlined text-sm text-gray-500">
+                            {isExpanded ? 'expand_less' : 'expand_more'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    {col.created_at && (
-                      <p className="text-[10px] text-gray-500 mt-2 font-mono">{new Date(col.created_at).toLocaleString()}</p>
+
+                    {isExpanded && (
+                      <div className="border-t border-[#252a39] p-4 space-y-4 bg-[#0d1220]">
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                          <div>
+                            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">PIR</span>
+                            <p className="text-gray-300 whitespace-pre-wrap">{col.pir}</p>
+                          </div>
+                          {col.refined_pir && (
+                            <div>
+                              <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">Refined PIR</span>
+                              <p className="text-gray-300 whitespace-pre-wrap">{col.refined_pir}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {col.refinement && (
+                          <div>
+                            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">LLM Refinement</span>
+                            <div className="bg-[#1a1f2e] rounded p-3 max-h-60 overflow-y-auto">
+                              <p className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed">{col.refinement}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {col.plan && col.plan.length > 0 && (
+                          <div>
+                            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">Collection Plan</span>
+                            <div className="space-y-1">
+                              {col.plan.map((item, i) => (
+                                <div key={i} className="flex items-center gap-3 bg-[#1a1f2e] rounded px-3 py-2">
+                                  <span className="material-symbols-outlined text-xs text-[#adc6ff]">
+                                    {SOURCE_TYPE_ICONS[item.source_type] || 'description'}
+                                  </span>
+                                  <span className="text-xs text-gray-300 capitalize flex-none">{(item.source_type || '').replace('_', ' ')}</span>
+                                  <span className="text-[11px] text-gray-400 flex-1">{item.description}</span>
+                                  <span className={`text-[10px] font-bold uppercase ${item.approved ? 'text-green-400' : 'text-gray-500'}`}>
+                                    {item.approved ? 'approved' : 'rejected'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-4 text-[10px] text-gray-500 font-mono pt-2 border-t border-[#252a39]">
+                          <span>ID: {col.id}</span>
+                          {col.updated_at && <span>Updated: {new Date(col.updated_at).toLocaleString()}</span>}
+                        </div>
+                      </div>
                     )}
                   </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );
