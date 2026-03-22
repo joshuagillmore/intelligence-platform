@@ -334,7 +334,7 @@ export default function CyberPage() {
     return (
       <div className="flex">
         <Sidebar />
-        <main className="ml-56 flex-1 p-8">
+        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
           <h2 className="text-2xl font-bold mb-4">Cyber Intelligence</h2>
           <div className="rounded-lg p-8 text-center text-gray-500" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
             <p>Select a project first.</p>
@@ -347,11 +347,11 @@ export default function CyberPage() {
   return (
     <div className="flex" style={{ backgroundColor: '#0e1321' }}>
       <Sidebar />
-      <main className="ml-56 flex-1 p-8">
+      <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
         <h2 className="text-2xl font-bold mb-4 text-white">Cyber Intelligence</h2>
 
         {/* Page-level tabs */}
-        <div className="flex gap-1 mb-6 border-b border-navy-600 pb-0">
+        <div className="flex gap-1 mb-6 border-b border-navy-600 pb-0 overflow-x-auto">
           {([
             { label: 'IOC Dashboard', value: 'ioc' as PageTab, icon: 'dashboard' },
             { label: 'ATT&CK Matrix', value: 'attack' as PageTab, icon: 'grid_view' },
@@ -376,7 +376,7 @@ export default function CyberPage() {
         {pageTab === 'ioc' && (
           <>
             {/* Severity stat cards */}
-            <div className="flex gap-3 mb-6 flex-wrap">
+            <div className="grid grid-cols-2 md:flex gap-3 mb-6 md:flex-wrap">
               <SeverityStatCard label="Critical IOCs" count={severityStats.critical} color="#ef4444" />
               <SeverityStatCard label="High Severity" count={severityStats.high} color="#f97316" />
               <SeverityStatCard label="Medium" count={severityStats.medium} color="#adc6ff" />
@@ -387,7 +387,7 @@ export default function CyberPage() {
             </div>
 
             {/* Filter tabs */}
-            <div className="flex gap-1 mb-4">
+            <div className="flex gap-1 mb-4 overflow-x-auto">
               {FILTER_TABS.map(tab => (
                 <button
                   key={tab.value}
@@ -404,10 +404,10 @@ export default function CyberPage() {
             </div>
 
             {/* Split layout: IOC table + Graph */}
-            <div className="flex gap-6" style={{ height: 'calc(100vh - 380px)' }}>
+            <div className="flex flex-col md:flex-row gap-6" style={{ minHeight: '400px' }}>
 
               {/* Left: IOC table (55%) */}
-              <div className="w-[55%] overflow-hidden flex flex-col">
+              <div className="w-full md:w-[55%] overflow-hidden flex flex-col" style={{ minHeight: '300px' }}>
                 <div className="rounded-lg overflow-hidden flex-1 overflow-y-auto" style={{ backgroundColor: '#1a1f2e', borderColor: '#2f3444', borderWidth: 1 }}>
                   {iocsLoading ? (
                     <LoadingSpinner size="lg" />
@@ -524,7 +524,7 @@ export default function CyberPage() {
               </div>
 
               {/* Right: Cyber Relationship Graph (45%) */}
-              <div className="w-[45%] flex flex-col overflow-hidden">
+              <div className="w-full md:w-[45%] flex flex-col overflow-hidden" style={{ minHeight: '300px' }}>
                 <div className="rounded-lg flex-1 overflow-hidden flex flex-col" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
                   <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #2f3444' }}>
                     <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Cyber Relationship Graph</h3>
@@ -556,7 +556,7 @@ export default function CyberPage() {
         {/* ATT&CK Matrix Tab */}
         {pageTab === 'attack' && (
           <div>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-2">
               <div>
                 <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">MITRE ATT&CK Coverage</h3>
                 <p className="text-sm text-gray-400 mt-1">

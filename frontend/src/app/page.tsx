@@ -209,7 +209,7 @@ export default function ProjectsPage() {
   return (
     <div className="flex">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8">
+      <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold">Projects</h2>
           <div className="flex items-center gap-3">
