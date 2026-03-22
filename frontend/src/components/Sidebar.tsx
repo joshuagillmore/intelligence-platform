@@ -108,6 +108,22 @@ export default function Sidebar() {
           </Link>
         ))}
       </nav>
+      <div className="p-4 border-t border-navy-600">
+        <p className="text-xs text-gray-400 truncate mb-2">
+          {typeof window !== 'undefined' ? localStorage.getItem('auth_user') || 'Not signed in' : ''}
+        </p>
+        <button
+          onClick={() => {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('auth_user');
+            localStorage.removeItem('auth_role');
+            window.location.href = '/login';
+          }}
+          className="w-full text-xs text-gray-500 hover:text-red-400 transition-colors text-left"
+        >
+          Sign Out
+        </button>
+      </div>
     </aside>
   );
 }
