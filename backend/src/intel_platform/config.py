@@ -14,7 +14,10 @@ class Settings(BaseSettings):
 
     # Extraction
     extraction_mode: str = "nlp"  # nlp | llm | hybrid
-    spacy_model: str = "en_core_web_sm"
+    spacy_model: str = "en_core_web_lg"
+    coreference_enabled: bool = False
+    entity_resolution_threshold: float = 0.92
+    extraction_confidence_min: float = 0.0
 
     # Chunking
     chunk_size: int = 2000
