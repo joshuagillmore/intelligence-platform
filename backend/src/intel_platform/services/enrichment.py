@@ -5,8 +5,17 @@ import networkx as nx
 from intel_platform.graph.store import GraphStore
 
 
+# Tactical relationship types that should have higher weight in analysis
+_TACTICAL_REL_TYPES = {"TARGETS", "USES", "EXPLOITS", "COMMUNICATES_WITH", "ATTRIBUTED_TO", "COMMANDED_BY"}
+
+
 def build_networkx_from_data(data: dict) -> nx.Graph:
-    """Build NetworkX graph from already-fetched graph data."""
+    """Build NetworkX graph from already-fetched graph data.
+
+    Edges are weighted by confidence and relationship type:
+    - Tactical relationships (TARGETS, USES, EXPLOITS, etc.) get a 1.5x boost
+    - Generic ASSOCIATED_WITH uses raw confidence (typically 0.5)
+    """
     G = nx.Graph()
     for node in data.get("nodes", []):
         nid = node.get("id", "")
@@ -16,7 +25,13 @@ def build_networkx_from_data(data: dict) -> nx.Graph:
         sid = edge.get("source_id", "")
         tid = edge.get("target_id", "")
         if sid and tid:
-            G.add_edge(sid, tid, **{k: v for k, v in edge.items() if k not in ("source_id", "target_id") and not isinstance(v, (dict, list))})
+            props = {k: v for k, v in edge.items() if k not in ("source_id", "target_id") and not isinstance(v, (dict, list))}
+            # Weight edges by confidence and relationship type
+            confidence = float(edge.get("confidence", 0.5))
+            rel_type = edge.get("rel_type", "ASSOCIATED_WITH")
+            weight = confidence * (1.5 if rel_type in _TACTICAL_REL_TYPES else 1.0)
+            props["weight"] = round(weight, 4)
+            G.add_edge(sid, tid, **props)
     return G
 
 

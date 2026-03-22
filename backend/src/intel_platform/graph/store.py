@@ -83,7 +83,46 @@ class GraphStore:
         "RESOLVES_TO", "EXPLOITS", "USES", "TARGETS", "ATTRIBUTED_TO",
         "MENTIONED_IN", "MENTIONS", "PARENT_OF", "RELATED_TO", "ASSESSES",
         "SUPPORTED_BY", "SHARED_WITH", "OCCURRED_ON",
+        "COMMANDED_BY", "FUNDED_BY", "SUPPLIED_BY", "DEPLOYED_AT",
     }
+
+    def search_entity_by_name(self, project_id: str, name: str, limit: int = 20) -> list[dict]:
+        """Search entities by name using the fulltext index for efficient resolution.
+
+        Returns candidate entities for fuzzy matching — much faster than loading
+        all entities when the project is large.
+        """
+        with self._driver.session() as session:
+            # Try fulltext index first
+            try:
+                result = session.run(
+                    """
+                    CALL db.index.fulltext.queryNodes("entity_name_search", $search_name)
+                    YIELD node, score
+                    WHERE node.project_id = $project_id
+                    RETURN node
+                    LIMIT $limit
+                    """,
+                    parameters={"search_name": name, "project_id": project_id, "limit": limit},
+                )
+                candidates = [dict(record["node"]) for record in result]
+                if candidates:
+                    return candidates
+            except Exception:
+                pass  # Fulltext index may not exist; fall through
+
+            # Fallback: CONTAINS search
+            result = session.run(
+                """
+                MATCH (n)
+                WHERE n.project_id = $project_id
+                AND toLower(n.name) CONTAINS toLower($search_name)
+                RETURN n
+                LIMIT $limit
+                """,
+                parameters={"search_name": name, "project_id": project_id, "limit": limit},
+            )
+            return [dict(record["n"]) for record in result]
 
     def create_relationship(self, rel) -> dict:
         if rel.rel_type not in self.VALID_REL_TYPES:

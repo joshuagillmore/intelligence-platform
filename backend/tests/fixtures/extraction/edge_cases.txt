@@ -1,0 +1,23 @@
+INTELLIGENCE NOTE: CROSS-DOMAIN ENTITY RESOLUTION CHALLENGES
+
+This document tests entity extraction edge cases commonly encountered in intelligence analysis.
+
+TRANSLITERATED NAMES
+
+The Russian Ambassador to the United Nations, Vasily Nebenzya (also transliterated as Vasiliy Nebenzia or Vassily Nebenzja), delivered a statement at the UN Security Council on behalf of Moscow. Foreign Minister Sergei Lavrov (Sergey Lavrov) has supported this position.
+
+ACRONYMS AND AMBIGUITY
+
+The PLA Navy (PLAN) conducted exercises in the South China Sea alongside the PLAAF. The People's Liberation Army is under the command of Xi Jinping through the Central Military Commission. Georgia (the country, not the US state) has applied for EU membership. The CIA and NSA coordinate through the Office of the Director of National Intelligence (ODNI).
+
+NESTED ORGANIZATIONS
+
+The IRGC Aerospace Force, a subdivision of the Islamic Revolutionary Guard Corps, test-fired a Shahab-3 medium-range ballistic missile from a facility near Isfahan on 12 February 2026. The test was monitored by the IAEA and drew condemnation from the US State Department.
+
+ENTITIES AS COMMON WORDS
+
+Jordan's King Abdullah met with Defense Secretary Lloyd Austin at the Pentagon. The meeting covered the Jordan-Syria border situation and the presence of ISIS remnants in the Al-Tanf garrison. Apple and Samsung have been banned from selling devices to sanctioned entities per OFAC regulations.
+
+FINANCIAL INDICATORS
+
+A Bitcoin transaction of 15.7 BTC (approximately $650,000) was traced to wallet address 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa, linked to a known ransomware operator. The US Treasury's Office of Foreign Assets Control (OFAC) imposed sanctions worth $2.5 billion against entities connected to the operation.
