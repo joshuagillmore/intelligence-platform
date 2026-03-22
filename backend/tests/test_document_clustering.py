@@ -44,3 +44,35 @@ def test_tfidf_single_doc():
     matrix, doc_ids, vocab = build_tfidf(docs)
     assert matrix.shape[0] == 1
     assert len(vocab) > 0
+
+
+from intel_platform.services.document_clustering import kmeans
+
+
+def test_kmeans_two_clusters():
+    """Documents on clearly different topics should separate."""
+    docs = [
+        ("d1", "cyber attack malware phishing credential"),
+        ("d2", "cyber threat exploit vulnerability malware"),
+        ("d3", "cyber ransomware attack phishing email"),
+        ("d4", "sanctions iran oil trade export"),
+        ("d5", "sanctions embargo trade iran nuclear"),
+        ("d6", "oil export revenue sanctions iran"),
+    ]
+    matrix, doc_ids, vocab = build_tfidf(docs)
+    rng = np.random.RandomState(42)
+    assignments = kmeans(matrix, k=2, max_iter=20, rng=rng)
+    # Cyber docs (0-2) should be in same cluster, sanctions docs (3-5) in another
+    assert assignments[0] == assignments[1] == assignments[2]
+    assert assignments[3] == assignments[4] == assignments[5]
+    assert assignments[0] != assignments[3]
+
+
+def test_kmeans_single_cluster():
+    """All identical docs should end up in one cluster."""
+    docs = [("d1", "hello world"), ("d2", "hello world"), ("d3", "hello world")]
+    matrix, _, _ = build_tfidf(docs)
+    rng = np.random.RandomState(42)
+    assignments = kmeans(matrix, k=2, max_iter=20, rng=rng)
+    # All in same cluster
+    assert len(set(assignments)) == 1
