@@ -260,9 +260,13 @@ export default function DataSourcesPage() {
       <div className="ml-56 flex-1 flex h-screen overflow-hidden">
 
         {/* ── Left Panel: Topic Tree ────────────────────────────── */}
-        <div className="w-80 flex-none bg-navy-800 border-r border-navy-600 flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-navy-600">
-            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Topic Tree</h3>
+        <div className="w-80 flex-none bg-[#161b2a] border-r border-[#1a1f2e] flex flex-col overflow-hidden">
+          <div className="p-4 border-b border-[#1a1f2e]">
+            <h3 className="text-[10px] font-bold text-[#adc6ff] uppercase tracking-widest mb-3">Topic Explorer</h3>
+            <div className="relative">
+              <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-sm">search</span>
+              <input className="w-full bg-[#090e1c] border-none text-[11px] py-2 pl-8 pr-3 rounded-sm focus:ring-1 focus:ring-[#adc6ff] placeholder:text-gray-600" placeholder="FILTER TAXONOMY..." />
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto">
             {loading ? (
@@ -547,7 +551,7 @@ export default function DataSourcesPage() {
         </div>
 
         {/* ── Right Panel: Entity Context ───────────────────────── */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-8 relative">
           {!selectedEntity ? (
             <div className="flex items-center justify-center h-full text-gray-500 text-sm">
               <p>Select an entity from the topic tree to view its context.</p>
@@ -557,75 +561,134 @@ export default function DataSourcesPage() {
               <p>Loading entity context...</p>
             </div>
           ) : (
-            <div className="space-y-6 max-w-4xl">
+            <div className="space-y-8 max-w-4xl pb-16">
 
               {/* Entity header */}
-              <div className="bg-navy-800 border border-navy-600 rounded-lg p-5">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-xl font-bold text-gray-100">
-                    {entityContext?.entity?.name || selectedEntity.name}
-                  </h2>
-                  <span className={`text-xs px-2 py-0.5 rounded border ${entityTypeColor(entityContext?.entity?.entity_type || selectedEntity.entity_type)}`}>
-                    {entityContext?.entity?.entity_type || selectedEntity.entity_type}
+              <div>
+                <h1 className="text-3xl font-extrabold tracking-tight text-white leading-none mb-2">
+                  {entityContext?.entity?.name || selectedEntity.name}
+                </h1>
+                <div className="flex gap-5 text-[10px] font-medium uppercase tracking-[0.2em] text-gray-500">
+                  {entityContext?.source_documents && (
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#adc6ff]" />
+                      {entityContext.source_documents.length} Documents
+                    </span>
+                  )}
+                  {entityContext?.connected_entities && (
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#ffb95f]" />
+                      {entityContext.connected_entities.length} Entities
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                    Active Analysis
                   </span>
                 </div>
-                {entityContext?.entity?.properties && Object.keys(entityContext.entity.properties).length > 0 && (
-                  <div className="mt-3 space-y-1">
-                    {Object.entries(entityContext.entity.properties).map(([key, value]) => (
-                      <div key={key} className="text-xs">
-                        <span className="text-gray-500">{key}:</span>{' '}
-                        <span className="text-gray-300">{String(value)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
 
-              {/* Source documents */}
+              {/* AI Summary Card */}
+              <div className="bg-[#161b2a]/50 rounded-xl p-8 border border-[#adc6ff]/10 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
+                  <span className="material-symbols-outlined text-7xl">auto_awesome</span>
+                </div>
+                <div className="flex items-center gap-2 mb-5">
+                  <span className="material-symbols-outlined text-[#adc6ff] text-sm">auto_awesome</span>
+                  <h3 className="font-bold text-[10px] uppercase tracking-widest text-[#adc6ff]">Sentinel AI Summary</h3>
+                </div>
+                <p className="text-[15px] leading-relaxed text-gray-200/90 max-w-3xl font-medium">
+                  Analysis of {entityContext?.entity?.name || selectedEntity.name} ({entityContext?.entity?.entity_type || selectedEntity.entity_type}) reveals{' '}
+                  {entityContext?.connected_entities?.length || 0} connected entities across{' '}
+                  {entityContext?.source_documents?.length || 0} source documents.
+                  {entityContext?.entity?.properties && Object.keys(entityContext.entity.properties).length > 0 && (
+                    <> Key attributes include: {Object.entries(entityContext.entity.properties).slice(0, 3).map(([k, v]) => `${k}: ${String(v)}`).join(', ')}.</>
+                  )}
+                </p>
+                <div className="mt-6">
+                  <button
+                    onClick={() => { if (!queryInput) setQueryInput(`Tell me more about ${selectedEntity.name}`); }}
+                    className="bg-[#adc6ff]/10 hover:bg-[#adc6ff]/20 text-[#adc6ff] border border-[#adc6ff]/30 px-5 py-2.5 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-all rounded-sm"
+                  >
+                    Ask Follow-up <span className="material-symbols-outlined text-sm">send</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Suggested Analytic Paths */}
+              <div>
+                <h3 className="font-bold text-[10px] uppercase tracking-widest text-gray-500/60 mb-5">Suggested Analytic Paths</h3>
+                <div className="flex flex-wrap gap-3">
+                  {[
+                    `What connections exist between ${selectedEntity.name} and known threat infrastructure?`,
+                    'Identify temporal patterns in entity activity',
+                    'Map related entities to MITRE ATT&CK Matrix',
+                  ].map((q, i) => (
+                    <button
+                      key={i}
+                      onClick={() => { setQueryInput(q); }}
+                      className="bg-[#252a39] hover:bg-[#343949] text-gray-200 text-[11px] font-medium py-2.5 px-5 rounded-full border border-[#424754]/10 transition-all text-left"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Key Entities & Taxonomy */}
+              <div className="grid grid-cols-2 gap-12">
+                <div>
+                  <h3 className="font-bold text-[10px] uppercase tracking-widest text-gray-500/60 mb-5">Key Entities Detected</h3>
+                  <div className="flex flex-wrap gap-2.5">
+                    {(entityContext?.connected_entities || []).slice(0, 8).map((ce, i) => (
+                      <span key={i} className="flex items-center gap-2 bg-[#2f3444] px-3.5 py-2 rounded-sm border border-[#424754]/20 hover:border-[#adc6ff]/50 cursor-default transition-all">
+                        <span className="text-[11px] font-bold text-[#adc6ff]">{ce.name}</span>
+                        <span className="text-[8px] font-black bg-[#adc6ff]/20 text-[#adc6ff] px-1.5 rounded-sm">{ce.entity_type}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <h3 className="font-bold text-[10px] uppercase tracking-widest text-gray-500/60 mb-5">Related Taxonomy</h3>
+                  <div className="flex flex-wrap gap-2.5">
+                    <span className="px-4 py-2 bg-[#090e1c] text-gray-500 text-[10px] font-bold uppercase tracking-widest border border-[#424754]/10 hover:text-[#adc6ff] hover:border-[#adc6ff]/30 transition-all cursor-pointer">
+                      {entityContext?.entity?.entity_type || selectedEntity.entity_type} Patterns
+                    </span>
+                    <span className="px-4 py-2 bg-[#090e1c] text-gray-500 text-[10px] font-bold uppercase tracking-widest border border-[#424754]/10 hover:text-[#adc6ff] hover:border-[#adc6ff]/30 transition-all cursor-pointer">
+                      Network Analysis
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Source Documents */}
               {entityContext?.source_documents && entityContext.source_documents.length > 0 && (
-                <div className="bg-navy-800 border border-navy-600 rounded-lg p-5">
-                  <h3 className="text-sm font-semibold text-gray-400 mb-3">
-                    Source Documents ({entityContext.source_documents.length})
-                  </h3>
-                  <div className="space-y-2">
+                <div>
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="font-bold text-[10px] uppercase tracking-widest text-gray-500/60">Primary Sources & Documents</h3>
+                    <button className="text-[9px] font-bold text-[#adc6ff] hover:text-white uppercase tracking-widest transition-colors">View All Sources</button>
+                  </div>
+                  <div className="space-y-4">
                     {entityContext.source_documents.map((doc, i) => (
-                      <div key={i} className="bg-navy-700 rounded p-3">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span
-                            className="text-sm text-accent-blue font-medium hover:underline cursor-pointer"
-                            onClick={() => router.push(`/documents/${doc.id}`)}
-                          >{doc.name}</span>
+                      <div key={i} className="bg-[#090e1c] p-5 rounded-sm border border-[#424754]/10 hover:bg-[#161b2a] transition-all cursor-pointer group" onClick={() => router.push(`/documents/${doc.id}`)}>
+                        <div className="flex justify-between items-start mb-2.5">
+                          <div className="flex-1">
+                            <h4 className="text-[15px] font-bold text-white group-hover:text-[#adc6ff] transition-colors mb-1">{doc.name}</h4>
+                            <div className="flex items-center gap-4 text-[9px] text-gray-500 font-bold uppercase tracking-widest opacity-80">
+                              <span className="flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-[14px]">link</span>
+                                Source Document
+                              </span>
+                            </div>
+                          </div>
                           {doc.reliability && (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded border ${reliabilityColor(doc.reliability)}`}>
-                              {doc.reliability}
-                            </span>
+                            <div className={`text-[9px] font-black px-2.5 py-1 rounded-sm border ${reliabilityColor(doc.reliability)}`}>
+                              {doc.reliability} RATING
+                            </div>
                           )}
                         </div>
                         {doc.content && (
-                          <p className="text-xs text-gray-400 line-clamp-3">{doc.content.substring(0, 300)}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Connected entities */}
-              {entityContext?.connected_entities && entityContext.connected_entities.length > 0 && (
-                <div className="bg-navy-800 border border-navy-600 rounded-lg p-5">
-                  <h3 className="text-sm font-semibold text-gray-400 mb-3">
-                    Connected Entities ({entityContext.connected_entities.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {entityContext.connected_entities.map((ce, i) => (
-                      <div key={i} className="flex items-center gap-3 bg-navy-700 rounded p-2 text-xs">
-                        <span className="text-accent-blue font-medium">{ce.rel_type}</span>
-                        <span className="text-gray-300">{ce.name}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${entityTypeColor(ce.entity_type)}`}>
-                          {ce.entity_type}
-                        </span>
-                        {ce.confidence !== undefined && (
-                          <span className="ml-auto text-gray-500">{(ce.confidence * 100).toFixed(0)}%</span>
+                          <p className="text-xs text-gray-400/60 line-clamp-2 leading-relaxed font-medium">{doc.content.substring(0, 300)}</p>
                         )}
                       </div>
                     ))}
@@ -634,26 +697,26 @@ export default function DataSourcesPage() {
               )}
 
               {/* Ask about this entity */}
-              <div className="bg-navy-800 border border-navy-600 rounded-lg p-5">
-                <h3 className="text-sm font-semibold text-gray-400 mb-3">Ask About This</h3>
+              <div className="bg-[#1a1f2e] border border-[#252a39] rounded-lg p-5">
+                <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Ask About This Entity</h3>
                 <div className="flex gap-2">
                   <input
                     value={queryInput}
                     onChange={(e) => setQueryInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && askAboutEntity()}
                     placeholder={`Ask about ${selectedEntity.name}...`}
-                    className="flex-1 bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
+                    className="flex-1 bg-[#090e1c] border border-[#1a1f2e] rounded-sm px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#adc6ff]"
                   />
                   <button
                     onClick={askAboutEntity}
                     disabled={queryLoading || !queryInput.trim()}
-                    className="bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
+                    className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-4 py-2 rounded-sm text-sm font-bold disabled:opacity-50 transition-colors"
                   >
                     {queryLoading ? 'Asking...' : 'Ask'}
                   </button>
                 </div>
                 {queryResult && (
-                  <div className="mt-3 bg-navy-700 rounded p-3 text-sm text-gray-300 whitespace-pre-wrap max-h-64 overflow-y-auto">
+                  <div className="mt-3 bg-[#090e1c] rounded-sm p-3 text-sm text-gray-300 whitespace-pre-wrap max-h-64 overflow-y-auto border border-[#1a1f2e]">
                     {queryResult}
                   </div>
                 )}
@@ -661,6 +724,20 @@ export default function DataSourcesPage() {
 
             </div>
           )}
+
+          {/* Bottom status bar */}
+          <div className="absolute bottom-0 left-0 w-full h-12 bg-[#161b2a]/90 backdrop-blur-xl border-t border-[#424754]/10 flex items-center justify-between px-8">
+            <div className="flex items-center gap-6">
+              <span className="text-[9px] font-bold uppercase text-gray-500/80 tracking-widest flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e]" />
+                System Sync: Stable
+              </span>
+            </div>
+            <div className="flex gap-6">
+              <button className="text-[9px] font-bold uppercase text-[#adc6ff] hover:text-white transition-colors tracking-widest">Compare Documents</button>
+              <button className="text-[9px] font-bold uppercase text-[#adc6ff] hover:text-white transition-colors tracking-widest">Export Selection</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

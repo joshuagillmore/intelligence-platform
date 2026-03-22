@@ -6,17 +6,20 @@ import { useProject } from '@/lib/ProjectContext';
 import { collectionsApi, watchlistApi } from '@/lib/api';
 
 const navItems = [
-  { name: 'Projects', href: '/', icon: 'P' },
-  { name: 'Collections', href: '/collections', icon: 'C' },
-  { name: 'Data Sources', href: '/data-sources', icon: 'D' },
-  { name: 'Network Analysis', href: '/network', icon: 'N' },
-  { name: 'Timeline', href: '/timeline', icon: 'T' },
-  { name: 'Watchlist', href: '/watchlist', icon: '\u2B50' },
-  { name: 'Geo-Intelligence', href: '/geo', icon: 'G' },
-  { name: 'Cyber', href: '/cyber', icon: 'S' },
-  { name: 'Products', href: '/products', icon: 'R' },
-  { name: 'LLM Hub', href: '/llm-hub', icon: 'L' },
-  { name: 'Admin', href: '/admin', icon: 'A' },
+  { name: 'Projects', href: '/', icon: 'folder_open' },
+  { name: 'Collections', href: '/collections', icon: 'database' },
+  { name: 'Data Sources', href: '/data-sources', icon: 'satellite_alt' },
+  { name: 'Network Analysis', href: '/network', icon: 'hub' },
+  { name: 'Geo-Intelligence', href: '/geo', icon: 'public' },
+  { name: 'Cyber', href: '/cyber', icon: 'security' },
+  { name: 'Products & Artefacts', href: '/products', icon: 'description' },
+  { name: 'Admin', href: '/admin', icon: 'admin_panel_settings' },
+];
+
+const secondaryItems = [
+  { name: 'Timeline', href: '/timeline', icon: 'timeline' },
+  { name: 'Watchlist', href: '/watchlist', icon: 'star' },
+  { name: 'LLM Hub', href: '/llm-hub', icon: 'smart_toy' },
 ];
 
 export default function Sidebar() {
@@ -64,51 +67,81 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-56 bg-navy-800 border-r border-navy-600 flex flex-col h-screen fixed left-0 top-0">
-      <div className="p-4 border-b border-navy-600">
-        <h1 className="text-lg font-bold text-accent-blue">Intel Platform</h1>
-        <p className="text-xs text-gray-500 mt-1">Analyst Workbench</p>
+    <aside className="w-56 bg-[#0e1321] border-r border-[#1a1f2e] flex flex-col h-screen fixed left-0 top-0 z-40">
+      {/* Branding */}
+      <div className="px-5 py-5 flex flex-col gap-0.5">
+        <span className="text-[#adc6ff] font-black text-sm tracking-tight">SENTINEL</span>
+        <span className="text-[10px] tracking-widest uppercase font-medium text-gray-500">V.2.4-ALPHA</span>
       </div>
-      <div className="px-4 py-2 border-b border-navy-600">
-        <p className="text-xs text-gray-500">Active Project</p>
-        <p className="text-sm font-medium text-gray-200 truncate">
-          {activeProject ? activeProject.name : 'No project selected'}
-        </p>
+
+      {/* Active Project */}
+      {activeProject && (
+        <div className="px-5 pb-3">
+          <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold mb-0.5">Active Project</p>
+          <p className="text-xs font-semibold text-gray-200 truncate">{activeProject.name}</p>
+        </div>
+      )}
+
+      {/* Search */}
+      <div className="px-4 pb-3">
+        <div className="relative">
+          <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-sm">search</span>
+          <input
+            type="text"
+            data-search-input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search... (Ctrl+K)"
+            className="w-full bg-[#090e1c] border border-[#1a1f2e] rounded-sm pl-8 pr-3 py-1.5 text-[10px] text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#3b82f6] tracking-wide"
+          />
+        </div>
       </div>
-      <div className="px-4 py-2 border-b border-navy-600">
-        <input
-          type="text"
-          data-search-input
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyDown={handleSearchKeyDown}
-          placeholder="Search... (Ctrl+K)"
-          className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-accent-blue"
-        />
-      </div>
-      <nav className="flex-1 py-2 overflow-y-auto">
+
+      {/* Primary Navigation */}
+      <nav className="flex-1 py-1 overflow-y-auto space-y-0.5">
         {navItems.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
+            className={`flex items-center gap-3 px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider transition-colors ${
               isActive(item.href)
-                ? 'bg-navy-700 text-accent-blue border-r-2 border-accent-blue'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-navy-700'
+                ? 'bg-[#1a1f2e] text-[#adc6ff] border-l-2 border-[#3b82f6]'
+                : 'text-gray-500 hover:text-gray-300 hover:bg-[#1a1f2e]/50'
             }`}
           >
-            <span className="w-5 h-5 bg-navy-600 rounded text-xs flex items-center justify-center font-mono">{item.icon}</span>
-            <span className="flex-1">{item.name}</span>
+            <span className={`material-symbols-outlined text-lg ${isActive(item.href) ? 'text-[#adc6ff]' : ''}`}>{item.icon}</span>
+            <span className="flex-1 truncate">{item.name}</span>
             {item.name === 'Collections' && activeCollections > 0 && (
-              <span className="w-2 h-2 rounded-full bg-accent-blue animate-pulse" title={`${activeCollections} active task${activeCollections > 1 ? 's' : ''}`} />
+              <span className="w-2 h-2 rounded-full bg-[#3b82f6] animate-pulse" title={`${activeCollections} active task${activeCollections > 1 ? 's' : ''}`} />
             )}
+          </Link>
+        ))}
+
+        {/* Divider */}
+        <div className="mx-4 my-2 border-t border-[#1a1f2e]" />
+
+        {secondaryItems.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`flex items-center gap-3 px-4 py-2 text-[10px] font-medium uppercase tracking-wider transition-colors ${
+              isActive(item.href)
+                ? 'bg-[#1a1f2e] text-[#adc6ff] border-l-2 border-[#3b82f6]'
+                : 'text-gray-500 hover:text-gray-300 hover:bg-[#1a1f2e]/50'
+            }`}
+          >
+            <span className={`material-symbols-outlined text-base ${isActive(item.href) ? 'text-[#adc6ff]' : ''}`}>{item.icon}</span>
+            <span className="flex-1">{item.name}</span>
             {item.name === 'Watchlist' && watchlistCount > 0 && (
-              <span className="min-w-[18px] h-[18px] rounded-full bg-accent-blue/20 text-accent-blue text-[10px] flex items-center justify-center font-medium">{watchlistCount}</span>
+              <span className="min-w-[18px] h-[18px] rounded-full bg-[#3b82f6]/20 text-[#adc6ff] text-[9px] flex items-center justify-center font-bold">{watchlistCount}</span>
             )}
           </Link>
         ))}
       </nav>
-      <div className="p-4 border-t border-navy-600">
+
+      {/* Bottom section */}
+      <div className="mt-auto border-t border-[#1a1f2e] px-4 py-3">
         <p className="text-xs text-gray-400 truncate mb-2">
           {typeof window !== 'undefined' ? localStorage.getItem('auth_user') || 'Not signed in' : ''}
         </p>
@@ -119,10 +152,14 @@ export default function Sidebar() {
             localStorage.removeItem('auth_role');
             window.location.href = '/login';
           }}
-          className="w-full text-xs text-gray-500 hover:text-red-400 transition-colors text-left"
+          className="w-full text-xs text-gray-500 hover:text-red-400 transition-colors text-left mb-2"
         >
           Sign Out
         </button>
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
+          <span className="text-[9px] tracking-widest text-gray-500 uppercase font-medium">System Nominal</span>
+        </div>
       </div>
     </aside>
   );
