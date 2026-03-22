@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 
 interface GraphNode {
@@ -125,7 +125,21 @@ export default function GraphVisualization({
   const svgRef = useRef<SVGSVGElement>(null);
   const simulationRef = useRef<d3.Simulation<GraphNode, GraphEdge> | null>(null);
 
+  // Stable refs to avoid re-renders when parent creates new function/array references
+  const onNodeClickRef = useRef(onNodeClick);
+  onNodeClickRef.current = onNodeClick;
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  const edgesRef = useRef(edges);
+  edgesRef.current = edges;
+
+  // Memoize node/edge identity strings - only changes when actual data changes
+  const nodeIdentity = useMemo(() => nodes.map(n => n.id).sort().join(','), [nodes]);
+  const edgeIdentity = useMemo(() => edges.map(e => (e.source_id || '') + '-' + (e.target_id || '')).sort().join(','), [edges]);
+
   const render = useCallback(() => {
+    const nodes = nodesRef.current;
+    const edges = edgesRef.current;
     if (!svgRef.current || nodes.length === 0) return;
 
     const svg = d3.select(svgRef.current);
@@ -348,7 +362,7 @@ export default function GraphVisualization({
       .attr('filter', d => d.id === selectedNodeId ? 'url(#glow)' : 'none')
       .attr('cursor', 'pointer')
       .on('click', (event, d) => {
-        onNodeClick(d, event as unknown as MouseEvent);
+        onNodeClickRef.current(d, event as unknown as MouseEvent);
       })
       .call(d3.drag<SVGCircleElement, GraphNode>()
         .on('start', (event, d) => {
@@ -498,7 +512,10 @@ export default function GraphVisualization({
     return () => {
       simulation.stop();
     };
-  }, [nodes, edges, onNodeClick, selectedNodeId, layout, colorMode, communityMap]);
+  // Using nodeIdentity/edgeIdentity instead of nodes/edges to avoid re-render on reference changes only
+  // onNodeClick is accessed via onNodeClickRef to avoid re-renders from parent function recreation
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeIdentity, edgeIdentity, selectedNodeId, layout, colorMode, communityMap]);
 
   useEffect(() => {
     render();
