@@ -122,6 +122,7 @@ export default function NetworkPage() {
   const [assessAnalyst, setAssessAnalyst] = useState('');
   const [assessLoading, setAssessLoading] = useState(false);
   const [islandThreshold, setIslandThreshold] = useState(0);
+  const [islandMetric, setIslandMetric] = useState<'degree' | 'betweenness' | 'eigenvector' | 'pagerank' | 'closeness'>('degree');
   const [filteredGraphNodes, setFilteredGraphNodes] = useState<GraphNode[]>([]);
   const [filteredGraphEdges, setFilteredGraphEdges] = useState<GraphEdge[]>([]);
   const [bottomTab, setBottomTab] = useState<'chat' | 'notebook'>('chat');
@@ -319,7 +320,7 @@ export default function NetworkPage() {
   function clearSnapshotView() {
     setActiveSnapshotId(null);
     // Re-trigger the filter effect by resetting island threshold
-    setIslandThreshold(islandThreshold);
+    setIslandThreshold(0);
   }
 
   async function deleteSnapshot(snapshotId: string) {
@@ -409,17 +410,35 @@ export default function NetworkPage() {
 
     // Then apply island threshold
     if (islandThreshold > 0) {
-      const degreeMap: Record<string, number> = {};
-      for (const node of graphNodes) {
-        degreeMap[node.id] = 0;
+      // Build a metric value map for each node
+      const metricMap: Record<string, number> = {};
+
+      if (islandMetric === 'degree') {
+        // Compute degree from current edges
+        for (const node of graphNodes) {
+          metricMap[node.id] = 0;
+        }
+        for (const edge of edges) {
+          const srcId = edge.source_id || edge.source;
+          const tgtId = edge.target_id || edge.target;
+          if (metricMap[srcId] !== undefined) metricMap[srcId]++;
+          if (metricMap[tgtId] !== undefined) metricMap[tgtId]++;
+        }
+      } else {
+        // Use pre-computed stats from entity_statistics
+        const statsLookup: Record<string, EntityStats> = {};
+        if (stats?.entity_statistics) {
+          for (const s of stats.entity_statistics) {
+            statsLookup[s.entity] = s;
+          }
+        }
+        for (const node of graphNodes) {
+          const s = statsLookup[node.name];
+          metricMap[node.id] = s ? s[islandMetric] : 0;
+        }
       }
-      for (const edge of edges) {
-        const srcId = edge.source_id || edge.source;
-        const tgtId = edge.target_id || edge.target;
-        if (degreeMap[srcId] !== undefined) degreeMap[srcId]++;
-        if (degreeMap[tgtId] !== undefined) degreeMap[tgtId]++;
-      }
-      const visibleIds = new Set(graphNodes.filter(n => degreeMap[n.id] >= islandThreshold).map(n => n.id));
+
+      const visibleIds = new Set(graphNodes.filter(n => metricMap[n.id] >= islandThreshold).map(n => n.id));
       setFilteredGraphNodes(graphNodes.filter(n => visibleIds.has(n.id)));
       edges = edges.filter(e => {
         const srcId = e.source_id || e.source;
@@ -449,7 +468,7 @@ export default function NetworkPage() {
       }
     }
     setFilteredGraphEdges(edges);
-  }, [graphNodes, graphEdges, islandThreshold, hiddenRelTypes, confidenceThreshold]);
+  }, [graphNodes, graphEdges, islandThreshold, islandMetric, hiddenRelTypes, confidenceThreshold, stats]);
 
   function handleShiftNodeClick(node: GraphNode, shiftKey: boolean) {
     if (shiftKey) {
@@ -1218,24 +1237,43 @@ export default function NetworkPage() {
                     </div>
                     {/* Island Method */}
                     <div className="bg-navy-700 rounded p-3">
-                      <label className="text-xs text-gray-400 font-medium block mb-2">
-                        Island Method &mdash; Minimum Degree
-                      </label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs text-gray-400 font-medium">
+                          Island Method
+                        </label>
+                        <select
+                          value={islandMetric}
+                          onChange={(e) => {
+                            setIslandMetric(e.target.value as typeof islandMetric);
+                            setIslandThreshold(0);
+                          }}
+                          className="bg-navy-800 border border-navy-600 rounded px-2 py-0.5 text-xs text-gray-300"
+                        >
+                          <option value="degree">Degree</option>
+                          <option value="betweenness">Betweenness</option>
+                          <option value="eigenvector">Eigenvector</option>
+                          <option value="pagerank">PageRank</option>
+                          <option value="closeness">Closeness</option>
+                        </select>
+                      </div>
                       <input
                         type="range"
                         min={0}
-                        max={Math.max(maxVals.degree, 1)}
+                        max={islandMetric === 'degree' ? Math.max(maxVals.degree, 1) : Math.max(maxVals[islandMetric], 0.01)}
+                        step={islandMetric === 'degree' ? 1 : islandMetric === 'pagerank' ? 0.001 : 0.01}
                         value={islandThreshold}
                         onChange={(e) => setIslandThreshold(Number(e.target.value))}
                         className="w-full accent-accent-blue"
                       />
                       <div className="flex justify-between text-xs text-gray-500 mt-1">
                         <span>0</span>
-                        <span className="text-accent-blue font-medium">{islandThreshold}</span>
-                        <span>{maxVals.degree}</span>
+                        <span className="text-accent-blue font-medium">
+                          {islandMetric === 'degree' ? islandThreshold : islandThreshold.toFixed(islandMetric === 'pagerank' ? 3 : 2)}
+                        </span>
+                        <span>{islandMetric === 'degree' ? maxVals.degree : maxVals[islandMetric].toFixed(islandMetric === 'pagerank' ? 3 : 2)}</span>
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
-                        Showing nodes with degree &ge; {islandThreshold}
+                        Showing nodes with {islandMetric} &ge; {islandMetric === 'degree' ? islandThreshold : islandThreshold.toFixed(islandMetric === 'pagerank' ? 3 : 2)}
                       </p>
                     </div>
                     <p className="text-xs text-gray-500">See full statistics table in expanded view by clicking a column header to sort.</p>
