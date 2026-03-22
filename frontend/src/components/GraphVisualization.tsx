@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import * as d3 from 'd3';
 
 interface GraphNode extends d3.SimulationNodeDatum {
@@ -20,6 +20,8 @@ interface GraphEdge extends d3.SimulationLinkDatum<GraphNode> {
   rel_type: string;
   confidence?: number;
   weight?: number;
+  first_seen?: string;
+  last_seen?: string;
 }
 
 export type LayoutMode = 'force' | 'radial' | 'hierarchical';
@@ -29,10 +31,14 @@ interface Props {
   nodes: GraphNode[];
   edges: GraphEdge[];
   onNodeClick: (node: GraphNode, event?: MouseEvent) => void;
+  onEdgeClick?: (edge: GraphEdge, event?: MouseEvent) => void;
   selectedNodeId?: string | null;
+  highlightedNodeIds?: Set<string>;
+  highlightedEdgeKeys?: Set<string>;
   layout?: LayoutMode;
   colorMode?: ColorMode;
   communityMap?: Record<string, number>;
+  onPositionsUpdate?: (positions: Record<string, { x: number; y: number }>) => void;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -51,13 +57,39 @@ const COMMUNITY_PALETTE = [
   '#06b6d4', '#eab308', '#ec4899', '#14b8a6', '#f43f5e',
 ];
 
+/** Abbreviate relationship type for edge labels: COMMUNICATES_WITH -> Comm. With */
+function abbreviateRelType(rel: string): string {
+  const words = rel.split('_');
+  if (words.length === 1) return rel.charAt(0).toUpperCase() + rel.slice(1).toLowerCase();
+  return words.map(w => w.charAt(0).toUpperCase() + w.slice(1, 4).toLowerCase()).join(' ');
+}
+
 export default function GraphVisualization({
-  nodes, edges, onNodeClick, selectedNodeId,
+  nodes, edges, onNodeClick, onEdgeClick, selectedNodeId,
+  highlightedNodeIds, highlightedEdgeKeys,
   layout = 'force', colorMode = 'type', communityMap,
+  onPositionsUpdate,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const onClickRef = useRef(onNodeClick);
+  const onEdgeClickRef = useRef(onEdgeClick);
+  const onPositionsRef = useRef(onPositionsUpdate);
   onClickRef.current = onNodeClick;
+  onEdgeClickRef.current = onEdgeClick;
+  onPositionsRef.current = onPositionsUpdate;
+
+  const currentZoomRef = useRef(1);
+
+  const emitPositions = useCallback((simNodes: GraphNode[]) => {
+    if (!onPositionsRef.current) return;
+    const positions: Record<string, { x: number; y: number }> = {};
+    simNodes.forEach(n => {
+      if (n.x != null && n.y != null) {
+        positions[n.id] = { x: n.x, y: n.y };
+      }
+    });
+    onPositionsRef.current(positions);
+  }, []);
 
   useEffect(() => {
     if (!svgRef.current || nodes.length === 0) return;
@@ -84,6 +116,18 @@ export default function GraphVisualization({
     });
     const maxDeg = Math.max(1, ...Object.values(deg));
 
+    // Build adjacency for layout algorithms (use arrays for TS compat)
+    const adjacencySet: Record<string, Set<string>> = {};
+    edges.forEach(e => {
+      if (!adjacencySet[e.source_id]) adjacencySet[e.source_id] = new Set();
+      if (!adjacencySet[e.target_id]) adjacencySet[e.target_id] = new Set();
+      adjacencySet[e.source_id].add(e.target_id);
+      adjacencySet[e.target_id].add(e.source_id);
+    });
+    // Convert to arrays for iteration without downlevelIteration
+    const adjacency: Record<string, string[]> = {};
+    Object.keys(adjacencySet).forEach(k => { adjacency[k] = Array.from(adjacencySet[k]); });
+
     function radius(d: GraphNode): number {
       if (d.isCommunity) return Math.min(35, 12 + (d.members?.length || 2) * 1.5);
       return 5 + ((deg[d.id] || 0) / maxDeg) * 15;
@@ -97,29 +141,201 @@ export default function GraphVisualization({
       return TYPE_COLORS[d.entity_type] || '#78716c';
     }
 
+    // Convert Set props to lookup-friendly form
+    const hlNodeSet = highlightedNodeIds || new Set<string>();
+    const hlEdgeSet = highlightedEdgeKeys || new Set<string>();
+    const isHighlighted = (id: string) => hlNodeSet.size > 0 && hlNodeSet.has(id);
+    const isEdgeHighlighted = (sid: string, tid: string) => {
+      if (hlEdgeSet.size === 0) return false;
+      return hlEdgeSet.has(`${sid}-${tid}`) || hlEdgeSet.has(`${tid}-${sid}`);
+    };
+    const hasHighlights = hlNodeSet.size > 0;
+
     // Container with zoom
     const g = svg.append('g');
-    svg.call(
-      d3.zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.1, 4])
-        .on('zoom', (event) => g.attr('transform', event.transform))
-    );
+    const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.1, 4])
+      .on('zoom', (event) => {
+        g.attr('transform', event.transform);
+        currentZoomRef.current = event.transform.k;
+        // Semantic zoom: show/hide edge labels based on zoom level
+        g.selectAll('.edge-label')
+          .attr('opacity', event.transform.k > 1.2 ? 0.8 : 0);
+      });
+    svg.call(zoomBehavior);
 
-    // Simulation
-    const sim = d3.forceSimulation<GraphNode>(simNodes)
-      .force('link', d3.forceLink<GraphNode, GraphEdge>(simEdges).id(d => d.id).distance(80))
-      .force('charge', d3.forceManyBody().strength(-200))
-      .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collide', d3.forceCollide<GraphNode>().radius(d => radius(d) + 5));
+    // --- Apply layout-specific forces or positions ---
+    const sim = d3.forceSimulation<GraphNode>(simNodes);
 
-    // Edges
-    const link = g.append('g')
-      .selectAll('line')
+    if (layout === 'radial') {
+      // Radial layout: selected node at center, others in rings by hop distance
+      const centerId = selectedNodeId || (simNodes.length > 0 ? simNodes[0].id : '');
+      const hopMap: Record<string, number> = {};
+      if (centerId) {
+        // BFS to compute hop distances
+        const queue: string[] = [centerId];
+        hopMap[centerId] = 0;
+        while (queue.length > 0) {
+          const current = queue.shift()!;
+          const neighbors = adjacency[current] || new Set();
+          for (const neighbor of neighbors) {
+            if (hopMap[neighbor] === undefined) {
+              hopMap[neighbor] = hopMap[current] + 1;
+              queue.push(neighbor);
+            }
+          }
+        }
+      }
+
+      const maxHop = Math.max(1, ...Object.values(hopMap));
+      const ringDistance = Math.min(width, height) / (2 * (maxHop + 1));
+
+      simNodes.forEach(n => {
+        const hop = hopMap[n.id] ?? maxHop + 1;
+        if (hop === 0) {
+          n.fx = width / 2;
+          n.fy = height / 2;
+        }
+      });
+
+      sim
+        .force('link', d3.forceLink<GraphNode, GraphEdge>(simEdges).id(d => d.id).distance(60).strength(0.3))
+        .force('radial', d3.forceRadial<GraphNode>(
+          d => (hopMap[d.id] ?? maxHop + 1) * ringDistance,
+          width / 2, height / 2
+        ).strength(0.8))
+        .force('collide', d3.forceCollide<GraphNode>().radius(d => radius(d) + 5));
+
+    } else if (layout === 'hierarchical') {
+      // Hierarchical layout: BFS layers from selected node, positioned top-to-bottom
+      const rootId = selectedNodeId || (simNodes.length > 0 ? simNodes[0].id : '');
+      const layers: Record<string, number> = {};
+      const layerNodes: Record<number, string[]> = {};
+
+      if (rootId) {
+        const queue: string[] = [rootId];
+        layers[rootId] = 0;
+        while (queue.length > 0) {
+          const current = queue.shift()!;
+          const neighbors = adjacency[current] || new Set();
+          for (const neighbor of neighbors) {
+            if (layers[neighbor] === undefined) {
+              layers[neighbor] = layers[current] + 1;
+              queue.push(neighbor);
+            }
+          }
+        }
+      }
+
+      // Assign unconnected nodes to max layer + 1
+      const maxLayer = Math.max(0, ...Object.values(layers));
+      simNodes.forEach(n => {
+        if (layers[n.id] === undefined) layers[n.id] = maxLayer + 1;
+      });
+
+      // Group by layer
+      simNodes.forEach(n => {
+        const layer = layers[n.id];
+        if (!layerNodes[layer]) layerNodes[layer] = [];
+        layerNodes[layer].push(n.id);
+      });
+
+      // Position nodes in layers
+      const layerHeight = height / (maxLayer + 3);
+      simNodes.forEach(n => {
+        const layer = layers[n.id];
+        const siblings = layerNodes[layer];
+        const idx = siblings.indexOf(n.id);
+        const layerWidth = width / (siblings.length + 1);
+        n.fx = layerWidth * (idx + 1);
+        n.fy = layerHeight * (layer + 1);
+      });
+
+      sim
+        .force('link', d3.forceLink<GraphNode, GraphEdge>(simEdges).id(d => d.id).distance(40).strength(0))
+        .force('collide', d3.forceCollide<GraphNode>().radius(d => radius(d) + 3));
+      sim.alpha(0.1); // Low alpha since positions are fixed
+
+    } else {
+      // Force-directed (default)
+      sim
+        .force('link', d3.forceLink<GraphNode, GraphEdge>(simEdges).id(d => d.id).distance(80))
+        .force('charge', d3.forceManyBody().strength(-200))
+        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('collide', d3.forceCollide<GraphNode>().radius(d => radius(d) + 5));
+    }
+
+    // --- Edge lines (clickable with wider invisible hit area) ---
+    const linkG = g.append('g');
+
+    // Invisible wider lines for easier click targeting
+    const linkHitArea = linkG.selectAll<SVGLineElement, GraphEdge>('.edge-hit')
       .data(simEdges)
       .join('line')
-      .attr('stroke', '#4b5563')
-      .attr('stroke-width', d => Math.min(3, d.weight || 1))
-      .attr('stroke-opacity', 0.5);
+      .attr('class', 'edge-hit')
+      .attr('stroke', 'transparent')
+      .attr('stroke-width', 12)
+      .attr('cursor', 'pointer')
+      .on('click', (event, d) => {
+        if (onEdgeClickRef.current) {
+          onEdgeClickRef.current(d, event as unknown as MouseEvent);
+        }
+      });
+
+    // Visible edge lines
+    const link = linkG.selectAll<SVGLineElement, GraphEdge>('.edge-visible')
+      .data(simEdges)
+      .join('line')
+      .attr('class', 'edge-visible')
+      .attr('stroke', d => {
+        const sid = typeof d.source === 'string' ? d.source : (d.source as GraphNode).id;
+        const tid = typeof d.target === 'string' ? d.target : (d.target as GraphNode).id;
+        if (isEdgeHighlighted(sid, tid)) return '#fbbf24';
+        return hasHighlights ? '#1e293b' : '#4b5563';
+      })
+      .attr('stroke-width', d => {
+        const sid = typeof d.source === 'string' ? d.source : (d.source as GraphNode).id;
+        const tid = typeof d.target === 'string' ? d.target : (d.target as GraphNode).id;
+        if (isEdgeHighlighted(sid, tid)) return 3;
+        return Math.min(3, d.weight || 1);
+      })
+      .attr('stroke-opacity', d => {
+        const sid = typeof d.source === 'string' ? d.source : (d.source as GraphNode).id;
+        const tid = typeof d.target === 'string' ? d.target : (d.target as GraphNode).id;
+        if (hasHighlights && !isEdgeHighlighted(sid, tid)) return 0.15;
+        return 0.5;
+      })
+      .attr('pointer-events', 'none');
+
+    // Edge labels (relationship type) — hidden by default, shown at zoom > 1.2x
+    const edgeLabelG = g.append('g');
+    const edgeLabel = edgeLabelG.selectAll<SVGTextElement, GraphEdge>('.edge-label')
+      .data(simEdges)
+      .join('text')
+      .attr('class', 'edge-label')
+      .text(d => abbreviateRelType(d.rel_type))
+      .attr('font-size', '7px')
+      .attr('fill', '#9ca3af')
+      .attr('text-anchor', 'middle')
+      .attr('pointer-events', 'none')
+      .attr('opacity', 0); // Initially hidden, shown via semantic zoom
+
+    // Edge confidence indicators (small circles at midpoint for high/low confidence)
+    // Shown only when zoomed in
+    const edgeConfG = g.append('g');
+    const edgeConf = edgeConfG.selectAll<SVGCircleElement, GraphEdge>('.edge-conf')
+      .data(simEdges.filter(d => d.confidence != null))
+      .join('circle')
+      .attr('class', 'edge-conf')
+      .attr('r', 2.5)
+      .attr('fill', d => {
+        const c = d.confidence || 0;
+        if (c >= 0.8) return '#22c55e';
+        if (c >= 0.5) return '#eab308';
+        return '#ef4444';
+      })
+      .attr('opacity', 0)
+      .attr('pointer-events', 'none');
 
     // Nodes
     const node = g.append('g')
@@ -127,10 +343,26 @@ export default function GraphVisualization({
       .data(simNodes)
       .join('circle')
       .attr('r', d => radius(d))
-      .attr('fill', d => color(d))
-      .attr('stroke', d => d.id === selectedNodeId ? '#fff' : d.isCommunity ? '#8b5cf6' : 'none')
-      .attr('stroke-width', d => d.id === selectedNodeId ? 3 : d.isCommunity ? 2 : 0)
+      .attr('fill', d => {
+        if (hasHighlights && !isHighlighted(d.id) && d.id !== selectedNodeId) {
+          return '#374151'; // Dim non-highlighted nodes
+        }
+        return color(d);
+      })
+      .attr('stroke', d => {
+        if (d.id === selectedNodeId) return '#fff';
+        if (isHighlighted(d.id)) return '#fbbf24';
+        if (d.isCommunity) return '#8b5cf6';
+        return 'none';
+      })
+      .attr('stroke-width', d => {
+        if (d.id === selectedNodeId) return 3;
+        if (isHighlighted(d.id)) return 2;
+        if (d.isCommunity) return 2;
+        return 0;
+      })
       .attr('stroke-dasharray', d => d.isCommunity ? '4,2' : 'none')
+      .attr('opacity', d => hasHighlights && !isHighlighted(d.id) && d.id !== selectedNodeId ? 0.3 : 1)
       .attr('cursor', 'pointer')
       .on('click', (event, d) => onClickRef.current(d, event as unknown as MouseEvent))
       .call(d3.drag<SVGCircleElement, GraphNode>()
@@ -145,14 +377,14 @@ export default function GraphVisualization({
         })
       );
 
-    // Labels
+    // Node labels
     const label = g.append('g')
       .selectAll('text')
       .data(simNodes)
       .join('text')
       .text(d => d.name.length > 25 ? d.name.slice(0, 22) + '...' : d.name)
       .attr('font-size', '9px')
-      .attr('fill', '#d1d5db')
+      .attr('fill', d => hasHighlights && !isHighlighted(d.id) && d.id !== selectedNodeId ? '#4b5563' : '#d1d5db')
       .attr('text-anchor', 'middle')
       .attr('dy', d => -(radius(d) + 3))
       .attr('pointer-events', 'none');
@@ -170,16 +402,48 @@ export default function GraphVisualization({
       row.append('text').attr('x', 14).attr('y', 7).attr('font-size', '8px').attr('fill', '#d1d5db').text(t);
     });
 
-    // Tick
+    // Tick — update all positions each simulation frame
+    let tickCount = 0;
     sim.on('tick', () => {
+      tickCount++;
+
+      const getX = (d: GraphNode | string) => typeof d === 'string' ? 0 : (d.x || 0);
+      const getY = (d: GraphNode | string) => typeof d === 'string' ? 0 : (d.y || 0);
+
       link
-        .attr('x1', d => (d.source as GraphNode).x || 0)
-        .attr('y1', d => (d.source as GraphNode).y || 0)
-        .attr('x2', d => (d.target as GraphNode).x || 0)
-        .attr('y2', d => (d.target as GraphNode).y || 0);
+        .attr('x1', d => getX(d.source as GraphNode))
+        .attr('y1', d => getY(d.source as GraphNode))
+        .attr('x2', d => getX(d.target as GraphNode))
+        .attr('y2', d => getY(d.target as GraphNode));
+
+      linkHitArea
+        .attr('x1', d => getX(d.source as GraphNode))
+        .attr('y1', d => getY(d.source as GraphNode))
+        .attr('x2', d => getX(d.target as GraphNode))
+        .attr('y2', d => getY(d.target as GraphNode));
+
+      // Edge labels at midpoint
+      edgeLabel
+        .attr('x', d => (getX(d.source as GraphNode) + getX(d.target as GraphNode)) / 2)
+        .attr('y', d => (getY(d.source as GraphNode) + getY(d.target as GraphNode)) / 2 - 4);
+
+      // Confidence dots at midpoint
+      edgeConf
+        .attr('cx', d => (getX(d.source as GraphNode) + getX(d.target as GraphNode)) / 2)
+        .attr('cy', d => (getY(d.source as GraphNode) + getY(d.target as GraphNode)) / 2 + 4)
+        .attr('opacity', currentZoomRef.current > 1.5 ? 0.7 : 0);
+
       node.attr('cx', d => d.x || 0).attr('cy', d => d.y || 0);
       label.attr('x', d => d.x || 0).attr('y', d => (d.y || 0) - radius(d) - 3);
+
+      // Emit positions once simulation stabilizes (every 50 ticks)
+      if (tickCount % 50 === 0) {
+        emitPositions(simNodes);
+      }
     });
+
+    // Emit final positions when simulation ends
+    sim.on('end', () => emitPositions(simNodes));
 
     return () => { sim.stop(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -187,6 +451,9 @@ export default function GraphVisualization({
     // Only re-render when actual data content changes
     nodes.length, edges.length, selectedNodeId, layout, colorMode,
     nodes.map(n => n.id).join(','),
+    // eslint-disable-next-line no-nested-ternary
+    highlightedNodeIds ? highlightedNodeIds.size : 0,
+    highlightedEdgeKeys ? highlightedEdgeKeys.size : 0,
   ]);
 
   return (
