@@ -102,7 +102,7 @@ def test_cluster_documents_single_doc():
     """Single document returns leaf node."""
     docs = [("d1", "intelligence analysis report")]
     tree, _, _ = cluster_documents(docs, project_id="test-proj")
-    assert tree["entity_type"] == "document_source"
+    assert tree["entity_type"] == "topic"
 
 
 def test_cluster_documents_empty():

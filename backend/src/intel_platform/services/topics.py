@@ -39,26 +39,11 @@ class TopicTreeService:
             "children": [],
         }
 
-        # Branch 1: Topics (document clustering) — primary topic view
+        # Topics (document content clustering) — only branch in the tree
         full_docs = self._store.search_entities(project_id=project_id, entity_type="Document", limit=500)
         topic_branch = self._build_topic_branch(full_docs, project_id)
         if topic_branch and topic_branch.get("children"):
-            tree["children"].append(topic_branch)
-
-        # Branch 2: By Source Document (with entity drilldown)
-        doc_branch = self._build_document_branch(documents)
-        if doc_branch["children"]:
-            tree["children"].append(doc_branch)
-
-        # Branch 3: Geographic Themes (locations grouped by region)
-        geo_branch = self._build_geo_branch(non_docs)
-        if geo_branch["children"]:
-            tree["children"].append(geo_branch)
-
-        # Branch 4: Actors & Organizations
-        actor_branch = self._build_actor_branch(non_docs, G)
-        if actor_branch["children"]:
-            tree["children"].append(actor_branch)
+            tree["children"].extend(topic_branch.get("children", []))
 
         return tree
 
@@ -87,19 +72,6 @@ class TopicTreeService:
         # Update module-level caches
         _cluster_doc_map.update(doc_map)
         _cluster_keywords.update(kw_map)
-
-        # Replace doc IDs in leaf nodes with display names (filenames)
-        def _replace_ids_with_names(node: dict) -> None:
-            if not node.get("children") and node.get("doc_ids"):
-                node["children"] = [
-                    {"id": did, "name": id_to_name.get(did, did), "entity_type": "Document"}
-                    for did in node["doc_ids"]
-                ]
-            for child in node.get("children", []):
-                if isinstance(child, dict) and "doc_ids" in child:
-                    _replace_ids_with_names(child)
-
-        _replace_ids_with_names(tree_node)
 
         # Wrap in branch node
         branch = {
@@ -436,18 +408,26 @@ class TopicTreeService:
             keywords = _cluster_keywords.get(project_id, {}).get(entity_id, [])
 
             documents = []
+            document_excerpts: list[dict[str, str]] = []
             connected_entities = []
             seen_entity_ids: set[str] = set()
 
             for doc_id in doc_ids:
                 doc = self._store.get_entity(doc_id)
                 if doc and doc.get("entity_type") == "Document":
+                    full_content = doc.get("content", "") or ""
                     documents.append({
                         "id": doc.get("id"),
                         "name": doc.get("name"),
                         "reliability_rating": doc.get("reliability_rating", ""),
-                        "content_preview": (doc.get("content", "") or "")[:500],
+                        "content_preview": full_content[:500],
                     })
+                    # Include longer excerpt for LLM summary generation
+                    if full_content:
+                        document_excerpts.append({
+                            "name": doc.get("name", ""),
+                            "content": full_content[:3000],
+                        })
                     # Find entities extracted from this document
                     rels = self._store.get_relationships(doc_id)
                     for rel in rels:
@@ -468,6 +448,7 @@ class TopicTreeService:
                 "entity": {"id": entity_id, "name": ", ".join(keywords) or "Topic Cluster", "entity_type": "topic"},
                 "documents": documents,
                 "source_documents": documents,
+                "document_excerpts": document_excerpts,
                 "connected_entities": connected_entities,
                 "keywords": keywords,
                 "document_count": len(documents),

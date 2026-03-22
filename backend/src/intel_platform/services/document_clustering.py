@@ -179,8 +179,8 @@ def kmeans(
 # Recursive clustering + keyword labeling
 # ---------------------------------------------------------------------------
 
-MIN_CLUSTER_SIZE = 3
-MAX_DEPTH = 6
+MIN_CLUSTER_SIZE = 2
+MAX_DEPTH = 8
 
 
 def _label_cluster(
@@ -286,12 +286,12 @@ def _recursive_cluster(
     label, keywords = _label_cluster(vectors, vocab, doc_indices, all_tokenized)
     all_doc_ids = [doc_ids[i] for i in doc_indices]
 
-    # Base cases: leaf node
+    # Base cases: leaf topic node (no further splitting)
     if n <= MIN_CLUSTER_SIZE or depth >= MAX_DEPTH:
         node = {
             "id": node_id,
             "name": label,
-            "entity_type": "document_source",
+            "entity_type": "topic",
             "doc_ids": all_doc_ids,
             "count": n,
             "children": [],
@@ -312,7 +312,7 @@ def _recursive_cluster(
         node = {
             "id": node_id,
             "name": label,
-            "entity_type": "document_source",
+            "entity_type": "topic",
             "doc_ids": all_doc_ids,
             "count": n,
             "children": [],
@@ -387,7 +387,7 @@ def cluster_documents(
         node = {
             "id": "topic-root",
             "name": label,
-            "entity_type": "document_source",
+            "entity_type": "topic",
             "doc_ids": [doc_id],
             "count": 1,
             "children": [],
