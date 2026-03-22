@@ -30,6 +30,77 @@ const TYPE_COLORS: Record<string, string> = {
 
 const ENTITY_TYPES = ['Person', 'Organization', 'Location', 'ThreatActor', 'Document', 'IPAddress', 'Domain', 'Event', 'Hash', 'Vulnerability', 'Report', 'Topic'];
 
+function TimelineChart({ events }: { events: TimelineEvent[] }) {
+  // Group events by date
+  const byDate: Record<string, { count: number; types: Record<string, number> }> = {};
+  events.forEach(e => {
+    const date = e.timestamp ? e.timestamp.split('T')[0] : 'Unknown';
+    if (!byDate[date]) byDate[date] = { count: 0, types: {} };
+    byDate[date].count++;
+    byDate[date].types[e.entity_type] = (byDate[date].types[e.entity_type] || 0) + 1;
+  });
+
+  const dates = Object.keys(byDate).sort();
+  const maxCount = Math.max(...Object.values(byDate).map(d => d.count), 1);
+  const chartHeight = 120;
+  const barWidth = Math.max(20, Math.min(60, 800 / dates.length));
+
+  const typeColors: Record<string, string> = {
+    Person: '#f97316', Organization: '#3b82f6', Location: '#22c55e',
+    IPAddress: '#06b6d4', Domain: '#a855f7', Hash: '#ec4899',
+    ThreatActor: '#ef4444', TTP: '#eab308', Document: '#6b7280',
+  };
+
+  if (dates.length === 0) return null;
+
+  return (
+    <div className="bg-navy-800 border border-navy-600 rounded-lg p-4 mb-6">
+      <h3 className="text-sm font-semibold text-gray-400 mb-3">Activity Over Time</h3>
+      <div className="overflow-x-auto">
+        <svg width={dates.length * (barWidth + 4) + 40} height={chartHeight + 40}>
+          {dates.map((date, i) => {
+            const d = byDate[date];
+            const height = (d.count / maxCount) * chartHeight;
+            const dominantType = Object.entries(d.types).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Document';
+            const color = typeColors[dominantType] || '#6b7280';
+            return (
+              <g key={date} transform={`translate(${i * (barWidth + 4) + 30}, 0)`}>
+                <rect
+                  y={chartHeight - height}
+                  width={barWidth}
+                  height={height}
+                  fill={color}
+                  rx={3}
+                  opacity={0.8}
+                />
+                <text
+                  x={barWidth / 2}
+                  y={chartHeight - height - 4}
+                  textAnchor="middle"
+                  className="text-[10px]"
+                  fill="#9ca3af"
+                >
+                  {d.count}
+                </text>
+                <text
+                  x={barWidth / 2}
+                  y={chartHeight + 14}
+                  textAnchor="middle"
+                  className="text-[9px]"
+                  fill="#6b7280"
+                  transform={`rotate(-45, ${barWidth / 2}, ${chartHeight + 14})`}
+                >
+                  {date.slice(5)}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 function groupByDate(events: TimelineEvent[]): Record<string, TimelineEvent[]> {
   const groups: Record<string, TimelineEvent[]> = {};
   const now = new Date();
@@ -159,6 +230,7 @@ export default function TimelinePage() {
               <div className="text-center text-gray-500 mt-8">No events to display.</div>
             ) : (
               <div className="space-y-8">
+                <TimelineChart events={filtered} />
                 {Object.entries(grouped).map(([dateLabel, dateEvents]) => (
                   <div key={dateLabel}>
                     <h3 className="text-sm font-bold text-gray-400 mb-4 sticky top-0 bg-navy-900 py-2 z-10 border-b border-navy-700">

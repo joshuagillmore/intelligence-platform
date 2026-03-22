@@ -114,6 +114,34 @@ export default function CollectionsPage() {
     setAssistantError(null);
     setPlanItems([]);
     try {
+      const refineResponse = await llmApi.query(
+        [{ role: 'user', content: `As an intelligence analyst mentor, help me refine this Priority Intelligence Requirement (PIR). Do NOT answer the question. Instead:
+
+1. ASSESS the PIR: Is it specific enough? Measurable? Time-bounded?
+2. IDENTIFY hidden assumptions in the PIR
+3. BREAK DOWN into 3-5 more specific sub-questions (Essential Elements of Information)
+4. SUGGEST which structured analytic techniques would help (ACH, Key Assumptions Check, etc.)
+5. PROPOSE a refined version of the PIR that is more actionable
+
+PIR: ${pir.trim()}` }],
+        undefined // no skill — use the foundation grounding only
+      );
+      const answer = refineResponse.data?.response || refineResponse.data?.answer || refineResponse.data?.content || JSON.stringify(refineResponse.data);
+      const aiMsg: ChatMessage = { role: 'assistant', content: answer };
+      setAssistantMessages(prev => [...prev, aiMsg]);
+    } catch (e) {
+      setAssistantError(getErrorMessage(e));
+    } finally {
+      setAssistantLoading(false);
+    }
+  }
+
+  async function generateCollectionPlan() {
+    if (!pir.trim()) return;
+    setAssistantLoading(true);
+    setAssistantError(null);
+    setPlanItems([]);
+    try {
       const res = await llmApi.query(
         [{ role: 'user', content: pir.trim() }],
         'collection_planning'
@@ -314,7 +342,14 @@ export default function CollectionsPage() {
               disabled={assistantLoading || !pir.trim()}
               className="bg-navy-600 hover:bg-navy-500 text-accent-blue border border-accent-blue/30 px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
             >
-              {assistantLoading ? 'Refining...' : 'Refine with AI'}
+              {assistantLoading ? 'Refining...' : 'Refine PIR'}
+            </button>
+            <button
+              onClick={generateCollectionPlan}
+              disabled={assistantLoading || !pir.trim()}
+              className="bg-navy-600 hover:bg-navy-500 text-emerald-400 border border-emerald-500/30 px-4 py-2 rounded text-sm font-medium disabled:opacity-50 transition-colors"
+            >
+              {assistantLoading ? 'Planning...' : 'Generate Collection Plan'}
             </button>
           </div>
         </div>
@@ -597,7 +632,7 @@ export default function CollectionsPage() {
             {collections.length === 0 && (
               <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center">
                 <p className="text-gray-500 text-sm mb-2">No collection tasks yet.</p>
-                <p className="text-gray-600 text-xs">Enter a PIR above and click &quot;Create Collection&quot; or use &quot;Refine with AI&quot; to build a structured plan.</p>
+                <p className="text-gray-600 text-xs">Enter a PIR above and click &quot;Create Collection&quot;, use &quot;Refine PIR&quot; to improve your question, or &quot;Generate Collection Plan&quot; to build a structured plan.</p>
               </div>
             )}
           </div>
