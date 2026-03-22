@@ -25,17 +25,21 @@ export default function StatusBar() {
   }, []);
 
   return (
-    <div className="fixed bottom-0 left-56 right-0 h-7 bg-navy-800 border-t border-navy-600 flex items-center px-4 text-xs text-gray-500 gap-4 z-50">
+    <div className="fixed bottom-0 left-56 right-0 h-7 bg-[#090e1c] border-t border-[#1a1f2e] flex items-center px-4 text-[9px] tracking-widest uppercase gap-6 z-50">
       <div className="flex items-center gap-1.5">
-        <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
-        <span>{connected ? 'Connected' : 'Disconnected'}</span>
+        <div className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-red-500'}`} />
+        <span className="text-gray-500 font-bold">{connected ? 'Systems Nominal' : 'Disconnected'}</span>
       </div>
       {activeProject && (
-        <span className="text-gray-400">
-          Project: <span className="text-gray-300">{activeProject.name}</span>
+        <span className="text-gray-500">
+          Project: <span className="text-gray-400 font-bold">{activeProject.name}</span>
         </span>
       )}
-      <span className="ml-auto">{lastAction}</span>
+      <div className="flex items-center gap-1.5">
+        <span className="material-symbols-outlined text-[10px] text-[#adc6ff]">shield</span>
+        <span className="text-gray-500">Encryption: AES-256</span>
+      </div>
+      <span className="ml-auto text-gray-600">{lastAction}</span>
     </div>
   );
 }
