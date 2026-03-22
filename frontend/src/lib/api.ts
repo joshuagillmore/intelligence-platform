@@ -1,15 +1,42 @@
 import axios from 'axios';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY || 'dev-api-key-change-in-production';
 
 const api = axios.create({
   baseURL: `${API_BASE}/api`,
   headers: {
-    'Authorization': `Bearer ${API_KEY}`,
     'Content-Type': 'application/json',
   },
 });
+
+// Add auth interceptor
+api.interceptors.request.use((config) => {
+  // Try JWT token first, fall back to API key
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  } else {
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY || 'dev-api-key-change-in-production';
+    config.headers.Authorization = `Bearer ${apiKey}`;
+  }
+  return config;
+});
+
+// Redirect to login on 401
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && typeof window !== 'undefined') {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+      // Only redirect if not already on login page
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 export interface Project {
   id: string;
@@ -192,7 +219,12 @@ export const documentsApi = {
 };
 
 export const healthApi = {
-  check: () => axios.get(`${API_BASE}/health`, { headers: { 'Authorization': `Bearer ${API_KEY}` } }),
+  check: () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const apiKey = process.env.NEXT_PUBLIC_API_KEY || 'dev-api-key-change-in-production';
+    const authValue = token ? `Bearer ${token}` : `Bearer ${apiKey}`;
+    return axios.get(`${API_BASE}/health`, { headers: { 'Authorization': authValue } });
+  },
 };
 
 export default api;
