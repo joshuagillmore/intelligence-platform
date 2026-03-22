@@ -33,14 +33,22 @@ The current topic mind map on the Data Sources page organizes nodes by entity ty
 
 #### Step 1: Document Vectorization (TF-IDF)
 
-For each Document entity in the project:
-1. Retrieve document content
+Fetch Document entities separately using `search_entities(project_id, entity_type="Document")` — not from the bulk 10K entity fetch used for other branches. This avoids loading full document content into the entity list used by non-document branches.
+
+For each Document entity:
+1. Retrieve document content from the entity's `content` field
 2. Tokenize: lowercase, split on whitespace/punctuation, remove stopwords (English stopword list)
 3. Build term frequency (TF) per document
 4. Compute inverse document frequency (IDF) across corpus
 5. Produce TF-IDF vector per document
 
 Implementation: Pure Python using `scipy.sparse` for sparse vectors and basic math. No scikit-learn dependency.
+
+**Edge cases:**
+- **0 documents**: Skip topic branch entirely (omit from tree)
+- **1 document**: Single leaf node, no clustering
+- **<5 documents**: Skip vocabulary filtering (df thresholds don't work with tiny corpora), use all terms with df >= 1
+- Use a deterministic seed (`np.random.RandomState(hash(project_id) % 2**31)`) for reproducible clustering across cache refreshes
 
 #### Step 2: Recursive K-Means Clustering
 
@@ -49,7 +57,7 @@ function cluster(doc_ids, vectors, depth=0):
     if len(doc_ids) <= MIN_CLUSTER_SIZE (3) or depth >= MAX_DEPTH (6):
         return leaf_node(doc_ids)
 
-    k = min(5, len(doc_ids) // 2)  # arity capped at 5
+    k = max(2, min(5, len(doc_ids) // 2))  # at least binary split, arity capped at 5
     assignments = kmeans(vectors, k, max_iter=20)
 
     children = []
@@ -72,7 +80,7 @@ For each internal node:
 3. Filter terms by document frequency within the cluster:
    - **Primary terms**: appear in >=70% of cluster docs (up to 3 terms)
    - **Secondary terms**: next highest weight (up to 2 more terms)
-4. Remove unigrams that are substrings of selected bigrams
+4. Generate bigrams from adjacent token pairs in the top-scoring documents; if a bigram (e.g., "south china") scores higher than its constituent unigrams, use the bigram and remove the unigrams
 5. Node label = comma-separated top terms (e.g., "Sanctions, Iran, Oil Exports")
 
 #### Step 4: Tree Assembly
@@ -109,13 +117,24 @@ Below the primary Topics branch:
 
 The removed branches (By Entity Type, By Category) stay removed.
 
+### Cluster Membership Persistence
+
+The tree build produces a mapping from cluster IDs to document IDs. This mapping must survive between the tree-build request and subsequent context requests. Design:
+
+- `TopicTreeService` stores a **project-level cluster map** in an instance-level dict: `_cluster_cache: dict[str, dict[str, list[str]]]` keyed by `project_id → { "topic-0-1": ["doc-uuid-1", "doc-uuid-2"], ... }`
+- The cluster map also stores keywords per node: `_cluster_keywords: dict[str, dict[str, list[str]]]` keyed by `project_id → { "topic-0-1": ["sanctions", "iran"], ... }`
+- Both are populated during `_build_topic_branch()` and cleared when the tree cache expires
+- Since `TopicTreeService` is instantiated per-request via FastAPI dependency injection, the cache must be **module-level** (a simple module dict, matching the existing cache pattern used by the route decorator)
+
 ### Backend — Updated `get_topic_context()` for Topic Nodes
 
 When a topic cluster node is selected (ID starts with `topic-`):
-1. Retrieve all `doc_ids` from that cluster
-2. Fetch each Document entity (name, reliability_rating, content preview)
-3. Collect entities that appear in those documents (via `source_doc_id` or text search)
-4. Return: `{ documents: [...], connected_entities: [...], keywords: [...] }`
+1. Look up `doc_ids` from the module-level `_cluster_doc_map[project_id][node_id]`
+2. If not found (cache expired), re-run `build_topic_tree()` to repopulate
+3. Fetch each Document entity (name, reliability_rating, content preview)
+4. Collect entities that appear in those documents (via `source_doc_id` or text search)
+5. Look up keywords from `_cluster_keywords[project_id][node_id]`
+6. Return: `{ documents: [...], connected_entities: [...], keywords: [...] }`
 
 ### API Changes
 
@@ -230,8 +249,12 @@ def build_tfidf(documents: list[tuple[str, str]]) -> tuple[csr_matrix, list[str]
                 vocab[t] = len(vocab)
 
     # Filter: keep terms in 2+ docs but <90% of docs
+    # Skip filtering for very small corpora (<5 docs)
     n_docs = len(documents)
-    valid_terms = {t: i for t, i in vocab.items() if 2 <= df[t] <= 0.9 * n_docs}
+    if n_docs < 5:
+        valid_terms = {t: i for t, i in vocab.items() if df[t] >= 1}
+    else:
+        valid_terms = {t: i for t, i in vocab.items() if 2 <= df[t] <= 0.9 * n_docs}
     # Re-index
     final_vocab = {}
     for t in sorted(valid_terms.keys()):
@@ -260,28 +283,42 @@ def build_tfidf(documents: list[tuple[str, str]]) -> tuple[csr_matrix, list[str]
 ### K-Means With K-Means++ Init
 
 ```python
-def kmeans(vectors: csr_matrix, k: int, max_iter: int = 20):
-    """Simple K-Means on sparse TF-IDF vectors."""
+def kmeans(vectors: csr_matrix, k: int, max_iter: int = 20, rng=None):
+    """Simple K-Means on sparse L2-normalized TF-IDF vectors.
+    Uses cosine similarity (dot product of L2-normed vectors).
+    """
+    if rng is None:
+        rng = np.random.RandomState(42)
     n = vectors.shape[0]
-    # K-Means++ initialization
-    centroids = [vectors[np.random.randint(n)].toarray().flatten()]
+
+    # K-Means++ initialization (vectorized)
+    centroids_dense = np.array(centroids)
+    first_idx = rng.randint(n)
+    centroids_list = [vectors[first_idx].toarray().flatten()]
     for _ in range(k - 1):
-        dists = np.array([min(cosine_dist(vectors[i], c) for c in centroids) for i in range(n)])
-        probs = dists / dists.sum()
-        next_idx = np.random.choice(n, p=probs)
-        centroids.append(vectors[next_idx].toarray().flatten())
-    centroids = np.array(centroids)
+        centroid_matrix = np.array(centroids_list)
+        # Cosine distance = 1 - dot(a, b) for L2-normed vectors
+        sims = vectors.dot(centroid_matrix.T)  # (n, num_centroids)
+        min_dists = 1.0 - sims.max(axis=1).A1  # distance to nearest centroid
+        min_dists = np.maximum(min_dists, 0)  # clamp negatives
+        probs = min_dists / (min_dists.sum() + 1e-10)
+        next_idx = rng.choice(n, p=probs)
+        centroids_list.append(vectors[next_idx].toarray().flatten())
+    centroids = np.array(centroids_list)
 
     for _ in range(max_iter):
-        # Assign
-        sims = vectors.dot(centroids.T)  # cosine similarity (vectors are L2-normed)
+        # Assign: cosine similarity via dot product
+        sims = vectors.dot(centroids.T)
         assignments = sims.argmax(axis=1).A1
-        # Update
+
+        # Update centroids + L2 renormalize
         new_centroids = np.zeros_like(centroids)
         for j in range(k):
             mask = assignments == j
             if mask.any():
-                new_centroids[j] = vectors[mask].mean(axis=0).A1
+                mean_vec = vectors[mask].mean(axis=0).A1
+                norm = np.linalg.norm(mean_vec)
+                new_centroids[j] = mean_vec / norm if norm > 0 else mean_vec
         if np.allclose(centroids, new_centroids, atol=1e-6):
             break
         centroids = new_centroids
@@ -305,15 +342,11 @@ The topic tree involves TF-IDF computation across all documents. Cache the tree 
 ## Files Modified
 
 ### Backend
-- `backend/src/intel_platform/services/topics.py` — add `_build_topic_branch()`, `_tfidf_vectorize()`, `_recursive_kmeans()`, `_label_cluster()` methods; update `build_topic_tree()` to use topic branch as primary; update `get_topic_context()` for topic-* nodes
-- `backend/src/intel_platform/services/graph_rag.py` — no changes needed (already fixed)
+- `backend/src/intel_platform/services/topics.py` — add `_build_topic_branch()`, `_tfidf_vectorize()`, `_recursive_kmeans()`, `_label_cluster()` methods; add module-level `_cluster_doc_map` and `_cluster_keywords` dicts; update `build_topic_tree()` to use topic branch as primary; update `get_topic_context()` for topic-* nodes
+- `backend/src/intel_platform/api/routes/topics.py` — increase cache TTL from 30s to 60s
 
 ### Frontend
-- `frontend/src/app/data-sources/page.tsx` — handle `topic-*` node selection, display cluster keywords as tags, no other structural changes needed (Generate Summary button already added)
-- `frontend/src/components/TopicMindMap.tsx` — no changes needed (expand/select separation already fixed)
-
-### No New Files
-All changes fit within existing files.
+- `frontend/src/app/data-sources/page.tsx` — handle `topic-*` node selection; add keyword tags display above the summary section in the right panel; update left panel header text for topic vs document nodes; normalize `keywords` field from context response
 
 ---
 
