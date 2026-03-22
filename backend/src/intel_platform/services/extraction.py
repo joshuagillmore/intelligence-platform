@@ -80,12 +80,19 @@ KNOWN_PERSONS = {
 }
 
 # Words that spaCy commonly misidentifies as entities
+KNOWN_ACRONYMS = {
+    "NATO", "AUKUS", "ASEAN", "IRGC", "PLAN", "PLAAF", "ISIS",
+    "IAEA", "OPEC", "BRICS", "CSIS", "RAND", "CISA", "NSA", "CIA", "FBI",
+    "GRU", "FSB", "SVR", "MI6", "MI5", "DIA", "NGA", "GCHQ",
+}
+
 NOISE_WORDS = {
     "NETWORK", "INFRASTRUCTURE", "ASSESSMENT", "ANALYSIS", "REPORT",
     "NOTE", "SUBJECT", "SUMMARY", "FINDINGS", "GAPS", "KEY",
     "Backup C2", "Primary", "Secondary", "Administrative", "Sea",
     "Bitcoin", "Monero", "Ethereum", "Cryptocurrency",
     "VPS", "CDN", "API", "HTTP", "HTTPS", "DNS", "TCP", "UDP",
+    "IP", "URL", "PDF", "CSV", "JSON", "XML",
     "LIKELY", "UNLIKELY", "VERY LIKELY", "ALMOST CERTAIN", "ROUGHLY EVEN CHANCE",
     "VERY UNLIKELY", "ALMOST NO CHANCE",
     "Defense", "INTELLIGENCE", "OPEN SOURCE", "TECHNICAL",
@@ -171,8 +178,8 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         name = e["name"]
         name_lower = name.lower().strip()
 
-        # Skip all-caps headers (likely document section headings)
-        if name.isupper() and len(name) > 3:
+        # Skip all-caps headers (likely document section headings), but keep known acronyms
+        if name.isupper() and len(name) > 3 and name not in KNOWN_ACRONYMS:
             continue
 
         # Fix trailing parenthetical fragments
