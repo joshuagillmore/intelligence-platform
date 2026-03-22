@@ -436,3 +436,100 @@ def cluster_documents(
     )
 
     return tree, doc_map, kw_map
+
+
+# ---------------------------------------------------------------------------
+# LLM-based topic label refinement
+# ---------------------------------------------------------------------------
+
+async def refine_labels_with_llm(
+    tree_node: dict,
+    doc_pairs: list[tuple[str, str]],
+) -> dict:
+    """Walk the cluster tree and replace keyword labels with LLM-generated names.
+
+    Falls back to existing keyword labels if no LLM provider is configured.
+    Returns the tree with refined labels (mutated in place).
+    """
+    from intel_platform.config import settings
+
+    provider = None
+    if settings.cohere_api_key:
+        from intel_platform.llm.cohere_provider import CohereProvider
+        provider = CohereProvider(api_key=settings.cohere_api_key)
+    elif settings.anthropic_api_key:
+        from intel_platform.llm.anthropic import AnthropicProvider
+        provider = AnthropicProvider(api_key=settings.anthropic_api_key)
+    elif settings.openai_api_key:
+        from intel_platform.llm.openai_provider import OpenAIProvider
+        provider = OpenAIProvider(api_key=settings.openai_api_key)
+
+    if not provider:
+        return tree_node
+
+    from intel_platform.llm.skills.loader import SkillsLoader
+    loader = SkillsLoader()
+    system = loader.get_system_prompt("topic_naming", include_foundation=True) or ""
+
+    # Build a lookup of doc_id -> text for excerpt extraction
+    doc_text_map = {doc_id: text for doc_id, text in doc_pairs}
+
+    async def _refine_node(node: dict) -> None:
+        """Refine a single node's label via LLM."""
+        if node.get("entity_type") != "topic":
+            return
+
+        keywords = node.get("keywords", [])
+        doc_ids = node.get("doc_ids", [])
+
+        if not keywords and not doc_ids:
+            return
+
+        # Build excerpts from up to 5 representative documents
+        excerpts: list[str] = []
+        for did in doc_ids[:5]:
+            text = doc_text_map.get(did, "")
+            if text:
+                excerpts.append(text[:500])
+
+        prompt_parts = []
+        if keywords:
+            prompt_parts.append(f"Keywords: {', '.join(keywords)}")
+        if excerpts:
+            prompt_parts.append("Document excerpts:\n" + "\n---\n".join(excerpts))
+
+        user_msg = "\n\n".join(prompt_parts)
+
+        try:
+            result = await provider.generate(
+                messages=[{"role": "user", "content": user_msg}],
+                system=system,
+                temperature=0.2,
+                max_tokens=256,
+            )
+            content = result.content.strip()
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+
+            import json
+            data = json.loads(content.strip())
+            llm_name = data.get("topic_name", "").strip()
+            llm_summary = data.get("summary", "").strip()
+
+            if llm_name:
+                node["llm_label"] = llm_name
+                node["name"] = llm_name
+            if llm_summary:
+                node["summary"] = llm_summary
+        except Exception:
+            # Keep original keyword label on any failure
+            pass
+
+        # Recurse into children
+        for child in node.get("children", []):
+            await _refine_node(child)
+
+    await _refine_node(tree_node)
+    return tree_node
