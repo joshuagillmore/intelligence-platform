@@ -79,10 +79,17 @@ def build_graph_from_extractions(
             continue
 
         cls = ENTITY_TYPE_MAP.get(entity_type)
-        if not cls:
-            continue
+        if cls:
+            entity = cls(name=name, project_id=project_id)
+        else:
+            # Generic entity for unknown types
+            from intel_platform.models.entities import Entity, EntityType
+            try:
+                et = EntityType(entity_type)
+            except ValueError:
+                et = EntityType.CUSTOM
+            entity = Entity(name=name, entity_type=et, project_id=project_id)
 
-        entity = cls(name=name, project_id=project_id)
         store.create_entity(entity)
         name_to_id[name] = entity.id
         existing_names.append(name)

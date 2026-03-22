@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import re
+
 from neo4j import Driver
 
 from intel_platform.models.entities import Entity, EntityType
 
-VALID_LABELS = {e.value for e in EntityType} | {"Project"}
-
 
 def _validate_label(label: str) -> str:
-    if label not in VALID_LABELS:
-        raise ValueError(f"Invalid entity label: {label}")
+    """Validate entity label. Must be alphanumeric (Neo4j label requirement)."""
+    if not label or not re.match(r'^[A-Za-z][A-Za-z0-9_]*$', label):
+        return "Entity"  # Fallback for invalid labels
     return label
 
 

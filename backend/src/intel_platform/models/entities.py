@@ -24,6 +24,24 @@ class EntityType(str, Enum):
     TOPIC = "Topic"
     REPORT = "Report"
     ASSESSMENT = "Assessment"
+    # Extended types for LLM extraction
+    TECHNOLOGY = "Technology"
+    WEAPON = "Weapon"
+    VEHICLE = "Vehicle"
+    FACILITY = "Facility"
+    FINANCIAL = "Financial"
+    INFRASTRUCTURE = "Infrastructure"
+    SOFTWARE = "Software"
+    HARDWARE = "Hardware"
+    COUNTRY = "Country"
+    CITY = "City"
+    REGION = "Region"
+    MILITARY_UNIT = "MilitaryUnit"
+    GOVERNMENT_AGENCY = "GovernmentAgency"
+    DATE = "Date"
+    QUANTITY = "Quantity"
+    PRODUCT = "Product"
+    CUSTOM = "Custom"
 
 
 PROBABILITY_SCALE = [
