@@ -1,9 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import TopicMindMap from '@/components/TopicMindMap';
+import MindMapControls from '@/components/MindMapControls';
+import type { LayoutMode } from '@/components/MindMapControls';
+import HighlightedExcerpt from '@/components/HighlightedExcerpt';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
 import { topicsApi, queryApi } from '@/lib/api';
@@ -19,11 +22,20 @@ interface TreeNode {
   children?: TreeNode[];
 }
 
+interface RelevantExcerpt {
+  text: string;
+  score: number;
+  matched_keywords: string[];
+}
+
 interface SourceDocument {
   id: string;
   name: string;
   content?: string;
   reliability?: string;
+  relevant_excerpts?: RelevantExcerpt[];
+  keyword_matches?: Record<string, number>;
+  relevance_score?: number;
 }
 
 interface ConnectedEntity {
@@ -45,6 +57,17 @@ interface EntityContext {
   source_documents?: SourceDocument[];
   document_excerpts?: DocumentExcerpt[];
   keywords?: string[];
+}
+
+interface CrossReference {
+  doc_id: string;
+  doc_name: string;
+  topic_ids: string[];
+}
+
+interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 /* -- Helpers ---------------------------------------------------------- */
@@ -73,36 +96,60 @@ const entityTypeColor = (type: string) => {
   return 'bg-gray-900/40 text-gray-300 border-gray-700/50';
 };
 
+function getStoredLayout(): LayoutMode {
+  if (typeof window === 'undefined') return 'radial';
+  return (localStorage.getItem('mindmap-layout') as LayoutMode) || 'radial';
+}
+
 /* -- Component -------------------------------------------------------- */
 
 export default function DataSourcesPage() {
   const { activeProject } = useProject();
   const router = useRouter();
+  const mindmapSvgRef = useRef<SVGSVGElement | null>(null);
 
-  // Mind map tree data (raw from backend)
+  // Mind map tree data
   const [topicTree, setTopicTree] = useState<TreeNode>({ name: 'Knowledge Base', id: 'root', children: [] });
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [crossReferences, setCrossReferences] = useState<CrossReference[]>([]);
+
+  // Layout
+  const [layout, setLayout] = useState<LayoutMode>('radial');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
+  const [focusMode, setFocusMode] = useState(false);
 
   // Selected node
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeName, setSelectedNodeName] = useState<string | null>(null);
 
-  // Entity context (documents, connected entities)
+  // Entity context
   const [entityContext, setEntityContext] = useState<EntityContext | null>(null);
   const [contextLoading, setContextLoading] = useState(false);
 
-  // LLM summary
+  // LLM summary (progressive)
   const [summary, setSummary] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryCache, setSummaryCache] = useState<Record<string, string>>({});
 
-  // Keywords (for topic nodes)
+  // Keywords
   const [keywords, setKeywords] = useState<string[]>([]);
+
+  // Conversation history per topic
+  const [conversation, setConversation] = useState<ConversationMessage[]>([]);
 
   // Query input
   const [queryInput, setQueryInput] = useState('');
-  const [queryResult, setQueryResult] = useState<string | null>(null);
   const [queryLoading, setQueryLoading] = useState(false);
+
+  // Expanded documents
+  const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
+
+  // Load stored layout preference
+  useEffect(() => {
+    setLayout(getStoredLayout());
+  }, []);
 
   /* -- Load topic tree ------------------------------------------------ */
 
@@ -115,10 +162,9 @@ export default function DataSourcesPage() {
       const data = res.data;
 
       if (data && typeof data === 'object' && !Array.isArray(data) && data.children) {
-        // Backend returns tree structure directly
         setTopicTree(data);
+        setCrossReferences(data.cross_references || []);
       } else if (Array.isArray(data)) {
-        // Fallback: flat entity list -- group by type
         const grouped: Record<string, TreeNode[]> = {};
         for (const entity of data) {
           const type = entity.entity_type || 'Unknown';
@@ -151,6 +197,38 @@ export default function DataSourcesPage() {
     loadTopics();
   }, [loadTopics]);
 
+  /* -- Auto-generate summary ------------------------------------------ */
+
+  const generateSummary = useCallback(async (nodeId: string, nodeName: string, ctx: EntityContext | null) => {
+    if (!activeProject || !nodeName) return;
+
+    // Check cache first
+    if (summaryCache[nodeId]) {
+      setSummary(summaryCache[nodeId]);
+      return;
+    }
+
+    setSummaryLoading(true);
+    setSummary(null);
+    try {
+      const excerpts = ctx?.document_excerpts || [];
+      let query = `Provide a comprehensive intelligence summary about "${nodeName}". What do we know from our sources?`;
+      if (excerpts.length > 0) {
+        const excerptText = excerpts.map(e => `**${e.name}:**\n${e.content}`).join('\n\n---\n\n');
+        query = `Provide a comprehensive intelligence summary about "${nodeName}" based on the following source documents.\n\n${excerptText}\n\nSummarize the key findings, themes, and intelligence value.`;
+      }
+      const res = await queryApi.rag(activeProject.id, query);
+      const text = res.data.answer || res.data.response || JSON.stringify(res.data);
+      setSummary(text);
+      setSummaryCache((prev: Record<string, string>) => ({ ...prev, [nodeId]: text }));
+      setConversation([{ role: 'assistant', content: text }]);
+    } catch {
+      setSummary('Unable to generate summary at this time.');
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [activeProject, summaryCache]);
+
   /* -- Handle node click ---------------------------------------------- */
 
   const handleTopicClick = useCallback(async (node: TreeNode) => {
@@ -159,11 +237,18 @@ export default function DataSourcesPage() {
     setSelectedNodeId(node.id);
     setSelectedNodeName(node.name);
     setEntityContext(null);
-    setSummary(null);
-    setQueryResult(null);
+    setQueryInput('');
     setKeywords([]);
+    setExpandedDocs(new Set());
+    setConversation([]);
 
-    // Skip fetching context for branch/root nodes and intermediate grouping nodes
+    // Check summary cache
+    if (summaryCache[node.id]) {
+      setSummary(summaryCache[node.id]);
+    } else {
+      setSummary(null);
+    }
+
     const isGroupingNode = node.id === 'root' || node.id.startsWith('branch-')
       || node.id.startsWith('type-') || node.id.startsWith('cat-')
       || node.id.startsWith('geo-') || node.id.startsWith('actors-')
@@ -171,17 +256,21 @@ export default function DataSourcesPage() {
       || node.entity_type === 'category' || node.entity_type === 'region';
     if (isGroupingNode) return;
 
-    // Fetch entity context (documents + connected entities)
     setContextLoading(true);
     try {
       const res = await topicsApi.context(node.id, activeProject.id);
-      // Normalize: backend returns "documents", frontend expects "source_documents"
       const data = res.data;
       if (data.documents && !data.source_documents) {
         data.source_documents = data.documents;
       }
       setEntityContext(data);
       setKeywords(data.keywords || []);
+
+      // Auto-generate summary with 500ms debounce
+      const timeoutId = setTimeout(() => {
+        generateSummary(node.id, node.name, data);
+      }, 500);
+      return () => clearTimeout(timeoutId);
     } catch (e) {
       console.error('Failed to load entity context', e);
       setEntityContext({
@@ -192,47 +281,75 @@ export default function DataSourcesPage() {
     } finally {
       setContextLoading(false);
     }
-
-    // Do NOT auto-generate summary — wait for user to click "Generate Summary"
-  }, [activeProject]);
-
-  const generateSummary = useCallback(async () => {
-    if (!activeProject || !selectedNodeName) return;
-    setSummaryLoading(true);
-    setSummary(null);
-    try {
-      // Build query with document excerpts for topic nodes
-      const excerpts = entityContext?.document_excerpts || [];
-      let query = `Provide a comprehensive intelligence summary about "${selectedNodeName}". What do we know from our sources?`;
-      if (excerpts.length > 0) {
-        const excerptText = excerpts.map(e => `**${e.name}:**\n${e.content}`).join('\n\n---\n\n');
-        query = `Provide a comprehensive intelligence summary about "${selectedNodeName}" based on the following source documents.\n\n${excerptText}\n\nSummarize the key findings, themes, and intelligence value of these documents regarding "${selectedNodeName}".`;
-      }
-      const res = await queryApi.rag(activeProject.id, query);
-      setSummary(res.data.answer || res.data.response || JSON.stringify(res.data));
-    } catch {
-      setSummary('Unable to generate summary at this time.');
-    } finally {
-      setSummaryLoading(false);
-    }
-  }, [activeProject, selectedNodeName]);
+  }, [activeProject, summaryCache, generateSummary]);
 
   /* -- Ask about selected topic --------------------------------------- */
 
   async function askAboutTopic() {
     if (!queryInput.trim() || !activeProject || !selectedNodeName) return;
     setQueryLoading(true);
-    setQueryResult(null);
+    const userMessage = queryInput;
+    setQueryInput('');
+
+    // Add user message to conversation
+    setConversation((prev: ConversationMessage[]) => [...prev, { role: 'user', content: userMessage }]);
+
     try {
-      const scopedQuery = `Regarding "${selectedNodeName}": ${queryInput}`;
+      const scopedQuery = `Regarding "${selectedNodeName}": ${userMessage}`;
       const res = await queryApi.rag(activeProject.id, scopedQuery);
-      setQueryResult(res.data.answer || res.data.response || JSON.stringify(res.data));
+      const answer = res.data.answer || res.data.response || JSON.stringify(res.data);
+      setConversation((prev: ConversationMessage[]) => [...prev, { role: 'assistant', content: answer }]);
     } catch {
-      setQueryResult('Failed to process query.');
+      setConversation((prev: ConversationMessage[]) => [...prev, { role: 'assistant', content: 'Failed to process query.' }]);
     } finally {
       setQueryLoading(false);
     }
   }
+
+  /* -- Layout controls ------------------------------------------------ */
+
+  const handleLayoutChange = useCallback((mode: LayoutMode) => {
+    setLayout(mode);
+    localStorage.setItem('mindmap-layout', mode);
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    const el = document.querySelector('[data-mindmap-svg]') as any;
+    el?.__zoomIn?.();
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    const el = document.querySelector('[data-mindmap-svg]') as any;
+    el?.__zoomOut?.();
+  }, []);
+
+  const handleZoomReset = useCallback(() => {
+    const el = document.querySelector('[data-mindmap-svg]') as any;
+    el?.__zoomReset?.();
+  }, []);
+
+  const handleExpandAll = useCallback(() => {
+    // Re-render tree without collapsing
+    loadTopics();
+  }, [loadTopics]);
+
+  const handleCollapseAll = useCallback(() => {
+    // Re-render tree (collapsed by default)
+    loadTopics();
+  }, [loadTopics]);
+
+  const handleBreadcrumbClick = useCallback((item: { id: string; name: string }) => {
+    handleTopicClick({ id: item.id, name: item.name } as TreeNode);
+  }, [handleTopicClick]);
+
+  const toggleDocExpanded = useCallback((docId: string) => {
+    setExpandedDocs((prev: Set<string>) => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId);
+      else next.add(docId);
+      return next;
+    });
+  }, []);
 
   /* -- No project selected -------------------------------------------- */
 
@@ -253,7 +370,6 @@ export default function DataSourcesPage() {
   /* -- Render --------------------------------------------------------- */
 
   const rawDocs = entityContext?.source_documents || [];
-  // Normalize document fields from backend
   const documents = rawDocs.map((doc: any) => ({
     ...doc,
     reliability: doc.reliability || doc.reliability_rating || '',
@@ -270,234 +386,357 @@ export default function DataSourcesPage() {
       <Sidebar />
       <main className="md:ml-56 flex-1 flex flex-col pt-16 pb-24 md:pt-0 md:pb-0" style={{ height: 'calc(100vh - 28px)' }}>
 
-        {/* -- Mind Map ------------------------------------------------- */}
-        <div className="flex-none p-4 pb-0">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-[10px] font-bold text-[#adc6ff] uppercase tracking-widest">Topic Mind Map</h3>
-            <button
-              onClick={loadTopics}
-              className="text-[9px] font-bold text-[#adc6ff] hover:text-white uppercase tracking-widest transition-colors"
-            >
-              Refresh
-            </button>
-          </div>
-          {loading ? (
-            <div className="flex items-center justify-center bg-[#0a0f1c] rounded-lg border border-[#1a1f2e]" style={{ height: '350px' }}>
-              <LoadingSpinner />
-            </div>
-          ) : loadError ? (
-            <div className="flex items-center justify-center bg-[#0a0f1c] rounded-lg border border-[#1a1f2e]" style={{ height: '350px' }}>
-              <div className="text-center">
-                <p className="text-red-400 text-sm mb-2">{loadError}</p>
-                <button onClick={loadTopics} className="text-xs text-[#adc6ff] hover:underline">Retry</button>
+        {/* -- Mind Map Section ----------------------------------------- */}
+        <div className={`flex flex-col ${focusMode ? 'flex-1' : ''}`} style={focusMode ? {} : { height: '60%', minHeight: '300px' }}>
+          {/* Header + Controls */}
+          <div className="flex-none px-4 pt-4 pb-2">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-[10px] font-bold text-[#adc6ff] uppercase tracking-widest">Topic Mind Map</h3>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setFocusMode(!focusMode)}
+                  className="text-[9px] font-bold text-gray-500 hover:text-[#adc6ff] uppercase tracking-widest transition-colors"
+                >
+                  {focusMode ? 'Exit Focus' : 'Focus'}
+                </button>
+                <button
+                  onClick={loadTopics}
+                  className="text-[9px] font-bold text-[#adc6ff] hover:text-white uppercase tracking-widest transition-colors"
+                >
+                  Refresh
+                </button>
               </div>
             </div>
-          ) : topicTree.children && topicTree.children.length > 0 ? (
-            <TopicMindMap
-              data={topicTree}
-              onNodeClick={handleTopicClick}
-              selectedNodeId={selectedNodeId}
+            <MindMapControls
+              layout={layout}
+              onLayoutChange={handleLayoutChange}
+              onSearch={setSearchQuery}
+              onZoomIn={handleZoomIn}
+              onZoomOut={handleZoomOut}
+              onZoomReset={handleZoomReset}
+              onExpandAll={handleExpandAll}
+              onCollapseAll={handleCollapseAll}
+              breadcrumbs={breadcrumbs}
+              onBreadcrumbClick={handleBreadcrumbClick}
             />
-          ) : (
-            <div className="flex items-center justify-center bg-[#0a0f1c] rounded-lg border border-[#1a1f2e]" style={{ height: '350px' }}>
-              <div className="text-center text-gray-500 text-sm">
-                <p className="mb-2">No topics found. Ingest documents to populate.</p>
-                <a href="/collections" className="text-[#adc6ff] text-xs hover:underline">Go to Collections to ingest documents</a>
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
 
-        {/* -- Document Corpus + LLM Summary --------------------------- */}
-        <div className="flex-1 flex flex-col md:flex-row gap-4 p-4 min-h-0 overflow-auto md:overflow-hidden">
-
-          {/* Left: Documents */}
-          <div className="w-full md:w-1/2 overflow-y-auto bg-[#0d1220] rounded-lg border border-[#1a1f2e] p-4">
-            {!isLeafSelected ? (
-              <div className="flex items-center justify-center h-full text-gray-500 text-sm">
-                <p>Click a topic node above to view associated documents.</p>
-              </div>
-            ) : contextLoading ? (
-              <div className="flex items-center justify-center h-full">
+          {/* Map */}
+          <div className="flex-1 px-4 pb-2 min-h-0">
+            {loading ? (
+              <div className="flex items-center justify-center bg-[#0a0f1c] rounded-lg border border-[#1a1f2e] h-full">
                 <LoadingSpinner />
               </div>
-            ) : (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-[10px] uppercase tracking-widest text-gray-500">
-                    {selectedNodeId?.startsWith('topic-')
-                      ? <>Documents in &ldquo;{selectedNodeName}&rdquo;</>
-                      : <>Documents for &ldquo;{selectedNodeName}&rdquo;</>
-                    }
-                  </h3>
-                  <span className="text-[10px] bg-[#1a1f2e] text-gray-400 px-2 py-0.5 rounded-full">
-                    {documents.length} source{documents.length !== 1 ? 's' : ''}
-                  </span>
+            ) : loadError ? (
+              <div className="flex items-center justify-center bg-[#0a0f1c] rounded-lg border border-[#1a1f2e] h-full">
+                <div className="text-center">
+                  <p className="text-red-400 text-sm mb-2">{loadError}</p>
+                  <button onClick={loadTopics} className="text-xs text-[#adc6ff] hover:underline">Retry</button>
                 </div>
+              </div>
+            ) : topicTree.children && topicTree.children.length > 0 ? (
+              <TopicMindMap
+                data={topicTree}
+                onNodeClick={handleTopicClick}
+                selectedNodeId={selectedNodeId}
+                layout={layout}
+                searchQuery={searchQuery}
+                crossReferences={crossReferences}
+                onBreadcrumbsChange={setBreadcrumbs}
+              />
+            ) : (
+              <div className="flex items-center justify-center bg-[#0a0f1c] rounded-lg border border-[#1a1f2e] h-full">
+                <div className="text-center text-gray-500 text-sm">
+                  <p className="mb-2">No topics found. Ingest documents to populate.</p>
+                  <a href="/collections" className="text-[#adc6ff] text-xs hover:underline">Go to Collections to ingest documents</a>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
 
-                {documents.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No source documents found for this entity.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {documents.map((doc, i) => (
-                      <div
-                        key={i}
-                        className="bg-[#090e1c] p-4 rounded-sm border border-[#1a1f2e] hover:bg-[#161b2a] transition-all cursor-pointer group"
-                        onClick={() => router.push(`/documents/${doc.id}`)}
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="text-sm font-bold text-white group-hover:text-[#adc6ff] transition-colors flex-1">
-                            {doc.name}
-                          </h4>
-                          {doc.reliability && (
-                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-sm border ml-2 flex-none ${reliabilityColor(doc.reliability)}`}>
-                              {doc.reliability}
-                            </span>
-                          )}
-                        </div>
-                        {doc.content && (
-                          <p className="text-xs text-gray-400/60 line-clamp-3 leading-relaxed">
-                            {doc.content.substring(0, 300)}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+        {/* -- Document Corpus + LLM Summary (bottom panels) ----------- */}
+        {!focusMode && (
+          <div className="flex-1 flex flex-col md:flex-row gap-4 p-4 pt-2 min-h-0 overflow-auto md:overflow-hidden">
 
-                {/* Connected entities */}
-                {connectedEntities.length > 0 && (
-                  <div className="mt-6">
-                    <h3 className="font-bold text-[10px] uppercase tracking-widest text-gray-500 mb-3">
-                      Connected Entities
+            {/* Left: Documents (evidence-centric) */}
+            <div className="w-full md:w-1/2 overflow-y-auto bg-[#0d1220] rounded-lg border border-[#1a1f2e] p-4">
+              {!isLeafSelected ? (
+                <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                  <p>Click a topic node above to view associated documents.</p>
+                </div>
+              ) : contextLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <LoadingSpinner />
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-[10px] uppercase tracking-widest text-gray-500">
+                      {selectedNodeId?.startsWith('topic-')
+                        ? <>Documents in &ldquo;{selectedNodeName}&rdquo;</>
+                        : <>Documents for &ldquo;{selectedNodeName}&rdquo;</>
+                      }
                     </h3>
-                    <div className="flex flex-wrap gap-2">
-                      {connectedEntities.slice(0, 12).map((ce, i) => (
+                    <span className="text-[10px] bg-[#1a1f2e] text-gray-400 px-2 py-0.5 rounded-full">
+                      {documents.length} source{documents.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+
+                  {documents.length === 0 ? (
+                    <p className="text-gray-500 text-sm">No source documents found for this entity.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {documents.map((doc: any, i: number) => {
+                        const isExpanded = expandedDocs.has(doc.id);
+                        const excerpts: RelevantExcerpt[] = doc.relevant_excerpts || [];
+                        const kwMatches: Record<string, number> = doc.keyword_matches || {};
+                        const matchCount = Object.values(kwMatches).reduce((a: number, b: number) => a + b, 0);
+
+                        return (
+                          <div
+                            key={i}
+                            className="bg-[#090e1c] rounded-sm border border-[#1a1f2e] hover:bg-[#161b2a] transition-all group"
+                          >
+                            {/* Document header */}
+                            <div
+                              className="p-4 cursor-pointer"
+                              onClick={() => router.push(`/documents/${doc.id}`)}
+                            >
+                              <div className="flex justify-between items-start mb-2">
+                                <h4 className="text-sm font-bold text-white group-hover:text-[#adc6ff] transition-colors flex-1">
+                                  {doc.name}
+                                </h4>
+                                <div className="flex items-center gap-1.5 flex-none ml-2">
+                                  {matchCount > 0 && (
+                                    <span className="text-[8px] font-bold bg-purple-900/30 text-purple-300 border border-purple-700/30 px-1.5 py-0.5 rounded-sm">
+                                      {matchCount} match{matchCount !== 1 ? 'es' : ''}
+                                    </span>
+                                  )}
+                                  {doc.reliability && (
+                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-sm border ${reliabilityColor(doc.reliability)}`}>
+                                      {doc.reliability}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Show relevant excerpts with highlighting instead of first 300 chars */}
+                              {excerpts.length > 0 ? (
+                                <div className="space-y-1.5">
+                                  {excerpts.slice(0, isExpanded ? excerpts.length : 2).map((ex, j) => (
+                                    <div key={j} className="text-xs text-gray-400/80 leading-relaxed border-l-2 border-purple-700/30 pl-2">
+                                      <HighlightedExcerpt
+                                        text={ex.text}
+                                        keywords={keywords}
+                                        maxLength={isExpanded ? 0 : 200}
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : doc.content ? (
+                                <p className="text-xs text-gray-400/60 line-clamp-3 leading-relaxed">
+                                  <HighlightedExcerpt
+                                    text={doc.content}
+                                    keywords={keywords}
+                                    maxLength={300}
+                                  />
+                                </p>
+                              ) : null}
+                            </div>
+
+                            {/* Expand/collapse toggle */}
+                            {(doc.content || excerpts.length > 2) && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleDocExpanded(doc.id); }}
+                                className="w-full text-[9px] font-bold text-gray-500 hover:text-[#adc6ff] py-1.5 border-t border-[#1a1f2e]/50 uppercase tracking-widest transition-colors"
+                              >
+                                {isExpanded ? 'Show Less' : 'Show Full Document'}
+                              </button>
+                            )}
+
+                            {/* Expanded full document content */}
+                            {isExpanded && doc.content && (
+                              <div className="px-4 pb-4 text-xs text-gray-400/70 leading-relaxed whitespace-pre-wrap border-t border-[#1a1f2e]/50 pt-3 max-h-64 overflow-y-auto">
+                                <HighlightedExcerpt
+                                  text={doc.content}
+                                  keywords={keywords}
+                                  maxLength={0}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Connected entities */}
+                  {connectedEntities.length > 0 && (
+                    <div className="mt-6">
+                      <h3 className="font-bold text-[10px] uppercase tracking-widest text-gray-500 mb-3">
+                        Connected Entities
+                      </h3>
+                      <div className="flex flex-wrap gap-2">
+                        {connectedEntities.slice(0, 15).map((ce, i) => (
+                          <span
+                            key={i}
+                            className="flex items-center gap-1.5 bg-[#2f3444] px-2.5 py-1.5 rounded-sm border border-[#424754]/20 text-xs cursor-pointer hover:bg-[#3a4050] transition-colors"
+                            onClick={() => {
+                              // Search mind map for topics containing this entity
+                              setSearchQuery(ce.name);
+                            }}
+                          >
+                            <span className="font-bold text-[#adc6ff]">{ce.name}</span>
+                            <span className={`text-[8px] font-black px-1 rounded-sm ${entityTypeColor(ce.entity_type)}`}>
+                              {ce.entity_type}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Right: LLM Summary + Conversation */}
+            <div className="w-full md:w-1/2 overflow-y-auto bg-[#0d1220] rounded-lg border border-[#1a1f2e] p-4 flex flex-col">
+              {!isLeafSelected ? (
+                <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                  <p>Select a topic to see its intelligence summary.</p>
+                </div>
+              ) : (
+                <div className="flex flex-col h-full">
+                  {/* Keywords */}
+                  {keywords.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {keywords.map((kw, i) => (
                         <span
                           key={i}
-                          className="flex items-center gap-1.5 bg-[#2f3444] px-2.5 py-1.5 rounded-sm border border-[#424754]/20 text-xs"
+                          className="bg-purple-900/30 text-purple-300 border border-purple-700/30 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
                         >
-                          <span className="font-bold text-[#adc6ff]">{ce.name}</span>
-                          <span className={`text-[8px] font-black px-1 rounded-sm ${entityTypeColor(ce.entity_type)}`}>
-                            {ce.entity_type}
-                          </span>
+                          {kw}
                         </span>
                       ))}
                     </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+                  )}
 
-          {/* Right: LLM Summary + Query */}
-          <div className="w-full md:w-1/2 overflow-y-auto bg-[#0d1220] rounded-lg border border-[#1a1f2e] p-4 flex flex-col">
-            {!isLeafSelected ? (
-              <div className="flex items-center justify-center h-full text-gray-500 text-sm">
-                <p>Select a topic to see its intelligence summary.</p>
-              </div>
-            ) : (
-              <div className="flex flex-col h-full">
-                {keywords.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-3">
-                    {keywords.map((kw, i) => (
-                      <span
-                        key={i}
-                        className="bg-purple-900/30 text-purple-300 border border-purple-700/30 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
-                      >
-                        {kw}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {/* AI Summary */}
-                <div className="bg-[#161b2a]/50 rounded-xl p-6 border border-[#adc6ff]/10 relative overflow-hidden mb-4">
-                  <div className="absolute top-0 right-0 p-4 opacity-5">
-                    <span className="material-symbols-outlined text-6xl">auto_awesome</span>
-                  </div>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[#adc6ff] text-sm">auto_awesome</span>
-                      <h3 className="font-bold text-[10px] uppercase tracking-widest text-[#adc6ff]">
-                        Intelligence Summary: {selectedNodeName}
-                      </h3>
+                  {/* AI Summary */}
+                  <div className="bg-[#161b2a]/50 rounded-xl p-6 border border-[#adc6ff]/10 relative overflow-hidden mb-4">
+                    <div className="absolute top-0 right-0 p-4 opacity-5">
+                      <span className="material-symbols-outlined text-6xl">auto_awesome</span>
                     </div>
-                    {!summaryLoading && (
-                      <button
-                        onClick={generateSummary}
-                        className="bg-[#adc6ff]/10 hover:bg-[#adc6ff]/20 text-[#adc6ff] px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border border-[#adc6ff]/20"
-                      >
-                        {summary ? 'Regenerate' : 'Generate Summary'}
-                      </button>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[#adc6ff] text-sm">auto_awesome</span>
+                        <h3 className="font-bold text-[10px] uppercase tracking-widest text-[#adc6ff]">
+                          Intelligence Summary
+                        </h3>
+                      </div>
+                      {!summaryLoading && summary && (
+                        <button
+                          onClick={() => {
+                            // Clear cache and regenerate
+                            setSummaryCache((prev: Record<string, string>) => {
+                              const next = { ...prev };
+                              if (selectedNodeId) delete next[selectedNodeId];
+                              return next;
+                            });
+                            if (selectedNodeId && selectedNodeName) {
+                              generateSummary(selectedNodeId, selectedNodeName, entityContext);
+                            }
+                          }}
+                          className="bg-[#adc6ff]/10 hover:bg-[#adc6ff]/20 text-[#adc6ff] px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border border-[#adc6ff]/20"
+                        >
+                          Regenerate
+                        </button>
+                      )}
+                    </div>
+                    {summaryLoading ? (
+                      <div className="flex items-center gap-3 py-4">
+                        <LoadingSpinner />
+                        <span className="text-sm text-gray-400">Generating intelligence summary...</span>
+                      </div>
+                    ) : summary ? (
+                      <p className="text-[13px] leading-relaxed text-gray-200/90 whitespace-pre-wrap">
+                        {summary}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-gray-500">Summary will be generated automatically...</p>
                     )}
                   </div>
-                  {summaryLoading ? (
-                    <div className="flex items-center gap-3 py-4">
-                      <LoadingSpinner />
-                      <span className="text-sm text-gray-400">Generating intelligence summary...</span>
-                    </div>
-                  ) : summary ? (
-                    <p className="text-[13px] leading-relaxed text-gray-200/90 whitespace-pre-wrap">
-                      {summary}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-gray-500">Click &ldquo;Generate Summary&rdquo; to analyze this topic.</p>
-                  )}
-                </div>
 
-                {/* Quick Queries */}
-                <div className="mb-4">
-                  <h3 className="font-bold text-[10px] uppercase tracking-widest text-gray-500/60 mb-3">
-                    Suggested Queries
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      `What connections exist for ${selectedNodeName}?`,
-                      `Identify temporal patterns related to ${selectedNodeName}`,
-                      `What threats are associated with ${selectedNodeName}?`,
-                    ].map((q, i) => (
+                  {/* Conversation thread */}
+                  {conversation.length > 1 && (
+                    <div className="mb-4 space-y-3 max-h-48 overflow-y-auto">
+                      {conversation.slice(1).map((msg, i) => (
+                        <div
+                          key={i}
+                          className={`rounded-sm p-3 text-sm whitespace-pre-wrap ${
+                            msg.role === 'user'
+                              ? 'bg-[#1a1f2e] text-gray-300 border-l-2 border-[#adc6ff]/40'
+                              : 'bg-[#090e1c] text-gray-400 border border-[#1a1f2e]'
+                          }`}
+                        >
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">
+                            {msg.role === 'user' ? 'You' : 'Analysis'}
+                          </span>
+                          {msg.content}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Quick Queries */}
+                  <div className="mb-4">
+                    <h3 className="font-bold text-[10px] uppercase tracking-widest text-gray-500/60 mb-3">
+                      Suggested Queries
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        `What connections exist for ${selectedNodeName}?`,
+                        `Identify temporal patterns related to ${selectedNodeName}`,
+                        `What threats are associated with ${selectedNodeName}?`,
+                      ].map((q, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setQueryInput(q)}
+                          className="bg-[#252a39] hover:bg-[#343949] text-gray-200 text-[10px] font-medium py-2 px-3 rounded-full border border-[#424754]/10 transition-all text-left"
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Ask about this topic */}
+                  <div className="mt-auto bg-[#1a1f2e] border border-[#252a39] rounded-lg p-4">
+                    <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+                      Ask About This Topic
+                    </h3>
+                    <div className="flex gap-2">
+                      <input
+                        value={queryInput}
+                        onChange={(e) => setQueryInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && askAboutTopic()}
+                        placeholder={`Ask about ${selectedNodeName}...`}
+                        className="flex-1 bg-[#090e1c] border border-[#1a1f2e] rounded-sm px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#adc6ff]"
+                      />
                       <button
-                        key={i}
-                        onClick={() => setQueryInput(q)}
-                        className="bg-[#252a39] hover:bg-[#343949] text-gray-200 text-[10px] font-medium py-2 px-3 rounded-full border border-[#424754]/10 transition-all text-left"
+                        onClick={askAboutTopic}
+                        disabled={queryLoading || !queryInput.trim()}
+                        className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-4 py-2 rounded-sm text-sm font-bold disabled:opacity-50 transition-colors"
                       >
-                        {q}
+                        {queryLoading ? 'Asking...' : 'Ask'}
                       </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Ask about this topic */}
-                <div className="mt-auto bg-[#1a1f2e] border border-[#252a39] rounded-lg p-4">
-                  <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
-                    Ask About This Topic
-                  </h3>
-                  <div className="flex gap-2">
-                    <input
-                      value={queryInput}
-                      onChange={(e) => setQueryInput(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && askAboutTopic()}
-                      placeholder={`Ask about ${selectedNodeName}...`}
-                      className="flex-1 bg-[#090e1c] border border-[#1a1f2e] rounded-sm px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#adc6ff]"
-                    />
-                    <button
-                      onClick={askAboutTopic}
-                      disabled={queryLoading || !queryInput.trim()}
-                      className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-4 py-2 rounded-sm text-sm font-bold disabled:opacity-50 transition-colors"
-                    >
-                      {queryLoading ? 'Asking...' : 'Ask'}
-                    </button>
-                  </div>
-                  {queryResult && (
-                    <div className="mt-3 bg-[#090e1c] rounded-sm p-3 text-sm text-gray-300 whitespace-pre-wrap max-h-48 overflow-y-auto border border-[#1a1f2e]">
-                      {queryResult}
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </main>
     </div>
   );
