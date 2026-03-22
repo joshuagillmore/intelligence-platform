@@ -133,7 +133,7 @@ export default function TopicMindMap({ data, onNodeClick, selectedNodeId }: Topi
         .attr('fill', '#e5e7eb')
         .attr('font-size', '11px')
         .text((d: any) => {
-          const name = d.data.name || '';
+          const name = d.data.name || d.data.entity_type || 'Unnamed';
           const count = d.data.count;
           const suffix = count != null ? ` (${count})` : '';
           return name.length > 30 ? name.slice(0, 27) + '...' + suffix : name + suffix;

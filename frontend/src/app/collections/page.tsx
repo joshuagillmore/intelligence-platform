@@ -478,21 +478,24 @@ PIR: ${pir.trim()}` }],
                   <button
                     onClick={refinePirWithAI}
                     disabled={assistantLoading || !pir.trim()}
-                    className="bg-[#252a39] hover:bg-[#2f3444] text-[#adc6ff] border border-[#adc6ff]/30 px-3 rounded text-[10px] font-bold transition-all disabled:opacity-50 uppercase tracking-wider"
+                    className="bg-[#252a39] hover:bg-[#2f3444] text-[#adc6ff] border border-[#adc6ff]/30 px-3 rounded text-[10px] font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider"
+                    title={!pir.trim() ? 'Enter a PIR first' : 'Refine your PIR with AI'}
                   >
                     Refine
                   </button>
                   <button
                     onClick={generateCollectionPlan}
                     disabled={assistantLoading || !pir.trim()}
-                    className="bg-[#252a39] hover:bg-[#2f3444] text-emerald-400 border border-emerald-500/30 px-3 rounded text-[10px] font-bold transition-all disabled:opacity-50 uppercase tracking-wider"
+                    className="bg-[#252a39] hover:bg-[#2f3444] text-emerald-400 border border-emerald-500/30 px-3 rounded text-[10px] font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider"
+                    title={!pir.trim() ? 'Enter a PIR first' : 'Generate a collection plan'}
                   >
                     Plan
                   </button>
                   <button
                     onClick={createCollection}
                     disabled={loading || !pir.trim()}
-                    className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-4 rounded text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-2"
+                    className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-4 rounded text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    title={!pir.trim() ? 'Enter a PIR first' : 'Execute collection'}
                   >
                     EXECUTE
                     <span className="material-symbols-outlined text-xs">send</span>
@@ -500,6 +503,9 @@ PIR: ${pir.trim()}` }],
                 </div>
               </div>
               {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
+              {!pir.trim() && !error && (
+                <p className="text-gray-500 text-[10px] mt-2 italic">Enter a Priority Intelligence Requirement above to begin.</p>
+              )}
             </div>
           </div>
         </section>
