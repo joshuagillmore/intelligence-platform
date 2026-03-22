@@ -128,17 +128,31 @@ export default function DataSourcesPage() {
       const res = await topicsApi.tree(activeProject.id);
       const data = res.data;
 
-      // The backend returns a hierarchical tree object
+      // The backend returns a hierarchical tree: {name, id, children: [{name, id, children, ...}]}
       if (data && typeof data === 'object' && !Array.isArray(data)) {
-        // Handle both old format and new 5-branch format
-        const sourceDocsBranch = data.by_source_document || data.documents || data['Source Documents'] || [];
-        const entityTypeBranch = data.by_entity_type || data.entity_types || data.categories || data['By Entity Type'] || [];
-        const themesBranch = data.key_themes || data.themes || data['Thematic Clusters'] || [];
-        const geoBranch = data.geographic_regions || data['Geographic Regions'] || [];
-        const actorsBranch = data.actors_organizations || data['Actors & Organizations'] || [];
+        const children = data.children || [];
+
+        // Find branches by name or id
+        const findBranch = (keywords: string[]) => {
+          const branch = children.find((c: Record<string, unknown>) =>
+            keywords.some(kw =>
+              (c.name as string || '').toLowerCase().includes(kw.toLowerCase()) ||
+              (c.id as string || '').toLowerCase().includes(kw.toLowerCase())
+            )
+          );
+          return branch?.children || [];
+        };
+
+        const sourceDocsBranch = findBranch(['source', 'docs', 'document']);
+        const entityTypeBranch = findBranch(['entity type', 'by type', 'types']);
+        const themesBranch = findBranch(['theme', 'thematic', 'cluster']);
+        const geoBranch = findBranch(['geo', 'region', 'geographic']);
+        const actorsBranch = findBranch(['actor', 'personnel', 'organization']);
+        const categoryBranch = findBranch(['category', 'categories']);
+
         setTree({
           by_source_document: sourceDocsBranch,
-          by_entity_type: entityTypeBranch,
+          by_entity_type: entityTypeBranch.length > 0 ? entityTypeBranch : categoryBranch,
           key_themes: themesBranch,
           geographic_regions: geoBranch,
           actors_organizations: actorsBranch,
