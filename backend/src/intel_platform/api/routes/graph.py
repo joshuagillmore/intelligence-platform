@@ -4,30 +4,37 @@ from intel_platform.api.cache import cached
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.enrichment import (
+    build_networkx_from_data,
     compute_degree_centrality, detect_communities, compute_all_statistics,
 )
+from intel_platform.services.graph_cache import graph_cache
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
 @router.get("/graph")
 def get_full_graph(project_id: str, limit: int = 500, min_centrality: float = 0, store: GraphStore = Depends(get_graph_store)):
+    import networkx as nx
+
     data = store.get_full_graph(project_id=project_id, limit=limit)
 
-    # Compute communities and attach to nodes
-    import networkx as nx
-    from intel_platform.services.enrichment import build_networkx_from_data
+    # Use the cache to get/build the DiGraph
+    G = graph_cache.get_or_build_graph(
+        project_id,
+        lambda: build_networkx_from_data(
+            store.get_full_graph(project_id=project_id, limit=10000)
+        ),
+    )
 
     try:
-        G = build_networkx_from_data(data)
-
-        # Get community assignments
+        # Get community assignments (Louvain needs undirected)
+        G_undirected = G.to_undirected()
         try:
             import community as community_louvain
-            partition = community_louvain.best_partition(G)
+            partition = community_louvain.best_partition(G_undirected)
         except ImportError:
             from networkx.algorithms.community import greedy_modularity_communities
-            comms = greedy_modularity_communities(G)
+            comms = greedy_modularity_communities(G_undirected)
             partition = {}
             for i, comm in enumerate(comms):
                 for node in comm:
@@ -71,6 +78,8 @@ def get_full_graph(project_id: str, limit: int = 500, min_centrality: float = 0,
                 "target_id": edge.get("target_id", ""),
                 "rel_type": edge.get("rel_type", ""),
                 "confidence": edge.get("confidence", edge.get("props", {}).get("confidence", 0.5)),
+                "first_seen": edge.get("first_seen", edge.get("props", {}).get("first_seen")),
+                "last_seen": edge.get("last_seen", edge.get("props", {}).get("last_seen")),
             })
 
     return {
