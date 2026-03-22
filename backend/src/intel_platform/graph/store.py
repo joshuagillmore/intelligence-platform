@@ -5,6 +5,7 @@ import re
 from neo4j import Driver
 
 from intel_platform.models.entities import Entity, EntityType
+from intel_platform.services.graph_cache import graph_cache
 
 
 def _validate_label(label: str) -> str:
@@ -53,7 +54,15 @@ class GraphStore:
                 props=props,
             )
             record = result.single()
-            return dict(record["n"]) if record else {}
+            node = dict(record["n"]) if record else {}
+
+        # Invalidate graph cache for the project
+        project_id = getattr(entity, "project_id", None) or props.get("project_id")
+        if project_id:
+            from intel_platform.services.graph_cache import graph_cache
+            graph_cache.invalidate(project_id)
+
+        return node
 
     def get_entity(self, entity_id: str) -> dict | None:
         with self._driver.session() as session:
@@ -140,7 +149,19 @@ class GraphStore:
                 rel_type=rel.rel_type, props=props,
             )
             record = result.single()
-            return dict(record["rel"]) if record else {}
+            rel_data = dict(record["rel"]) if record else {}
+
+        # Invalidate graph cache — resolve project_id from source entity
+        project_id = getattr(rel, "project_id", None) or props.get("project_id")
+        if not project_id:
+            source_entity = self.get_entity(rel.source_id)
+            if source_entity:
+                project_id = source_entity.get("project_id")
+        if project_id:
+            from intel_platform.services.graph_cache import graph_cache
+            graph_cache.invalidate(project_id)
+
+        return rel_data
 
     def get_relationships(self, entity_id: str) -> list[dict]:
         with self._driver.session() as session:
@@ -253,8 +274,16 @@ class GraphStore:
             }
 
     def delete_entity(self, entity_id: str) -> None:
+        # Look up project_id before deleting so we can invalidate the cache
+        entity = self.get_entity(entity_id)
+        project_id = entity.get("project_id") if entity else None
+
         with self._driver.session() as session:
             session.run("MATCH (n {id: $id}) DETACH DELETE n", id=entity_id)
+
+        if project_id:
+            from intel_platform.services.graph_cache import graph_cache
+            graph_cache.invalidate(project_id)
 
     def create_project(self, name: str, description: str, classification_level: str, priority: str) -> dict:
         import uuid

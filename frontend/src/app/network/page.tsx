@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
 import Sidebar from '@/components/Sidebar';
 import GraphVisualization, { LayoutMode, ColorMode } from '@/components/GraphVisualization';
+import TemporalSlider from '@/components/TemporalSlider';
 import { useProject } from '@/lib/ProjectContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -40,8 +41,11 @@ interface GraphEdge {
   target_id: string;
   rel_type: string;
   confidence?: number;
+  first_seen?: string;
+  last_seen?: string;
   source: string;
   target: string;
+  [key: string]: unknown;
 }
 
 interface EntityStats {
@@ -183,6 +187,13 @@ function NetworkPageInner() {
   const [relEvidenceLoading, setRelEvidenceLoading] = useState<Record<number, boolean>>({});
   const [mobileLeftOpen, setMobileLeftOpen] = useState(false);
   const [mobileRightOpen, setMobileRightOpen] = useState(false);
+  // Temporal range filter for graph edges (P0.5)
+  const [temporalRange, setTemporalRange] = useState<[string | null, string | null]>([null, null]);
+  // Selected edge for detail panel
+  const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
+  // Undo/redo history stack
+  const [undoStack, setUndoStack] = useState<Array<{ hiddenRelTypes: Set<string>; confidenceThreshold: number; islandThreshold: number }>>([]);
+  const [redoStack, setRedoStack] = useState<Array<{ hiddenRelTypes: Set<string>; confidenceThreshold: number; islandThreshold: number }>>([]);
   const networkRouter = useRouter();
   const searchParams = useSearchParams();
   const selectParam = searchParams.get('select');
@@ -479,12 +490,16 @@ function NetworkPageInner() {
     });
   }
 
-  // Combined filter: island threshold + relationship type + confidence
+  // Combined filter: island threshold + relationship type + confidence + temporal range
   useEffect(() => {
-    // First filter edges by relationship type and confidence
+    // First filter edges by relationship type, confidence, and temporal range
     let edges = graphEdges.filter(e => {
       if (hiddenRelTypes.has(e.rel_type)) return false;
       if (confidenceThreshold > 0 && (e.confidence === undefined || e.confidence < confidenceThreshold)) return false;
+      // Temporal range filter (P0.5)
+      const [tStart, tEnd] = temporalRange;
+      if (tStart && e.last_seen && e.last_seen < tStart) return false;
+      if (tEnd && e.first_seen && e.first_seen > tEnd) return false;
       return true;
     });
 
@@ -548,7 +563,7 @@ function NetworkPageInner() {
       }
     }
     setFilteredGraphEdges(edges);
-  }, [graphNodes, graphEdges, islandThreshold, islandMetric, hiddenRelTypes, confidenceThreshold, stats]);
+  }, [graphNodes, graphEdges, islandThreshold, islandMetric, hiddenRelTypes, confidenceThreshold, temporalRange, stats]);
 
   // Community collapse: reduce many nodes into community super-nodes
   const displayData = useMemo(() => {
@@ -906,6 +921,56 @@ function NetworkPageInner() {
     }
   }
 
+  // Edge click handler for detail panel (P0.4)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function handleEdgeClick(edge: any) {
+    setSelectedEdge(edge as GraphEdge);
+    setSelectedEntity(null);
+  }
+
+  // Undo/redo keyboard shortcuts
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          // Redo
+          if (redoStack.length > 0) {
+            const nextState = redoStack[redoStack.length - 1];
+            setRedoStack(prev => prev.slice(0, -1));
+            setUndoStack(prev => [...prev, { hiddenRelTypes, confidenceThreshold, islandThreshold }]);
+            setHiddenRelTypes(nextState.hiddenRelTypes);
+            setConfidenceThreshold(nextState.confidenceThreshold);
+            setIslandThreshold(nextState.islandThreshold);
+          }
+        } else {
+          // Undo
+          if (undoStack.length > 0) {
+            const prevState = undoStack[undoStack.length - 1];
+            setUndoStack(prev => prev.slice(0, -1));
+            setRedoStack(prev => [...prev, { hiddenRelTypes, confidenceThreshold, islandThreshold }]);
+            setHiddenRelTypes(prevState.hiddenRelTypes);
+            setConfidenceThreshold(prevState.confidenceThreshold);
+            setIslandThreshold(prevState.islandThreshold);
+          }
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undoStack, redoStack, hiddenRelTypes, confidenceThreshold, islandThreshold]);
+
+  // Push to undo stack when filters change
+  const prevFiltersRef = useRef({ hiddenRelTypes, confidenceThreshold, islandThreshold });
+  useEffect(() => {
+    const prev = prevFiltersRef.current;
+    if (prev.hiddenRelTypes !== hiddenRelTypes || prev.confidenceThreshold !== confidenceThreshold || prev.islandThreshold !== islandThreshold) {
+      setUndoStack(stack => [...stack.slice(-49), { hiddenRelTypes: prev.hiddenRelTypes, confidenceThreshold: prev.confidenceThreshold, islandThreshold: prev.islandThreshold }]);
+      setRedoStack([]);
+      prevFiltersRef.current = { hiddenRelTypes, confidenceThreshold, islandThreshold };
+    }
+  }, [hiddenRelTypes, confidenceThreshold, islandThreshold]);
+
   function handleSort(key: SortKey) {
     if (sortKey === key) {
       setSortAsc(!sortAsc);
@@ -1205,6 +1270,47 @@ function NetworkPageInner() {
           >
             {collapseCommunities ? 'Expand Communities' : 'Collapse Communities'}
           </button>
+
+          {/* Divider */}
+          <div className="w-px h-5 bg-navy-600" />
+
+          {/* Undo/Redo */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => {
+                if (undoStack.length > 0) {
+                  const prevState = undoStack[undoStack.length - 1];
+                  setUndoStack(prev => prev.slice(0, -1));
+                  setRedoStack(prev => [...prev, { hiddenRelTypes, confidenceThreshold, islandThreshold }]);
+                  setHiddenRelTypes(prevState.hiddenRelTypes);
+                  setConfidenceThreshold(prevState.confidenceThreshold);
+                  setIslandThreshold(prevState.islandThreshold);
+                }
+              }}
+              disabled={undoStack.length === 0}
+              className="px-2 py-1 rounded text-xs bg-navy-700 border border-navy-600 text-gray-400 hover:bg-navy-600 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Undo (Ctrl+Z)"
+            >
+              Undo
+            </button>
+            <button
+              onClick={() => {
+                if (redoStack.length > 0) {
+                  const nextState = redoStack[redoStack.length - 1];
+                  setRedoStack(prev => prev.slice(0, -1));
+                  setUndoStack(prev => [...prev, { hiddenRelTypes, confidenceThreshold, islandThreshold }]);
+                  setHiddenRelTypes(nextState.hiddenRelTypes);
+                  setConfidenceThreshold(nextState.confidenceThreshold);
+                  setIslandThreshold(nextState.islandThreshold);
+                }
+              }}
+              disabled={redoStack.length === 0}
+              className="px-2 py-1 rounded text-xs bg-navy-700 border border-navy-600 text-gray-400 hover:bg-navy-600 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Redo (Ctrl+Shift+Z)"
+            >
+              Redo
+            </button>
+          </div>
         </div>
 
         {/* Main content area */}
@@ -1537,7 +1643,10 @@ function NetworkPageInner() {
                       nodes={displayData.nodes as GraphNode[]}
                       edges={displayData.edges as GraphEdge[]}
                       onNodeClick={handleNodeClick}
+                      onEdgeClick={handleEdgeClick as never}
                       selectedNodeId={selectedEntity?.id}
+                      highlightedNodeIds={highlightedNodeIds}
+                      highlightedEdgeKeys={highlightedEdgeKeys}
                       layout={layoutMode}
                       colorMode={colorMode}
                       communityMap={communityMap}
@@ -1547,6 +1656,12 @@ function NetworkPageInner() {
                       <p>No graph data. Ingest documents to populate the knowledge graph.</p>
                     </div>
                   )}
+                  {/* Temporal Slider (P0.5) */}
+                  <TemporalSlider
+                    edges={graphEdges}
+                    value={temporalRange}
+                    onChange={setTemporalRange}
+                  />
                 </div>
 
                 {/* ═══ Floating Chat Overlay (Geo-style) ═══ */}
@@ -2000,9 +2115,66 @@ function NetworkPageInner() {
                   </div>
                 )}
               </div>
+            ) : selectedEdge ? (
+              <div className="p-4 space-y-4">
+                <div>
+                  <h3 className="font-bold text-lg text-gray-200">Relationship</h3>
+                  <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded bg-navy-600 text-gray-300">
+                    {formatRelType(selectedEdge.rel_type)}
+                  </span>
+                </div>
+                <div className="space-y-2 text-xs">
+                  <div>
+                    <span className="text-gray-500">Source:</span>{' '}
+                    <span className="text-gray-300">{selectedEdge.source_id}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Target:</span>{' '}
+                    <span className="text-gray-300">{selectedEdge.target_id}</span>
+                  </div>
+                  {selectedEdge.confidence !== undefined && (
+                    <div>
+                      <span className="text-gray-500">Confidence:</span>{' '}
+                      <span className={selectedEdge.confidence >= 0.8 ? 'text-green-400' : selectedEdge.confidence >= 0.5 ? 'text-yellow-400' : 'text-red-400'}>
+                        {(selectedEdge.confidence * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                  )}
+                  {selectedEdge.first_seen && (
+                    <div>
+                      <span className="text-gray-500">First Seen:</span>{' '}
+                      <span className="text-gray-300">{String(selectedEdge.first_seen).slice(0, 10)}</span>
+                    </div>
+                  )}
+                  {selectedEdge.last_seen && (
+                    <div>
+                      <span className="text-gray-500">Last Seen:</span>{' '}
+                      <span className="text-gray-300">{String(selectedEdge.last_seen).slice(0, 10)}</span>
+                    </div>
+                  )}
+                  {selectedEdge.source && (
+                    <div>
+                      <span className="text-gray-500">Source Document:</span>{' '}
+                      <span className="text-gray-300">{String(selectedEdge.source)}</span>
+                    </div>
+                  )}
+                  {selectedEdge['method'] != null && (
+                    <div>
+                      <span className="text-gray-500">Extraction Method:</span>{' '}
+                      <span className="text-gray-300">{String(selectedEdge['method'])}</span>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => setSelectedEdge(null)}
+                  className="text-xs text-gray-500 hover:text-gray-300"
+                >
+                  Dismiss
+                </button>
+              </div>
             ) : (
               <div className="p-4 text-center text-gray-500 text-sm mt-8">
-                <p>Select an entity from the list or click a node in the graph to see details.</p>
+                <p>Select an entity from the list or click a node/edge in the graph to see details.</p>
               </div>
             )}
           </div>
