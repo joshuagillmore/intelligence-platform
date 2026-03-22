@@ -121,7 +121,7 @@ export default function Sidebar() {
     : 'A';
 
   return (
-    <aside className="w-56 bg-[#0e1321] border-r border-[#1a1f2e] flex flex-col h-screen fixed left-0 top-0 z-40">
+    <aside className="w-56 bg-[#0e1321] border-r border-[#1a1f2e] flex-col h-screen fixed left-0 top-0 z-40 hidden md:flex">
       {/* Branding + Notification Bell */}
       <div className="px-5 py-5 flex items-start justify-between">
         <div className="flex flex-col gap-0.5">
