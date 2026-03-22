@@ -27,7 +27,12 @@ COPY --from=frontend-build /app/frontend/.next/static /app/frontend-server/.next
 # Install Node.js for frontend server
 RUN apt-get update && apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/*
 
-EXPOSE 8000 3000
+# Create startup script with proper line endings
+RUN echo '#!/bin/sh' > /app/entrypoint.sh \
+    && echo 'cd /app/frontend-server && PORT=3000 node server.js &' >> /app/entrypoint.sh \
+    && echo 'cd /app && exec uv run uvicorn intel_platform.api.app:app --host 0.0.0.0 --port 8000' >> /app/entrypoint.sh \
+    && chmod +x /app/entrypoint.sh
 
-# Use fixed port 8000 — Railway maps it via PORT env var
-CMD ["uv", "run", "uvicorn", "intel_platform.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8000
+
+ENTRYPOINT ["/app/entrypoint.sh"]

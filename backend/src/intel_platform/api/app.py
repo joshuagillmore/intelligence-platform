@@ -64,3 +64,14 @@ app.include_router(admin_config.router, prefix="/api", tags=["admin"])
 app.include_router(personas.router, prefix="/api", tags=["personas"])
 app.include_router(documents.router, prefix="/api", tags=["documents"])
 app.include_router(snapshots.router, prefix="/api", tags=["snapshots"])
+
+# Serve frontend static files if available (for Railway single-service deployment)
+import os
+from pathlib import Path
+_frontend_dir = Path("/app/frontend-server")
+if _frontend_dir.exists() and (_frontend_dir / "server.js").exists():
+    # Frontend is served by a separate Node.js process started in the Dockerfile
+    pass
+elif Path("/app/static").exists():
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/", StaticFiles(directory="/app/static", html=True), name="static")
