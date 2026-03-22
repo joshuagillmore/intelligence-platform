@@ -12,14 +12,12 @@ const api = axios.create({
 
 // Add auth interceptor
 api.interceptors.request.use((config) => {
-  // Try JWT token first, fall back to API key
   const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
-  } else {
-    const apiKey = process.env.NEXT_PUBLIC_API_KEY || 'dev-api-key-change-in-production';
-    config.headers.Authorization = `Bearer ${apiKey}`;
   }
+  // No fallback API key — if no token, the request goes unauthenticated
+  // and the 401 interceptor below will redirect to login
   return config;
 });
 

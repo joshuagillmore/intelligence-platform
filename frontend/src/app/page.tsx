@@ -56,6 +56,11 @@ export default function ProjectsPage() {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   useEffect(() => {
+    // Check auth before loading — redirect to login if no token
+    if (typeof window !== 'undefined' && !localStorage.getItem('auth_token')) {
+      router.push('/login');
+      return;
+    }
     loadProjects();
   }, []);
 
