@@ -148,13 +148,26 @@ class GraphStore:
                 "node_count": len(record["nodes"]), "edge_count": len(record["edges"]),
             }
 
+    @staticmethod
+    def _strip_heavy_props(props: dict) -> dict:
+        """Remove large fields from node properties for graph visualization."""
+        stripped = {}
+        for k, v in props.items():
+            if k == "content":
+                continue  # Skip full document content
+            if isinstance(v, str) and len(v) > 200:
+                stripped[k] = v[:200] + "..."
+            else:
+                stripped[k] = v
+        return stripped
+
     def get_full_graph(self, project_id: str, limit: int = 500) -> dict:
         with self._driver.session() as session:
             nodes_result = session.run(
                 "MATCH (n) WHERE n.project_id = $project_id RETURN properties(n) as props LIMIT $limit",
                 project_id=project_id, limit=limit,
             )
-            nodes = [record["props"] for record in nodes_result]
+            nodes = [self._strip_heavy_props(record["props"]) for record in nodes_result]
             edges_result = session.run(
                 """
                 MATCH (a)-[r]->(b)
