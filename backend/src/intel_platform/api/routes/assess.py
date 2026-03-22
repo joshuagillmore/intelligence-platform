@@ -64,7 +64,7 @@ async def generate_assessment(req: CreateAssessmentRequest, store: GraphStore = 
 
     # Build context using Graph RAG
     pipeline = GraphRAGPipeline(store)
-    rag_result = pipeline.query(f"What do we know about {entity.get('name', '')}?", req.project_id)
+    rag_result = await pipeline.query(f"What do we know about {entity.get('name', '')}?", req.project_id)
     context = rag_result.get("context", "")
 
     # Get LLM provider
