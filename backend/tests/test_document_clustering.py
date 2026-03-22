@@ -76,3 +76,55 @@ def test_kmeans_single_cluster():
     assignments = kmeans(matrix, k=2, max_iter=20, rng=rng)
     # All in same cluster
     assert len(set(assignments)) == 1
+
+
+from intel_platform.services.document_clustering import cluster_documents
+
+
+def test_cluster_documents_produces_tree():
+    """Cluster documents should produce a tree with topic nodes."""
+    docs = [
+        ("d1", "cyber attack malware phishing credential theft"),
+        ("d2", "cyber threat exploit vulnerability malware attack"),
+        ("d3", "sanctions iran oil trade export revenue"),
+        ("d4", "sanctions embargo trade iran nuclear deal"),
+    ]
+    tree, doc_map, kw_map = cluster_documents(docs, project_id="test-proj")
+    assert tree["name"] != ""
+    assert tree["id"].startswith("topic-")
+    assert tree["entity_type"] == "topic"
+    assert len(tree.get("doc_ids", [])) == 4
+    # doc_map should have entries for the root node
+    assert "test-proj" in doc_map or tree["id"] in doc_map.get("test-proj", {})
+
+
+def test_cluster_documents_single_doc():
+    """Single document returns leaf node."""
+    docs = [("d1", "intelligence analysis report")]
+    tree, _, _ = cluster_documents(docs, project_id="test-proj")
+    assert tree["entity_type"] == "document_source"
+
+
+def test_cluster_documents_empty():
+    """Empty corpus returns None."""
+    tree, _, _ = cluster_documents([], project_id="test-proj")
+    assert tree is None
+
+
+def test_cluster_labels_contain_terms():
+    """Internal nodes should have keyword labels, not UUIDs."""
+    docs = [
+        ("d1", "cyber attack malware phishing credential theft"),
+        ("d2", "cyber threat exploit vulnerability malware attack"),
+        ("d3", "cyber ransomware attack phishing email spearphishing"),
+        ("d4", "sanctions iran oil trade export revenue"),
+        ("d5", "sanctions embargo trade iran nuclear deal"),
+        ("d6", "oil export revenue sanctions iran economy"),
+    ]
+    tree, _, kw_map = cluster_documents(docs, project_id="test-proj")
+    # Root should have children (the clusters)
+    assert len(tree.get("children", [])) >= 2
+    # Each child should have a name with actual words, not UUIDs
+    for child in tree["children"]:
+        assert len(child["name"]) > 0
+        assert not child["name"].startswith("topic-")
