@@ -16,10 +16,10 @@ def get_full_graph(project_id: str, limit: int = 500, min_centrality: float = 0,
 
     # Compute communities and attach to nodes
     import networkx as nx
-    from intel_platform.services.enrichment import _build_networkx_graph
+    from intel_platform.services.enrichment import build_networkx_from_data
 
     try:
-        G = _build_networkx_graph(store, project_id)
+        G = build_networkx_from_data(data)
 
         # Get community assignments
         try:
