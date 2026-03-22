@@ -213,6 +213,7 @@ export default function CyberPage() {
     return iocs.filter(i => i.entity_type === activeFilter);
   }, [iocs, activeFilter]);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const stats = useMemo(() => {
     const counts: Record<string, number> = { total: iocs.length };
     IOC_TYPES.forEach(t => { counts[t] = 0; });
