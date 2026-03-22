@@ -52,7 +52,7 @@ export default function GeoPage() {
       const data = res.data;
       if (Array.isArray(data)) {
         setLocations(data);
-      } else if (data.locations) {
+      } else if (data && data.locations) {
         setLocations(data.locations);
       } else {
         setLocations([]);
@@ -93,7 +93,7 @@ export default function GeoPage() {
     setRelsLoading(true);
     try {
       const res = await entitiesApi.get(loc.id);
-      setSelectedRels(res.data.relationships || []);
+      setSelectedRels(res.data?.relationships || []);
     } catch {
       setSelectedRels([]);
     } finally {

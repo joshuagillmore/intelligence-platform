@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
 import { llmApi, entitiesApi, reportsApi, exportApi } from '@/lib/api';
+import { useNotifications } from '@/components/NotificationProvider';
 
 const REPORT_TYPES = [
   { value: 'threat_assessment', label: 'Threat Assessment', skill: 'threat_assessment' },
@@ -36,6 +37,7 @@ interface SavedReport {
 
 export default function ProductsPage() {
   const { activeProject } = useProject();
+  const { addNotification, updateNotification } = useNotifications();
   const [reportType, setReportType] = useState('threat_assessment');
   const [entitySearch, setEntitySearch] = useState('');
   const [searchResults, setSearchResults] = useState<SearchedEntity[]>([]);
@@ -118,8 +120,13 @@ export default function ProductsPage() {
     setGeneratedReport(null);
     setViewingHistoryId(null);
     setViewingSavedReport(null);
+    const rt = REPORT_TYPES.find(r => r.value === reportType);
+    const notifId = addNotification({
+      type: 'processing',
+      title: 'Generating Report',
+      message: `Creating ${rt?.label || reportType} report...`,
+    });
     try {
-      const rt = REPORT_TYPES.find(r => r.value === reportType);
       const entityContext = selectedEntities.map(e => `${e.name} (${e.entity_type})`).join(', ');
       const prompt = `Generate a ${rt?.label || reportType} report covering the following entities: ${entityContext}.${activeProject ? ` Project context: ${activeProject.name}.` : ''} Provide a comprehensive, structured intelligence product.`;
 
@@ -138,8 +145,20 @@ export default function ProductsPage() {
         content,
         timestamp: new Date(),
       }, ...prev]);
+
+      updateNotification(notifId, {
+        type: 'success',
+        title: 'Report Ready',
+        message: `${rt?.label || reportType} report generated successfully.`,
+        link: '/products',
+      });
     } catch {
       setGeneratedReport('Failed to generate report. Check that the LLM service is configured.');
+      updateNotification(notifId, {
+        type: 'error',
+        title: 'Report Failed',
+        message: 'Failed to generate report. Check LLM configuration.',
+      });
     } finally {
       setLoading(false);
     }

@@ -39,7 +39,16 @@ export default function WatchlistPage() {
     setLoading(true);
     try {
       const res = await watchlistApi.list(activeProject.id);
-      setEntities(res.data || []);
+      const data = res.data;
+      if (Array.isArray(data)) {
+        setEntities(data);
+      } else if (data && Array.isArray(data.entities)) {
+        setEntities(data.entities);
+      } else if (data && Array.isArray(data.watchlist)) {
+        setEntities(data.watchlist);
+      } else {
+        setEntities([]);
+      }
     } catch {
       console.error('Failed to load watchlist');
     } finally {
