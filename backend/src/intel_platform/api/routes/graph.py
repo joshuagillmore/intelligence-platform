@@ -6,6 +6,7 @@ from intel_platform.graph.store import GraphStore
 from intel_platform.services.enrichment import (
     build_networkx_from_data,
     compute_degree_centrality, detect_communities, compute_all_statistics,
+    compute_structural_holes, extract_ego_network, compute_influence_propagation,
 )
 from intel_platform.services.graph_cache import graph_cache
 
@@ -105,3 +106,28 @@ def get_centrality(project_id: str, store: GraphStore = Depends(get_graph_store)
 @cached(ttl=30)
 def get_statistics(project_id: str, store: GraphStore = Depends(get_graph_store)):
     return compute_all_statistics(store, project_id)
+
+
+@router.get("/graph/structural-holes")
+@cached(ttl=30)
+def get_structural_holes(project_id: str, top_n: int = 20, store: GraphStore = Depends(get_graph_store)):
+    return compute_structural_holes(store, project_id, top_n=top_n)
+
+
+@router.get("/graph/ego-network/{entity_id}")
+def get_ego_network(entity_id: str, project_id: str, hops: int = 2, store: GraphStore = Depends(get_graph_store)):
+    return extract_ego_network(store, project_id, entity_id, hops=min(hops, 4))
+
+
+@router.post("/graph/influence")
+def post_influence_propagation(
+    body: dict,
+    store: GraphStore = Depends(get_graph_store),
+):
+    project_id = body.get("project_id", "")
+    seed_ids = body.get("seed_ids", [])
+    steps = min(body.get("steps", 3), 10)
+    threshold = body.get("threshold", 0.3)
+    return compute_influence_propagation(
+        store, project_id, seed_ids, steps=steps, threshold=threshold
+    )
