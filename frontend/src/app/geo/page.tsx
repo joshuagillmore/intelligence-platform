@@ -183,8 +183,47 @@ export default function GeoPage() {
     return acc;
   }, []);
 
-  /* ── mini bar-chart data (decorative traffic frequency) ── */
-  const trafficBars = [3, 7, 5, 9, 4, 6, 8, 2, 5, 7, 3, 6, 9, 4, 5, 7, 8, 3, 6, 4, 7, 5, 8, 6];
+  /* ── entity timeline data (real temporal data) ── */
+  const [entityTimeline, setEntityTimeline] = useState<{
+    events: Array<{ date: string; type: string; label: string }>;
+    buckets: Array<{ date: string; count: number }>;
+    date_range: { start: string; end: string } | null;
+  }>({ events: [], buckets: [], date_range: null });
+  const [timelineLoading, setTimelineLoading] = useState(false);
+
+  /* ── temporal window filter state ── */
+  const [temporalStart, setTemporalStart] = useState('');
+  const [temporalEnd, setTemporalEnd] = useState('');
+
+  // Load entity timeline when a location is selected
+  useEffect(() => {
+    if (!selectedLocation?.id || !activeProject) {
+      setEntityTimeline({ events: [], buckets: [], date_range: null });
+      return;
+    }
+    setTimelineLoading(true);
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/geo/entity-timeline?entity_id=${selectedLocation.id}&project_id=${activeProject.id}`, {
+      headers: { 'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('auth_token') || 'dev-api-key-change-in-production' : 'dev-api-key-change-in-production'}` },
+    })
+      .then(r => r.json())
+      .then(data => {
+        setEntityTimeline({
+          events: data.events || [],
+          buckets: data.buckets || [],
+          date_range: data.date_range || null,
+        });
+        if (data.date_range) {
+          setTemporalStart(data.date_range.start?.slice(0, 10) || '');
+          setTemporalEnd(data.date_range.end?.slice(0, 10) || '');
+        }
+      })
+      .catch(() => setEntityTimeline({ events: [], buckets: [], date_range: null }))
+      .finally(() => setTimelineLoading(false));
+  }, [selectedLocation?.id, activeProject]);
+
+  const trafficBars = entityTimeline.buckets.length > 0
+    ? entityTimeline.buckets.map(b => b.count)
+    : [0];
 
   if (!activeProject) {
     return (
@@ -273,11 +312,32 @@ export default function GeoPage() {
             <h4 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: C.textDim }}>
               Temporal Window
             </h4>
-            <div className="text-sm" style={{ color: C.primary }}>
-              2024-01-01 &mdash; Present
-            </div>
-            <div className="mt-2 h-1 rounded-full" style={{ background: C.border }}>
-              <div className="h-1 rounded-full w-3/4" style={{ background: C.primary }} />
+            <div className="space-y-2">
+              <div>
+                <label className="text-[10px] uppercase" style={{ color: C.textMuted }}>From</label>
+                <input
+                  type="date"
+                  value={temporalStart}
+                  onChange={e => setTemporalStart(e.target.value)}
+                  className="w-full rounded px-2 py-1 text-xs focus:outline-none"
+                  style={{ background: C.surface, border: `1px solid ${C.border}`, color: '#e5e7eb' }}
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase" style={{ color: C.textMuted }}>To</label>
+                <input
+                  type="date"
+                  value={temporalEnd}
+                  onChange={e => setTemporalEnd(e.target.value)}
+                  className="w-full rounded px-2 py-1 text-xs focus:outline-none"
+                  style={{ background: C.surface, border: `1px solid ${C.border}`, color: '#e5e7eb' }}
+                />
+              </div>
+              {entityTimeline.date_range && (
+                <div className="text-[10px]" style={{ color: C.textMuted }}>
+                  Data: {entityTimeline.date_range.start?.slice(0, 10)} — {entityTimeline.date_range.end?.slice(0, 10)}
+                </div>
+              )}
             </div>
           </div>
 
@@ -516,11 +576,25 @@ export default function GeoPage() {
                   </div>
                 </div>
 
-                {/* ── Traffic Frequency sparkline (24h) ── */}
+                {/* ── Activity Timeline ── */}
                 <div>
                   <h4 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: C.textDim }}>
-                    Traffic Frequency (24h)
+                    {timelineLoading ? 'Loading Timeline...' : `Activity Timeline (${entityTimeline.events.length} events)`}
                   </h4>
+
+                  {/* Events list */}
+                  {entityTimeline.events.length > 0 && (
+                    <div className="space-y-1 mb-3 max-h-24 overflow-y-auto">
+                      {entityTimeline.events.slice(0, 8).map((evt, i) => (
+                        <div key={i} className="text-[10px] flex gap-2" style={{ color: C.textMuted }}>
+                          <span className="font-mono shrink-0">{evt.date?.slice(0, 10) || '?'}</span>
+                          <span className="truncate text-gray-300">{evt.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Sparkline bars */}
                   <div className="flex items-end gap-px h-10">
                     {trafficBars.map((v, i) => (
                       <div
