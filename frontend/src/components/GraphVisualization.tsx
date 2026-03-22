@@ -6,6 +6,7 @@ interface GraphNode {
   id: string;
   name: string;
   entity_type: string;
+  entity_category?: string;
   x?: number;
   y?: number;
   fx?: number | null;
@@ -67,7 +68,18 @@ const TYPE_COLORS: Record<string, string> = {
   Custom: '#78716c',
 };
 
-const DEFAULT_COLOR = '#9ca3af';
+const CATEGORY_COLORS: Record<string, string> = {
+  Person: '#f97316',
+  Organization: '#3b82f6',
+  Location: '#22c55e',
+  Cyber: '#06b6d4',
+  Equipment: '#f43f5e',
+  Event: '#eab308',
+  Financial: '#f59e0b',
+  Intelligence: '#6b7280',
+  Campaign: '#ef4444',
+  Other: '#78716c',
+};
 
 const COMMUNITY_PALETTE = [
   '#f97316', '#3b82f6', '#22c55e', '#ef4444', '#a855f7',
@@ -76,8 +88,8 @@ const COMMUNITY_PALETTE = [
   '#e11d48', '#0ea5e9', '#d946ef', '#78716c', '#fb923c',
 ];
 
-function getColor(entityType: string): string {
-  return TYPE_COLORS[entityType] || DEFAULT_COLOR;
+function getColor(entityType: string, entityCategory?: string): string {
+  return TYPE_COLORS[entityType] || CATEGORY_COLORS[entityCategory || ''] || CATEGORY_COLORS['Other'];
 }
 
 function getCommunityColor(communityId: number): string {
@@ -167,7 +179,7 @@ export default function GraphVisualization({
       if (colorMode === 'community' && communityMap && communityMap[d.id] !== undefined) {
         return getCommunityColor(communityMap[d.id]);
       }
-      return getColor(d.entity_type);
+      return getColor(d.entity_type, d.entity_category);
     }
 
     // --- Layout-specific positioning ---

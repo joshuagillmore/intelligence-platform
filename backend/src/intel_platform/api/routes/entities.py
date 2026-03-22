@@ -7,6 +7,16 @@ from intel_platform.graph.store import GraphStore
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
+@router.get("/entity-types")
+def get_entity_type_hierarchy():
+    """Get the entity type hierarchy."""
+    from intel_platform.models.type_hierarchy import TYPE_HIERARCHY
+    return {
+        "hierarchy": TYPE_HIERARCHY,
+        "categories": list(TYPE_HIERARCHY.keys()),
+    }
+
+
 @router.get("/entities")
 def search_entities(
     project_id: str, query: str = "", entity_type: str | None = None,

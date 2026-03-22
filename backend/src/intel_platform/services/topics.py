@@ -46,12 +46,16 @@ class TopicTreeService:
         type_branch = self._build_type_branch(non_docs)
         tree["children"].append(type_branch)
 
-        # Branch 4: Geographic (locations grouped by region)
+        # Branch 4: By Category Hierarchy
+        cat_branch = self._build_category_branch(non_docs)
+        tree["children"].append(cat_branch)
+
+        # Branch 5: Geographic (locations grouped by region)
         geo_branch = self._build_geo_branch(non_docs)
         if geo_branch["children"]:
             tree["children"].append(geo_branch)
 
-        # Branch 5: Actors & Organizations
+        # Branch 6: Actors & Organizations
         actor_branch = self._build_actor_branch(non_docs, G)
         if actor_branch["children"]:
             tree["children"].append(actor_branch)
@@ -166,6 +170,53 @@ class TopicTreeService:
                 "children": related,
                 "count": len(related),
             })
+        return branch
+
+    def _build_category_branch(self, entities: list) -> dict:
+        """Entities grouped by parent category, then by specific type."""
+        from intel_platform.models.type_hierarchy import get_parent_category
+
+        branch = {
+            "name": "By Category",
+            "id": "branch-categories",
+            "entity_type": "branch",
+            "children": [],
+            "count": len(entities),
+        }
+        by_category: dict[str, list] = defaultdict(list)
+        for e in entities:
+            etype = e.get("entity_type", "Unknown")
+            category = e.get("entity_category", get_parent_category(etype))
+            by_category[category].append({
+                "id": e.get("id", ""),
+                "name": e.get("name", ""),
+                "entity_type": etype,
+            })
+
+        for cat_name, cat_entities in sorted(by_category.items()):
+            # Sub-group by specific type within category
+            by_specific: dict[str, list] = defaultdict(list)
+            for e in cat_entities:
+                by_specific[e["entity_type"]].append(e)
+
+            cat_children = []
+            for specific_type, specific_entities in sorted(by_specific.items()):
+                cat_children.append({
+                    "name": specific_type,
+                    "id": f"cat-{cat_name}-{specific_type}",
+                    "entity_type": "sub_category",
+                    "children": sorted(specific_entities, key=lambda x: x["name"]),
+                    "count": len(specific_entities),
+                })
+
+            branch["children"].append({
+                "name": cat_name,
+                "id": f"cat-{cat_name}",
+                "entity_type": "category",
+                "children": cat_children,
+                "count": len(cat_entities),
+            })
+
         return branch
 
     def _build_type_branch(self, entities: list) -> dict:
