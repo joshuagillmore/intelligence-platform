@@ -208,7 +208,7 @@ export default function DataSourcesPage() {
     return (
       <div className="flex">
         <Sidebar />
-        <main className="ml-56 flex-1 p-8">
+        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
           <h2 className="text-2xl font-bold mb-4">Data Sources</h2>
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
             <p>Select a project first.</p>
@@ -227,7 +227,7 @@ export default function DataSourcesPage() {
   return (
     <div className="flex">
       <Sidebar />
-      <main className="ml-56 flex-1 flex flex-col" style={{ height: 'calc(100vh - 28px)' }}>
+      <main className="md:ml-56 flex-1 flex flex-col pt-16 pb-24 md:pt-0 md:pb-0" style={{ height: 'calc(100vh - 28px)' }}>
 
         {/* -- Mind Map ------------------------------------------------- */}
         <div className="flex-none p-4 pb-0">
@@ -268,10 +268,10 @@ export default function DataSourcesPage() {
         </div>
 
         {/* -- Document Corpus + LLM Summary --------------------------- */}
-        <div className="flex-1 flex gap-4 p-4 min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col md:flex-row gap-4 p-4 min-h-0 overflow-auto md:overflow-hidden">
 
           {/* Left: Documents */}
-          <div className="w-1/2 overflow-y-auto bg-[#0d1220] rounded-lg border border-[#1a1f2e] p-4">
+          <div className="w-full md:w-1/2 overflow-y-auto bg-[#0d1220] rounded-lg border border-[#1a1f2e] p-4">
             {!isLeafSelected ? (
               <div className="flex items-center justify-center h-full text-gray-500 text-sm">
                 <p>Click a topic node above to view associated documents.</p>
@@ -347,7 +347,7 @@ export default function DataSourcesPage() {
           </div>
 
           {/* Right: LLM Summary + Query */}
-          <div className="w-1/2 overflow-y-auto bg-[#0d1220] rounded-lg border border-[#1a1f2e] p-4 flex flex-col">
+          <div className="w-full md:w-1/2 overflow-y-auto bg-[#0d1220] rounded-lg border border-[#1a1f2e] p-4 flex flex-col">
             {!isLeafSelected ? (
               <div className="flex items-center justify-center h-full text-gray-500 text-sm">
                 <p>Select a topic to see its intelligence summary.</p>

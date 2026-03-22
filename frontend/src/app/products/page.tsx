@@ -279,7 +279,7 @@ export default function ProductsPage() {
     return (
       <div className="flex">
         <Sidebar />
-        <main className="ml-56 flex-1 p-8" style={{ backgroundColor: '#0e1321' }}>
+        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8" style={{ backgroundColor: '#0e1321' }}>
           <h2 className="text-2xl font-bold mb-4">Products &amp; Artefacts</h2>
           <div className="rounded-lg p-8 text-center text-gray-500 border border-navy-600" style={{ backgroundColor: '#1a1f2e' }}>
             <p>Select a project first.</p>
@@ -292,7 +292,7 @@ export default function ProductsPage() {
   return (
     <div className="flex">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8 min-h-screen" style={{ backgroundColor: '#0e1321' }}>
+      <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8 min-h-screen" style={{ backgroundColor: '#0e1321' }}>
         {/* Breadcrumb + Title */}
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-1">
@@ -300,9 +300,9 @@ export default function ProductsPage() {
             <span className="text-gray-600 text-[10px]">/</span>
             <span className="text-[10px] font-semibold uppercase tracking-widest text-[#adc6ff]">Production</span>
           </div>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <h2 className="text-xl font-semibold text-gray-100">Generate New Intelligence Product</h2>
-            <div className="flex items-center gap-5">
+            <div className="flex flex-wrap items-center gap-3 md:gap-5">
               {/* Toggle: Include Evidence Chains */}
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <span className="text-xs text-gray-400">Include Evidence Chains</span>
@@ -330,7 +330,7 @@ export default function ProductsPage() {
         {/* Report Type Cards - 5 column grid */}
         <div className="mb-6">
           <label className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 block mb-3">Report Type</label>
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {REPORT_TYPES.map(rt => (
               <button
                 key={rt.value}
@@ -634,7 +634,7 @@ export default function ProductsPage() {
             <span className="material-symbols-outlined text-sm">download</span>
             Export Data
           </h3>
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <button
               onClick={async () => {
                 try {
