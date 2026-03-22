@@ -10,7 +10,7 @@ export default function StatusBar() {
   useEffect(() => {
     const check = async () => {
       try {
-        const res = await fetch('http://localhost:8000/health');
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/health`);
         setConnected(res.ok);
         if (res.ok) {
           setLastAction(`Last check: ${new Date().toLocaleTimeString()}`);

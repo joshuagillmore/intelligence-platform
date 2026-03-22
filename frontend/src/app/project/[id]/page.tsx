@@ -181,7 +181,7 @@ export default function ProjectDashboard() {
           <div className="flex gap-3">
             <button
               onClick={() => {
-                window.open(`http://localhost:8000/api/projects/${projectId}/export/stix`, '_blank');
+                window.open(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/export/stix?project_id=${projectId}`, '_blank');
               }}
               className="px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
               style={{
