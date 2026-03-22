@@ -101,15 +101,23 @@ export default function TopicMindMap({ data, onNodeClick, selectedNodeId }: Topi
         .attr('transform', () => `translate(${source.y0 || 0},${source.x0 || 0})`)
         .attr('cursor', 'pointer')
         .on('click', (_event: any, d: any) => {
-          if (d.children) {
+          const hasHiddenChildren = !!d._children;
+          const hasVisibleChildren = !!d.children;
+
+          // Toggle expand/collapse
+          if (hasVisibleChildren) {
             d._children = d.children;
             d.children = null;
-          } else if (d._children) {
+          } else if (hasHiddenChildren) {
             d.children = d._children;
             d._children = null;
           }
+
           update(d);
-          if (onClickRef.current) {
+
+          // Only fire selection callback if this is NOT a pure expand action
+          // (i.e., node was already expanded, or is a leaf node)
+          if (onClickRef.current && !hasHiddenChildren) {
             onClickRef.current(d.data);
           }
         });
