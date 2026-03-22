@@ -104,3 +104,72 @@ def build_tfidf(
     matrix = csr_matrix(matrix.multiply(1.0 / norms[:, np.newaxis]))
 
     return matrix, [d[0] for d in documents], list(final_vocab.keys())
+
+
+def kmeans(
+    vectors: csr_matrix, k: int, max_iter: int = 20, rng: np.random.RandomState | None = None,
+) -> np.ndarray:
+    """K-Means on L2-normalized sparse vectors using cosine similarity.
+
+    Returns array of cluster assignments (length = number of rows).
+    """
+    if rng is None:
+        rng = np.random.RandomState(42)
+
+    n = vectors.shape[0]
+    if n == 0 or vectors.shape[1] == 0:
+        return np.zeros(n, dtype=int)
+
+    k = min(k, n)
+
+    # K-Means++ initialization
+    first_idx = rng.randint(n)
+    centroids_list: list[np.ndarray] = [vectors[first_idx].toarray().flatten()]
+
+    for _ in range(k - 1):
+        centroid_matrix = np.array(centroids_list)
+        sims = vectors.dot(centroid_matrix.T)
+        if hasattr(sims, "A"):
+            sims_dense = sims.A
+        else:
+            sims_dense = np.asarray(sims)
+        max_sims = sims_dense.max(axis=1)
+        min_dists = np.maximum(1.0 - max_sims, 0)
+        total = min_dists.sum()
+        if total < 1e-10:
+            idx = rng.randint(n)
+        else:
+            probs = min_dists / total
+            idx = rng.choice(n, p=probs)
+        centroids_list.append(vectors[idx].toarray().flatten())
+
+    centroids = np.array(centroids_list)
+
+    assignments = np.zeros(n, dtype=int)
+    for _ in range(max_iter):
+        # Assign each vector to nearest centroid (cosine = dot for L2-normed)
+        sims = vectors.dot(centroids.T)
+        if hasattr(sims, "A"):
+            new_assignments = sims.A.argmax(axis=1)
+        else:
+            new_assignments = np.asarray(sims).argmax(axis=1)
+
+        if np.array_equal(assignments, new_assignments):
+            break
+        assignments = new_assignments
+
+        # Update centroids + L2 renormalize
+        new_centroids = np.zeros_like(centroids)
+        for j in range(k):
+            mask = assignments == j
+            if mask.any():
+                mean_vec = vectors[mask].mean(axis=0)
+                if hasattr(mean_vec, "A1"):
+                    mean_vec = mean_vec.A1
+                else:
+                    mean_vec = np.asarray(mean_vec).flatten()
+                norm = np.linalg.norm(mean_vec)
+                new_centroids[j] = mean_vec / norm if norm > 0 else mean_vec
+        centroids = new_centroids
+
+    return assignments
