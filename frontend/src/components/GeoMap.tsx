@@ -22,6 +22,8 @@ interface ConnectionLine {
   from: [number, number];
   to: [number, number];
   names: string;
+  weight?: number;
+  shared_entities?: string[];
 }
 
 interface GeoMapProps {
@@ -113,14 +115,24 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
     linesRef.current.forEach(l => map.removeLayer(l));
     linesRef.current = [];
 
-    // Add connection lines
+    // Add connection lines between locations (edges based on shared entities)
+    const maxWeight = Math.max(1, ...connectionLines.map(l => l.weight || 1));
     connectionLines.forEach(line => {
+      const w = line.weight || 1;
+      const lineWidth = Math.max(1, Math.min(6, (w / maxWeight) * 6));
+      const opacity = Math.max(0.3, Math.min(0.8, 0.3 + (w / maxWeight) * 0.5));
       const polyline = L.polyline([line.from, line.to], {
         color: '#3b82f6',
-        weight: 1,
-        opacity: 0.4,
-        dashArray: '5,5',
+        weight: lineWidth,
+        opacity,
       }).addTo(map);
+      // Tooltip showing shared entities
+      const sharedText = line.shared_entities?.length
+        ? `<br><br>Shared entities:<br>${line.shared_entities.map((e: string) => `• ${e}`).join('<br>')}`
+        : '';
+      polyline.bindPopup(
+        `<div style="font-size:12px"><b>${line.names}</b><br>Shared entities: ${w}${sharedText}</div>`
+      );
       linesRef.current.push(polyline);
     });
 
