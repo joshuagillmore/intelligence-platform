@@ -64,6 +64,21 @@ interface GraphStats {
 
 const ENTITY_TYPES = ['All', 'Person', 'Organization', 'Location', 'ThreatActor', 'Document', 'IPAddress', 'Domain', 'Event', 'Hash', 'Vulnerability'];
 
+const TYPE_LABELS: Record<string, string> = {
+  TTP: 'Tactics, Techniques & Procedures',
+  IPAddress: 'IP Address',
+  ThreatActor: 'Threat Actor',
+  GovernmentAgency: 'Government Agency',
+  MilitaryUnit: 'Military Unit',
+};
+function formatEntityType(type: string): string {
+  return TYPE_LABELS[type] || type;
+}
+
+function formatRelType(rel: string): string {
+  return rel.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).replace(/\bOf\b/g, 'of').replace(/\bOn\b/g, 'on');
+}
+
 const TYPE_COLORS: Record<string, string> = {
   Person: 'bg-orange-500',
   Organization: 'bg-blue-500',
@@ -377,14 +392,41 @@ function NetworkPageInner() {
       const targetName = rel.target_name || '';
       for (const doc of allDocs) {
         try {
-          // Check for source entity
+          // First try the evidence endpoint for co-occurring passages
           if (sourceName) {
             const evRes = await documentsApi.evidence(doc.id, sourceName);
             if (evRes.data.count > 0) {
-              // Also check if target is mentioned in same passages
               for (const p of evRes.data.passages) {
                 if (targetName && p.text.includes(targetName)) {
                   passages.push({ ...p, document_name: doc.name, document_id: doc.id });
+                }
+              }
+            }
+          }
+          // Fallback: fetch full document and search for co-occurrence in content
+          if (passages.filter(p => p.document_id === doc.id).length === 0 && sourceName && targetName) {
+            const docRes = await documentsApi.get(doc.id);
+            const content = docRes.data.content || '';
+            if (content.includes(sourceName) && content.includes(targetName)) {
+              // Find passages containing both names — search sentence by sentence
+              const sentences = content.split(/(?<=[.!?])\s+/);
+              let accumulated = '';
+              for (const sentence of sentences) {
+                accumulated += (accumulated ? ' ' : '') + sentence;
+                if (accumulated.includes(sourceName) && accumulated.includes(targetName)) {
+                  // Trim to ~400 chars around the relevant area
+                  const trimmed = accumulated.length > 400 ? '...' + accumulated.slice(-400) : accumulated;
+                  passages.push({
+                    text: trimmed,
+                    document_name: doc.name || docRes.data.name,
+                    document_id: doc.id,
+                    entity_name: sourceName,
+                  });
+                  accumulated = '';
+                  break;
+                }
+                if (accumulated.length > 600) {
+                  accumulated = sentence;
                 }
               }
             }
@@ -1221,7 +1263,7 @@ function NetworkPageInner() {
                           >
                             <span className="text-[10px]">{isExpanded ? '▼' : '▶'}</span>
                             <span className={`w-2 h-2 rounded-full flex-none ${TYPE_COLORS[type] || 'bg-gray-500'}`} />
-                            <span className="flex-1">{type}</span>
+                            <span className="flex-1">{formatEntityType(type)}</span>
                             <span className="text-[10px] text-gray-500 bg-navy-600 px-1.5 py-0.5 rounded-full">{typeEntities.length}</span>
                           </button>
                           {isExpanded && typeEntities.map(entity => (
@@ -1509,7 +1551,7 @@ function NetworkPageInner() {
                       <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: '#adc6ff', color: '#0e1321' }}>
                         AI
                       </span>
-                      <span className="text-sm font-medium text-gray-200">Intelligence Assistant</span>
+                      <span className="text-sm font-medium text-gray-200">Aegis Intelligence Assistant</span>
                       <svg className="w-4 h-4 text-gray-400 transition-transform" style={{ transform: bottomPanelOpen ? 'rotate(180deg)' : 'rotate(0deg)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
                       </svg>
@@ -1517,7 +1559,7 @@ function NetworkPageInner() {
                     {bottomPanelOpen && (
                       <div className="flex ml-auto pr-2 gap-1">
                         <button onClick={() => setBottomTab('chat')} className={`px-3 py-1 rounded text-xs font-medium ${bottomTab === 'chat' ? 'bg-navy-600 text-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}>
-                          RAG Chat
+                          Graph RAG Chat
                         </button>
                         <button onClick={() => setBottomTab('notebook')} className={`px-3 py-1 rounded text-xs font-medium ${bottomTab === 'notebook' ? 'bg-navy-600 text-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}>
                           Notebook
@@ -1732,7 +1774,7 @@ function NetworkPageInner() {
                       />
                       <span className={`w-2 h-2 rounded-full ${TYPE_COLORS[e.entity_type] || 'bg-gray-500'}`} />
                       <span className="text-gray-200">{e.name}</span>
-                      <span className="text-xs text-gray-500">{e.entity_type}</span>
+                      <span className="text-xs text-gray-500">{formatEntityType(e.entity_type)}</span>
                       {mergePrimaryId === e.id && <span className="text-xs text-accent-blue ml-auto">Primary</span>}
                     </label>
                   ))}
@@ -1763,7 +1805,7 @@ function NetworkPageInner() {
                 <div>
                   <h3 className="font-bold text-lg">{selectedEntity.name}</h3>
                   <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded ${TYPE_COLORS[selectedEntity.entity_type] || 'bg-gray-500'} text-white`}>
-                    {selectedEntity.entity_type}
+                    {formatEntityType(selectedEntity.entity_type)}
                   </span>
                 </div>
 
@@ -1786,6 +1828,13 @@ function NetworkPageInner() {
                     <h4 className="text-sm font-semibold text-gray-400 mb-2">Relationships ({entityRelationships.length})</h4>
                     <div className="space-y-1">
                       {entityRelationships.map((rel, i) => {
+                        // Compute edge weight from graph edges
+                        const otherId = rel.source_id === selectedEntity.id ? rel.target_id : rel.source_id;
+                        const edgeWeight = graphEdges.filter(e => {
+                          const srcId = e.source_id || e.source;
+                          const tgtId = e.target_id || e.target;
+                          return (srcId === selectedEntity.id && tgtId === otherId) || (tgtId === selectedEntity.id && srcId === otherId);
+                        }).length;
                         const conf = rel.confidence;
                         const confBarColor = conf !== undefined
                           ? conf >= 0.8 ? 'bg-green-500'
@@ -1795,7 +1844,7 @@ function NetworkPageInner() {
                           : '';
                         return (
                         <div key={i} className="text-xs bg-navy-700 rounded p-2">
-                          <span className="text-accent-blue">{rel.rel_type}</span>
+                          <span className="text-accent-blue">{formatRelType(rel.rel_type)}{edgeWeight > 1 ? ` (${edgeWeight})` : ''}</span>
                           {conf !== undefined && (
                             <span className="text-gray-500 ml-2">({(conf * 100).toFixed(0)}%)</span>
                           )}

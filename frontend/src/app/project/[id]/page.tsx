@@ -500,6 +500,43 @@ export default function ProjectDashboard() {
           </div>
         </div>
 
+        {/* Action Buttons */}
+        <div className="mt-8 flex justify-center gap-4">
+          <button
+            onClick={() => router.push('/collections')}
+            className="px-8 py-3 rounded-lg text-sm font-semibold transition-colors"
+            style={{
+              backgroundColor: colors.primary,
+              color: colors.surface,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#c5d8ff';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = colors.primary;
+            }}
+          >
+            Initiate Collection
+          </button>
+          <button
+            onClick={() => router.push('/collections')}
+            className="px-8 py-3 rounded-lg text-sm font-semibold transition-colors"
+            style={{
+              border: `2px solid ${colors.primary}`,
+              color: colors.primary,
+              backgroundColor: 'transparent',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(173, 198, 255, 0.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+          >
+            Add Documents
+          </button>
+        </div>
+
         {/* Footer meta */}
         <div
           className="mt-8 rounded-lg px-5 py-3 flex items-center justify-between text-[10px]"
