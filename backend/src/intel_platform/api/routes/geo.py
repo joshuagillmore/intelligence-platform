@@ -1,10 +1,29 @@
 from collections import defaultdict
-from fastapi import APIRouter, Depends
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, Query
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.geocoding import geocode_all_locations
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
+
+
+def _parse_neo4j_datetime(dt_val) -> str | None:
+    """Extract ISO string from various Neo4j datetime formats."""
+    if not dt_val:
+        return None
+    if isinstance(dt_val, str):
+        return dt_val
+    if hasattr(dt_val, 'isoformat'):
+        return dt_val.isoformat()
+    if isinstance(dt_val, dict):
+        d = dt_val.get("_DateTime__date", {})
+        t = dt_val.get("_DateTime__time", {})
+        try:
+            return f"{d.get('_Date__year', 2026)}-{d.get('_Date__month', 1):02d}-{d.get('_Date__day', 1):02d}T{t.get('_Time__hour', 0):02d}:{t.get('_Time__minute', 0):02d}:00Z"
+        except (TypeError, ValueError):
+            return None
+    return str(dt_val)
 
 
 def _compute_location_edges(locations: list[dict], store: GraphStore) -> list[dict]:
@@ -96,4 +115,101 @@ def get_geo_locations(project_id: str, store: GraphStore = Depends(get_graph_sto
         "total": len(locations),
         "geocoded": sum(1 for l in locations if l.get("geocoded")),
         "edge_count": len(geo_edges),
+    }
+
+
+@router.get("/geo/entity-timeline")
+def get_entity_timeline(
+    entity_id: str,
+    project_id: str,
+    store: GraphStore = Depends(get_graph_store),
+):
+    """Get temporal data for an entity — event dates, relationship dates, document ingestion dates.
+
+    Returns bucketed counts for the traffic frequency chart and raw events for the temporal window.
+    """
+    entity = store.get_entity(entity_id)
+    if not entity:
+        return {"events": [], "buckets": [], "date_range": None}
+
+    events = []
+
+    # 1. Entity's own creation/event date
+    created = _parse_neo4j_datetime(entity.get("created_at"))
+    if created:
+        events.append({
+            "date": created,
+            "type": "entity_created",
+            "label": f"{entity.get('name', '')} first observed",
+        })
+
+    # Check for event_datetime on Event entities
+    event_dt = entity.get("event_datetime")
+    if event_dt:
+        parsed = _parse_neo4j_datetime(event_dt)
+        if parsed:
+            events.append({"date": parsed, "type": "event", "label": entity.get("name", "")})
+
+    # 2. Connected entities — their dates
+    rels = store.get_relationships(entity_id)
+    for rel in rels:
+        # Relationship first_seen
+        first_seen = rel.get("first_seen") or rel.get("props", {}).get("first_seen")
+        if first_seen:
+            parsed = _parse_neo4j_datetime(first_seen)
+            if parsed:
+                target_name = rel.get("target_name", "")
+                events.append({
+                    "date": parsed,
+                    "type": "relationship",
+                    "label": f"{rel.get('rel_type', '')} → {target_name}",
+                })
+
+        # Connected Date entities (OCCURRED_ON relationships)
+        if rel.get("rel_type") == "OCCURRED_ON":
+            target = store.get_entity(rel.get("target_id", ""))
+            if target and target.get("entity_type") == "Date":
+                events.append({
+                    "date": target.get("name", ""),  # Date entity name IS the date string
+                    "type": "event_date",
+                    "label": f"Event on {target.get('name', '')}",
+                })
+
+        # Connected Document entities — ingestion date
+        target = store.get_entity(rel.get("target_id", ""))
+        if target and target.get("entity_type") == "Document":
+            doc_created = _parse_neo4j_datetime(target.get("created_at"))
+            if doc_created:
+                events.append({
+                    "date": doc_created,
+                    "type": "document_ingested",
+                    "label": f"Source: {target.get('name', '')}",
+                })
+
+    # Sort by date
+    events.sort(key=lambda e: e.get("date", ""))
+
+    # Compute date range
+    dates = [e["date"] for e in events if e.get("date")]
+    date_range = None
+    if dates:
+        date_range = {"start": min(dates), "end": max(dates)}
+
+    # Bucket into time periods for the bar chart (by day)
+    buckets: dict[str, int] = defaultdict(int)
+    for e in events:
+        d = e.get("date", "")
+        if d and len(d) >= 10:
+            day = d[:10]  # YYYY-MM-DD
+            buckets[day] += 1
+
+    sorted_buckets = [{"date": k, "count": v} for k, v in sorted(buckets.items())]
+
+    return {
+        "entity_id": entity_id,
+        "entity_name": entity.get("name", ""),
+        "events": events,
+        "buckets": sorted_buckets,
+        "date_range": date_range,
+        "total_events": len(events),
     }
