@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from intel_platform.api.deps import verify_api_key
@@ -58,12 +60,18 @@ async def llm_query(req: LLMQueryRequest):
         messages=req.messages, system=system,
         temperature=req.temperature, max_tokens=req.max_tokens,
     )
-    return {
+    response = {
         "content": result.content,
         "skill_applied": req.skill_name,
         "model": result.model,
         "tokens_used": result.total_tokens,
     }
+    # Extract probability for assessment-related skills
+    if req.skill_name in ("threat_assessment", "report_writing"):
+        prob_match = re.search(r'PROBABILITY:\s*(0\.\d+)', result.content)
+        if prob_match:
+            response["probability"] = float(prob_match.group(1))
+    return response
 
 
 @router.get("/llm/skills", response_model=SkillListResponse)

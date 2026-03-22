@@ -1,4 +1,5 @@
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -96,7 +97,11 @@ Graph Context:
 
 Additional analyst input: {req.judgment if req.judgment else 'None provided'}
 
-Provide: Entity Overview, Key Relationships, Threat Profile, Assessment with probability rating, Gaps, and Recommendations."""
+Provide: Entity Overview, Key Relationships, Threat Profile, Assessment with probability rating, Gaps, and Recommendations.
+
+At the end of your assessment, provide:
+PROBABILITY: [0.01-0.99 numeric value]
+CONFIDENCE_LABEL: [Almost No Chance | Very Unlikely | Unlikely | Roughly Even Chance | Likely | Very Likely | Almost Certain]"""
 
     try:
         result = await provider.generate(
@@ -106,13 +111,17 @@ Provide: Entity Overview, Key Relationships, Threat Profile, Assessment with pro
             max_tokens=4096,
         )
 
+        # Extract probability from LLM response
+        prob_match = re.search(r'PROBABILITY:\s*(0\.\d+)', result.content)
+        probability = float(prob_match.group(1)) if prob_match else req.probability
+
         # Save the assessment
         svc = AssessmentService(store)
         saved = svc.create_assessment(
             entity_id=req.entity_id,
             project_id=req.project_id,
             judgment=result.content,
-            probability=req.probability,
+            probability=probability,
             analyst=req.analyst or "llm",
             methodology="LLM-generated threat assessment with Graph RAG context",
         )
