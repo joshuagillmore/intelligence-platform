@@ -48,6 +48,8 @@ export interface Project {
   entity_count: number;
   relationship_count: number;
   document_count: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export const projectsApi = {

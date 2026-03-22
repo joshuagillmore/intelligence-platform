@@ -86,3 +86,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 export function useNotifications() {
   return useContext(NotificationContext);
 }
+
+export function useNotificationCount() {
+  const { notifications } = useContext(NotificationContext);
+  return notifications.length;
+}

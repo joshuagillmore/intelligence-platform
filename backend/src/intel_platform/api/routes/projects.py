@@ -23,6 +23,18 @@ def list_projects(store: GraphStore = Depends(get_graph_store)):
             stats = store.get_project_stats(pid)
         except Exception:
             stats = {"entity_count": 0, "relationship_count": 0, "document_count": 0}
+
+        created_at = _normalize_datetime(p.get("created_at", ""))
+        updated_at = _normalize_datetime(p.get("updated_at", "")) or created_at
+
+        # Check latest entity creation time to supplement updated_at
+        try:
+            latest_entity_time = store.get_latest_entity_time(pid)
+            if latest_entity_time and (not updated_at or latest_entity_time > updated_at):
+                updated_at = latest_entity_time
+        except Exception:
+            pass
+
         result.append({
             "id": pid,
             "name": p.get("name", ""),
@@ -30,9 +42,30 @@ def list_projects(store: GraphStore = Depends(get_graph_store)):
             "classification_level": p.get("classification_level", "UNCLASSIFIED"),
             "priority": p.get("priority", "medium"),
             "status": p.get("status", "active"),
+            "created_at": created_at or "",
+            "updated_at": updated_at or "",
             **stats,
         })
     return result
+
+
+def _normalize_datetime(val) -> str:
+    """Normalize a datetime value to ISO string."""
+    if not val:
+        return ""
+    if isinstance(val, dict):
+        dt = val.get("_DateTime__date", {})
+        tm = val.get("_DateTime__time", {})
+        year = dt.get("_Date__year", 2026)
+        month = dt.get("_Date__month", 1)
+        day = dt.get("_Date__day", 1)
+        hour = tm.get("_Time__hour", 0)
+        minute = tm.get("_Time__minute", 0)
+        second = tm.get("_Time__second", 0)
+        return f"{year}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:{second:02d}Z"
+    if hasattr(val, "isoformat"):
+        return val.isoformat()
+    return str(val)
 
 
 @router.post("/projects", response_model=ProjectResponse)
@@ -45,7 +78,10 @@ def create_project(req: CreateProjectRequest, store: GraphStore = Depends(get_gr
     return ProjectResponse(
         id=project["id"], name=project["name"], description=project["description"],
         classification_level=project["classification_level"], priority=project["priority"],
-        status=project["status"], **stats,
+        status=project["status"],
+        created_at=_normalize_datetime(project.get("created_at", "")),
+        updated_at=_normalize_datetime(project.get("updated_at", "")),
+        **stats,
     )
 
 
@@ -58,7 +94,10 @@ def get_project(project_id: str, store: GraphStore = Depends(get_graph_store)):
     return ProjectResponse(
         id=project["id"], name=project["name"], description=project["description"],
         classification_level=project["classification_level"], priority=project["priority"],
-        status=project["status"], **stats,
+        status=project["status"],
+        created_at=_normalize_datetime(project.get("created_at", "")),
+        updated_at=_normalize_datetime(project.get("updated_at", "")),
+        **stats,
     )
 
 
@@ -74,7 +113,10 @@ def update_project(project_id: str, req: CreateProjectRequest, store: GraphStore
     return ProjectResponse(
         id=updated["id"], name=updated["name"], description=updated["description"],
         classification_level=updated["classification_level"], priority=updated["priority"],
-        status=updated["status"], **stats,
+        status=updated["status"],
+        created_at=_normalize_datetime(updated.get("created_at", "")),
+        updated_at=_normalize_datetime(updated.get("updated_at", "")),
+        **stats,
     )
 
 

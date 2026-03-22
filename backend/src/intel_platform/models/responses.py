@@ -11,6 +11,8 @@ class ProjectResponse(BaseModel):
     entity_count: int = 0
     relationship_count: int = 0
     document_count: int = 0
+    created_at: str = ""
+    updated_at: str = ""
 
 
 class EntityResponse(BaseModel):
