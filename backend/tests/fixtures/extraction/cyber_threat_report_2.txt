@@ -1,0 +1,81 @@
+CYBER THREAT INTELLIGENCE REPORT: JADE TYPHOON SUPPLY CHAIN COMPROMISE
+
+Report ID: CTI-2026-0347
+Date: 08 February 2026
+Classification: SECRET // NOFORN
+Source Reliability: A1 (Reliable source, confirmed information)
+Handling Caveat: ORIGINATOR CONTROLLED
+Prepared by: National Cybersecurity Intelligence Integration Center (NCIIC)
+
+EXECUTIVE SUMMARY
+
+This report details a sophisticated supply chain compromise operation attributed with high confidence to APT-41 (also tracked as Winnti Group, BARIUM, and Wicked Panda), a Chinese state-sponsored threat actor with nexus to the Ministry of State Security (MSS), Chengdu Bureau. The operation, designated JADE TYPHOON by the Intelligence Community, targeted Meridian Software Solutions, a US-based enterprise resource planning (ERP) vendor headquartered in Reston, Virginia, serving multiple Department of Defense (DoD) contractors within the US defense industrial base (DIB).
+
+APT-41 has been active since at least 2012 and is notable for conducting both state-directed espionage and financially-motivated intrusions. This dual mandate distinguishes it from other MSS-affiliated groups. The group maintains operational overlap with APT-40 (Kryptonite Panda) with respect to shared infrastructure and tooling, though JADE TYPHOON appears to be an APT-41-exclusive operation based on technical indicators and tradecraft analysis.
+
+KEY JUDGMENTS
+
+- (HIGH CONFIDENCE) APT-41 compromised the Meridian Software Solutions build environment between 15 October 2025 and 03 November 2025, inserting a trojanized update module into MSS Enterprise Suite v8.4.2.
+- (MODERATE CONFIDENCE) The operation was designed to facilitate access to at least four DIB entities: Raytheon Advanced Systems Division, Northrop Grumman Space Systems, General Dynamics Mission Systems, and BAE Systems Inc. (US subsidiary).
+- (HIGH CONFIDENCE) Secondary payloads included variants of ShadowPad and PlugX malware families, consistent with known MSS cyber espionage tooling.
+- (MODERATE CONFIDENCE) Intelligence collection priorities appear focused on hypersonic weapons research, satellite communications architecture, and next-generation radar systems under development for the US Navy and US Space Force.
+
+TECHNICAL ANALYSIS
+
+1. Initial Compromise Vector
+
+APT-41 gained initial access to Meridian Software Solutions via exploitation of CVE-2025-28741, a critical remote code execution vulnerability in Apache Tomcat (CVSS 9.8), affecting the company's externally-facing developer portal at devportal.meridiansoftware.com. The vulnerability was disclosed on 04 September 2025 and a patch was available by 12 September 2025; however, Meridian had not applied the patch at the time of compromise. Post-exploitation, the actors leveraged CVE-2025-31205, a privilege escalation vulnerability in the Windows Print Spooler service (CVSS 7.8), to obtain domain administrator credentials within 72 hours of initial access.
+
+Forensic analysis by Mandiant (incident report M-IR-2026-00892) confirmed the use of Cobalt Strike Beacon (version 4.9, watermark 391144938) during the initial compromise phase, a common APT-41 technique for lateral movement prior to deploying bespoke tooling.
+
+2. Supply Chain Implant
+
+Between 22 October 2025 and 01 November 2025, the actors modified the Meridian ERP build pipeline to inject a malicious dynamic-link library (DLL) into the legitimate update package. The trojanized component (mss_core_update.dll, SHA-256: 7a3f8b2c91d4e6f5a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3) was signed with a stolen Meridian code-signing certificate (thumbprint: 9F:3A:7C:2B:1D:8E:4F:6A:0C:5B).
+
+The implant operates as a Windows service (MeridianUpdateSvc) and employs sophisticated anti-analysis techniques including: environment-aware execution (checks for VMware, VirtualBox, and Hyper-V artifacts), delayed execution with a randomized 72-96 hour dormancy period, and process hollowing into legitimate svchost.exe instances.
+
+3. Command and Control Infrastructure
+
+The implant establishes encrypted communications with the following C2 nodes:
+
+- Primary C2: 103.216.44.78 (hosted at Choopa LLC, Singapore, ASN 20473)
+- Secondary C2: 45.77.183.215 (hosted at Vultr Holdings, Tokyo, Japan, ASN 20473)
+- Tertiary C2: 192.248.95.132 (hosted at Leaseweb Asia, Hong Kong, ASN 59253)
+
+C2 traffic is routed through the following domains, all employing HTTPS with valid Let's Encrypt certificates:
+- update-service.meridiansoftware.cloud (typosquatting legitimate vendor domain; registered 08 September 2025 via GoDaddy)
+- cdn-assets.globaltechtrust.net (registered via Namecheap, privacy-protected WHOIS; first seen 15 September 2025)
+- api.securecloud-analytics.com (registered 12 September 2025 via Tucows; resolves to 103.216.44.78)
+
+All three domains employ domain fronting through legitimate cloud providers (Cloudflare and Fastly) to evade network-level detection.
+
+4. Malware Analysis
+
+Stage 1 - Loader: The trojanized DLL functions as a loader for ShadowPad (variant: SHADOWPAD.V4), which is decrypted from an embedded configuration blob using a custom XOR-based algorithm with a rotating 16-byte key. SHA-256 of decrypted ShadowPad payload: 4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f.
+
+ShadowPad v4 includes modular plugins for: keylogging, screen capture, file exfiltration, credential harvesting (LSASS memory dumping via custom Mimikatz variant), and Active Directory enumeration.
+
+Stage 2 - PlugX Deployment: Upon successful establishment of C2, ShadowPad downloads and deploys PlugX (variant: PLUGX.PARANOID) to maintain persistent access via DLL search order hijacking of legitimate Symantec executables. PlugX binary hash (MD5): a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6. The PARANOID variant features enhanced encryption of its configuration block and anti-forensics capabilities including timestomping and selective log deletion.
+
+5. MITRE ATT&CK Mapping
+
+- T1195.002 - Supply Chain Compromise: Compromise Software Supply Chain
+- T1574.002 - Hijack Execution Flow: DLL Side-Loading
+- T1027.002 - Obfuscated Files or Information: Software Packing
+- T1071.001 - Application Layer Protocol: Web Protocols
+
+ATTRIBUTION ASSESSMENT
+
+APT-41 attribution is assessed with HIGH CONFIDENCE based on: (1) infrastructure overlap with previously documented Winnti Group operations targeting the semiconductor sector in 2024, specifically shared registration patterns with domain registrar accounts linked to Chengdu-based personas; (2) ShadowPad variant matching MSS-exclusive tooling catalogued by Mandiant in report APT41-2024-Q3; (3) operational tempo consistent with Chengdu MSS bureau working hours (UTC+8, 0900-1800); and (4) SIGINT reporting corroborating MSS tasking of cyber operations against US DIB entities.
+
+The Winnti Group umbrella encompasses multiple sub-teams, and this specific operation bears hallmarks of the team previously designated LEAD by Microsoft, which specializes in supply chain operations. Coordination with the FBI Cyber Division (Washington Field Office, lead agent SSA Patricia Moreno) and NSA Cybersecurity Directorate (Fort Meade, Maryland) is ongoing.
+
+IMPACT ASSESSMENT
+
+As of 07 February 2026, CISA has confirmed that the trojanized update was distributed to approximately 1,200 Meridian customers across 14 industry sectors. Of these, 87 are confirmed DIB entities with active Department of Defense contracts. Forensic analysis by CrowdStrike (case CR-2026-04481) and Mandiant has identified active ShadowPad beaconing from networks belonging to Raytheon Advanced Systems Division (Arlington, Virginia) and General Dynamics Mission Systems (Scottsdale, Arizona). Assessment of Northrop Grumman and BAE Systems networks is pending.
+
+Preliminary damage assessment indicates potential compromise of technical data related to the SM-6 Block IB missile program and Next-Generation Overhead Persistent Infrared (Next-Gen OPIR) satellite system.
+
+RECOMMENDED ACTIONS
+
+Organizations running Meridian MSS Enterprise Suite v8.4.2 should immediately isolate affected systems, scan for the provided IOCs, and contact CISA at central@cisa.dhs.gov for incident response support. CISA Emergency Directive ED-26-02 applies. FBI requests any entities identifying network indicators matching this report contact the FBI Internet Crime Complaint Center (IC3) or their local FBI field office.

@@ -1,0 +1,85 @@
+INTELLIGENCE ASSESSMENT: RUSSIAN HYBRID WARFARE OPERATIONS TARGETING THE BALTIC STATES
+
+Report ID: EUR-HW-2026-0033
+Date: 28 February 2026
+Classification: SECRET // REL TO NATO
+Source Reliability: B1 (Usually reliable source, confirmed information)
+Intelligence Discipline: Multi-INT (HUMINT / SIGINT / OSINT / CYBINT)
+Prepared by: NATO Intelligence Fusion Centre (NIFC), RAF Molesworth, United Kingdom
+
+EXECUTIVE SUMMARY
+
+This assessment provides a comprehensive analysis of Russian hybrid warfare operations targeting Estonia, Latvia, and Lithuania during the period September 2025 through February 2026. Russian activities have encompassed coordinated disinformation campaigns, cyber operations against critical infrastructure, energy supply manipulation, military provocations along NATO's northeastern flank, and intelligence operations involving diplomatic personnel.
+
+The assessed objective of these operations is to undermine Baltic state societal resilience, test NATO collective defense resolve under Article 5, and create information conditions favorable to Russian strategic narratives regarding NATO "encirclement" and the rights of Russian-speaking minorities in the Baltic states.
+
+KEY JUDGMENTS
+
+- (HIGH CONFIDENCE) GRU Unit 26165 (also known as APT-28, Fancy Bear, Sofacy, and STRONTIUM) has conducted sustained cyber operations against Estonian and Latvian government networks and energy infrastructure since at least October 2025.
+- (HIGH CONFIDENCE) Russian information operations are centrally coordinated by the Presidential Administration's Directorate for Inter-Regional and Cultural Relations with Foreign Countries, with execution by the Internet Research Agency (IRA) successor entity Patriot Media Group, based in St. Petersburg.
+- (MODERATE CONFIDENCE) GRU Unit 29155 (Zaslon) has conducted reconnaissance and sabotage preparation activities against Baltic energy and telecommunications infrastructure, as evidenced by the expulsion of suspected intelligence officers and discovery of surveillance equipment.
+- (HIGH CONFIDENCE) Russia has weaponized energy supply as a coercive tool, with Gazprom reducing natural gas deliveries through the Lithuanian Klaipeda LNG terminal interconnector by 35% since November 2025, citing "technical maintenance."
+
+DETAILED ANALYSIS
+
+1. Cyber Operations
+
+GRU Unit 26165 Campaign — Operation FROZEN LACE
+
+Beginning approximately 15 October 2025, NATO CCDCOE (Cooperative Cyber Defence Centre of Excellence, Tallinn) and the Estonian Information System Authority (RIA) detected a sophisticated intrusion campaign targeting Estonian government networks, designated FROZEN LACE by allied cyber intelligence.
+
+Technical details:
+- Initial access vector: Spear-phishing emails impersonating the Estonian Ministry of Foreign Affairs, containing weaponized Microsoft Word documents exploiting CVE-2025-36891 (Microsoft Office Remote Code Execution, CVSS 8.8).
+- Post-exploitation: Deployment of a custom backdoor designated WINTERSTRIKE by CCDCOE analysts. WINTERSTRIKE communicates with C2 infrastructure at 77.83.247.91 (hosted at Selectel, St. Petersburg, Russia, ASN 49505) and 185.174.137.28 (hosted at MivoCloud, Chisinau, Moldova, ASN 39798).
+- C2 domains: gov-ee-portal.com (registered 02 September 2025 via Njalla, privacy registrar) and mod-latvija-update.net (registered 28 September 2025 via Njalla).
+- Targets confirmed: Estonian Ministry of Defence, Estonian Foreign Intelligence Service (Valismuuriaagentuuri, EFIS), Latvian Ministry of Defence, Latvian Constitution Protection Bureau (SAB).
+- MITRE ATT&CK mapping: T1566.001 (Phishing: Spearphishing Attachment), T1059.001 (Command and Scripting Interpreter: PowerShell), T1071.001 (Application Layer Protocol: Web Protocols).
+
+On 12 January 2026, a separate cyber operation assessed as GRU-directed targeted the Lithuanian energy grid operator Litgrid AB. The attack employed the Industroyer2 malware variant against industrial control systems (ICS) at the Kruonis Pumped Storage Plant. The attack was detected and mitigated before causing operational disruption, but forensic analysis confirmed the malware was configured to manipulate circuit breaker operations — consistent with the 2016 Ukraine power grid attack attributed to GRU Unit 74455 (Sandworm).
+
+2. Information Operations
+
+Russian disinformation efforts targeting the Baltic states have intensified significantly, with the following key campaigns identified:
+
+Campaign BALTIC DISCORD: Beginning November 2025, Patriot Media Group (PMG) operatives based in St. Petersburg deployed a coordinated inauthentic behavior (CIB) network across Facebook, X (formerly Twitter), Telegram, and TikTok. The network comprised approximately 2,400 fake accounts and 85 automated bot accounts targeting Russian-speaking populations in Estonia (approximately 25% of population) and Latvia (approximately 26% of population).
+
+Key narratives promoted:
+- "NATO troops are occupation forces threatening Russian-speaking communities"
+- "Baltic governments are implementing linguistic discrimination against Russian speakers"
+- "NATO military buildup will make the Baltics a nuclear target"
+
+Meta Platforms Inc. disrupted 1,847 accounts linked to this campaign on 18 January 2026. TikTok removed an additional 312 accounts on 02 February 2026.
+
+The campaign was directed by Ilya Andreevich Gambashidze, head of Patriot Media Group and subject of EU sanctions (Council Decision CFSP/2025/1847, dated 15 October 2025). Gambashidze was previously identified by the US State Department's Global Engagement Center (GEC) as a key figure in Russian information operations targeting European elections.
+
+3. Intelligence Operations and Diplomatic Incidents
+
+Multiple Russian intelligence operations have been disrupted by Baltic counterintelligence services during the assessment period:
+
+- 22 November 2025: Estonia's Internal Security Service (Kaitsepolitseiamet, KAPO) arrested Russian Embassy Second Secretary Sergei Viktorovich Petrov (assessed GRU Unit 29155 officer) for conducting surveillance of the Tapa Military Base, which hosts NATO Enhanced Forward Presence (eFP) Battlegroup Estonia (led by the United Kingdom). Petrov was declared persona non grata and expelled on 29 November 2025. Estonia simultaneously expelled one additional Russian diplomatic staff member, Military Attache Colonel Dmitri Aleksandrovich Volkov.
+
+- 14 December 2025: Latvia's Constitution Protection Bureau (SAB) announced the detention of Latvian national Janis Ozolins (DOB 08 April 1973), a former Latvian Armed Forces logistics officer, on charges of espionage for Russia's GRU. Ozolins allegedly provided classified NATO force disposition information and eFP Battlegroup Latvia (Canadian-led, based at Camp Adazi) readiness assessments to his GRU handler, identified as "Viktor" (assessed to be Viktor Nikolaevich Sorokin, GRU European Directorate). Ozolins faces up to 20 years imprisonment under Latvian Criminal Law Section 85.
+
+- 03 January 2026: Lithuanian State Security Department (VSD) detected and disrupted a GPS spoofing operation affecting civil aviation in the Kaliningrad corridor. The spoofing signals originated from Russian military facilities in the Kaliningrad Oblast exclave and affected commercial flights operating in Lithuanian airspace. NATO Allied Air Command (AIRCOM, Ramstein) issued a formal protest through the NATO-Russia communication line.
+
+4. Energy Coercion
+
+Russia continues to leverage energy dependencies as a hybrid warfare tool against the Baltic states:
+
+- Gazprom reduced natural gas flows through the Klaipeda LNG terminal interconnector pipeline by 35% beginning 14 November 2025, citing "scheduled maintenance" on compressor stations. Lithuanian Energy Minister Dainius Kreivys characterized the reduction as "politically motivated coercion" in a 20 November 2025 statement.
+
+- The Nord Stream pipeline network destruction (September 2022) continues to shape Baltic energy security calculations. Baltic intelligence services assess (MODERATE CONFIDENCE) that Russian naval vessels conducted seabed surveys near the Balticconnector pipeline (Finland-Estonia gas interconnector) in October 2025, raising concerns about potential sabotage. The Finnish Naval Command detected the Russian oceanographic research vessel Yantar (AGI-520) operating near the pipeline route on 18 October 2025.
+
+5. Military Provocations
+
+Russian military activity along the Baltic borders has increased:
+
+- Russian Aerospace Forces (VKS) conducted 47 intercept-triggering flights near Baltic airspace between September 2025 and February 2026, a 60% increase over the same period in 2024-2025. NATO Baltic Air Policing assets (currently rotated by German Luftwaffe Eurofighter Typhoons operating from Amari Air Base, Estonia) conducted scrambles on 31 occasions.
+
+- On 24 January 2026, the Russian Baltic Fleet conducted a live-fire naval exercise in the central Baltic Sea, 45 nautical miles west of Liepaja, Latvia, involving guided-missile corvette Soobrazitelnyy (project 20380 Steregushchiy-class) and two Project 11356 Buyan-M-class missile corvettes. The exercise included launches of Kalibr-NK cruise missiles.
+
+ASSESSMENT AND OUTLOOK
+
+Russia's hybrid warfare campaign against the Baltic states represents a coordinated, multi-domain effort to test NATO's response thresholds below the Article 5 trigger. The combination of cyber operations, information warfare, energy coercion, and military provocations constitutes a textbook "gray zone" strategy. NATO's response should emphasize resilience-building, enhanced counterintelligence cooperation, energy diversification acceleration, and clear strategic communication.
+
+This assessment has been coordinated with NATO SHAPE J2, the Estonian EFIS, Latvian SAB, Lithuanian VSD, UK Defence Intelligence (DI), and the US European Command (EUCOM) J2.

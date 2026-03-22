@@ -1,0 +1,79 @@
+COUNTERTERRORISM INTELLIGENCE ASSESSMENT: ISIS-KHORASAN PROVINCE ACTIVITY IN CENTRAL ASIA
+
+Report ID: CT-CENTASIA-2026-0041
+Date: 05 March 2026
+Classification: SECRET // NOFORN
+Source Reliability: B2 (Usually reliable source, probably true)
+Intelligence Discipline: HUMINT / SIGINT / OSINT
+Prepared by: National Counterterrorism Center (NCTC), Directorate of Strategic Operational Planning
+
+EXECUTIVE SUMMARY
+
+This assessment examines the evolving threat posed by Islamic State Khorasan Province (ISIS-K, also designated ISKP or IS-KP) in Central Asia, with particular focus on operational activity in Tajikistan, northern Afghanistan, and cross-border facilitation networks. ISIS-K has significantly expanded its operational tempo in the region since Q3 2025, exploiting governance vacuums, porous borders, and the Taliban's inconsistent counterterrorism pressure.
+
+Since 01 September 2025, ISIS-K has claimed or is assessed responsible for 14 attacks in the Afghanistan-Tajikistan border region, resulting in approximately 127 casualties (68 killed, 59 wounded). This represents a 40% increase over the comparable period in 2024.
+
+KEY JUDGMENTS
+
+- (HIGH CONFIDENCE) ISIS-K has established a durable operational cell in the Gorno-Badakhshan Autonomous Region (GBAO) of Tajikistan, with logistics support nodes in Khorog and Murghab.
+- (MODERATE CONFIDENCE) The group is actively recruiting from Tajik and Uzbek diaspora communities, with documented recruitment activity in Turkey (Istanbul), Russia (Moscow, Yekaterinburg), and online via encrypted Telegram channels.
+- (HIGH CONFIDENCE) ISIS-K Central Asia operations are directed by Abu Omar al-Tajiki (true name: Jalolov Mukhammadsobir Fayzulloyevich, DOB 12 June 1991, Tajik national, Interpol Red Notice A-7293/2025), a former Tajik special forces officer who defected in 2019.
+- (MODERATE CONFIDENCE) The Taliban's Islamic Emirate of Afghanistan (IEA) has conducted limited counter-ISIS-K operations in Takhar and Badakhshan provinces, but these efforts are assessed as insufficient and potentially compromised by Taliban elements sympathetic to ISIS-K's anti-Shia agenda.
+
+DETAILED ANALYSIS
+
+1. Organizational Structure — Central Asia Wilayat
+
+ISIS-K's Central Asia operations function as a semi-autonomous sub-command within the broader Khorasan Province structure. The following leadership hierarchy has been identified through HUMINT and SIGINT collection:
+
+- Emir (Regional): Abu Omar al-Tajiki (Jalolov Mukhammadsobir). Location: Assessed to be operating from the Jurm District, Badakhshan Province, Afghanistan (approximate coordinates: 36.87N, 70.98E). Communicates with ISIS-K senior leadership in Nangarhar Province via encrypted courier network.
+
+- Military Commander: Qari Salahuddin (true name: Nazarov Rustam Karimovich, DOB 09 March 1988, Uzbek national). Former Islamic Movement of Uzbekistan (IMU) fighter. Responsible for planning and directing cross-border operations. Last confirmed location: Kunduz Province, Afghanistan (December 2025).
+
+- Logistics Chief: Abu Hafsa al-Turki (true name: Erdogan Mehmet Yilmaz, DOB 28 July 1986, Turkish national). Manages weapons procurement and supply lines from Pakistan's tribal areas via Chitral, Khyber Pakhtunkhwa. Maintains contacts with arms dealers in Peshawar and Darra Adam Khel.
+
+- Finance Emir: Abdulaziz al-Khaliji (true name unknown, assessed Gulf national, possibly Kuwaiti). Coordinates hawala transfers and cryptocurrency donations from Gulf-based sympathizers. Operates from Kabul under commercial cover.
+
+- Recruitment Coordinator (External): Kamolova Nigina Rahimovna (DOB 15 October 1993, Tajik national, female). Based in Istanbul, Turkey. Manages online recruitment via Telegram channels "Voice of Khorasan" (@khorasan_voice_313) and "Lions of the Ummah" (@lions_ummah_official). Subject of Turkish MIT investigation since August 2025.
+
+2. Recent Attack Activity
+
+The following significant attacks have been attributed to ISIS-K in the assessment period:
+
+- 14 November 2025: Suicide vehicle-borne IED (SVBIED) attack on a Tajik Border Guard Forces (TBF) checkpoint at the Ishkashim border crossing (36.71N, 71.58E), Gorno-Badakhshan. 8 killed (6 TBF soldiers, 2 civilians), 14 wounded. ISIS-K claimed via Amaq News Agency.
+
+- 23 December 2025: Complex attack (small arms and IED) on a Taliban Interior Ministry patrol in Fayzabad, Badakhshan Province, Afghanistan (37.12N, 70.58E). 12 Taliban fighters killed. Demonstrates ISIS-K capability to strike Taliban security apparatus.
+
+- 09 January 2026: Assassination of Mirzoev Shamsiddin, a Tajik intelligence officer (GKNB — State Committee for National Security), in Dushanbe (38.56N, 68.77E) via magnetic IED attached to his vehicle. ISIS-K claimed responsibility via encrypted channels. This represents the first ISIS-K assassination operation in the Tajik capital.
+
+- 18 February 2026: Coordinated assault on a mining camp operated by Zijin Mining Group (PRC state-owned enterprise) in Murghab District, GBAO (38.17N, 74.05E). 4 Chinese nationals and 3 Tajik security guards killed. 11 wounded. Attack employed RPG-7 and PKM machine gun fire. ISIS-K released operational video via al-Azm Foundation media arm.
+
+3. Weapons and Materiel
+
+Intelligence reporting and post-attack forensics indicate ISIS-K Central Asia cells possess the following weapons inventory:
+
+- AK-74M assault rifles (7.62x39mm and 5.45x39mm variants)
+- RPG-7V2 rocket-propelled grenade launchers with PG-7VL warheads
+- PKM general-purpose machine guns
+- IED components including military-grade detonators (assessed sourced from Afghan National Army legacy stockpiles)
+- Small quantities of C-4 plastic explosive (origin under investigation; assessed Pakistani military stockpile diversion)
+- Commercial drones (DJI Mavic 3 series) modified for surveillance and potential payload delivery
+
+A weapons cache discovered by Tajik GKNB special forces on 28 January 2026 near the village of Langar, GBAO (38.41N, 72.14E), contained 12 AK-74 rifles, 3 RPG-7 launchers, approximately 2,000 rounds of ammunition, and 15 kg of ammonium nitrate. Two suspects were detained: Sharipov Farrukh (DOB 1995, Tajik national) and Kamolov Davlatyor (DOB 1998, Tajik national).
+
+4. Funding Mechanisms
+
+ISIS-K Central Asia operations are funded through multiple channels:
+
+- Hawala networks: Approximately $350,000 USD per quarter transferred via hawala brokers in Peshawar, Dubai, and Istanbul. Primary hawaladar identified as Abdul Wahid Noorzai (Afghan national, based in Peshawar).
+- Cryptocurrency: Bitcoin and USDT (Tether) donations solicited via Telegram. Estimated quarterly inflow: $80,000-$120,000 USD.
+- Extortion and taxation of lapis lazuli and chromite mining operations in Badakhshan Province.
+- Donations from Gulf-based individuals, routed through charitable front organizations in Kuwait and Qatar.
+
+5. Taliban Response
+
+The Taliban's General Directorate of Intelligence (GDI, Istikhbarat) has conducted at least 6 counter-ISIS-K raids in Takhar and Badakhshan provinces since October 2025, claiming the arrest of 23 ISIS-K operatives. However, HUMINT reporting suggests that Taliban counter-ISIS-K efforts are undermined by: (1) ideological sympathy for ISIS-K's anti-Shia position among some Taliban commanders, particularly within the Haqqani Network; and (2) limited operational capability in the remote mountainous terrain of Badakhshan.
+
+COORDINATION
+
+This assessment has been coordinated with the CIA Counterterrorism Center (CTC), DIA Joint Intelligence Task Force — Combating Terrorism (JITF-CT), the Tajik GKNB via the CIA Dushanbe Station, and CENTCOM J2. Information sharing with regional partners is conducted through the NCTC Directorate of Strategic Operational Planning.

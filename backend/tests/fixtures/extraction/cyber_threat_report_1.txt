@@ -1,0 +1,25 @@
+CYBER THREAT INTELLIGENCE REPORT: MIDNIGHT BLIZZARD CAMPAIGN
+
+Date: 15 March 2026
+Classification: UNCLASSIFIED // FOR OFFICIAL USE ONLY
+Source Reliability: B2
+
+EXECUTIVE SUMMARY
+
+APT-29, also known as Cozy Bear and attributed to the Russian Foreign Intelligence Service (SVR), has launched a new phishing campaign targeting European government agencies. The campaign, designated MIDNIGHT BLIZZARD by Microsoft, began in Q1 2026 and uses a previously undocumented backdoor called GraphicalNeutrino.
+
+TECHNICAL ANALYSIS
+
+Initial access was achieved through spear-phishing emails containing malicious PDF attachments exploiting CVE-2024-21412, a Windows SmartScreen bypass vulnerability with a CVSS score of 8.1. The emails impersonated diplomatic staff from the German Federal Foreign Office and the French Ministry of Europe and Foreign Affairs.
+
+Upon execution, the payload deploys GraphicalNeutrino, which communicates with command-and-control infrastructure at 185.220.101.42 and 91.215.85.17. The malware also uses the domain microsoftupdate-security.com for secondary C2 communications, which resolves to 185.220.101.42. The backdoor uses T1071.001 (Application Layer Protocol: Web Protocols) for C2 and T1059.001 (PowerShell) for execution.
+
+Artifacts recovered include SHA-256 hash e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 (GraphicalNeutrino loader) and MD5 hash d41d8cd98f00b204e9800998ecf8427e (second-stage payload).
+
+ATTRIBUTION
+
+The campaign is attributed to APT-29 with high confidence based on overlapping infrastructure with previous SVR operations, shared code similarities with the WellMess malware family, and targeting patterns consistent with Russian intelligence collection priorities. The UK National Cyber Security Centre (NCSC) and the US Cybersecurity and Infrastructure Security Agency (CISA) have issued joint advisories on this activity.
+
+TARGETS
+
+Primary targets include the German Bundestag, the French National Assembly, the European Commission in Brussels, and the NATO Communications and Information Agency (NCIA) in The Hague.

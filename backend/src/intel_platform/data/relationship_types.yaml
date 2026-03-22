@@ -1,0 +1,145 @@
+# Valid relationship types and verb-to-relationship mappings.
+# Used by both graph store validation and dependency-parse extraction.
+
+relationship_types:
+  ASSOCIATED_WITH:
+    description: General association between entities
+    confidence_default: 0.5
+  BELONGS_TO:
+    description: Entity is a member or part of another entity
+    confidence_default: 0.7
+  LOCATED_AT:
+    description: Entity is located at a place
+    confidence_default: 0.7
+  COMMUNICATES_WITH:
+    description: Entity communicates with another (e.g., C2 infrastructure)
+    confidence_default: 0.7
+  RESOLVES_TO:
+    description: Domain resolves to an IP address
+    confidence_default: 0.9
+  EXPLOITS:
+    description: Actor or malware exploits a vulnerability
+    confidence_default: 0.8
+  USES:
+    description: Actor uses a tool, technique, malware, or infrastructure
+    confidence_default: 0.7
+  TARGETS:
+    description: Actor or group attacks or focuses on a target entity
+    confidence_default: 0.7
+  ATTRIBUTED_TO:
+    description: Activity is attributed to an actor or nation-state
+    confidence_default: 0.7
+  MENTIONED_IN:
+    description: Entity is mentioned in a document
+    confidence_default: 0.9
+  MENTIONS:
+    description: Document mentions an entity
+    confidence_default: 0.9
+  PARENT_OF:
+    description: Hierarchical parent relationship
+    confidence_default: 0.8
+  RELATED_TO:
+    description: General relation (weaker than ASSOCIATED_WITH)
+    confidence_default: 0.4
+  ASSESSES:
+    description: Assessment evaluates an entity
+    confidence_default: 0.9
+  SUPPORTED_BY:
+    description: Conclusion or assessment supported by evidence
+    confidence_default: 0.7
+  SHARED_WITH:
+    description: Intelligence shared with another entity
+    confidence_default: 0.7
+  OCCURRED_ON:
+    description: Event occurred on a date
+    confidence_default: 0.8
+  COMMANDED_BY:
+    description: Military unit or operation commanded by a person
+    confidence_default: 0.7
+  FUNDED_BY:
+    description: Entity funded by another entity
+    confidence_default: 0.7
+  SUPPLIED_BY:
+    description: Equipment or resources supplied by an entity
+    confidence_default: 0.7
+  DEPLOYED_AT:
+    description: Equipment or forces deployed at a location
+    confidence_default: 0.7
+
+# Verb-to-relationship mapping for dependency-parse extraction.
+# Keys are verb lemmas; values are relationship types.
+verb_mappings:
+  # TARGETS
+  attack: TARGETS
+  target: TARGETS
+  strike: TARGETS
+  bomb: TARGETS
+  threaten: TARGETS
+  focus: TARGETS
+  aim: TARGETS
+  compromise: TARGETS
+  breach: TARGETS
+  infiltrate: TARGETS
+  hack: TARGETS
+  # USES
+  use: USES
+  deploy: USES
+  employ: USES
+  leverage: USES
+  utilize: USES
+  operate: USES
+  wield: USES
+  # EXPLOITS
+  exploit: EXPLOITS
+  abuse: EXPLOITS
+  # LOCATED_AT
+  locate: LOCATED_AT
+  base: LOCATED_AT
+  station: LOCATED_AT
+  headquarter: LOCATED_AT
+  position: LOCATED_AT
+  # BELONGS_TO
+  belong: BELONGS_TO
+  join: BELONGS_TO
+  affiliate: BELONGS_TO
+  # ATTRIBUTED_TO
+  attribute: ATTRIBUTED_TO
+  link: ATTRIBUTED_TO
+  associate: ATTRIBUTED_TO
+  tie: ATTRIBUTED_TO
+  connect: ATTRIBUTED_TO
+  # COMMUNICATES_WITH
+  communicate: COMMUNICATES_WITH
+  contact: COMMUNICATES_WITH
+  # COMMANDED_BY
+  command: COMMANDED_BY
+  lead: COMMANDED_BY
+  direct: COMMANDED_BY
+  # FUNDED_BY
+  fund: FUNDED_BY
+  finance: FUNDED_BY
+  sponsor: FUNDED_BY
+  # SUPPLIED_BY
+  supply: SUPPLIED_BY
+  provide: SUPPLIED_BY
+  deliver: SUPPLIED_BY
+  ship: SUPPLIED_BY
+  # DEPLOYED_AT
+  deploy: DEPLOYED_AT
+  station: DEPLOYED_AT
+  move: DEPLOYED_AT
+
+# Discourse markers that suggest cross-sentence relationships
+discourse_markers:
+  - "therefore"
+  - "as a result"
+  - "consequently"
+  - "because of this"
+  - "in response"
+  - "following this"
+  - "subsequently"
+  - "accordingly"
+  - "thus"
+  - "hence"
+  - "this led to"
+  - "in retaliation"
