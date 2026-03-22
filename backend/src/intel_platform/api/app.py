@@ -65,13 +65,34 @@ app.include_router(personas.router, prefix="/api", tags=["personas"])
 app.include_router(documents.router, prefix="/api", tags=["documents"])
 app.include_router(snapshots.router, prefix="/api", tags=["snapshots"])
 
-# Serve frontend static files if available (for Railway single-service deployment)
+# Reverse proxy to frontend Node.js server (Railway single-port deployment)
 import os
 from pathlib import Path
 _frontend_dir = Path("/app/frontend-server")
 if _frontend_dir.exists() and (_frontend_dir / "server.js").exists():
-    # Frontend is served by a separate Node.js process started in the Dockerfile
-    pass
+    import httpx
+    from fastapi import Request
+    from fastapi.responses import StreamingResponse, Response
+
+    @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+    async def proxy_frontend(request: Request, path: str):
+        """Proxy non-API requests to the Next.js frontend server."""
+        # Don't proxy API, health, or MCP routes
+        if path.startswith(("api/", "health", "mcp", "openapi", "docs")):
+            return Response(status_code=404)
+        url = f"http://127.0.0.1:3000/{path}"
+        if request.url.query:
+            url += f"?{request.url.query}"
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, headers=dict(request.headers), timeout=10)
+                return Response(
+                    content=resp.content,
+                    status_code=resp.status_code,
+                    headers=dict(resp.headers),
+                )
+        except Exception:
+            return Response(content="Frontend not available", status_code=502)
 elif Path("/app/static").exists():
     from fastapi.staticfiles import StaticFiles
     app.mount("/", StaticFiles(directory="/app/static", html=True), name="static")

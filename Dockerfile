@@ -7,14 +7,17 @@ COPY frontend/ .
 RUN mkdir -p public
 RUN npm run build
 
-# ── Stage 2: Backend + serve frontend ──
+# ── Stage 2: Backend + Frontend on single port ──
 FROM python:3.12-slim
 
 WORKDIR /app
 
+# Install Node.js first (needed for frontend server)
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs curl && rm -rf /var/lib/apt/lists/*
+
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install backend dependencies
+# Install backend
 COPY backend/pyproject.toml ./
 COPY backend/src/ src/
 RUN uv sync --no-dev
@@ -24,15 +27,8 @@ RUN uv pip install --python .venv/bin/python https://github.com/explosion/spacy-
 COPY --from=frontend-build /app/frontend/.next/standalone /app/frontend-server
 COPY --from=frontend-build /app/frontend/.next/static /app/frontend-server/.next/static
 
-# Install Node.js for frontend server
-RUN apt-get update && apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/*
-
-# Create startup script with proper line endings
-RUN echo '#!/bin/sh' > /app/entrypoint.sh \
-    && echo 'cd /app/frontend-server && PORT=3000 node server.js &' >> /app/entrypoint.sh \
-    && echo 'cd /app && exec uv run uvicorn intel_platform.api.app:app --host 0.0.0.0 --port 8000' >> /app/entrypoint.sh \
-    && chmod +x /app/entrypoint.sh
-
 EXPOSE 8000
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+# Start both: frontend on internal port 3000, backend on 8000
+# Railway exposes 8000 via the domain
+ENTRYPOINT ["sh", "-c", "cd /app/frontend-server && HOSTNAME=0.0.0.0 PORT=3000 node server.js & cd /app && exec uv run uvicorn intel_platform.api.app:app --host 0.0.0.0 --port 8000"]
