@@ -7,6 +7,11 @@ interface GraphNode {
   name: string;
   entity_type: string;
   entity_category?: string;
+  community_id?: number;
+  pagerank?: number;
+  degree?: number;
+  members?: string[];
+  isCommunity?: boolean;
   x?: number;
   y?: number;
   fx?: number | null;
@@ -66,6 +71,7 @@ const TYPE_COLORS: Record<string, string> = {
   Report: '#475569',
   Product: '#ea580c',
   Custom: '#78716c',
+  Community: '#8b5cf6',
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -184,6 +190,10 @@ export default function GraphVisualization({
     // Scale radius: min 5, max 20, based on degree
     const maxDegree = Math.max(1, ...Object.values(degreeMap));
     function nodeRadius(d: GraphNode): number {
+      if (d.isCommunity) {
+        const memberCount = d.members?.length || 2;
+        return Math.min(40, 15 + memberCount * 1.5);
+      }
       const degree = degreeMap[d.id] || 0;
       return 5 + (degree / maxDegree) * 15;
     }
@@ -357,8 +367,9 @@ export default function GraphVisualization({
       .join('circle')
       .attr('r', d => nodeRadius(d))
       .attr('fill', d => nodeColor(d))
-      .attr('stroke', d => d.id === selectedNodeId ? '#ffffff' : 'transparent')
-      .attr('stroke-width', d => d.id === selectedNodeId ? 3 : 0)
+      .attr('stroke', d => d.id === selectedNodeId ? '#ffffff' : d.isCommunity ? '#8b5cf6' : 'transparent')
+      .attr('stroke-width', d => d.id === selectedNodeId ? 3 : d.isCommunity ? 2 : 0)
+      .attr('stroke-dasharray', d => d.isCommunity ? '4,2' : 'none')
       .attr('filter', d => d.id === selectedNodeId ? 'url(#glow)' : 'none')
       .attr('cursor', 'pointer')
       .on('click', (event, d) => {
@@ -394,6 +405,18 @@ export default function GraphVisualization({
       .attr('fill', '#e5e7eb')
       .attr('text-anchor', 'middle')
       .attr('dy', d => -(nodeRadius(d) + 4))
+      .attr('pointer-events', 'none');
+
+    // Sublabels for community nodes (member count)
+    const subLabel = g.append('g')
+      .selectAll('text')
+      .data(nodes.filter(n => n.isCommunity))
+      .join('text')
+      .text(d => `${d.members?.length || 0} members`)
+      .attr('font-size', '8px')
+      .attr('fill', '#9ca3af')
+      .attr('text-anchor', 'middle')
+      .attr('dy', d => nodeRadius(d) + 12)
       .attr('pointer-events', 'none');
 
     // Legend
@@ -496,6 +519,10 @@ export default function GraphVisualization({
         .attr('cy', d => d.y || 0);
 
       label
+        .attr('x', d => d.x || 0)
+        .attr('y', d => d.y || 0);
+
+      subLabel
         .attr('x', d => d.x || 0)
         .attr('y', d => d.y || 0);
     }
