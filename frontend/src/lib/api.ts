@@ -142,6 +142,7 @@ export const assessApi = {
 export const topicsApi = {
   tree: (projectId: string) => api.get('/topics', { params: { project_id: projectId } }),
   context: (entityId: string, projectId: string) => api.get(`/topics/${entityId}`, { params: { project_id: projectId } }),
+  summarizeUrl: (entityId: string) => `${API_BASE}/api/topics/${entityId}/summarize`,
 };
 
 export const reportsApi = {
