@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client';
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import GraphVisualization, { LayoutMode, ColorMode } from '@/components/GraphVisualization';
 import { useProject } from '@/lib/ProjectContext';
@@ -166,6 +166,7 @@ export default function NetworkPage() {
   const [relEvidenceData, setRelEvidenceData] = useState<Record<number, any[]>>({});
   const [relEvidenceLoading, setRelEvidenceLoading] = useState<Record<number, boolean>>({});
   const networkRouter = useRouter();
+  const graphNodesRef = useRef<GraphNode[]>([]);
 
   const loadGraph = useCallback(async () => {
     if (!activeProject) return;
@@ -173,7 +174,9 @@ export default function NetworkPage() {
     setGraphError(null);
     try {
       const res = await graphApi.full(activeProject.id);
-      setGraphNodes(res.data.nodes || []);
+      const nodes = res.data.nodes || [];
+      graphNodesRef.current = nodes;
+      setGraphNodes(nodes);
       setGraphEdges(res.data.edges || []);
     } catch (e) {
       console.error('Failed to load graph', e);
@@ -252,9 +255,9 @@ export default function NetworkPage() {
             }
           }
           // If keys are entity names, map them to IDs via graphNodes
-          if (Object.keys(map).length > 0 && graphNodes.length > 0) {
+          if (Object.keys(map).length > 0 && graphNodesRef.current.length > 0) {
             const nameToId: Record<string, string> = {};
-            for (const n of graphNodes) {
+            for (const n of graphNodesRef.current) {
               nameToId[n.name] = n.id;
             }
             const remapped: Record<string, number> = {};
@@ -274,7 +277,7 @@ export default function NetworkPage() {
     } catch (e) {
       console.error('Failed to load communities', e);
     }
-  }, [activeProject, graphNodes]);
+  }, [activeProject]);
 
   const loadSnapshots = useCallback(async () => {
     if (!activeProject) return;
