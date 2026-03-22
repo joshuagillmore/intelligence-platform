@@ -8,6 +8,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { useRouter } from 'next/navigation';
 import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
+import { useNotifications } from '@/components/NotificationProvider';
 
 interface Entity {
   id: string;
@@ -89,6 +90,7 @@ function intensityClass(value: number, max: number): string {
 
 export default function NetworkPage() {
   const { activeProject } = useProject();
+  const { addNotification, updateNotification } = useNotifications();
   const [entities, setEntities] = useState<Entity[]>([]);
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
@@ -207,24 +209,61 @@ export default function NetworkPage() {
     try {
       const res = await graphApi.communities(activeProject.id);
       const data = res.data;
-      // Expect array of { entity_id, community } or { nodes: [...] } or similar
       const map: Record<string, number> = {};
+
+      const extractFromItem = (item: Record<string, unknown>) => {
+        const entityId = item.entity_id || item.id || item.node_id;
+        const communityId = item.community ?? item.community_id ?? item.group;
+        if (entityId !== undefined && communityId !== undefined) {
+          map[String(entityId)] = Number(communityId);
+        }
+      };
+
       if (Array.isArray(data)) {
         for (const item of data) {
-          if (item.entity_id && item.community !== undefined) {
-            map[item.entity_id] = item.community;
-          } else if (item.id && item.community !== undefined) {
-            map[item.id] = item.community;
-          }
+          extractFromItem(item);
         }
       } else if (data && typeof data === 'object') {
-        // Could be { communities: [...] } or { nodes: [...] }
-        const arr = data.communities || data.nodes || [];
-        for (const item of arr) {
-          if (item.entity_id !== undefined && item.community !== undefined) {
-            map[item.entity_id] = item.community;
-          } else if (item.id !== undefined && item.community !== undefined) {
-            map[item.id] = item.community;
+        // Could be { communities: [...] } or { nodes: [...] } or { members: { community_id: [entity_ids] } }
+        const arr = data.communities || data.nodes || data.results || [];
+        if (Array.isArray(arr) && arr.length > 0) {
+          for (const item of arr) {
+            // Handle nested format: { id: N, members: [{ id, name }] }
+            if (item.members && Array.isArray(item.members)) {
+              const cid = item.id ?? item.community_id ?? item.community;
+              for (const member of item.members) {
+                const eid = member.entity_id || member.id || member.node_id;
+                if (eid !== undefined && cid !== undefined) {
+                  map[String(eid)] = Number(cid);
+                }
+              }
+            } else {
+              extractFromItem(item);
+            }
+          }
+        } else if (!Array.isArray(arr) || arr.length === 0) {
+          // Try dict format: { entity_id_or_name: community_number }
+          for (const [key, value] of Object.entries(data)) {
+            if (key !== 'communities' && key !== 'nodes' && key !== 'results' && typeof value === 'number') {
+              map[key] = value;
+            }
+          }
+          // If keys are entity names, map them to IDs via graphNodes
+          if (Object.keys(map).length > 0 && graphNodes.length > 0) {
+            const nameToId: Record<string, string> = {};
+            for (const n of graphNodes) {
+              nameToId[n.name] = n.id;
+            }
+            const remapped: Record<string, number> = {};
+            for (const [key, val] of Object.entries(map)) {
+              if (nameToId[key]) {
+                remapped[nameToId[key]] = val;
+              } else {
+                remapped[key] = val; // already an ID
+              }
+            }
+            setCommunityMap(remapped);
+            return;
           }
         }
       }
@@ -232,7 +271,7 @@ export default function NetworkPage() {
     } catch (e) {
       console.error('Failed to load communities', e);
     }
-  }, [activeProject]);
+  }, [activeProject, graphNodes]);
 
   const loadSnapshots = useCallback(async () => {
     if (!activeProject) return;
@@ -580,6 +619,11 @@ export default function NetworkPage() {
   async function generateAssessment() {
     if (!selectedEntity || !activeProject) return;
     setAiLoading(true);
+    const notifId = addNotification({
+      type: 'processing',
+      title: 'Generating Assessment',
+      message: `Analyzing ${selectedEntity.name}...`,
+    });
     try {
       const res = await assessApi.generate(selectedEntity.id, {
         entity_id: selectedEntity.id,
@@ -588,8 +632,18 @@ export default function NetworkPage() {
         probability: 0.5,
       });
       setAiResult(res.data.assessment || res.data.error || JSON.stringify(res.data));
+      updateNotification(notifId, {
+        type: 'success',
+        title: 'Assessment Ready',
+        message: `Assessment for ${selectedEntity.name} complete.`,
+      });
     } catch {
       setAiResult('Failed to generate assessment.');
+      updateNotification(notifId, {
+        type: 'error',
+        title: 'Assessment Failed',
+        message: `Failed to generate assessment for ${selectedEntity.name}.`,
+      });
     } finally {
       setAiLoading(false);
     }

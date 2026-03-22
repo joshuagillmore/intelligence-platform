@@ -13,6 +13,8 @@ export default function ProjectsPage() {
   const [toast, setToast] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [watchedEntities, setWatchedEntities] = useState<any[]>([]);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [batchDeleting, setBatchDeleting] = useState(false);
   const { activeProject, setActiveProject } = useProject();
   const router = useRouter();
 
@@ -80,6 +82,48 @@ export default function ProjectsPage() {
     }
   }
 
+  function toggleChecked(projectId: string) {
+    setCheckedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  }
+
+  async function batchDeleteProjects() {
+    if (checkedIds.size === 0) return;
+    if (!confirm(`Are you sure you want to delete ${checkedIds.size} selected project(s)? This action cannot be undone.`)) return;
+    setBatchDeleting(true);
+    try {
+      await projectsApi.batchDelete(Array.from(checkedIds));
+      if (activeProject && checkedIds.has(activeProject.id)) {
+        setActiveProject(null);
+      }
+      setCheckedIds(new Set());
+      loadProjects();
+      setToast(`Deleted ${checkedIds.size} project(s).`);
+    } catch {
+      // Fallback: delete one by one
+      try {
+        const ids = Array.from(checkedIds);
+        for (let i = 0; i < ids.length; i++) {
+          await projectsApi.delete(ids[i]);
+        }
+        if (activeProject && checkedIds.has(activeProject.id)) {
+          setActiveProject(null);
+        }
+        setCheckedIds(new Set());
+        loadProjects();
+        setToast(`Deleted ${checkedIds.size} project(s).`);
+      } catch {
+        setToast('Failed to delete some projects.');
+      }
+    } finally {
+      setBatchDeleting(false);
+    }
+  }
+
   function selectProject(project: Project) {
     setActiveProject(project);
     setToast(`Selected: ${project.name}`);
@@ -92,12 +136,23 @@ export default function ProjectsPage() {
       <main className="ml-56 flex-1 p-8">
         <div className="flex justify-between items-center mb-8">
           <h2 className="text-2xl font-bold">Projects</h2>
-          <button
-            onClick={() => setShowCreate(!showCreate)}
-            className="bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
-            + New Project
-          </button>
+          <div className="flex items-center gap-3">
+            {checkedIds.size > 0 && (
+              <button
+                onClick={batchDeleteProjects}
+                disabled={batchDeleting}
+                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {batchDeleting ? 'Deleting...' : `Delete Selected (${checkedIds.size})`}
+              </button>
+            )}
+            <button
+              onClick={() => setShowCreate(!showCreate)}
+              className="bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              + New Project
+            </button>
+          </div>
         </div>
 
         {showCreate && (
@@ -125,37 +180,47 @@ export default function ProjectsPage() {
             <div key={project.id} className={`bg-navy-800 border rounded-lg p-5 transition-colors ${
               activeProject?.id === project.id ? 'border-accent-blue' : 'border-navy-600 hover:border-accent-blue'
             }`}>
-              <h3 className="font-semibold text-lg mb-1">{project.name}</h3>
-              <p className="text-gray-400 text-sm mb-4">{project.description || 'No description'}</p>
-              <div className="flex gap-4 text-xs text-gray-500">
-                <span>{project.entity_count} entities</span>
-                <span>{project.relationship_count} relationships</span>
-                <span>{project.document_count} documents</span>
-              </div>
-              <div className="mt-3 flex gap-2 items-center">
-                <span className={`text-xs px-2 py-0.5 rounded ${
-                  project.priority === 'critical' ? 'bg-threat-critical/20 text-threat-critical' :
-                  project.priority === 'high' ? 'bg-threat-high/20 text-threat-high' :
-                  'bg-navy-600 text-gray-400'
-                }`}>
-                  {project.priority}
-                </span>
-                <span className="text-xs px-2 py-0.5 rounded bg-green-900/30 text-green-400">
-                  {project.status}
-                </span>
-                <button
-                  onClick={() => selectProject(project)}
-                  className="ml-auto bg-accent-blue hover:bg-blue-600 text-white px-3 py-1 rounded text-xs font-medium transition-colors"
-                >
-                  Select
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); deleteProject(project); }}
-                  className="text-gray-500 hover:text-red-400 px-2 py-1 rounded text-xs transition-colors"
-                  title="Delete project"
-                >
-                  &times;
-                </button>
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={checkedIds.has(project.id)}
+                  onChange={() => toggleChecked(project.id)}
+                  className="mt-1.5 rounded border-navy-600 bg-navy-700 text-accent-blue focus:ring-accent-blue cursor-pointer"
+                />
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-lg mb-1">{project.name}</h3>
+                  <p className="text-gray-400 text-sm mb-4">{project.description || 'No description'}</p>
+                  <div className="flex gap-4 text-xs text-gray-500">
+                    <span>{project.entity_count} entities</span>
+                    <span>{project.relationship_count} relationships</span>
+                    <span>{project.document_count} documents</span>
+                  </div>
+                  <div className="mt-3 flex gap-2 items-center">
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      project.priority === 'critical' ? 'bg-threat-critical/20 text-threat-critical' :
+                      project.priority === 'high' ? 'bg-threat-high/20 text-threat-high' :
+                      'bg-navy-600 text-gray-400'
+                    }`}>
+                      {project.priority}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded bg-green-900/30 text-green-400">
+                      {project.status}
+                    </span>
+                    <button
+                      onClick={() => selectProject(project)}
+                      className="ml-auto bg-accent-blue hover:bg-blue-600 text-white px-3 py-1 rounded text-xs font-medium transition-colors"
+                    >
+                      Select
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteProject(project); }}
+                      className="text-gray-500 hover:text-red-400 px-2 py-1 rounded text-xs transition-colors"
+                      title="Delete project"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           ))}

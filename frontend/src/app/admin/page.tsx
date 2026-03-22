@@ -18,12 +18,21 @@ interface AdminConfig {
   neo4j_uri: string;
 }
 
+interface ProxyConfig {
+  mode: string;
+  proxy_url?: string;
+  tor_port?: number;
+}
+
 export default function AdminPage() {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [config, setConfig] = useState<AdminConfig | null>(null);
+  const [proxy, setProxy] = useState<ProxyConfig>({ mode: 'direct' });
+  const [proxyLoading, setProxyLoading] = useState(false);
+  const [proxySaving, setProxySaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const loadHealth = useCallback(async () => {
@@ -55,11 +64,36 @@ export default function AdminPage() {
     }
   }, []);
 
+  const loadProxy = useCallback(async () => {
+    setProxyLoading(true);
+    try {
+      const res = await adminApi.getProxy();
+      setProxy(res.data || { mode: 'direct' });
+    } catch {
+      setProxy({ mode: 'direct' });
+    } finally {
+      setProxyLoading(false);
+    }
+  }, []);
+
+  async function saveProxy() {
+    setProxySaving(true);
+    try {
+      await adminApi.updateProxy(proxy);
+      setToast('Proxy configuration saved.');
+    } catch {
+      setToast('Failed to save proxy configuration.');
+    } finally {
+      setProxySaving(false);
+    }
+  }
+
   useEffect(() => {
     loadHealth();
     loadProjects();
     loadConfig();
-  }, [loadHealth, loadProjects, loadConfig]);
+    loadProxy();
+  }, [loadHealth, loadProjects, loadConfig, loadProxy]);
 
   useEffect(() => {
     if (toast) {
@@ -281,6 +315,62 @@ export default function AdminPage() {
                 Save (Coming Soon)
               </button>
             </div>
+          </div>
+
+          {/* Proxy Configuration */}
+          <div className="bg-navy-800 border border-navy-600 rounded-lg p-6">
+            <h3 className="text-lg font-semibold mb-4">Proxy Configuration</h3>
+            <p className="text-gray-500 text-sm mb-3">Configure network proxy for external API calls and collection tasks.</p>
+            {proxyLoading ? (
+              <p className="text-gray-500 text-sm">Loading proxy configuration...</p>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Proxy Mode</label>
+                  <select
+                    value={proxy.mode}
+                    onChange={(e) => setProxy(prev => ({ ...prev, mode: e.target.value }))}
+                    className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
+                  >
+                    <option value="direct">Direct (No Proxy)</option>
+                    <option value="proxy">HTTP/SOCKS Proxy</option>
+                    <option value="tor">Tor Network</option>
+                  </select>
+                </div>
+
+                {proxy.mode === 'proxy' && (
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Proxy URL</label>
+                    <input
+                      value={proxy.proxy_url || ''}
+                      onChange={(e) => setProxy(prev => ({ ...prev, proxy_url: e.target.value }))}
+                      placeholder="socks5://127.0.0.1:1080 or http://proxy:8080"
+                      className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
+                    />
+                  </div>
+                )}
+
+                {proxy.mode === 'tor' && (
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Tor SOCKS Port</label>
+                    <input
+                      type="number"
+                      value={proxy.tor_port || 9050}
+                      onChange={(e) => setProxy(prev => ({ ...prev, tor_port: parseInt(e.target.value) || 9050 }))}
+                      className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
+                    />
+                  </div>
+                )}
+
+                <button
+                  onClick={saveProxy}
+                  disabled={proxySaving}
+                  className="bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  {proxySaving ? 'Saving...' : 'Save Proxy Settings'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Project Management / Danger Zone */}

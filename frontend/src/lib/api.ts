@@ -29,6 +29,7 @@ export const projectsApi = {
     api.post<Project>('/projects', data),
   get: (id: string) => api.get<Project>(`/projects/${id}`),
   delete: (id: string) => api.delete(`/projects/${id}`),
+  batchDelete: (projectIds: string[]) => api.post('/projects/batch-delete', { project_ids: projectIds }),
   activity: (id: string, limit?: number) => api.get(`/projects/${id}/activity`, { params: { limit } }),
 };
 
@@ -146,6 +147,9 @@ export const exportApi = {
 
 export const adminApi = {
   config: () => api.get('/admin/config'),
+  getProxy: () => api.get('/admin/proxy'),
+  updateProxy: (data: { mode: string; proxy_url?: string; tor_port?: number }) =>
+    api.put('/admin/proxy', data),
 };
 
 export const watchlistApi = {

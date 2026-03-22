@@ -36,10 +36,25 @@ interface ThemeNode {
   neighbors: TopicEntity[];
 }
 
+interface GeoRegion {
+  name: string;
+  count: number;
+  entities: TopicEntity[];
+}
+
+interface ActorGroup {
+  name: string;
+  entity_type: string;
+  count: number;
+  entities: TopicEntity[];
+}
+
 interface TopicTree {
   by_source_document?: DocumentNode[];
   by_entity_type?: TypeGroup[];
   key_themes?: ThemeNode[];
+  geographic_regions?: GeoRegion[];
+  actors_organizations?: ActorGroup[];
 }
 
 interface ConnectedEntity {
@@ -115,10 +130,18 @@ export default function DataSourcesPage() {
 
       // The backend returns a hierarchical tree object
       if (data && typeof data === 'object' && !Array.isArray(data)) {
+        // Handle both old format and new 5-branch format
+        const sourceDocsBranch = data.by_source_document || data.documents || data['Source Documents'] || [];
+        const entityTypeBranch = data.by_entity_type || data.entity_types || data.categories || data['By Entity Type'] || [];
+        const themesBranch = data.key_themes || data.themes || data['Thematic Clusters'] || [];
+        const geoBranch = data.geographic_regions || data['Geographic Regions'] || [];
+        const actorsBranch = data.actors_organizations || data['Actors & Organizations'] || [];
         setTree({
-          by_source_document: data.by_source_document || data.documents || [],
-          by_entity_type: data.by_entity_type || data.entity_types || data.categories || [],
-          key_themes: data.key_themes || data.themes || [],
+          by_source_document: sourceDocsBranch,
+          by_entity_type: entityTypeBranch,
+          key_themes: themesBranch,
+          geographic_regions: geoBranch,
+          actors_organizations: actorsBranch,
         });
       } else if (Array.isArray(data)) {
         // Fallback: flat entity list -- group by type into by_entity_type
@@ -225,7 +248,9 @@ export default function DataSourcesPage() {
   const docs = tree.by_source_document || [];
   const types = tree.by_entity_type || [];
   const themes = tree.key_themes || [];
-  const hasData = docs.length > 0 || types.length > 0 || themes.length > 0;
+  const geoRegions = tree.geographic_regions || [];
+  const actors = tree.actors_organizations || [];
+  const hasData = docs.length > 0 || types.length > 0 || themes.length > 0 || geoRegions.length > 0 || actors.length > 0;
 
   /* ── Render ───────────────────────────────────────────────────── */
 
@@ -248,7 +273,10 @@ export default function DataSourcesPage() {
                 <button onClick={loadTopics} className="text-xs text-accent-blue hover:underline">Retry</button>
               </div>
             ) : !hasData ? (
-              <div className="p-4 text-center text-gray-500 text-sm">No topics found. Ingest documents to populate.</div>
+              <div className="p-4 text-center text-gray-500 text-sm">
+                <p className="mb-2">No topics found. Ingest documents to populate.</p>
+                <a href="/collections" className="text-accent-blue text-xs hover:underline">Go to Collections to ingest documents</a>
+              </div>
             ) : (
               <div className="py-1">
 
@@ -350,7 +378,7 @@ export default function DataSourcesPage() {
                   </div>
                 )}
 
-                {/* ── Branch: Key Themes ─────────────────────── */}
+                {/* ── Branch: Key Themes / Thematic Clusters ── */}
                 {themes.length > 0 && (
                   <div>
                     <button
@@ -358,7 +386,7 @@ export default function DataSourcesPage() {
                       className="w-full text-left px-4 py-2.5 hover:bg-navy-700 transition-colors flex items-center gap-2"
                     >
                       <span className="text-xs text-gray-500">{expandedBranches.has('themes') ? '▼' : '▶'}</span>
-                      <span className="text-sm font-semibold text-gray-200">Key Themes</span>
+                      <span className="text-sm font-semibold text-gray-200">Thematic Clusters</span>
                       <span className="ml-auto text-xs bg-navy-600 text-gray-400 px-2 py-0.5 rounded-full">{themes.length}</span>
                     </button>
                     {expandedBranches.has('themes') && themes.map(theme => (
@@ -377,7 +405,6 @@ export default function DataSourcesPage() {
                         </button>
                         {expandedNodes.has(`theme-${theme.entity.id}`) && (
                           <div>
-                            {/* The theme entity itself */}
                             <button
                               onClick={() => selectEntity(theme.entity)}
                               className={`w-full text-left pl-14 pr-4 py-1 text-xs transition-colors flex items-center gap-2 ${
@@ -392,7 +419,6 @@ export default function DataSourcesPage() {
                                 {theme.entity.entity_type}
                               </span>
                             </button>
-                            {/* Connected neighbors */}
                             {theme.neighbors?.map(nb => (
                               <button
                                 key={nb.id}
@@ -412,6 +438,104 @@ export default function DataSourcesPage() {
                             ))}
                           </div>
                         )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* ── Branch: Geographic Regions ─────────────── */}
+                {geoRegions.length > 0 && (
+                  <div>
+                    <button
+                      onClick={() => toggleBranch('geo')}
+                      className="w-full text-left px-4 py-2.5 hover:bg-navy-700 transition-colors flex items-center gap-2"
+                    >
+                      <span className="text-xs text-gray-500">{expandedBranches.has('geo') ? '▼' : '▶'}</span>
+                      <span className="text-sm font-semibold text-gray-200">Geographic Regions</span>
+                      <span className="ml-auto text-xs bg-navy-600 text-gray-400 px-2 py-0.5 rounded-full">{geoRegions.length}</span>
+                    </button>
+                    {expandedBranches.has('geo') && geoRegions.map(region => (
+                      <div key={region.name}>
+                        <button
+                          onClick={() => toggleNode(`geo-${region.name}`)}
+                          className="w-full text-left pl-8 pr-4 py-1.5 hover:bg-navy-700 transition-colors flex items-center gap-2"
+                        >
+                          <span className="text-xs text-gray-500">
+                            {expandedNodes.has(`geo-${region.name}`) ? '▼' : '▶'}
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${entityTypeColor('Location')}`}>
+                            {region.name}
+                          </span>
+                          <span className="ml-auto text-xs bg-navy-600 text-gray-400 px-2 py-0.5 rounded-full">
+                            {region.count ?? region.entities?.length ?? 0}
+                          </span>
+                        </button>
+                        {expandedNodes.has(`geo-${region.name}`) && region.entities?.map(entity => (
+                          <button
+                            key={entity.id}
+                            onClick={() => selectEntity(entity)}
+                            className={`w-full text-left pl-14 pr-4 py-1 text-xs transition-colors flex items-center gap-2 ${
+                              selectedEntity?.id === entity.id
+                                ? 'bg-accent-blue/20 text-accent-blue'
+                                : 'text-gray-400 hover:bg-navy-700 hover:text-gray-200'
+                            }`}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500/60 flex-none" />
+                            <span className="truncate">{entity.name}</span>
+                            <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border flex-none ${entityTypeColor(entity.entity_type)}`}>
+                              {entity.entity_type}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* ── Branch: Actors & Organizations ─────────── */}
+                {actors.length > 0 && (
+                  <div>
+                    <button
+                      onClick={() => toggleBranch('actors')}
+                      className="w-full text-left px-4 py-2.5 hover:bg-navy-700 transition-colors flex items-center gap-2"
+                    >
+                      <span className="text-xs text-gray-500">{expandedBranches.has('actors') ? '▼' : '▶'}</span>
+                      <span className="text-sm font-semibold text-gray-200">Actors &amp; Organizations</span>
+                      <span className="ml-auto text-xs bg-navy-600 text-gray-400 px-2 py-0.5 rounded-full">{actors.length}</span>
+                    </button>
+                    {expandedBranches.has('actors') && actors.map(group => (
+                      <div key={group.name}>
+                        <button
+                          onClick={() => toggleNode(`actor-${group.name}`)}
+                          className="w-full text-left pl-8 pr-4 py-1.5 hover:bg-navy-700 transition-colors flex items-center gap-2"
+                        >
+                          <span className="text-xs text-gray-500">
+                            {expandedNodes.has(`actor-${group.name}`) ? '▼' : '▶'}
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${entityTypeColor(group.entity_type || 'Organization')}`}>
+                            {group.name}
+                          </span>
+                          <span className="ml-auto text-xs bg-navy-600 text-gray-400 px-2 py-0.5 rounded-full">
+                            {group.count ?? group.entities?.length ?? 0}
+                          </span>
+                        </button>
+                        {expandedNodes.has(`actor-${group.name}`) && group.entities?.map(entity => (
+                          <button
+                            key={entity.id}
+                            onClick={() => selectEntity(entity)}
+                            className={`w-full text-left pl-14 pr-4 py-1 text-xs transition-colors flex items-center gap-2 ${
+                              selectedEntity?.id === entity.id
+                                ? 'bg-accent-blue/20 text-accent-blue'
+                                : 'text-gray-400 hover:bg-navy-700 hover:text-gray-200'
+                            }`}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-orange-500/60 flex-none" />
+                            <span className="truncate">{entity.name}</span>
+                            <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded border flex-none ${entityTypeColor(entity.entity_type)}`}>
+                              {entity.entity_type}
+                            </span>
+                          </button>
+                        ))}
                       </div>
                     ))}
                   </div>
