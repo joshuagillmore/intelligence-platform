@@ -48,6 +48,7 @@ export interface Project {
   entity_count: number;
   relationship_count: number;
   document_count: number;
+  collection_count?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -115,11 +116,17 @@ export const ingestApi = {
 };
 
 export const collectionsApi = {
-  create: (data: { project_id: string; pir: string; plan?: unknown[] }) => api.post('/collections', data),
-  list: () => api.get('/collections'),
+  create: (data: { project_id: string; pir: string; refined_pir?: string; refinement?: string; plan?: object[] }) =>
+    api.post('/collections', data),
+  list: (projectId?: string) => api.get('/collections', { params: projectId ? { project_id: projectId } : {} }),
+  get: (id: string) => api.get(`/collections/${id}`),
+  update: (id: string, data: { refined_pir?: string; refinement?: string; plan?: object[]; status?: string }) =>
+    api.put(`/collections/${id}`, data),
   status: (id: string) => api.get(`/collections/${id}/status`),
-  parsePlan: (planText: string) => api.post('/collections/parse-plan', { plan_text: planText }),
+  cancel: (id: string) => api.post(`/collections/${id}/cancel`),
   approve: (id: string) => api.post(`/collections/${id}/approve`),
+  parsePlan: (planText: string) => api.post('/collections/parse-plan', { plan_text: planText }),
+  count: (projectId: string) => api.get(`/collections/count/${projectId}`),
 };
 
 export const assessApi = {

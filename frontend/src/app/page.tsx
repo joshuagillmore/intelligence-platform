@@ -309,6 +309,7 @@ export default function ProjectsPage() {
                       <span>{project.entity_count} entities</span>
                       <span>{project.relationship_count} relationships</span>
                       <span>{project.document_count} documents</span>
+                      {(project.collection_count ?? 0) > 0 && <span>{project.collection_count} collections</span>}
                     </div>
                     <div className="flex gap-4 text-[10px] text-gray-600 mb-3">
                       <span>Created: {formatDate(project.created_at)}</span>
@@ -397,6 +398,9 @@ export default function ProjectsPage() {
                     <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
                       Docs
                     </th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                      Colls
+                    </th>
                     <th
                       className="px-3 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-200"
                       onClick={() => handleColumnSort('created')}
@@ -450,6 +454,7 @@ export default function ProjectsPage() {
                       <td className="px-3 py-2 text-right text-xs text-gray-400">{project.entity_count}</td>
                       <td className="px-3 py-2 text-right text-xs text-gray-400">{project.relationship_count}</td>
                       <td className="px-3 py-2 text-right text-xs text-gray-400">{project.document_count}</td>
+                      <td className="px-3 py-2 text-right text-xs text-gray-400">{project.collection_count ?? 0}</td>
                       <td className="px-3 py-2 text-[10px] text-gray-500 whitespace-nowrap">{formatDate(project.created_at)}</td>
                       <td className="px-3 py-2 text-[10px] text-gray-500 whitespace-nowrap">{formatDate(project.updated_at)}</td>
                       <td className="px-3 py-2 text-right">
