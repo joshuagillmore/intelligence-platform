@@ -5,15 +5,24 @@ import networkx as nx
 from intel_platform.graph.store import GraphStore
 
 
+def build_networkx_from_data(data: dict) -> nx.Graph:
+    """Build NetworkX graph from already-fetched graph data."""
+    G = nx.Graph()
+    for node in data.get("nodes", []):
+        nid = node.get("id", "")
+        if nid:
+            G.add_node(nid, **{k: v for k, v in node.items() if k != "id" and not isinstance(v, (dict, list))})
+    for edge in data.get("edges", []):
+        sid = edge.get("source_id", "")
+        tid = edge.get("target_id", "")
+        if sid and tid:
+            G.add_edge(sid, tid, **{k: v for k, v in edge.items() if k not in ("source_id", "target_id") and not isinstance(v, (dict, list))})
+    return G
+
+
 def _build_networkx_graph(store: GraphStore, project_id: str) -> nx.Graph:
     data = store.get_full_graph(project_id=project_id, limit=10000)
-    G = nx.Graph()
-    for node in data["nodes"]:
-        G.add_node(node["id"], **{k: v for k, v in node.items() if k != "id"})
-    for edge in data["edges"]:
-        G.add_edge(edge["source_id"], edge["target_id"],
-                   **{k: v for k, v in edge.items() if k not in ("source_id", "target_id")})
-    return G
+    return build_networkx_from_data(data)
 
 
 def compute_degree_centrality(store: GraphStore, project_id: str) -> list[dict]:

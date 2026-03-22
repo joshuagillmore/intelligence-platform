@@ -1,7 +1,8 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
-import 'leaflet/dist/leaflet.css';
+// DO NOT import leaflet CSS at top level - it crashes SSR
+// import 'leaflet/dist/leaflet.css';
 
 interface GeoLocation {
   id: string;
@@ -12,13 +13,17 @@ interface GeoLocation {
   lng?: number | null;
   geocoded?: boolean;
   connections?: number;
+  connection_count?: number;
   properties?: Record<string, unknown>;
+  relationships?: Array<{target_name: string; rel_type: string}>;
 }
 
 interface ConnectionLine {
   from: [number, number];
   to: [number, number];
   names: string;
+  weight?: number;
+  shared_entities?: string[];
 }
 
 interface GeoMapProps {
@@ -36,97 +41,161 @@ function getLng(loc: GeoLocation): number | null {
   return (loc.longitude ?? loc.lng ?? (loc.properties?.longitude as number | undefined)) || null;
 }
 
-function GeoMapInner({ locations, connectionLines = [], onLocationClick, selectedLocationId }: GeoMapProps) {
-  const [L, setL] = useState<typeof import('leaflet') | null>(null);
-  const [MapComponents, setMapComponents] = useState<typeof import('react-leaflet') | null>(null);
+export default function GeoMap({ locations, connectionLines = [], onLocationClick, selectedLocationId }: GeoMapProps) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const [error, setError] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const leafletMapRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const leafletRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const markersRef = useRef<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const linesRef = useRef<any[]>([]);
 
   useEffect(() => {
+    if (!mapRef.current || leafletMapRef.current) return;
+
+    // Dynamically import Leaflet and its CSS to avoid SSR crashes
+    // @ts-expect-error - CSS import has no type declaration
+    const cssImport = import('leaflet/dist/leaflet.css');
     Promise.all([
       import('leaflet'),
-      import('react-leaflet'),
-    ]).then(([leaflet, reactLeaflet]) => {
-      // Fix default marker icons
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (leaflet.default.Icon.Default.prototype as any)._getIconUrl;
-      leaflet.default.Icon.Default.mergeOptions({
-        iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-        iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-      });
-      setL(leaflet);
-      setMapComponents(reactLeaflet);
+      cssImport,
+    ]).then(([L]) => {
+      try {
+        if (!mapRef.current) return;
+
+        // Fix default marker icons
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (L.default.Icon.Default.prototype as any)._getIconUrl;
+        L.default.Icon.Default.mergeOptions({
+          iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+          iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+        });
+
+        const map = L.default.map(mapRef.current).setView([20, 40], 3);
+
+        L.default.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        }).addTo(map);
+
+        leafletMapRef.current = map;
+        leafletRef.current = L.default;
+        setMapReady(true);
+      } catch {
+        setError(true);
+      }
+    }).catch(() => {
+      setError(true);
     });
+
+    return () => {
+      if (leafletMapRef.current) {
+        leafletMapRef.current.remove();
+        leafletMapRef.current = null;
+      }
+    };
   }, []);
 
-  if (!L || !MapComponents) {
-    return <div className="w-full h-full bg-navy-800 flex items-center justify-center text-gray-500">Loading map...</div>;
+  // Update markers when locations change
+  useEffect(() => {
+    if (!leafletMapRef.current || !mapReady || !leafletRef.current) return;
+
+    const map = leafletMapRef.current;
+    const L = leafletRef.current;
+
+    // Clear existing markers
+    markersRef.current.forEach(m => map.removeLayer(m));
+    markersRef.current = [];
+
+    // Clear existing lines
+    linesRef.current.forEach(l => map.removeLayer(l));
+    linesRef.current = [];
+
+    // Add connection lines between locations (edges based on shared entities)
+    const maxWeight = Math.max(1, ...connectionLines.map(l => l.weight || 1));
+    connectionLines.forEach(line => {
+      const w = line.weight || 1;
+      const lineWidth = Math.max(1, Math.min(6, (w / maxWeight) * 6));
+      const opacity = Math.max(0.3, Math.min(0.8, 0.3 + (w / maxWeight) * 0.5));
+      const polyline = L.polyline([line.from, line.to], {
+        color: '#3b82f6',
+        weight: lineWidth,
+        opacity,
+      }).addTo(map);
+      // Tooltip showing shared entities
+      const sharedText = line.shared_entities?.length
+        ? `<br><br>Shared entities:<br>${line.shared_entities.map((e: string) => `• ${e}`).join('<br>')}`
+        : '';
+      polyline.bindPopup(
+        `<div style="font-size:12px"><b>${line.names}</b><br>Shared entities: ${w}${sharedText}</div>`
+      );
+      linesRef.current.push(polyline);
+    });
+
+    // Add markers for geocoded locations
+    const geocoded = locations.filter(loc => getLat(loc) != null && getLng(loc) != null);
+
+    geocoded.forEach(loc => {
+      const lat = getLat(loc)!;
+      const lng = getLng(loc)!;
+      const connCount = loc.connections || loc.connection_count || 0;
+      const radius = Math.max(6, Math.min(16, (connCount || 1) * 2));
+      const isSelected = selectedLocationId === loc.id;
+
+      const marker = L.circleMarker([lat, lng], {
+        radius,
+        fillColor: isSelected ? '#f97316' : '#3b82f6',
+        fillOpacity: 0.8,
+        color: isSelected ? '#f97316' : '#60a5fa',
+        weight: 2,
+      }).addTo(map);
+
+      marker.bindPopup(`<div style="font-size:12px"><b>${loc.name}</b><br>Connections: ${connCount}<br>Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}</div>`);
+
+      if (onLocationClick) {
+        marker.on('click', () => onLocationClick(loc));
+      }
+
+      markersRef.current.push(marker);
+    });
+  }, [locations, connectionLines, mapReady, selectedLocationId, onLocationClick]);
+
+  if (error) {
+    // Fallback: show location table
+    const geocoded = locations.filter(loc => getLat(loc) != null && getLng(loc) != null);
+    return (
+      <div className="w-full h-full bg-navy-800 p-4 overflow-y-auto">
+        <p className="text-sm text-gray-400 mb-3">Map unavailable. Showing location data:</p>
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-gray-500 border-b border-navy-600">
+              <th className="text-left py-1">Location</th>
+              <th className="text-right py-1">Lat</th>
+              <th className="text-right py-1">Lng</th>
+              <th className="text-right py-1">Connections</th>
+            </tr>
+          </thead>
+          <tbody>
+            {geocoded.map(loc => (
+              <tr key={loc.id} className="border-b border-navy-700 cursor-pointer hover:bg-navy-700"
+                  onClick={() => onLocationClick?.(loc)}>
+                <td className="py-1 text-gray-200">{loc.name}</td>
+                <td className="text-right text-gray-400">{getLat(loc)?.toFixed(2)}</td>
+                <td className="text-right text-gray-400">{getLng(loc)?.toFixed(2)}</td>
+                <td className="text-right text-gray-400">{loc.connections || loc.connection_count || 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
   }
 
-  const { MapContainer, TileLayer, CircleMarker, Popup, Polyline } = MapComponents;
-
-  const geocodedLocations = locations.filter(loc => {
-    const lat = getLat(loc);
-    const lng = getLng(loc);
-    return lat != null && lng != null;
-  });
-
   return (
-    <MapContainer
-      center={[20, 60] as [number, number]}
-      zoom={3}
-      style={{ width: '100%', height: '100%', borderRadius: '0.5rem' }}
-      className="z-0"
-    >
-      <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-      />
-      {connectionLines.map((line, i) => (
-        <Polyline
-          key={`line-${i}`}
-          positions={[line.from, line.to]}
-          color="#3b82f6"
-          weight={1}
-          opacity={0.4}
-          dashArray="5,5"
-        />
-      ))}
-      {geocodedLocations.map((loc) => {
-        const lat = getLat(loc)!;
-        const lng = getLng(loc)!;
-        const connCount = loc.connections || 0;
-        return (
-          <CircleMarker
-            key={loc.id}
-            center={[lat, lng] as [number, number]}
-            radius={Math.max(6, Math.min(16, (connCount || 1) * 2))}
-            fillColor={selectedLocationId === loc.id ? '#f97316' : '#3b82f6'}
-            fillOpacity={0.8}
-            color={selectedLocationId === loc.id ? '#f97316' : '#60a5fa'}
-            weight={2}
-            eventHandlers={{
-              click: () => onLocationClick?.(loc),
-            }}
-          >
-            <Popup>
-              <div className="text-sm">
-                <strong>{loc.name}</strong>
-                <br />
-                Connections: {connCount}
-                <br />
-                Lat: {lat.toFixed(4)}, Lng: {lng.toFixed(4)}
-              </div>
-            </Popup>
-          </CircleMarker>
-        );
-      })}
-    </MapContainer>
+    <div ref={mapRef} className="w-full h-full" style={{ minHeight: '400px', zIndex: 0, borderRadius: '0.5rem' }} />
   );
-}
-
-export default function GeoMap(props: GeoMapProps) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  if (!mounted) return <div className="w-full h-full bg-navy-800 flex items-center justify-center text-gray-500">Loading map...</div>;
-  return <GeoMapInner {...props} />;
 }

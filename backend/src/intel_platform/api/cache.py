@@ -1,8 +1,9 @@
 from __future__ import annotations
 import time
 from functools import wraps
+from typing import Any
 
-_cache: dict[str, tuple[float, any]] = {}
+_cache: dict[str, tuple[float, Any]] = {}
 DEFAULT_TTL = 30  # seconds
 
 

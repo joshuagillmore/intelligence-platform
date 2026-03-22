@@ -148,13 +148,26 @@ class GraphStore:
                 "node_count": len(record["nodes"]), "edge_count": len(record["edges"]),
             }
 
+    @staticmethod
+    def _strip_heavy_props(props: dict) -> dict:
+        """Remove large fields from node properties for graph visualization."""
+        stripped = {}
+        for k, v in props.items():
+            if k == "content":
+                continue  # Skip full document content
+            if isinstance(v, str) and len(v) > 200:
+                stripped[k] = v[:200] + "..."
+            else:
+                stripped[k] = v
+        return stripped
+
     def get_full_graph(self, project_id: str, limit: int = 500) -> dict:
         with self._driver.session() as session:
             nodes_result = session.run(
                 "MATCH (n) WHERE n.project_id = $project_id RETURN properties(n) as props LIMIT $limit",
                 project_id=project_id, limit=limit,
             )
-            nodes = [record["props"] for record in nodes_result]
+            nodes = [self._strip_heavy_props(record["props"]) for record in nodes_result]
             edges_result = session.run(
                 """
                 MATCH (a)-[r]->(b)
@@ -231,10 +244,15 @@ class GraphStore:
             record = result.single()
             return dict(record["p"]) if record else None
 
+    ALLOWED_PROJECT_FIELDS = {"name", "description", "classification_level", "priority", "status"}
+
     def update_project(self, project_id: str, **kwargs) -> None:
-        set_clauses = ", ".join(f"p.{k} = ${k}" for k in kwargs)
+        safe_kwargs = {k: v for k, v in kwargs.items() if k in self.ALLOWED_PROJECT_FIELDS}
+        if not safe_kwargs:
+            return
+        set_clauses = ", ".join(f"p.{k} = ${k}" for k in safe_kwargs)
         with self._driver.session() as session:
-            session.run(f"MATCH (p:Project {{id: $id}}) SET {set_clauses}", id=project_id, **kwargs)
+            session.run(f"MATCH (p:Project {{id: $id}}) SET {set_clauses}", id=project_id, **safe_kwargs)
 
     def get_project_stats(self, project_id: str) -> dict:
         with self._driver.session() as session:

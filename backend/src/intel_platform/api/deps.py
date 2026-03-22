@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from typing import Optional
-
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends
 from neo4j import Driver, GraphDatabase
 
 from intel_platform.config import settings
 from intel_platform.graph.store import GraphStore
+from intel_platform.api.auth import get_current_user
 
 _driver: Driver | None = None
 
@@ -25,9 +24,5 @@ def get_graph_store(driver: Driver = Depends(get_neo4j_driver)) -> GraphStore:
     return GraphStore(driver)
 
 
-def verify_api_key(authorization: Optional[str] = Header(None)) -> str:
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
-    if authorization != f"Bearer {settings.api_key}":
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return authorization
+# Keep verify_api_key as alias for backwards compatibility
+verify_api_key = get_current_user
