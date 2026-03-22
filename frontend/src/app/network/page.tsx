@@ -564,6 +564,7 @@ function NetworkPageInner() {
 
   async function selectEntity(entity: Entity) {
     setSelectedEntity(entity);
+    setMobileRightOpen(true);
     setAiResult(null);
     setTypeDropdownOpen(false);
     setEvidenceDocs([]);
@@ -926,8 +927,18 @@ function NetworkPageInner() {
       <div className="md:ml-56 flex-1 flex flex-col overflow-hidden pt-14 md:pt-0" style={{ height: 'calc(100vh - 28px)' }}>
         {/* Top bar */}
         <div className="flex-none px-4 py-2 border-b border-navy-600 bg-navy-800 flex items-center justify-between">
-          <h2 className="text-lg font-bold">Network Analysis</h2>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setMobileLeftOpen(true)} className="md:hidden text-gray-400 hover:text-white p-1">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" /></svg>
+            </button>
+            <h2 className="text-lg font-bold">Network Analysis</h2>
+          </div>
           <div className="flex items-center gap-4">
+            {selectedEntity && (
+              <button onClick={() => setMobileRightOpen(true)} className="md:hidden text-gray-400 hover:text-accent-blue p-1" title="Show details">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
+              </button>
+            )}
             {selectedEntities.length > 0 && (
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-gray-400">Path:</span>
@@ -1763,7 +1774,11 @@ function NetworkPageInner() {
           )}
 
           {/* Right sidebar - Detail panel */}
-          <div className="w-80 flex-none bg-navy-800 border-l border-navy-600 overflow-y-auto">
+          <div className={`${mobileRightOpen ? 'fixed inset-x-0 bottom-0 z-40 h-2/3 rounded-t-xl border-t' : 'hidden'} md:relative md:block md:w-80 md:h-auto md:rounded-none flex-none bg-navy-800 border-l border-navy-600 overflow-y-auto`}>
+            {/* Mobile close button */}
+            <button onClick={() => setMobileRightOpen(false)} className="md:hidden absolute top-2 right-2 z-50 text-gray-400 hover:text-white p-1">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+            </button>
             {selectedEntity ? (
               <div className="p-4 space-y-4">
                 <div>
