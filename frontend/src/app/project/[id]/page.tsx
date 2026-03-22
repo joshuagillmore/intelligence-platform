@@ -59,7 +59,7 @@ export default function ProjectDashboard() {
     return (
       <div className="flex">
         <Sidebar />
-        <main className="ml-56 flex-1 p-8" style={{ backgroundColor: colors.surface, minHeight: '100vh' }}>
+        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8" style={{ backgroundColor: colors.surface, minHeight: '100vh' }}>
           <div className="text-gray-500">Loading project...</div>
         </main>
       </div>
@@ -70,7 +70,7 @@ export default function ProjectDashboard() {
     return (
       <div className="flex">
         <Sidebar />
-        <main className="ml-56 flex-1 p-8" style={{ backgroundColor: colors.surface, minHeight: '100vh' }}>
+        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8" style={{ backgroundColor: colors.surface, minHeight: '100vh' }}>
           <div style={{ color: colors.tertiary }}>Project not found</div>
         </main>
       </div>
@@ -160,9 +160,9 @@ export default function ProjectDashboard() {
   return (
     <div className="flex">
       <Sidebar />
-      <main className="ml-56 flex-1 p-6" style={{ backgroundColor: colors.surface, minHeight: '100vh' }}>
+      <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8" style={{ backgroundColor: colors.surface, minHeight: '100vh' }}>
         {/* Header */}
-        <div className="flex justify-between items-start mb-8">
+        <div className="flex flex-col md:flex-row justify-between items-start mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-bold text-white tracking-tight">Project Overview</h1>
             <p className="text-sm mt-2" style={{ color: '#8b95a8' }}>
@@ -218,7 +218,7 @@ export default function ProjectDashboard() {
         </div>
 
         {/* Stat Cards */}
-        <div className="grid grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           {statCards.map(s => (
             <div
               key={s.label}
@@ -253,7 +253,7 @@ export default function ProjectDashboard() {
         </div>
 
         {/* Three-column bento grid */}
-        <div className="grid gap-4" style={{ gridTemplateColumns: '25% 1fr 25%' }}>
+        <div className="grid grid-cols-1 md:grid-cols-[25%_1fr_25%] gap-4">
           {/* Left Column: Recent Activity */}
           <div
             className="rounded-lg p-4"
@@ -539,7 +539,7 @@ export default function ProjectDashboard() {
 
         {/* Footer meta */}
         <div
-          className="mt-8 rounded-lg px-5 py-3 flex items-center justify-between text-[10px]"
+          className="mt-8 rounded-lg px-5 py-3 flex flex-col md:flex-row items-start md:items-center justify-between gap-2 md:gap-0 text-[10px]"
           style={{ backgroundColor: colors.containerLow, color: '#4b5563' }}
         >
           <div className="flex items-center gap-2">
