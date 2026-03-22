@@ -1,0 +1,108 @@
+# Entity type hierarchy — maps parent categories to specific child types.
+# Add new entity types here without code changes; call reload_taxonomy() at runtime.
+
+Person:
+  - Person
+  - Analyst
+  - Operative
+  - Diplomat
+  - Commander
+  - Politician
+  - Scientist
+  - Executive
+  - Agent
+  - Informant
+
+Organization:
+  - Organization
+  - Company
+  - GovernmentAgency
+  - MilitaryUnit
+  - IntelligenceService
+  - NGO
+  - PoliticalParty
+  - Bank
+  - CriminalGroup
+  - TerroristGroup
+  - MediaOutlet
+  - University
+  - ResearchInstitute
+  - Corporation
+  - Consortium
+
+Location:
+  - Location
+  - Country
+  - City
+  - Region
+  - Facility
+  - Base
+  - Port
+  - Island
+  - Reef
+  - Airbase
+  - Embassy
+  - Border
+  - Province
+  - District
+  - Territory
+
+Cyber:
+  - IPAddress
+  - Domain
+  - Hash
+  - Vulnerability
+  - TTP
+  - Malware
+  - Software
+  - Exploit
+  - Backdoor
+  - Botnet
+  - C2Server
+  - Ransomware
+  - Trojan
+
+Equipment:
+  - Weapon
+  - Vehicle
+  - Hardware
+  - Technology
+  - Satellite
+  - Aircraft
+  - Ship
+  - Drone
+  - Missile
+  - Radar
+  - Submarine
+  - Tank
+  - Artillery
+
+Event:
+  - Event
+  - Attack
+  - Meeting
+  - Treaty
+  - Election
+  - Exercise
+  - Summit
+  - Conference
+  - Incident
+  - Operation
+
+Financial:
+  - Financial
+  - CryptocurrencyExchange
+  - Transaction
+  - Sanction
+  - Contract
+  - Fund
+
+Intelligence:
+  - Document
+  - Report
+  - Assessment
+  - Briefing
+
+Campaign:
+  - Campaign
+  - ThreatActor
