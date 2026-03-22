@@ -888,9 +888,9 @@ export default function NetworkPage() {
   const sortArrow = (key: SortKey) => sortKey === key ? (sortAsc ? ' ▲' : ' ▼') : '';
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex overflow-hidden" style={{ height: 'calc(100vh - 28px)' }}>
       <Sidebar />
-      <div className="ml-56 flex-1 flex flex-col h-screen overflow-hidden">
+      <div className="ml-56 flex-1 flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 28px)' }}>
         {/* Top bar */}
         <div className="flex-none px-4 py-2 border-b border-navy-600 bg-navy-800 flex items-center justify-between">
           <h2 className="text-lg font-bold">Network Analysis</h2>
