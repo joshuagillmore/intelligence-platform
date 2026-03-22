@@ -84,6 +84,7 @@ def resolve_entity_name(
 
 def build_graph_from_extractions(
     store: GraphStore, entities: list[dict], relationships: list[dict], project_id: str,
+    source_doc_id: str = "",
 ) -> dict:
     created = 0
     merged = 0
@@ -112,8 +113,11 @@ def build_graph_from_extractions(
 
         # Try to find a Pydantic class for the specific type, then parent category
         cls = ENTITY_TYPE_MAP.get(specific_type) or ENTITY_TYPE_MAP.get(parent_category)
+        # Determine source doc ID from extraction data or caller
+        entity_doc_id = ent_data.get("source", "") or source_doc_id
+
         if cls:
-            entity = cls(name=name, project_id=project_id)
+            entity = cls(name=name, project_id=project_id, source_doc_id=entity_doc_id)
         else:
             # Generic entity for unknown types
             from intel_platform.models.entities import Entity, EntityType
@@ -121,7 +125,7 @@ def build_graph_from_extractions(
                 et = EntityType(specific_type)
             except ValueError:
                 et = EntityType.CUSTOM
-            entity = Entity(name=name, entity_type=et, project_id=project_id)
+            entity = Entity(name=name, entity_type=et, project_id=project_id, source_doc_id=entity_doc_id)
 
         store.create_entity(entity)
         name_to_id[name] = entity.id

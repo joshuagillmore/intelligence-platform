@@ -57,6 +57,7 @@ class GraphRAGPipeline:
         all_edges = []
         seen_node_ids = set()
         node_name_map: dict[str, str] = {}  # id -> name
+        source_doc_ids: set[str] = set()  # Track source document IDs from entities
 
         for entity in understanding.get("target_entities", []):
             entity_id = entity.get("id", "")
@@ -66,6 +67,10 @@ class GraphRAGPipeline:
                     seen_node_ids.add(entity_id)
                     all_nodes.append(full_entity)
                     node_name_map[entity_id] = full_entity.get("name", entity_id)
+                    # Track source document ID from the entity's 'source_doc_id' property
+                    src = full_entity.get("source_doc_id", "") or full_entity.get("source", "")
+                    if src:
+                        source_doc_ids.add(src)
 
             subgraph = self._store.get_subgraph(entity_id, hops=max_hops)
             for node in subgraph.get("nodes", []):
@@ -74,6 +79,9 @@ class GraphRAGPipeline:
                     seen_node_ids.add(node_id)
                     all_nodes.append(node)
                     node_name_map[node_id] = node.get("name", node_id)
+                    src = node.get("source_doc_id", "") or node.get("source", "")
+                    if src:
+                        source_doc_ids.add(src)
             all_edges.extend(subgraph.get("edges", []))
 
         # Resolve edge names
@@ -82,12 +90,38 @@ class GraphRAGPipeline:
             edge["target_name"] = node_name_map.get(edge.get("target_id", ""), edge.get("target_id", "?"))
 
         # Retrieve source document text for evidence
+        # Strategy 1: Documents found in subgraph
         doc_texts: dict[str, str] = {}
         for node in all_nodes:
             if node.get("entity_type") == "Document":
                 content = node.get("content", "")
                 if content:
-                    doc_texts[node.get("name", "")] = content[:2000]  # Cap per doc
+                    doc_texts[node.get("name", "")] = content
+
+        # Strategy 2: Fetch documents by source ID from entity properties
+        # Entities store their source document ID in the 'source' field
+        for doc_id in source_doc_ids:
+            if doc_id in seen_node_ids:
+                continue  # Already have it
+            doc_node = self._store.get_entity(doc_id)
+            if doc_node and doc_node.get("entity_type") == "Document":
+                content = doc_node.get("content", "")
+                if content:
+                    doc_name = doc_node.get("name", doc_id)
+                    if doc_name not in doc_texts:
+                        doc_texts[doc_name] = content
+
+        # Strategy 3: If still no documents, search for all project documents
+        if not doc_texts:
+            project_docs = self._store.search_entities(
+                project_id=project_id, entity_type="Document", limit=10,
+            )
+            for doc_meta in project_docs:
+                doc_full = self._store.get_entity(doc_meta.get("id", ""))
+                if doc_full:
+                    content = doc_full.get("content", "")
+                    if content:
+                        doc_texts[doc_full.get("name", "")] = content
 
         return {
             "nodes": all_nodes,
@@ -146,22 +180,84 @@ class GraphRAGPipeline:
                 conf_str = f" (confidence: {conf})" if conf else ""
                 lines.append(f"- {src} --[{rel}]--> {tgt}{conf_str}")
 
-        # Source document excerpts for evidence
+        # Source document excerpts for evidence — extract relevant passages
         doc_texts = retrieved.get("doc_texts", {})
         if doc_texts:
+            # Build search terms from entity names and query words
+            entity_names = set()
+            for node in retrieved.get("nodes", []):
+                name = node.get("name", "")
+                if name and node.get("entity_type") != "Document":
+                    entity_names.add(name.lower())
+            query_words = set()
+            for name in entity_names:
+                for word in name.split():
+                    if len(word) >= 3:
+                        query_words.add(word.lower())
+
             lines.append(f"\n### Source Document Evidence ({len(doc_texts)} documents)")
             for doc_name, text in list(doc_texts.items())[:5]:
                 lines.append(f"\n**{doc_name}:**")
-                # Include relevant excerpt (first 1000 chars)
-                excerpt = text[:1000].strip()
-                if len(text) > 1000:
-                    excerpt += "..."
-                lines.append(f"```\n{excerpt}\n```")
+
+                # Extract relevant passages: sentences containing entity names
+                passages = self._extract_relevant_passages(text, entity_names, query_words, max_chars=3000)
+                if passages:
+                    lines.append(f"```\n{passages}\n```")
+                else:
+                    # Fallback: first portion of document
+                    excerpt = text[:1500].strip()
+                    if len(text) > 1500:
+                        excerpt += "..."
+                    lines.append(f"```\n{excerpt}\n```")
 
         context = "\n".join(lines)
         if len(context) > token_budget * 4:
             context = context[:token_budget * 4] + "\n\n[Context truncated due to token budget]"
         return context
+
+    @staticmethod
+    def _extract_relevant_passages(
+        text: str, entity_names: set[str], query_words: set[str], max_chars: int = 3000,
+    ) -> str:
+        """Extract sentences/paragraphs from document text that mention relevant entities."""
+        import re
+        # Split into sentences (rough split on period/newline boundaries)
+        sentences = re.split(r'(?<=[.!?])\s+|\n{2,}', text)
+
+        scored: list[tuple[float, str]] = []
+        for sent in sentences:
+            sent = sent.strip()
+            if len(sent) < 20:
+                continue
+            sent_lower = sent.lower()
+            score = 0.0
+            # Score by full entity name matches (highest value)
+            for name in entity_names:
+                if name in sent_lower:
+                    score += 3.0
+            # Score by individual word matches
+            for word in query_words:
+                if word in sent_lower:
+                    score += 0.5
+            if score > 0:
+                scored.append((score, sent))
+
+        # Sort by relevance score descending
+        scored.sort(key=lambda x: -x[0])
+
+        # Collect top passages within budget
+        result_parts = []
+        total = 0
+        for _score, sent in scored:
+            if total + len(sent) > max_chars:
+                break
+            result_parts.append(sent)
+            total += len(sent) + 2  # account for newlines
+
+        if not result_parts:
+            return ""
+
+        return "\n\n".join(result_parts)
 
     async def query(self, query: str, project_id: str, max_hops: int = 2, token_budget: int = 8000) -> dict:
         """Full RAG pipeline: understand → retrieve → assemble → generate with LLM."""
