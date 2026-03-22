@@ -330,6 +330,7 @@ PIR: ${pir.trim()}` }],
       const relCount = d?.relationships_created ?? 0;
       setUploadContent('');
       setUploadMsg(`Document ingested successfully. ${entityCount} entities created, ${relCount} relationships found.`);
+      loadCollections();
     } catch (e) {
       setUploadMsg(getErrorMessage(e));
     } finally {
@@ -374,6 +375,7 @@ PIR: ${pir.trim()}` }],
       }
       setSelectedFiles([]);
       if (fileInputRef.current) fileInputRef.current.value = '';
+      loadCollections();
     } catch (e) {
       setFileUploadMsg(getErrorMessage(e));
     } finally {
