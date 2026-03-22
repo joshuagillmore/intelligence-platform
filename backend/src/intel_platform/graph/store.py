@@ -220,10 +220,11 @@ class GraphStore:
     def create_project(self, name: str, description: str, classification_level: str, priority: str) -> dict:
         import uuid
         from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
         props = {
             "id": str(uuid.uuid4()), "name": name, "description": description,
             "classification_level": classification_level, "priority": priority,
-            "status": "active", "created_at": datetime.now(timezone.utc).isoformat(),
+            "status": "active", "created_at": now, "updated_at": now,
             "entity_type": "Project", "project_id": "",
         }
         with self._driver.session() as session:
@@ -247,12 +248,32 @@ class GraphStore:
     ALLOWED_PROJECT_FIELDS = {"name", "description", "classification_level", "priority", "status"}
 
     def update_project(self, project_id: str, **kwargs) -> None:
+        from datetime import datetime, timezone
         safe_kwargs = {k: v for k, v in kwargs.items() if k in self.ALLOWED_PROJECT_FIELDS}
         if not safe_kwargs:
             return
+        safe_kwargs["updated_at"] = datetime.now(timezone.utc).isoformat()
         set_clauses = ", ".join(f"p.{k} = ${k}" for k in safe_kwargs)
         with self._driver.session() as session:
             session.run(f"MATCH (p:Project {{id: $id}}) SET {set_clauses}", id=project_id, **safe_kwargs)
+
+    def get_latest_entity_time(self, project_id: str) -> str | None:
+        """Get the latest entity created_at time in a project."""
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (n {project_id: $pid}) WHERE NOT n:Project AND n.created_at IS NOT NULL
+                RETURN n.created_at as created_at ORDER BY n.created_at DESC LIMIT 1
+                """,
+                pid=project_id,
+            )
+            record = result.single()
+            if not record or not record["created_at"]:
+                return None
+            val = record["created_at"]
+            if hasattr(val, "isoformat"):
+                return val.isoformat()
+            return str(val)
 
     def get_project_stats(self, project_id: str) -> dict:
         with self._driver.session() as session:
