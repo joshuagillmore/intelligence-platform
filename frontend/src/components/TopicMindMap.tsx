@@ -430,7 +430,7 @@ export default function TopicMindMap({
         const selectedNode = nodes.find((n: any) => n.data.id === selectedNodeId);
         const linkedTopicIds = crossRefMap.get(selectedNodeId)!;
 
-        for (const linkedId of linkedTopicIds) {
+        for (const linkedId of Array.from(linkedTopicIds)) {
           const linkedNode = nodes.find((n: any) => n.data.id === linkedId);
           if (selectedNode && linkedNode) {
             g.append('path')
