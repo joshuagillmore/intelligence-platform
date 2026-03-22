@@ -213,12 +213,6 @@ export default function CyberPage() {
     return iocs.filter(i => i.entity_type === activeFilter);
   }, [iocs, activeFilter]);
 
-  const stats = useMemo(() => {
-    const counts: Record<string, number> = { total: iocs.length };
-    IOC_TYPES.forEach(t => { counts[t] = 0; });
-    iocs.forEach(i => { counts[i.entity_type] = (counts[i.entity_type] || 0) + 1; });
-    return counts;
-  }, [iocs]);
 
   const severityStats = useMemo(() => {
     let critical = 0, high = 0, medium = 0, low = 0, enriched = 0, newRecent = 0;
