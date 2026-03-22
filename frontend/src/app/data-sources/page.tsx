@@ -38,6 +38,7 @@ interface EntityContext {
   entity: { id: string; name: string; entity_type: string; properties?: Record<string, unknown> };
   connected_entities?: ConnectedEntity[];
   source_documents?: SourceDocument[];
+  keywords?: string[];
 }
 
 /* -- Helpers ---------------------------------------------------------- */
@@ -88,6 +89,9 @@ export default function DataSourcesPage() {
   // LLM summary
   const [summary, setSummary] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+
+  // Keywords (for topic nodes)
+  const [keywords, setKeywords] = useState<string[]>([]);
 
   // Query input
   const [queryInput, setQueryInput] = useState('');
@@ -151,6 +155,7 @@ export default function DataSourcesPage() {
     setEntityContext(null);
     setSummary(null);
     setQueryResult(null);
+    setKeywords([]);
 
     // Skip fetching context for branch/root nodes and intermediate grouping nodes
     const isGroupingNode = node.id === 'root' || node.id.startsWith('branch-')
@@ -170,6 +175,7 @@ export default function DataSourcesPage() {
         data.source_documents = data.documents;
       }
       setEntityContext(data);
+      setKeywords(data.keywords || []);
     } catch (e) {
       console.error('Failed to load entity context', e);
       setEntityContext({
@@ -309,7 +315,10 @@ export default function DataSourcesPage() {
               <div>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-bold text-[10px] uppercase tracking-widest text-gray-500">
-                    Documents for &ldquo;{selectedNodeName}&rdquo;
+                    {selectedNodeId?.startsWith('topic-')
+                      ? <>Documents in &ldquo;{selectedNodeName}&rdquo;</>
+                      : <>Documents for &ldquo;{selectedNodeName}&rdquo;</>
+                    }
                   </h3>
                   <span className="text-[10px] bg-[#1a1f2e] text-gray-400 px-2 py-0.5 rounded-full">
                     {documents.length} source{documents.length !== 1 ? 's' : ''}
@@ -379,6 +388,18 @@ export default function DataSourcesPage() {
               </div>
             ) : (
               <div className="flex flex-col h-full">
+                {keywords.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {keywords.map((kw, i) => (
+                      <span
+                        key={i}
+                        className="bg-purple-900/30 text-purple-300 border border-purple-700/30 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                      >
+                        {kw}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {/* AI Summary */}
                 <div className="bg-[#161b2a]/50 rounded-xl p-6 border border-[#adc6ff]/10 relative overflow-hidden mb-4">
                   <div className="absolute top-0 right-0 p-4 opacity-5">
