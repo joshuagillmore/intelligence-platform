@@ -1,0 +1,63 @@
+FINANCIAL INTELLIGENCE REPORT: DPRK SANCTIONS EVASION NETWORK — PHOENIX SYNDICATE
+
+Report ID: FININT-2026-0215
+Date: 22 January 2026
+Classification: SECRET // REL TO FVEY
+Source Reliability: A2 (Reliable source, probably true)
+Intelligence Discipline: FININT / SIGINT
+Prepared by: Treasury Department, Office of Terrorism and Financial Intelligence (TFI)
+
+EXECUTIVE SUMMARY
+
+This report details the identification and mapping of a North Korean sanctions evasion network, designated PHOENIX SYNDICATE, operating across the United Arab Emirates, Singapore, the People's Republic of China, and Malaysia. The network is assessed to generate approximately $120 million USD annually for the Democratic People's Republic of Korea (DPRK) Reconnaissance General Bureau (RGB), in direct violation of United Nations Security Council Resolutions (UNSCRs) 2270, 2321, and 2397.
+
+The PHOENIX SYNDICATE represents one of the most sophisticated DPRK financial networks identified since the 2022 dismantlement of the so-called "Chollima Network" by joint US-South Korean law enforcement operations. Revenue generated through this network is assessed to fund DPRK weapons of mass destruction (WMD) and ballistic missile programs.
+
+KEY JUDGMENTS
+
+- (HIGH CONFIDENCE) PHOENIX SYNDICATE is controlled by Ri Jong-ho, a senior RGB operative operating under diplomatic cover at the DPRK Embassy in Kuala Lumpur, Malaysia. Ri previously served as a trade attache in Beijing (2018-2022) and is designated under OFAC's Specially Designated Nationals (SDN) list since 14 August 2024.
+- (MODERATE CONFIDENCE) The network utilizes a layered structure of shell companies, cryptocurrency transactions, and front persons to obscure the ultimate beneficial ownership and destination of funds.
+- (HIGH CONFIDENCE) The network is directly linked to DPRK's procurement of precision machine tooling, maraging steel, and carbon fiber composites — materials with direct application to uranium enrichment centrifuge manufacturing and missile airframe construction.
+
+NETWORK STRUCTURE
+
+1. Corporate Entities
+
+The following shell companies have been identified as components of the PHOENIX SYNDICATE network:
+
+- Golden Bridge Trading FZE, registered in the Ras Al Khaimah Free Trade Zone, UAE (Registration No. RAK-FTZ-2023-14782). Nominal director: Tan Wei Lin (Singaporean national, DOB 14 May 1978, passport No. E7234891K). This entity functions as the primary procurement front for dual-use technology components, including high-precision CNC milling machines sourced from German and Japanese manufacturers.
+
+- Oceanic Star Shipping Pte Ltd, registered in Singapore (UEN: 202315847K). Nominal director: Chen Guowei (PRC national, DOB 22 September 1985, PRC passport No. E83291045). Used for maritime logistics and transshipment of sanctioned goods via Tanjung Pelepas, Malaysia. The company operates two dry cargo vessels: MV Orient Fortune (IMO 9483721) and MV Pacific Herald (IMO 9521038), both flagged in Cambodia.
+
+- Bright Future International Trade Co. Ltd, registered in Dalian, Liaoning Province, PRC (Unified Social Credit Code: 91210200MA0XXXXXX7). Nominal director: Park Sung-min (DPRK national, DOB 03 January 1980, aliases: Pak Song-min, Michael Park). Park is a known RGB associate and was designated under UNSCR 2397 Annex on 22 March 2024.
+
+- Horizon Digital Solutions LLC, registered in Dubai Internet City, UAE (License No. DIC-2024-5598). Functions as a front for DPRK IT worker revenue generation schemes. The entity maintains active accounts on Upwork, Freelancer.com, and Toptal under fabricated Western-sounding identities.
+
+- Kwangmyong Tech Services Ltd, registered in Labuan, Malaysia (Company No. LL-2024-19283). This entity was incorporated on 15 April 2024 and functions as a secondary IT services front, specializing in mobile application development and blockchain consulting.
+
+2. Financial Flows
+
+Bank of East Asia (Singapore branch, account number 0451-XXXX-7823) received wire transfers totaling $4.7 million USD between March and September 2025 from Golden Bridge Trading FZE's account at First Abu Dhabi Bank (account number FAB-XXXX-3391). These funds were subsequently layered through three intermediary accounts at Industrial and Commercial Bank of China (ICBC) Dalian branch before final transfer to Korea Kwangson Banking Corporation (KKBC), a DPRK financial institution designated under UNSCR 2270.
+
+A parallel channel involved Habib Bank AG Zurich (UAE operations), where $2.1 million USD was transferred from Horizon Digital Solutions between July and November 2025, ostensibly as "software licensing fees" to Kwangmyong Tech Services in Labuan.
+
+Additionally, between 01 June 2025 and 15 December 2025, the network processed approximately $18.3 million USD equivalent in cryptocurrency through the following Bitcoin wallets:
+
+- bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh (Primary collection wallet, total inflow: 187.4 BTC)
+- bc1q9h5yjqka3mz2f3hp8nf9w3a2v64fx70hzfj3eq (Mixing/tumbling intermediary)
+- 3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy (Exchange deposit wallet, linked to non-KYC exchange VaultEx, registered in the Seychelles)
+
+Chainalysis and Elliptic blockchain analysis confirmed that funds from the primary wallet were routed through the Sinbad.io cryptocurrency mixer before being converted to Monero (XMR) and subsequently to fiat currency via over-the-counter (OTC) desks in Shenzhen and Macau. Total estimated throughput of the cryptocurrency channel: $18.3 million USD between June and December 2025.
+
+3. Key Individuals
+
+- Ri Jong-ho (리종호): Network controller, RGB Colonel. OFAC SDN List (14 August 2024). Passport No. 472310089 (DPRK diplomatic passport, assessed fraudulent). Last confirmed location: Kuala Lumpur, Malaysia (December 2025).
+- Tan Wei Lin: Front person and nominee director. Singaporean national. Subject of ongoing investigation by Singapore's Suspicious Transaction Reporting Office (STRO) and Commercial Affairs Department (CAD). No current sanctions designation. Assessed to be a witting participant.
+- Chen Guowei: Shipping logistics coordinator. PRC national. Assessed to be a witting facilitator with knowledge of network's DPRK connections. Maintains residence in both Dalian and Singapore.
+- Park Sung-min (aliases: Pak Song-min, Michael Park): Dalian-based procurement agent. UNSCR 2397 designee. Interpol Red Notice (A-4821/2024). Last known to be operating from Dandong, Liaoning Province, near the PRC-DPRK border.
+- Kim Yong-chul (김영철): IT operations manager for Horizon Digital Solutions. Directs a team of approximately 30 DPRK IT workers generating revenue through freelance software development contracts on Western platforms. Based in Dubai, UAE, under alias "David Kim" with fraudulent South Korean passport.
+- Li Mei-hua: Chinese national, female, DOB 17 November 1982. Account manager at ICBC Dalian branch. Suspected of facilitating transactions with knowledge of DPRK nexus. Under investigation by PRC Ministry of Public Security (unconfirmed).
+
+COORDINATION
+
+This report has been shared with the UN Panel of Experts on DPRK (S/2026/58), the US Treasury Department's Office of Foreign Assets Control (OFAC), the Financial Crimes Enforcement Network (FinCEN), the Monetary Authority of Singapore (MAS), the UAE Financial Intelligence Unit (FIU), and partner Five Eyes financial intelligence units. OFAC is preparing designations against Tan Wei Lin, Chen Guowei, and the five identified corporate entities.

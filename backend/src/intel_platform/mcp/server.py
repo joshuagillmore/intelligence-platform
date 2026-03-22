@@ -90,18 +90,23 @@ def assess_entity(entity_id: str, project_id: str, judgment: str, probability: f
 
 
 @mcp.tool()
-async def ingest_document(project_id: str, content: str, source_name: str = "mcp_input", reliability_rating: str = "C3") -> dict:
-    """Ingest a document into the knowledge graph with entity extraction."""
+async def ingest_document(project_id: str, content: str, source_name: str = "mcp_input", reliability_rating: str = "C3", extraction_mode: str = "") -> dict:
+    """Ingest a document into the knowledge graph with entity extraction.
+
+    Args:
+        extraction_mode: "nlp", "llm", or "hybrid". Defaults to the configured extraction_mode setting.
+    """
     from intel_platform.api.deps import get_neo4j_driver
     from intel_platform.graph.store import GraphStore
     from intel_platform.models.entities import Document
     from intel_platform.services.ingestion import ingest_text
-    from intel_platform.services.extraction import extract_entities_nlp
     from intel_platform.services.graph_builder import build_graph_from_extractions
     from intel_platform.config import settings
 
     driver = get_neo4j_driver()
     store = GraphStore(driver)
+
+    mode = extraction_mode or settings.extraction_mode
 
     chunks = ingest_text(content, settings.chunk_size, settings.chunk_overlap)
     doc = Document(
@@ -112,12 +117,25 @@ async def ingest_document(project_id: str, content: str, source_name: str = "mcp
 
     all_entities, all_rels = [], []
     for chunk in chunks:
-        entities, rels = extract_entities_nlp(chunk["content"], doc.id)
+        entities, rels = await _mcp_extract(chunk["content"], doc.id, mode)
         all_entities.extend(entities)
         all_rels.extend(rels)
 
     result = build_graph_from_extractions(store, all_entities, all_rels, project_id)
-    return {"document_id": doc.id, "chunks": len(chunks), **result}
+    return {"document_id": doc.id, "chunks": len(chunks), "extraction_mode": mode, **result}
+
+
+async def _mcp_extract(text: str, doc_id: str, mode: str):
+    """Dispatch extraction based on mode (mirrors the API route logic)."""
+    if mode == "llm":
+        from intel_platform.services.extraction import extract_entities_llm
+        return await extract_entities_llm(text, doc_id)
+    elif mode == "hybrid":
+        from intel_platform.services.extraction import extract_entities_hybrid
+        return await extract_entities_hybrid(text, doc_id)
+    else:
+        from intel_platform.services.extraction import extract_entities_nlp
+        return extract_entities_nlp(text, doc_id)
 
 
 @mcp.tool()

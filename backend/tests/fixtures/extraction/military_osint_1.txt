@@ -1,0 +1,74 @@
+OPEN SOURCE INTELLIGENCE REPORT: INDO-PACIFIC NAVAL ACTIVITY ASSESSMENT
+
+Report ID: OSINT-INDOPAC-2026-0089
+Date: 14 March 2026
+Classification: UNCLASSIFIED // FOR OFFICIAL USE ONLY
+Source Reliability: B2 (Usually reliable source, probably true)
+Intelligence Discipline: OSINT / GEOINT
+Prepared by: Office of Naval Intelligence (ONI), Farragut Fusion Center
+
+EXECUTIVE SUMMARY
+
+This report consolidates open-source reporting on significant naval activity in the Indo-Pacific region during the period 15 February to 12 March 2026. Analysis of commercial satellite imagery (Planet Labs, Maxar Technologies), Automatic Identification System (AIS) tracking data, PRC state media, and allied defense ministry communiques indicates a marked increase in People's Liberation Army Navy (PLAN) surface combatant and amphibious operations in the waters east of Taiwan and in the South China Sea.
+
+The current activity level exceeds baseline patterns observed during comparable periods in 2024 and 2025. The Indo-Pacific Command (INDOPACOM) Intelligence Directorate (J2) assesses this activity as strategically significant and recommends enhanced intelligence, surveillance, and reconnaissance (ISR) posture across the First Island Chain.
+
+KEY JUDGMENTS
+
+- (MODERATE CONFIDENCE) The PLAN is conducting a large-scale combined arms naval exercise, designated by PRC media as "Joint Sword-2026A," involving an estimated 40+ surface vessels and an undisclosed number of submarines from the Eastern Theater Command Navy (ETCN) and Southern Theater Command Navy (STCN).
+- (HIGH CONFIDENCE) Japanese Maritime Self-Defense Force (JMSDF) and US Navy 7th Fleet have repositioned significant naval assets in response, indicating allied concern regarding the exercise scope and proximity to Taiwan.
+- (LOW CONFIDENCE) The exercise may serve as rehearsal for a Taiwan contingency scenario, though it is also consistent with routine annual spring training cycles. The inclusion of amphibious lift capacity, however, elevates concern.
+- (MODERATE CONFIDENCE) PRC Air Force (PLAAF) assets from Longtian Air Base, Fujian Province, are providing air cover for the naval exercise, with 24 J-16 fighter sorties detected via open-source flight tracking on 05 March 2026.
+
+DETAILED ANALYSIS
+
+1. PLAN Force Disposition
+
+Commercial satellite imagery collected on 28 February 2026 by Planet Labs (Scene ID: PSScene-20260228-0445Z) identified the following PLAN assets operating in the Philippine Sea, approximately 180 nautical miles east of Taiwan (approximate centroid: 23.5N, 124.8E):
+
+Surface Action Group ALPHA:
+- Two (2) Type 055 Renhai-class guided-missile destroyers (hull numbers 101 Nanchang and 105 Dalian)
+- Three (3) Type 052D Luyang III-class guided-missile destroyers
+- One (1) Type 075 Yushen-class landing helicopter dock (hull number 31, Hainan)
+- Two (2) Type 071 Yuzhao-class landing platform docks
+- One (1) Type 903A Fuchi-class replenishment ship
+
+Surface Action Group BRAVO (operating south of Pratas Island, South China Sea, approximate position: 19.8N, 116.5E):
+- PLAN aircraft carrier Shandong (CV-17) with embarked J-15 fighter wing (estimated 24 aircraft)
+- Two (2) Type 054A Jiangkai II-class frigates providing escort
+- One (1) Type 901 Fuyu-class fast combat support ship
+- One (1) Type 055 Renhai-class destroyer (hull number 103, Lhasa)
+
+AIS data indicates that the Type 075 LHD Hainan departed its home port of Yulin Naval Base, Hainan Island, on 18 February 2026. The vessel was tracked transiting the Bashi Channel on 21 February 2026 before AIS transmission ceased at approximately 20.3N, 121.9E, consistent with emissions control (EMCON) procedures during military exercises.
+
+Vice Admiral Zhang Weiguo, commander of the PLAN Eastern Theater Command Navy, was identified in PRC state media (CCTV-7 Defense and Military Channel broadcast, 02 March 2026) overseeing exercise operations from aboard the Nanchang. Zhang was previously identified as commanding the PLAN task force during the August 2025 Taiwan encirclement exercises.
+
+2. Japanese MSDF Response
+
+The Japanese Ministry of Defense (MOD) issued a press release on 04 March 2026 confirming that the JMSDF had deployed the following assets to monitor PLAN activity:
+
+- JS Izumo (DDH-183), Izumo-class helicopter destroyer (recently upgraded for F-35B compatibility), departed Yokosuka Naval Base on 25 February 2026
+- JS Maya (DDG-179), Maya-class Aegis-equipped guided-missile destroyer
+- One (1) Soryu-class submarine (hull number unconfirmed, assessed SS-501 Soryu or SS-502 Unryu)
+- Two (2) P-1 maritime patrol aircraft operating from JMSDF Naha Air Base, Okinawa
+
+Vice Admiral Tanaka Hiroshi, Commander of the JMSDF Self-Defense Fleet (自衛艦隊司令官), reportedly established a forward command element at Fleet Activities Sasebo to coordinate surveillance operations. Tanaka briefed Japanese Prime Minister's Office staff on 06 March 2026 per NHK reporting.
+
+3. US 7th Fleet Deployments
+
+US Navy 7th Fleet, headquartered at Commander Fleet Activities Yokosuka (CFAY), Japan, under the command of Vice Admiral Michael "Rick" Henderson, USN, announced the following deployments via USNI News and official DoD press releases:
+
+- USS Ronald Reagan (CVN-76) Carrier Strike Group departed Yokosuka on 01 March 2026 for "scheduled operations in the Western Pacific." The CSG includes Carrier Air Wing 5 (CVW-5), guided-missile cruiser USS Shiloh (CG-67), and Destroyer Squadron 15 (DESRON 15).
+- USS America (LHA-6) Expeditionary Strike Group, with embarked 31st Marine Expeditionary Unit (31st MEU), repositioned from Sasebo to the East China Sea.
+- Guided-missile destroyer USS Milius (DDG-69) conducted a Taiwan Strait transit on 07 March 2026, characterized by the US Pacific Fleet public affairs office as "routine and consistent with international law."
+
+4. AUKUS Partner Activity
+
+Australian Defence Force (ADF) contributions under the AUKUS framework include:
+- HMAS Hobart (DDG-39), Hobart-class air warfare destroyer, integrated with the USS Ronald Reagan CSG as part of combined interoperability exercise Pacific Vanguard 2026
+- Royal Australian Air Force (RAAF) P-8A Poseidon maritime patrol aircraft deployed from RAAF Base Darwin to conduct ISR operations in the South China Sea
+- Rear Admiral Catherine Walsh, RAN, Commander of the Australian Fleet, confirmed Australian participation in a joint press conference at Royal Australian Navy base HMAS Stirling, Garden Island, Western Australia, on 06 March 2026
+
+ASSESSMENT
+
+The scale and composition of Joint Sword-2026A exceeds comparable exercises from 2024-2025, particularly the inclusion of multiple amphibious assault vessels and the simultaneous deployment of both the Shandong carrier group and Type 055 destroyer flotilla. The exercise pattern suggests PLAN is rehearsing contested sea control and power projection operations within the First Island Chain. Continued monitoring via GEOINT and SIGINT collection is recommended, with particular attention to PLAN submarine activity in the Miyako Strait and Bashi Channel chokepoints.

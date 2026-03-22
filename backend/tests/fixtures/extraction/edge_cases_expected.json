@@ -1,0 +1,36 @@
+{
+  "entities": [
+    {"name": "Vasily Nebenzya", "entity_type": "Person", "aliases": ["Vasiliy Nebenzia", "Vassily Nebenzja"]},
+    {"name": "United Nations", "entity_type": "Organization", "aliases": ["UN"]},
+    {"name": "Sergei Lavrov", "entity_type": "Person", "aliases": ["Sergey Lavrov"]},
+    {"name": "PLAN", "entity_type": "Organization", "aliases": ["PLA Navy"]},
+    {"name": "South China Sea", "entity_type": "Location"},
+    {"name": "PLAAF", "entity_type": "Organization"},
+    {"name": "Xi Jinping", "entity_type": "Person"},
+    {"name": "Georgia", "entity_type": "Location"},
+    {"name": "CIA", "entity_type": "Organization"},
+    {"name": "NSA", "entity_type": "Organization"},
+    {"name": "ODNI", "entity_type": "Organization", "aliases": ["Office of the Director of National Intelligence"]},
+    {"name": "IRGC", "entity_type": "Organization", "aliases": ["Islamic Revolutionary Guard Corps"]},
+    {"name": "Shahab-3", "entity_type": "Weapon"},
+    {"name": "Isfahan", "entity_type": "Location"},
+    {"name": "IAEA", "entity_type": "Organization"},
+    {"name": "Jordan", "entity_type": "Location"},
+    {"name": "King Abdullah", "entity_type": "Person"},
+    {"name": "Lloyd Austin", "entity_type": "Person"},
+    {"name": "Pentagon", "entity_type": "Location"},
+    {"name": "ISIS", "entity_type": "Organization"},
+    {"name": "Al-Tanf", "entity_type": "Location"},
+    {"name": "Syria", "entity_type": "Location"},
+    {"name": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", "entity_type": "Financial"},
+    {"name": "OFAC", "entity_type": "Organization", "aliases": ["Office of Foreign Assets Control"]},
+    {"name": "12 February 2026", "entity_type": "Date"}
+  ],
+  "relationships": [
+    {"source": "Vasily Nebenzya", "target": "United Nations", "rel_type": "BELONGS_TO"},
+    {"source": "PLAN", "target": "South China Sea", "rel_type": "LOCATED_AT"},
+    {"source": "IRGC", "target": "Shahab-3", "rel_type": "USES"},
+    {"source": "King Abdullah", "target": "Lloyd Austin", "rel_type": "ASSOCIATED_WITH"},
+    {"source": "King Abdullah", "target": "Jordan", "rel_type": "BELONGS_TO"}
+  ]
+}

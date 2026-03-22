@@ -86,27 +86,61 @@ def build_graph_from_extractions(
     store: GraphStore, entities: list[dict], relationships: list[dict], project_id: str,
     source_doc_id: str = "",
 ) -> dict:
+    from intel_platform.config import settings
+
     created = 0
     merged = 0
     name_to_id: dict[str, str] = {}
+    resolution_threshold = settings.entity_resolution_threshold
 
-    existing = store.search_entities(project_id=project_id, limit=10000)
-    existing_names = [e["name"] for e in existing]
-    existing_name_to_id = {e["name"]: e["id"] for e in existing}
-    existing_name_to_type = {e["name"]: e.get("entity_type", "") for e in existing}
+    # Cache for resolved names within this batch to avoid repeated lookups
+    _resolution_cache: dict[str, str | None] = {}
+    # Track newly created entities for intra-batch resolution
+    batch_names: list[str] = []
+    batch_name_to_id: dict[str, str] = {}
+    batch_name_to_type: dict[str, str] = {}
 
     for ent_data in entities:
         name = ent_data["name"]
         raw_type = ent_data["entity_type"]
 
+        # Check intra-batch cache first
+        cache_key = f"{name}::{raw_type}"
+        if cache_key in _resolution_cache:
+            cached = _resolution_cache[cache_key]
+            if cached:
+                name_to_id[name] = cached
+                merged += 1
+                continue
+
+        # Try resolution against entities created in this batch
         match = resolve_entity_name(
-            name, existing_names, threshold=0.92,
-            entity_type=raw_type, existing_types=existing_name_to_type,
+            name, batch_names, threshold=resolution_threshold,
+            entity_type=raw_type, existing_types=batch_name_to_type,
         )
         if match:
-            name_to_id[name] = existing_name_to_id[match]
+            name_to_id[name] = batch_name_to_id[match]
+            _resolution_cache[cache_key] = batch_name_to_id[match]
             merged += 1
             continue
+
+        # Use indexed lookup against the graph (instead of loading all entities)
+        candidates = store.search_entity_by_name(project_id, name, limit=20)
+        if candidates:
+            candidate_names = [c["name"] for c in candidates]
+            candidate_name_to_id = {c["name"]: c["id"] for c in candidates}
+            candidate_name_to_type = {c["name"]: c.get("entity_type", "") for c in candidates}
+            match = resolve_entity_name(
+                name, candidate_names, threshold=resolution_threshold,
+                entity_type=raw_type, existing_types=candidate_name_to_type,
+            )
+            if match:
+                name_to_id[name] = candidate_name_to_id[match]
+                _resolution_cache[cache_key] = candidate_name_to_id[match]
+                merged += 1
+                continue
+
+        _resolution_cache[cache_key] = None
 
         # Normalize the entity type using the hierarchy
         specific_type, parent_category = normalize_entity_type(raw_type)
@@ -116,8 +150,18 @@ def build_graph_from_extractions(
         # Determine source doc ID from extraction data or caller
         entity_doc_id = ent_data.get("source", "") or source_doc_id
 
+        # Build constructor kwargs, passing through extracted attributes
+        kwargs: dict = {"name": name, "project_id": project_id, "source_doc_id": entity_doc_id}
+        attrs = ent_data.get("attributes", {})
+        if attrs and cls:
+            # Only pass attributes that the Pydantic model accepts
+            model_fields = set(cls.model_fields.keys())
+            for k, v in attrs.items():
+                if k in model_fields and v:
+                    kwargs[k] = v
+
         if cls:
-            entity = cls(name=name, project_id=project_id, source_doc_id=entity_doc_id)
+            entity = cls(**kwargs)
         else:
             # Generic entity for unknown types
             from intel_platform.models.entities import Entity, EntityType
@@ -129,8 +173,9 @@ def build_graph_from_extractions(
 
         store.create_entity(entity)
         name_to_id[name] = entity.id
-        existing_names.append(name)
-        existing_name_to_id[name] = entity.id
+        batch_names.append(name)
+        batch_name_to_id[name] = entity.id
+        batch_name_to_type[name] = raw_type
         created += 1
 
     rels_created = 0
