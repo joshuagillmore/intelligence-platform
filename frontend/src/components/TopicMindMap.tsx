@@ -29,6 +29,8 @@ const BRANCH_COLORS: Record<string, string> = {
 };
 
 function getBranchColor(node: any): string {
+  // Topic cluster nodes get purple
+  if (node.data?.entity_type === 'topic') return '#a855f7';
   let current = node;
   while (current) {
     const id = current.data?.id || '';
