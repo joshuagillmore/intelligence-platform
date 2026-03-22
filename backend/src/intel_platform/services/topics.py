@@ -34,28 +34,22 @@ class TopicTreeService:
             "children": [],
         }
 
-        # Branch 1: Thematic Clusters (community-based)
+        # Branch 1: Thematic Clusters (community-based) — primary topic view
         themes_branch = self._build_theme_branch(G, entity_map, non_docs)
-        tree["children"].append(themes_branch)
+        if themes_branch["children"]:
+            tree["children"].append(themes_branch)
 
         # Branch 2: By Source Document (with entity drilldown)
         doc_branch = self._build_document_branch(documents)
-        tree["children"].append(doc_branch)
+        if doc_branch["children"]:
+            tree["children"].append(doc_branch)
 
-        # Branch 3: By Entity Type
-        type_branch = self._build_type_branch(non_docs)
-        tree["children"].append(type_branch)
-
-        # Branch 4: By Category Hierarchy
-        cat_branch = self._build_category_branch(non_docs)
-        tree["children"].append(cat_branch)
-
-        # Branch 5: Geographic (locations grouped by region)
+        # Branch 3: Geographic Themes (locations grouped by region)
         geo_branch = self._build_geo_branch(non_docs)
         if geo_branch["children"]:
             tree["children"].append(geo_branch)
 
-        # Branch 6: Actors & Organizations
+        # Branch 4: Actors & Organizations
         actor_branch = self._build_actor_branch(non_docs, G)
         if actor_branch["children"]:
             tree["children"].append(actor_branch)
@@ -370,12 +364,13 @@ class TopicTreeService:
         return branch
 
     def get_topic_context(self, entity_id: str, project_id: str) -> dict:
-        """Get full context for an entity."""
+        """Get full context for an entity including source documents."""
         entity = self._store.get_entity(entity_id)
         if not entity:
             return {"error": "Entity not found"}
 
         relationships = self._store.get_relationships(entity_id)
+        seen_doc_ids: set[str] = set()
 
         documents = []
         connected = []
@@ -385,20 +380,59 @@ class TopicTreeService:
             if not target:
                 continue
             if target.get("entity_type") == "Document":
-                documents.append({
-                    "id": target.get("id"),
-                    "name": target.get("name"),
-                    "reliability_rating": target.get("reliability_rating", ""),
-                    "content_preview": (target.get("content", "") or "")[:500],
-                })
+                if target_id not in seen_doc_ids:
+                    seen_doc_ids.add(target_id)
+                    documents.append({
+                        "id": target.get("id"),
+                        "name": target.get("name"),
+                        "reliability_rating": target.get("reliability_rating", ""),
+                        "content_preview": (target.get("content", "") or "")[:500],
+                    })
             else:
                 connected.append({
                     "id": target.get("id"),
                     "name": target.get("name"),
                     "entity_type": target.get("entity_type"),
-                    "relationship": rel.get("rel_type"),
+                    "rel_type": rel.get("rel_type"),
                     "confidence": rel.get("confidence", rel.get("props", {}).get("confidence")),
                 })
+
+        # If no documents found via relationships, look up by source_doc_id
+        if not documents:
+            source_doc_id = entity.get("source_doc_id", "") or entity.get("source", "")
+            if source_doc_id and source_doc_id not in seen_doc_ids:
+                doc = self._store.get_entity(source_doc_id)
+                if doc and doc.get("entity_type") == "Document":
+                    seen_doc_ids.add(source_doc_id)
+                    documents.append({
+                        "id": doc.get("id"),
+                        "name": doc.get("name"),
+                        "reliability_rating": doc.get("reliability_rating", ""),
+                        "content_preview": (doc.get("content", "") or "")[:500],
+                    })
+
+        # If still no documents, search for project documents that mention this entity
+        if not documents:
+            entity_name = entity.get("name", "").lower()
+            if entity_name:
+                project_docs = self._store.search_entities(
+                    project_id=project_id, entity_type="Document", limit=50,
+                )
+                for doc_meta in project_docs:
+                    doc_id = doc_meta.get("id", "")
+                    if doc_id in seen_doc_ids:
+                        continue
+                    doc_full = self._store.get_entity(doc_id)
+                    if doc_full:
+                        content = (doc_full.get("content", "") or "").lower()
+                        if entity_name in content:
+                            seen_doc_ids.add(doc_id)
+                            documents.append({
+                                "id": doc_full.get("id"),
+                                "name": doc_full.get("name"),
+                                "reliability_rating": doc_full.get("reliability_rating", ""),
+                                "content_preview": (doc_full.get("content", "") or "")[:500],
+                            })
 
         return {
             "entity": {
@@ -407,6 +441,7 @@ class TopicTreeService:
                 "entity_type": entity.get("entity_type"),
             },
             "documents": documents,
+            "source_documents": documents,  # Include both keys for frontend compat
             "connected_entities": connected,
             "relationship_count": len(relationships),
             "document_count": len(documents),

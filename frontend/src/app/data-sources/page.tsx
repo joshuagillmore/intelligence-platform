@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
@@ -151,14 +152,24 @@ export default function DataSourcesPage() {
     setSummary(null);
     setQueryResult(null);
 
-    // Skip fetching context for branch/root nodes
-    if (node.id === 'root' || node.id.startsWith('branch-')) return;
+    // Skip fetching context for branch/root nodes and intermediate grouping nodes
+    const isGroupingNode = node.id === 'root' || node.id.startsWith('branch-')
+      || node.id.startsWith('type-') || node.id.startsWith('cat-')
+      || node.id.startsWith('geo-') || node.id.startsWith('actors-')
+      || node.id.startsWith('theme-') || node.entity_type === 'sub_category'
+      || node.entity_type === 'category' || node.entity_type === 'region';
+    if (isGroupingNode) return;
 
-    // Fetch entity context
+    // Fetch entity context (documents + connected entities)
     setContextLoading(true);
     try {
       const res = await topicsApi.context(node.id, activeProject.id);
-      setEntityContext(res.data);
+      // Normalize: backend returns "documents", frontend expects "source_documents"
+      const data = res.data;
+      if (data.documents && !data.source_documents) {
+        data.source_documents = data.documents;
+      }
+      setEntityContext(data);
     } catch (e) {
       console.error('Failed to load entity context', e);
       setEntityContext({
@@ -170,12 +181,17 @@ export default function DataSourcesPage() {
       setContextLoading(false);
     }
 
-    // Fetch LLM summary
+    // Do NOT auto-generate summary — wait for user to click "Generate Summary"
+  }, [activeProject]);
+
+  const generateSummary = useCallback(async () => {
+    if (!activeProject || !selectedNodeName) return;
     setSummaryLoading(true);
+    setSummary(null);
     try {
       const res = await queryApi.rag(
         activeProject.id,
-        `Provide a comprehensive intelligence summary about "${node.name}". What do we know from our sources?`
+        `Provide a comprehensive intelligence summary about "${selectedNodeName}". What do we know from our sources?`
       );
       setSummary(res.data.answer || res.data.response || JSON.stringify(res.data));
     } catch {
@@ -183,7 +199,7 @@ export default function DataSourcesPage() {
     } finally {
       setSummaryLoading(false);
     }
-  }, [activeProject]);
+  }, [activeProject, selectedNodeName]);
 
   /* -- Ask about selected topic --------------------------------------- */
 
@@ -220,9 +236,18 @@ export default function DataSourcesPage() {
 
   /* -- Render --------------------------------------------------------- */
 
-  const documents = entityContext?.source_documents || [];
+  const rawDocs = entityContext?.source_documents || [];
+  // Normalize document fields from backend
+  const documents = rawDocs.map((doc: any) => ({
+    ...doc,
+    reliability: doc.reliability || doc.reliability_rating || '',
+    content: doc.content || doc.content_preview || '',
+  }));
   const connectedEntities = entityContext?.connected_entities || [];
-  const isLeafSelected = selectedNodeId && !selectedNodeId.startsWith('branch-') && selectedNodeId !== 'root';
+  const isLeafSelected = selectedNodeId && !selectedNodeId.startsWith('branch-') && selectedNodeId !== 'root'
+    && !selectedNodeId.startsWith('type-') && !selectedNodeId.startsWith('cat-')
+    && !selectedNodeId.startsWith('geo-') && !selectedNodeId.startsWith('actors-')
+    && !selectedNodeId.startsWith('theme-');
 
   return (
     <div className="flex">
@@ -359,11 +384,21 @@ export default function DataSourcesPage() {
                   <div className="absolute top-0 right-0 p-4 opacity-5">
                     <span className="material-symbols-outlined text-6xl">auto_awesome</span>
                   </div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="material-symbols-outlined text-[#adc6ff] text-sm">auto_awesome</span>
-                    <h3 className="font-bold text-[10px] uppercase tracking-widest text-[#adc6ff]">
-                      Intelligence Summary: {selectedNodeName}
-                    </h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[#adc6ff] text-sm">auto_awesome</span>
+                      <h3 className="font-bold text-[10px] uppercase tracking-widest text-[#adc6ff]">
+                        Intelligence Summary: {selectedNodeName}
+                      </h3>
+                    </div>
+                    {!summaryLoading && (
+                      <button
+                        onClick={generateSummary}
+                        className="bg-[#adc6ff]/10 hover:bg-[#adc6ff]/20 text-[#adc6ff] px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border border-[#adc6ff]/20"
+                      >
+                        {summary ? 'Regenerate' : 'Generate Summary'}
+                      </button>
+                    )}
                   </div>
                   {summaryLoading ? (
                     <div className="flex items-center gap-3 py-4">
@@ -375,7 +410,7 @@ export default function DataSourcesPage() {
                       {summary}
                     </p>
                   ) : (
-                    <p className="text-sm text-gray-500">Summary will appear here once generated.</p>
+                    <p className="text-sm text-gray-500">Click &ldquo;Generate Summary&rdquo; to analyze this topic.</p>
                   )}
                 </div>
 
