@@ -82,7 +82,7 @@ class GraphStore:
         "ASSOCIATED_WITH", "BELONGS_TO", "LOCATED_AT", "COMMUNICATES_WITH",
         "RESOLVES_TO", "EXPLOITS", "USES", "TARGETS", "ATTRIBUTED_TO",
         "MENTIONED_IN", "MENTIONS", "PARENT_OF", "RELATED_TO", "ASSESSES",
-        "SUPPORTED_BY", "SHARED_WITH",
+        "SUPPORTED_BY", "SHARED_WITH", "OCCURRED_ON",
     }
 
     def create_relationship(self, rel) -> dict:
