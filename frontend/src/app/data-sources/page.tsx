@@ -623,7 +623,7 @@ export default function DataSourcesPage() {
                   )}
 
                   {/* AI Summary */}
-                  <div className="bg-[#161b2a]/50 rounded-xl p-6 border border-[#adc6ff]/10 relative overflow-y-auto max-h-[60vh] mb-4">
+                  <div className="bg-[#161b2a]/50 rounded-xl p-6 border border-[#adc6ff]/10 relative overflow-y-auto mb-4">
                     <div className="absolute top-0 right-0 p-4 opacity-5">
                       <span className="material-symbols-outlined text-6xl">auto_awesome</span>
                     </div>
