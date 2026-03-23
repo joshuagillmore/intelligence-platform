@@ -8,20 +8,30 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 @router.get("/documents")
 def list_documents(project_id: str, store: GraphStore = Depends(get_graph_store)):
     """List all documents in a project with metadata."""
-    docs = store.search_entities(project_id=project_id, entity_type="Document", limit=500)
-    result = []
-    for doc in docs:
-        rels = store.get_relationships(doc.get("id", ""))
-        entity_count = sum(1 for r in rels if r.get("rel_type") != "MENTIONS")
-        result.append({
-            "id": doc.get("id"),
-            "name": doc.get("name"),
-            "reliability_rating": doc.get("reliability_rating", ""),
-            "content_length": len(doc.get("content", "") or ""),
-            "entity_count": entity_count,
-            "created_at": str(doc.get("created_at", "")),
-        })
-    return {"documents": result, "count": len(result)}
+    # PERF: single query with relationship count instead of N+1 pattern
+    with store._driver.session() as session:
+        result = session.run(
+            """
+            MATCH (d:Document {project_id: $pid})
+            OPTIONAL MATCH (d)-[r]->(m) WHERE type(r) <> 'MENTIONS'
+            RETURN properties(d) as props, count(r) as entity_count
+            ORDER BY d.name
+            LIMIT 500
+            """,
+            pid=project_id,
+        )
+        docs = []
+        for record in result:
+            props = record["props"]
+            docs.append({
+                "id": props.get("id"),
+                "name": props.get("name"),
+                "reliability_rating": props.get("reliability_rating", ""),
+                "content_length": len(props.get("content", "") or ""),
+                "entity_count": record["entity_count"],
+                "created_at": str(props.get("created_at", "")),
+            })
+    return {"documents": docs, "count": len(docs)}
 
 
 @router.get("/documents/{doc_id}")

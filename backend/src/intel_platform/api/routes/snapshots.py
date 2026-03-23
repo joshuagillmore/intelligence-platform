@@ -7,8 +7,9 @@ from datetime import datetime, timezone
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
-# In-memory snapshot storage
+# In-memory snapshot storage (capped to prevent unbounded growth)
 _snapshots: dict[str, dict] = {}
+_MAX_SNAPSHOTS = 500
 
 
 class CreateSnapshotRequest(BaseModel):
@@ -33,6 +34,11 @@ def create_snapshot(req: CreateSnapshotRequest, store: GraphStore = Depends(get_
                 "name": entity.get("name"),
                 "entity_type": entity.get("entity_type"),
             })
+
+    # PERF: evict oldest snapshot if at capacity
+    if len(_snapshots) >= _MAX_SNAPSHOTS:
+        oldest = min(_snapshots, key=lambda k: _snapshots[k].get("created_at", ""))
+        del _snapshots[oldest]
 
     _snapshots[snapshot_id] = {
         "id": snapshot_id,

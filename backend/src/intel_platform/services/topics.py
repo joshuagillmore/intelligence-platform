@@ -12,6 +12,7 @@ _cluster_doc_map: dict[str, dict[str, list[str]]] = {}
 _cluster_keywords: dict[str, dict[str, list[str]]] = {}
 _summary_cache: dict[tuple[str, str, str], tuple[float, str]] = {}  # (project, node, hash) -> (timestamp, summary)
 _SUMMARY_TTL = 300  # 5 minutes
+_SUMMARY_CACHE_MAX = 200  # PERF: cap to prevent unbounded growth
 
 
 class TopicTreeService:
@@ -513,8 +514,11 @@ class TopicTreeService:
         except Exception as e:
             yield f"data: Error generating summary: {str(e)}\n\n"
 
-        # Cache the full response
+        # Cache the full response (evict oldest if cache is full)
         if full_response:
+            if len(_summary_cache) >= _SUMMARY_CACHE_MAX:
+                oldest_key = min(_summary_cache, key=lambda k: _summary_cache[k][0])
+                del _summary_cache[oldest_key]
             _summary_cache[cache_key] = (time.time(), full_response)
 
         yield "data: [DONE]\n\n"

@@ -16,45 +16,46 @@ class BatchDeleteRequest(BaseModel):
 
 @router.get("/projects")
 def list_projects(store: GraphStore = Depends(get_graph_store)):
-    projects = store.list_projects()
-    result = []
-    for p in projects:
-        pid = p.get("id", "")
-        try:
-            stats = store.get_project_stats(pid)
-        except Exception:
-            stats = {"entity_count": 0, "relationship_count": 0, "document_count": 0}
+    # PERF: single Cypher query for all projects with stats, replacing N+1 pattern
+    # (was: 3 separate DB calls per project for stats, latest_entity_time, collection_count)
+    with store._driver.session() as session:
+        result = session.run(
+            """
+            MATCH (p:Project)
+            OPTIONAL MATCH (n {project_id: p.id}) WHERE NOT n:Project
+            WITH p, count(n) as entity_count
+            OPTIONAL MATCH (d:Document {project_id: p.id})
+            WITH p, entity_count, count(d) as doc_count
+            OPTIONAL MATCH (a {project_id: p.id})-[r]->(b {project_id: p.id})
+            WITH p, entity_count, doc_count, count(r) as rel_count
+            OPTIONAL MATCH (c:Collection {project_id: p.id})
+            WITH p, entity_count, doc_count, rel_count, count(c) as coll_count
+            RETURN properties(p) as props, entity_count, doc_count, rel_count, coll_count
+            ORDER BY p.created_at DESC
+            """
+        )
+        projects = []
+        for record in result:
+            p = record["props"]
+            pid = p.get("id", "")
+            created_at = _normalize_datetime(p.get("created_at", ""))
+            updated_at = _normalize_datetime(p.get("updated_at", "")) or created_at
 
-        created_at = _normalize_datetime(p.get("created_at", ""))
-        updated_at = _normalize_datetime(p.get("updated_at", "")) or created_at
-
-        # Check latest entity creation time to supplement updated_at
-        try:
-            latest_entity_time = store.get_latest_entity_time(pid)
-            if latest_entity_time and (not updated_at or latest_entity_time > updated_at):
-                updated_at = latest_entity_time
-        except Exception:
-            pass
-
-        try:
-            from intel_platform.api.routes.collections import _get_collection_count
-            coll_count = _get_collection_count(store, pid)
-        except Exception:
-            coll_count = 0
-
-        result.append({
-            "id": pid,
-            "name": p.get("name", ""),
-            "description": p.get("description", ""),
-            "classification_level": p.get("classification_level", "UNCLASSIFIED"),
-            "priority": p.get("priority", "medium"),
-            "status": p.get("status", "active"),
-            "created_at": created_at or "",
-            "updated_at": updated_at or "",
-            "collection_count": coll_count,
-            **stats,
-        })
-    return result
+            projects.append({
+                "id": pid,
+                "name": p.get("name", ""),
+                "description": p.get("description", ""),
+                "classification_level": p.get("classification_level", "UNCLASSIFIED"),
+                "priority": p.get("priority", "medium"),
+                "status": p.get("status", "active"),
+                "created_at": created_at or "",
+                "updated_at": updated_at or "",
+                "collection_count": record["coll_count"],
+                "entity_count": record["entity_count"],
+                "document_count": record["doc_count"],
+                "relationship_count": record["rel_count"],
+            })
+    return projects
 
 
 @router.post("/projects", response_model=ProjectResponse)
