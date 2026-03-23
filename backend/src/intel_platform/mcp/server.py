@@ -160,14 +160,14 @@ def find_shortest_path(entity_id_1: str, entity_id_2: str) -> dict:
 
 
 @mcp.tool()
-def get_topic_tree(project_id: str) -> dict:
+async def get_topic_tree(project_id: str) -> dict:
     """Get the topic tree showing all entities organized by type."""
     from intel_platform.api.deps import get_neo4j_driver
     from intel_platform.graph.store import GraphStore
     from intel_platform.services.topics import TopicTreeService
     driver = get_neo4j_driver()
     store = GraphStore(driver)
-    return TopicTreeService(store).build_topic_tree(project_id)
+    return await TopicTreeService(store).build_topic_tree(project_id)
 
 
 @mcp.tool()

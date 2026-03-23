@@ -75,6 +75,12 @@ export const graphApi = {
   communities: (projectId: string) => api.get('/communities', { params: { project_id: projectId } }),
   centrality: (projectId: string) => api.get('/graph/centrality', { params: { project_id: projectId } }),
   statistics: (projectId: string) => api.get('/graph/statistics', { params: { project_id: projectId } }),
+  structuralHoles: (projectId: string, topN?: number) =>
+    api.get('/graph/structural-holes', { params: { project_id: projectId, top_n: topN } }),
+  egoNetwork: (entityId: string, projectId: string, hops?: number) =>
+    api.get(`/graph/ego-network/${entityId}`, { params: { project_id: projectId, hops } }),
+  influence: (projectId: string, seedIds: string[], steps?: number, threshold?: number) =>
+    api.post('/graph/influence', { project_id: projectId, seed_ids: seedIds, steps, threshold }),
 };
 
 export const queryApi = {
