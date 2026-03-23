@@ -557,31 +557,9 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
     """Extract entities using LLM. Returns (entities, relationships)."""
     from intel_platform.config import settings
 
-    provider = None
-    preferred = settings.default_llm_provider
-
-    # Dispatch based on configured default provider first
-    if preferred == "anthropic" and settings.anthropic_api_key:
-        from intel_platform.llm.anthropic import AnthropicProvider
-        provider = AnthropicProvider(api_key=settings.anthropic_api_key)
-    elif preferred == "openai" and settings.openai_api_key:
-        from intel_platform.llm.openai_provider import OpenAIProvider
-        provider = OpenAIProvider(api_key=settings.openai_api_key)
-    elif preferred == "cohere" and settings.cohere_api_key:
-        from intel_platform.llm.cohere_provider import CohereProvider
-        provider = CohereProvider(api_key=settings.cohere_api_key)
-
-    # Fallback: try any available key if preferred provider not configured
-    if not provider:
-        if settings.anthropic_api_key:
-            from intel_platform.llm.anthropic import AnthropicProvider
-            provider = AnthropicProvider(api_key=settings.anthropic_api_key)
-        elif settings.openai_api_key:
-            from intel_platform.llm.openai_provider import OpenAIProvider
-            provider = OpenAIProvider(api_key=settings.openai_api_key)
-        elif settings.cohere_api_key:
-            from intel_platform.llm.cohere_provider import CohereProvider
-            provider = CohereProvider(api_key=settings.cohere_api_key)
+    # Use the centralized provider selection (respects runtime overrides)
+    from intel_platform.api.routes.llm import _get_provider
+    provider = _get_provider()
 
     if not provider:
         # Fallback to NLP if no LLM configured

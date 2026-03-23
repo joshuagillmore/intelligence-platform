@@ -35,4 +35,5 @@ class GraphResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     neo4j_connected: bool
+    ollama_connected: bool = False
     version: str = "0.1.0"

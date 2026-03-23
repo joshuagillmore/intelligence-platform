@@ -77,12 +77,12 @@ Items marked with `SECURITY`, `PERF`, or `REVIEW` comments that need human decis
 
 ## Recommendations
 
-1. **Persist in-memory state to Neo4j**: Watchlists, snapshots, and personas are all stored in Python dicts and lost on restart. These should be Neo4j nodes (like Collections) for durability.
+1. **~~Persist in-memory state to Neo4j~~** — **Implemented**: Watchlists and snapshots now stored as Neo4j nodes (`Watchlist`, `Snapshot`). Data survives container restarts.
 
-2. **Add request-level logging middleware**: The application has no structured request logging. Adding a middleware that logs method, path, status code, and response time would significantly improve observability.
+2. **~~Add request-level logging middleware~~** — **Implemented**: `RequestLoggingMiddleware` logs `IP METHOD /path STATUS DURATIONms` for every request.
 
-3. **Pin dependency versions more tightly**: `pyproject.toml` uses `>=` for all dependencies. Consider using `~=` (compatible release) to prevent unexpected breaking changes on `uv sync`.
+3. **~~Pin dependency versions more tightly~~** — **Implemented**: All `pyproject.toml` dependencies changed from `>=` to `~=` (compatible release).
 
-4. **Add a health check for Ollama connectivity**: The `/health` endpoint only checks Neo4j. Since Ollama is now the default LLM provider, include an Ollama reachability check.
+4. **~~Add a health check for Ollama connectivity~~** — **Implemented**: `/health` now returns `ollama_connected` field. Status is `degraded` when Ollama is the default provider but unreachable.
 
-5. **Consider database-backed user management**: The in-memory user store (`_users` dict in `auth.py`) is fine for single-user use but blocks multi-instance deployments. A Neo4j-backed user store would align with the existing architecture.
+5. **~~Database-backed user management~~** — **Implemented**: Users stored as Neo4j `User` nodes. Default admin/admin created on first startup if no users exist. Registration creates new `User` nodes.

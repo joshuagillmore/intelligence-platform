@@ -12,6 +12,7 @@ interface HealthData {
 
 interface AdminConfig {
   llm_provider: string;
+  llm_model: string;
   extraction_mode: string;
   chunk_size: number;
   chunk_overlap: number;
@@ -24,6 +25,14 @@ interface ProxyConfig {
   tor_port?: number;
 }
 
+interface ModelInfo {
+  provider: string;
+  model: string;
+  params: string;
+  quantization: string;
+  size_gb: number;
+}
+
 export default function AdminPage() {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +43,9 @@ export default function AdminPage() {
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxySaving, setProxySaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelSwitching, setModelSwitching] = useState(false);
 
   const loadHealth = useCallback(async () => {
     try {
@@ -76,6 +88,31 @@ export default function AdminPage() {
     }
   }, []);
 
+  const loadModels = useCallback(async () => {
+    setModelsLoading(true);
+    try {
+      const res = await adminApi.listModels();
+      setModels(res.data.models || []);
+    } catch {
+      setModels([]);
+    } finally {
+      setModelsLoading(false);
+    }
+  }, []);
+
+  async function switchModel(provider: string, model: string) {
+    setModelSwitching(true);
+    try {
+      await adminApi.selectModel(provider, model);
+      setToast(`Switched to ${provider}/${model}`);
+      loadConfig();
+    } catch {
+      setToast('Failed to switch model.');
+    } finally {
+      setModelSwitching(false);
+    }
+  }
+
   async function saveProxy() {
     setProxySaving(true);
     try {
@@ -93,7 +130,8 @@ export default function AdminPage() {
     loadProjects();
     loadConfig();
     loadProxy();
-  }, [loadHealth, loadProjects, loadConfig, loadProxy]);
+    loadModels();
+  }, [loadHealth, loadProjects, loadConfig, loadProxy, loadModels]);
 
   useEffect(() => {
     if (toast) {
@@ -183,22 +221,72 @@ export default function AdminPage() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">LLM Configuration</h3>
               <button
-                onClick={loadConfig}
+                onClick={() => { loadConfig(); loadModels(); }}
                 className="text-xs text-accent-blue hover:text-blue-400"
               >
                 Refresh
               </button>
             </div>
             {config ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between bg-navy-700 rounded p-3">
-                  <span className="text-sm text-gray-400">LLM Provider</span>
-                  <span className={`text-sm font-medium px-2 py-0.5 rounded ${
-                    config.llm_provider !== 'none' ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'
-                  }`}>
-                    {config.llm_provider}
-                  </span>
+              <div className="space-y-3">
+                {/* Active model display */}
+                <div className="bg-navy-700 rounded p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm text-gray-400">Active Model</span>
+                    <span className="text-sm font-medium px-2 py-0.5 rounded bg-green-600/20 text-green-400">
+                      {config.llm_provider}
+                    </span>
+                  </div>
+                  {config.llm_model && (
+                    <div className="text-xs text-gray-500 font-mono">{config.llm_model}</div>
+                  )}
                 </div>
+
+                {/* Model selector */}
+                <div>
+                  <label className="text-xs text-gray-400 block mb-2">Available Models</label>
+                  {modelsLoading ? (
+                    <p className="text-gray-500 text-sm">Scanning providers...</p>
+                  ) : models.length === 0 ? (
+                    <p className="text-gray-500 text-sm">No models found.</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                      {models.map((m) => {
+                        const isActive = config.llm_provider === m.provider && config.llm_model === m.model;
+                        return (
+                          <button
+                            key={`${m.provider}:${m.model}`}
+                            onClick={() => !isActive && switchModel(m.provider, m.model)}
+                            disabled={isActive || modelSwitching}
+                            className={`w-full text-left rounded p-2.5 border transition-colors ${
+                              isActive
+                                ? 'bg-accent-blue/10 border-accent-blue/40 cursor-default'
+                                : 'bg-navy-700 border-navy-600 hover:border-accent-blue/30 hover:bg-navy-600'
+                            } disabled:opacity-60`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                  isActive ? 'bg-green-400' : m.provider === 'ollama' ? 'bg-purple-400' : 'bg-blue-400'
+                                }`} />
+                                <span className="text-sm text-gray-200 truncate">{m.model}</span>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                {m.params && <span className="text-[10px] text-gray-500">{m.params}</span>}
+                                {m.size_gb > 0 && <span className="text-[10px] text-gray-500">{m.size_gb}GB</span>}
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                                  m.provider === 'ollama' ? 'bg-purple-600/20 text-purple-400' : 'bg-blue-600/20 text-blue-400'
+                                }`}>{m.provider}</span>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Other config */}
                 <div className="flex items-center justify-between bg-navy-700 rounded p-3">
                   <span className="text-sm text-gray-400">Extraction Mode</span>
                   <span className="text-sm text-gray-300 font-mono">{config.extraction_mode}</span>
@@ -206,10 +294,6 @@ export default function AdminPage() {
                 <div className="flex items-center justify-between bg-navy-700 rounded p-3">
                   <span className="text-sm text-gray-400">Chunk Size / Overlap</span>
                   <span className="text-sm text-gray-300 font-mono">{config.chunk_size} / {config.chunk_overlap}</span>
-                </div>
-                <div className="flex items-center justify-between bg-navy-700 rounded p-3">
-                  <span className="text-sm text-gray-400">Neo4j</span>
-                  <span className="text-sm text-gray-300 font-mono text-xs truncate ml-2">{config.neo4j_uri}</span>
                 </div>
               </div>
             ) : (

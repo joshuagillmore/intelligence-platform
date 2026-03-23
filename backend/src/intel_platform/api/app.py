@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from intel_platform.api.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
+from intel_platform.api.middleware import RateLimitMiddleware, RequestLoggingMiddleware, SecurityHeadersMiddleware
 
 from intel_platform.api.deps import get_neo4j_driver
 from intel_platform.api.routes import health, projects, ingest, entities, graph, llm, collections, query, assess, topics, reports, geo, timeline, notebook, search, export, watchlist, admin_config, personas, documents, snapshots, auth
@@ -20,6 +20,9 @@ CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://loca
 async def lifespan(app: FastAPI):
     driver = get_neo4j_driver()
     initialize_schema(driver)
+    # Ensure default admin user exists in Neo4j
+    from intel_platform.api.auth import _ensure_default_admin
+    _ensure_default_admin()
     yield
     driver.close()
 
@@ -34,6 +37,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=120)
 app.add_middleware(SecurityHeadersMiddleware)
 

@@ -29,14 +29,32 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
-# Default admin user — in production, use a database
-_users: dict[str, dict] = {
-    "admin": {
-        "username": "admin",
-        "hashed_password": _hash_password("admin"),  # Change in production!
-        "role": "admin",
-    }
-}
+def _get_driver():
+    from intel_platform.api.deps import get_neo4j_driver
+    return get_neo4j_driver()
+
+
+def _ensure_default_admin():
+    """Create default admin user in Neo4j if no users exist."""
+    driver = _get_driver()
+    with driver.session() as session:
+        result = session.run("MATCH (u:User) RETURN count(u) as cnt")
+        count = result.single()["cnt"]
+        if count == 0:
+            session.run(
+                """
+                CREATE (u:User {
+                    username: $username,
+                    hashed_password: $hashed_password,
+                    role: $role,
+                    created_at: datetime()
+                })
+                """,
+                username="admin",
+                hashed_password=_hash_password("admin"),
+                role="admin",
+            )
+            _logger.warning("SECURITY: Created default admin/admin user. Change password in production!")
 
 
 def create_access_token(username: str, role: str = "analyst") -> str:
@@ -75,18 +93,40 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
 
 
 def register_user(username: str, password: str, role: str = "analyst") -> dict:
-    if username in _users:
-        raise HTTPException(status_code=400, detail="Username already exists")
-    _users[username] = {
-        "username": username,
-        "hashed_password": _hash_password(password),
-        "role": role,
-    }
+    driver = _get_driver()
+    with driver.session() as session:
+        # Check if user exists
+        result = session.run("MATCH (u:User {username: $username}) RETURN u", username=username)
+        if result.single():
+            raise HTTPException(status_code=400, detail="Username already exists")
+
+        session.run(
+            """
+            CREATE (u:User {
+                username: $username,
+                hashed_password: $hashed_password,
+                role: $role,
+                created_at: datetime()
+            })
+            """,
+            username=username,
+            hashed_password=_hash_password(password),
+            role=role,
+        )
     return {"username": username, "role": role}
 
 
 def authenticate_user(username: str, password: str) -> dict | None:
-    user = _users.get(username)
-    if not user or not verify_password(password, user["hashed_password"]):
-        return None
-    return user
+    driver = _get_driver()
+    with driver.session() as session:
+        result = session.run(
+            "MATCH (u:User {username: $username}) RETURN properties(u) as props",
+            username=username,
+        )
+        record = result.single()
+        if not record:
+            return None
+        user = record["props"]
+        if not verify_password(password, user["hashed_password"]):
+            return None
+        return user
