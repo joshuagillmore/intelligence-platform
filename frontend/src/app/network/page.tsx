@@ -96,6 +96,39 @@ const TYPE_COLORS: Record<string, string> = {
   Vulnerability: 'bg-rose-500',
 };
 
+interface StructuralHoleEntry {
+  id: string;
+  name: string;
+  entity_type: string;
+  constraint: number;
+  effective_size: number;
+  degree: number;
+  is_broker: boolean;
+}
+
+interface EgoNetworkData {
+  center: string;
+  hops: number;
+  node_count: number;
+  edge_count: number;
+  nodes: Array<{ id: string; name: string; entity_type: string; hop_distance: number; local_pagerank: number; local_betweenness: number }>;
+  edges: Array<{ source_id: string; target_id: string; rel_type: string; confidence: number; weight: number }>;
+}
+
+interface InfluenceStep {
+  step: number;
+  newly_activated: Array<{ id: string; name: string; entity_type: string }>;
+  cumulative_count: number;
+}
+
+interface InfluenceResult {
+  seeds: string[];
+  steps: InfluenceStep[];
+  total_activated: number;
+  reach_ratio: number;
+  total_nodes: number;
+}
+
 type SortKey = 'entity' | 'type' | 'degree' | 'betweenness' | 'eigenvector' | 'pagerank' | 'closeness';
 
 function intensityClass(value: number, max: number): string {
@@ -118,13 +151,15 @@ function NetworkPageInner() {
   const [entityRelationships, setEntityRelationships] = useState<Relationship[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
+  const [activeTypeFilters, setActiveTypeFilters] = useState<Set<string>>(new Set());
+  const [typeFilterOpen, setTypeFilterOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<Array<{ role: string; content: string }>>([]);
   const [chatLoading, setChatLoading] = useState(false);
   const [bottomPanelOpen, setBottomPanelOpen] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<string | null>(null);
-  const [leftTab, setLeftTab] = useState<'entities' | 'statistics'>('entities');
+  const [leftTab, setLeftTab] = useState<'entities' | 'statistics' | 'analysis'>('entities');
   const [expandedEntityTypes, setExpandedEntityTypes] = useState<Set<string>>(new Set());
   const [stats, setStats] = useState<GraphStats | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('pagerank');
@@ -187,6 +222,17 @@ function NetworkPageInner() {
   const [relEvidenceLoading, setRelEvidenceLoading] = useState<Record<number, boolean>>({});
   const [mobileLeftOpen, setMobileLeftOpen] = useState(false);
   const [mobileRightOpen, setMobileRightOpen] = useState(false);
+  // Ego highlight depth for graph selection
+  const [egoHighlightDepth, setEgoHighlightDepth] = useState(1);
+  // SNA advanced analysis state
+  const [structuralHoles, setStructuralHoles] = useState<StructuralHoleEntry[]>([]);
+  const [egoNetwork, setEgoNetwork] = useState<EgoNetworkData | null>(null);
+  const [egoLoading, setEgoLoading] = useState(false);
+  const [egoHops, setEgoHops] = useState(2);
+  const [influenceResult, setInfluenceResult] = useState<InfluenceResult | null>(null);
+  const [influenceLoading, setInfluenceLoading] = useState(false);
+  const [influenceSteps, setInfluenceSteps] = useState(3);
+  const [influenceThreshold, setInfluenceThreshold] = useState(0.3);
   // Temporal range filter for graph edges (P0.5)
   const [temporalRange, setTemporalRange] = useState<[string | null, string | null]>([null, null]);
   // Selected edge for detail panel
@@ -337,6 +383,42 @@ function NetworkPageInner() {
     }
   }, [activeProject]);
 
+  const loadStructuralHoles = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      const res = await graphApi.structuralHoles(activeProject.id, 20);
+      setStructuralHoles(res.data || []);
+    } catch (e) {
+      console.error('Failed to load structural holes', e);
+    }
+  }, [activeProject]);
+
+  async function loadEgoNetwork(entityId: string) {
+    if (!activeProject) return;
+    setEgoLoading(true);
+    try {
+      const res = await graphApi.egoNetwork(entityId, activeProject.id, egoHops);
+      setEgoNetwork(res.data);
+    } catch (e) {
+      console.error('Failed to load ego network', e);
+    } finally {
+      setEgoLoading(false);
+    }
+  }
+
+  async function runInfluencePropagation(seedIds: string[]) {
+    if (!activeProject || seedIds.length === 0) return;
+    setInfluenceLoading(true);
+    try {
+      const res = await graphApi.influence(activeProject.id, seedIds, influenceSteps, influenceThreshold);
+      setInfluenceResult(res.data);
+    } catch (e) {
+      console.error('Failed to run influence propagation', e);
+    } finally {
+      setInfluenceLoading(false);
+    }
+  }
+
   async function saveSnapshot() {
     if (!activeProject || !snapshotNameInput.trim() || multiSelected.length === 0) return;
     try {
@@ -462,7 +544,8 @@ function NetworkPageInner() {
     loadStatistics();
     loadCommunities();
     loadSnapshots();
-  }, [loadGraph, loadEntities, loadStatistics, loadCommunities, loadSnapshots]);
+    loadStructuralHoles();
+  }, [loadGraph, loadEntities, loadStatistics, loadCommunities, loadSnapshots, loadStructuralHoles]);
 
   // Auto-select entity from URL param (e.g., from Cyber "View in Graph")
   useEffect(() => {
@@ -490,13 +573,22 @@ function NetworkPageInner() {
     });
   }
 
-  // Combined filter: island threshold + relationship type + confidence + temporal range
+  // Combined filter: entity type + island threshold + relationship type + confidence + temporal range
   useEffect(() => {
-    // First filter edges by relationship type, confidence, and temporal range
+    // Filter nodes by active entity type filters
+    let nodes = graphNodes;
+    if (activeTypeFilters.size > 0) {
+      nodes = graphNodes.filter(n => activeTypeFilters.has(n.entity_type));
+    }
+    const visibleNodeIds = new Set(nodes.map(n => n.id));
+
+    // Filter edges by relationship type, confidence, temporal range, and visible nodes
     let edges = graphEdges.filter(e => {
+      const srcId = e.source_id || e.source;
+      const tgtId = e.target_id || e.target;
+      if (activeTypeFilters.size > 0 && (!visibleNodeIds.has(String(srcId)) || !visibleNodeIds.has(String(tgtId)))) return false;
       if (hiddenRelTypes.has(e.rel_type)) return false;
       if (confidenceThreshold > 0 && (e.confidence === undefined || e.confidence < confidenceThreshold)) return false;
-      // Temporal range filter (P0.5)
       const [tStart, tEnd] = temporalRange;
       if (tStart && e.last_seen && e.last_seen < tStart) return false;
       if (tEnd && e.first_seen && e.first_seen > tEnd) return false;
@@ -505,12 +597,10 @@ function NetworkPageInner() {
 
     // Then apply island threshold
     if (islandThreshold > 0) {
-      // Build a metric value map for each node
       const metricMap: Record<string, number> = {};
 
       if (islandMetric === 'degree') {
-        // Compute degree from current edges
-        for (const node of graphNodes) {
+        for (const node of nodes) {
           metricMap[node.id] = 0;
         }
         for (const edge of edges) {
@@ -520,50 +610,46 @@ function NetworkPageInner() {
           if (metricMap[tgtId] !== undefined) metricMap[tgtId]++;
         }
       } else {
-        // Use pre-computed stats from entity_statistics
         const statsLookup: Record<string, EntityStats> = {};
         if (stats?.entity_statistics) {
           for (const s of stats.entity_statistics) {
             statsLookup[s.entity] = s;
           }
         }
-        for (const node of graphNodes) {
+        for (const node of nodes) {
           const s = statsLookup[node.name];
           metricMap[node.id] = s ? s[islandMetric] : 0;
         }
       }
 
-      const visibleIds = new Set(graphNodes.filter(n => metricMap[n.id] >= islandThreshold).map(n => n.id));
-      setFilteredGraphNodes(graphNodes.filter(n => visibleIds.has(n.id)));
+      const filteredIds = new Set(nodes.filter(n => metricMap[n.id] >= islandThreshold).map(n => n.id));
+      setFilteredGraphNodes(nodes.filter(n => filteredIds.has(n.id)));
       edges = edges.filter(e => {
         const srcId = e.source_id || e.source;
         const tgtId = e.target_id || e.target;
-        return visibleIds.has(srcId) && visibleIds.has(tgtId);
+        return filteredIds.has(srcId) && filteredIds.has(tgtId);
       });
     } else {
-      // Still need to filter out orphan nodes if edges were removed
       const connectedIds = new Set<string>();
       for (const edge of edges) {
         connectedIds.add(String(edge.source_id || edge.source));
         connectedIds.add(String(edge.target_id || edge.target));
       }
-      // Show all nodes if no edge filtering is active, otherwise show only connected + originally isolated
-      if (hiddenRelTypes.size === 0 && confidenceThreshold === 0) {
+      if (hiddenRelTypes.size === 0 && confidenceThreshold === 0 && activeTypeFilters.size === 0) {
         setFilteredGraphNodes(graphNodes);
       } else {
-        // Show nodes that are connected after filtering, plus nodes that had no edges at all originally
         const originallyConnected = new Set<string>();
         for (const e of graphEdges) {
           originallyConnected.add(String(e.source_id || e.source));
           originallyConnected.add(String(e.target_id || e.target));
         }
-        setFilteredGraphNodes(graphNodes.filter(n =>
+        setFilteredGraphNodes(nodes.filter(n =>
           connectedIds.has(n.id) || !originallyConnected.has(n.id)
         ));
       }
     }
     setFilteredGraphEdges(edges);
-  }, [graphNodes, graphEdges, islandThreshold, islandMetric, hiddenRelTypes, confidenceThreshold, temporalRange, stats]);
+  }, [graphNodes, graphEdges, islandThreshold, islandMetric, hiddenRelTypes, confidenceThreshold, temporalRange, stats, activeTypeFilters]);
 
   // Community collapse: reduce many nodes into community super-nodes
   const displayData = useMemo(() => {
@@ -779,23 +865,53 @@ function NetworkPageInner() {
     if (!activeProject || multiSelected.length === 0) return;
     setAssessLoading(true);
     try {
-      const results: string[] = [];
-      for (const entity of multiSelected) {
+      // For multiple entities (community/group), generate a community overview
+      if (multiSelected.length > 1) {
+        const entityNames = multiSelected.map(e => `${e.name} (${e.entity_type})`).join(', ');
+        const entityIds = multiSelected.map(e => e.id);
+
+        // Get stats for these entities if available
+        const entityStats = stats?.entity_statistics?.filter(s =>
+          multiSelected.some(e => e.name === s.entity)
+        ) || [];
+        const topByPagerank = [...entityStats].sort((a, b) => b.pagerank - a.pagerank).slice(0, 5);
+        const topByBetweenness = [...entityStats].sort((a, b) => b.betweenness - a.betweenness).slice(0, 5);
+
+        const statsContext = topByPagerank.length > 0
+          ? `\n\nKey nodes by PageRank: ${topByPagerank.map(s => `${s.entity} (PR: ${s.pagerank.toFixed(4)})`).join(', ')}\nKey brokers by Betweenness: ${topByBetweenness.map(s => `${s.entity} (BC: ${s.betweenness.toFixed(4)})`).join(', ')}`
+          : '';
+
+        // Use RAG query for community context
+        const ragRes = await queryApi.rag(activeProject.id,
+          `Provide a comprehensive overview of the following group of entities and their relationships: ${entityNames}`
+        );
+        const ragContext = ragRes.data?.response || ragRes.data?.context || '';
+
+        const communityPrompt = `Generate a community/group assessment for these ${multiSelected.length} entities:\n${entityNames}\n\n${statsContext}\n\nContext from knowledge graph:\n${ragContext}\n\nProvide:\n1. Community Overview (what binds this group together)\n2. Key Nodes (most influential members based on centrality)\n3. Internal Dynamics (relationship patterns within the group)\n4. External Connections (how this group connects to the broader network)\n5. Intelligence Gaps\n6. Assessment Summary`;
+
+        const llmRes = await llmApi.query(
+          [{ role: 'user', content: communityPrompt }],
+          'threat_assessment'
+        );
+        const result = llmRes.data.response || llmRes.data.content || JSON.stringify(llmRes.data);
+        setAiResult(result);
+      } else {
+        // Single entity: use standard assessment
+        const entity = multiSelected[0];
         const res = await assessApi.generate(entity.id, {
           entity_id: entity.id,
           project_id: activeProject.id,
           judgment: assessJudgment || undefined,
           probability: assessProbability,
         });
-        results.push(res.data.assessment || res.data.error || 'No response');
+        setAiResult(res.data.assessment || res.data.error || 'No response');
       }
       setAssessModalOpen(false);
       setAssessJudgment('');
       setAssessProbability(0.5);
       setAssessAnalyst('');
-      setAiResult(results.join('\n\n---\n\n'));
     } catch {
-      setAiResult('Failed to generate AI assessment.');
+      setAiResult('Failed to generate community assessment.');
     } finally {
       setAssessLoading(false);
     }
@@ -1335,6 +1451,12 @@ function NetworkPageInner() {
               >
                 Statistics
               </button>
+              <button
+                onClick={() => setLeftTab('analysis')}
+                className={`flex-1 py-2 text-xs font-medium transition-colors ${leftTab === 'analysis' ? 'text-accent-blue border-b-2 border-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}
+              >
+                Analysis
+              </button>
             </div>
 
             {leftTab === 'entities' ? (
@@ -1346,19 +1468,129 @@ function NetworkPageInner() {
                     placeholder="Search entities..."
                     className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-accent-blue"
                   />
-                  <select
-                    value={typeFilter}
-                    onChange={(e) => setTypeFilter(e.target.value)}
-                    className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-accent-blue"
-                  >
-                    {ENTITY_TYPES.map(t => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
+                  {/* Multi-select entity type filter */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setTypeFilterOpen(!typeFilterOpen)}
+                      className="w-full flex items-center justify-between bg-navy-700 border border-navy-600 rounded px-2 py-1.5 text-xs text-gray-300 hover:border-accent-blue transition-colors"
+                    >
+                      <span className="truncate">
+                        {activeTypeFilters.size === 0 ? 'All Types' : `${activeTypeFilters.size} type${activeTypeFilters.size > 1 ? 's' : ''} selected`}
+                      </span>
+                      <span className="text-gray-500 ml-1">{typeFilterOpen ? '\u25B2' : '\u25BC'}</span>
+                    </button>
+                    {typeFilterOpen && (
+                      <div className="absolute z-20 mt-1 w-full bg-navy-700 border border-navy-600 rounded shadow-lg max-h-48 overflow-y-auto">
+                        <button
+                          onClick={() => { setActiveTypeFilters(new Set()); setTypeFilter('All'); }}
+                          className={`w-full text-left px-3 py-1.5 text-xs hover:bg-navy-600 transition-colors ${activeTypeFilters.size === 0 ? 'text-accent-blue font-medium' : 'text-gray-300'}`}
+                        >
+                          All Types
+                        </button>
+                        {(() => {
+                          const graphTypes = Array.from(new Set(graphNodes.map(n => n.entity_type))).sort();
+                          return graphTypes.map(t => (
+                            <label key={t} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-navy-600 cursor-pointer transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={activeTypeFilters.has(t)}
+                                onChange={() => {
+                                  setActiveTypeFilters(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(t)) next.delete(t); else next.add(t);
+                                    return next;
+                                  });
+                                }}
+                                className="accent-accent-blue"
+                              />
+                              <span className={`w-2 h-2 rounded-full flex-none ${TYPE_COLORS[t] || 'bg-gray-500'}`} />
+                              <span className="text-gray-300">{formatEntityType(t)}</span>
+                              <span className="ml-auto text-[10px] text-gray-500">
+                                {graphNodes.filter(n => n.entity_type === t).length}
+                              </span>
+                            </label>
+                          ));
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                  {activeTypeFilters.size > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {Array.from(activeTypeFilters).map(t => (
+                        <span key={t} className="flex items-center gap-1 bg-navy-600 text-[10px] text-gray-300 px-1.5 py-0.5 rounded">
+                          {t}
+                          <button onClick={() => setActiveTypeFilters(prev => { const n = new Set(prev); n.delete(t); return n; })} className="text-gray-500 hover:text-white">&times;</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
+                {/* Stats cards + filters (moved from Statistics tab) */}
+                {stats && (
+                  <div className="p-3 border-b border-navy-600 space-y-2">
+                    <div className="grid grid-cols-4 gap-1.5">
+                      <div className="bg-navy-700 rounded p-1.5 text-center">
+                        <div className="text-sm font-bold text-accent-blue">{stats.total_nodes}</div>
+                        <div className="text-[9px] text-gray-500">Nodes</div>
+                      </div>
+                      <div className="bg-navy-700 rounded p-1.5 text-center">
+                        <div className="text-sm font-bold text-accent-blue">{stats.total_edges}</div>
+                        <div className="text-[9px] text-gray-500">Edges</div>
+                      </div>
+                      <div className="bg-navy-700 rounded p-1.5 text-center">
+                        <div className="text-sm font-bold text-accent-blue">{typeof stats.density === 'number' ? stats.density.toFixed(3) : stats.density}</div>
+                        <div className="text-[9px] text-gray-500">Density</div>
+                      </div>
+                      <div className="bg-navy-700 rounded p-1.5 text-center">
+                        <div className="text-sm font-bold text-accent-blue">{stats.connected_components}</div>
+                        <div className="text-[9px] text-gray-500">Comp.</div>
+                      </div>
+                    </div>
+                    {/* Min Confidence */}
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-gray-500">Confidence</label>
+                        <span className="text-[10px] text-accent-blue font-medium">{confidenceThreshold.toFixed(2)}</span>
+                      </div>
+                      <input type="range" min={0} max={1} step={0.05} value={confidenceThreshold}
+                        onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
+                        className="w-full accent-accent-blue h-1" />
+                    </div>
+                    {/* Island Method */}
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-gray-500">Island ({islandMetric})</label>
+                        <select value={islandMetric}
+                          onChange={(e) => { setIslandMetric(e.target.value as typeof islandMetric); setIslandThreshold(0); }}
+                          className="bg-navy-800 border border-navy-600 rounded px-1 py-0.5 text-[10px] text-gray-400">
+                          <option value="degree">Degree</option>
+                          <option value="betweenness">Between.</option>
+                          <option value="eigenvector">Eigen.</option>
+                          <option value="pagerank">PageRank</option>
+                          <option value="closeness">Close.</option>
+                        </select>
+                      </div>
+                      <input type="range" min={0}
+                        max={islandMetric === 'degree' ? Math.max(maxVals.degree, 1) : Math.max(maxVals[islandMetric], 0.01)}
+                        step={islandMetric === 'degree' ? 1 : islandMetric === 'pagerank' ? 0.001 : 0.01}
+                        value={islandThreshold}
+                        onChange={(e) => setIslandThreshold(Number(e.target.value))}
+                        className="w-full accent-accent-blue h-1" />
+                    </div>
+                    {/* Ego Highlight Depth */}
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-gray-500">Ego Highlight</label>
+                        <span className="text-[10px] text-accent-blue font-medium">{egoHighlightDepth} hop{egoHighlightDepth > 1 ? 's' : ''}</span>
+                      </div>
+                      <input type="range" min={1} max={4} step={1} value={egoHighlightDepth}
+                        onChange={(e) => setEgoHighlightDepth(Number(e.target.value))}
+                        className="w-full accent-accent-blue h-1" />
+                    </div>
+                  </div>
+                )}
                 <div className="flex-1 overflow-y-auto">
                   {(() => {
-                    // Group entities by type for collapsible hierarchy
                     const grouped: Record<string, typeof entities> = {};
                     entities.forEach(e => {
                       const t = e.entity_type || 'Unknown';
@@ -1384,7 +1616,7 @@ function NetworkPageInner() {
                             })}
                             className="w-full text-left px-3 py-2 text-xs font-semibold border-b border-navy-700 hover:bg-navy-700 flex items-center gap-2 text-gray-400"
                           >
-                            <span className="text-[10px]">{isExpanded ? '▼' : '▶'}</span>
+                            <span className="text-[10px]">{isExpanded ? '\u25BC' : '\u25B6'}</span>
                             <span className={`w-2 h-2 rounded-full flex-none ${TYPE_COLORS[type] || 'bg-gray-500'}`} />
                             <span className="flex-1">{formatEntityType(type)}</span>
                             <span className="text-[10px] text-gray-500 bg-navy-600 px-1.5 py-0.5 rounded-full">{typeEntities.length}</span>
@@ -1392,11 +1624,27 @@ function NetworkPageInner() {
                           {isExpanded && typeEntities.map(entity => (
                             <button
                               key={entity.id}
-                              onClick={() => selectEntity(entity)}
+                              onClick={(e) => {
+                                if (e.shiftKey) {
+                                  // Shift+click adds to multi-select
+                                  setMultiSelected(prev => {
+                                    const exists = prev.find(x => x.id === entity.id);
+                                    if (exists) return prev.filter(x => x.id !== entity.id);
+                                    return [...prev, entity];
+                                  });
+                                } else {
+                                  selectEntity(entity);
+                                }
+                              }}
                               className={`w-full text-left pl-8 pr-3 py-1.5 text-xs border-b border-navy-700/50 hover:bg-navy-700 transition-colors flex items-center gap-2 ${
-                                selectedEntity?.id === entity.id ? 'bg-navy-700 text-accent-blue' : 'text-gray-300'
+                                selectedEntity?.id === entity.id ? 'bg-navy-700 text-accent-blue'
+                                : multiSelected.find(x => x.id === entity.id) ? 'bg-navy-700/50 text-purple-400'
+                                : 'text-gray-300'
                               }`}
                             >
+                              {multiSelected.find(x => x.id === entity.id) && (
+                                <span className="w-2 h-2 rounded-full bg-purple-500 flex-none" />
+                              )}
                               <span className="truncate">{entity.name}</span>
                             </button>
                           ))}
@@ -1405,17 +1653,46 @@ function NetworkPageInner() {
                     });
                   })()}
                 </div>
-                {/* Snapshots (Bins) Section */}
+                {/* Snapshots (Bins) + Mass Select Section */}
                 <div className="flex-none border-t border-navy-600">
                   <div className="px-3 py-2 flex items-center justify-between">
-                    <h4 className="text-xs font-semibold text-gray-400">Snapshots</h4>
-                    {activeSnapshotId && (
+                    <h4 className="text-xs font-semibold text-gray-400">Snapshots / Bins</h4>
+                    <div className="flex items-center gap-1">
+                      {activeSnapshotId && (
+                        <button onClick={clearSnapshotView} className="text-[10px] text-accent-blue hover:underline">Clear</button>
+                      )}
+                    </div>
+                  </div>
+                  {/* Mass selection helpers */}
+                  <div className="px-3 pb-2 flex flex-wrap gap-1">
+                    <button
+                      onClick={() => {
+                        const allEntities = filteredGraphNodes.map(n => ({ id: n.id, name: n.name, entity_type: n.entity_type }));
+                        setMultiSelected(allEntities);
+                      }}
+                      className="text-[9px] px-2 py-0.5 rounded bg-navy-600 text-gray-300 hover:bg-navy-500"
+                    >
+                      Select All Visible
+                    </button>
+                    {selectedEntity && communityMap[selectedEntity.id] !== undefined && (
                       <button
-                        onClick={clearSnapshotView}
-                        className="text-[10px] text-accent-blue hover:underline"
+                        onClick={() => {
+                          const cid = communityMap[selectedEntity.id];
+                          const communityEntities = filteredGraphNodes
+                            .filter(n => communityMap[n.id] === cid)
+                            .map(n => ({ id: n.id, name: n.name, entity_type: n.entity_type }));
+                          setMultiSelected(communityEntities);
+                        }}
+                        className="text-[9px] px-2 py-0.5 rounded bg-purple-800 text-gray-300 hover:bg-purple-700"
                       >
-                        Clear Filter
+                        Select Community
                       </button>
+                    )}
+                    {multiSelected.length > 0 && (
+                      <>
+                        <span className="text-[9px] text-purple-400 px-1 py-0.5">{multiSelected.length} selected</span>
+                        <button onClick={() => setMultiSelected([])} className="text-[9px] px-2 py-0.5 rounded bg-navy-600 text-gray-400 hover:bg-navy-500">Clear</button>
+                      </>
                     )}
                   </div>
                   {multiSelected.length > 0 && (
@@ -1430,27 +1707,20 @@ function NetworkPageInner() {
                             onKeyDown={(e) => e.key === 'Enter' && saveSnapshot()}
                           />
                           <div className="flex gap-1">
-                            <button
-                              onClick={saveSnapshot}
-                              disabled={!snapshotNameInput.trim()}
-                              className="flex-1 bg-accent-blue hover:bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-medium disabled:opacity-50"
-                            >
+                            <button onClick={saveSnapshot} disabled={!snapshotNameInput.trim()}
+                              className="flex-1 bg-accent-blue hover:bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-medium disabled:opacity-50">
                               Save ({multiSelected.length} entities)
                             </button>
-                            <button
-                              onClick={() => setSnapshotFormOpen(false)}
-                              className="px-2 py-1 bg-navy-600 hover:bg-navy-700 text-gray-300 rounded text-[10px]"
-                            >
+                            <button onClick={() => setSnapshotFormOpen(false)}
+                              className="px-2 py-1 bg-navy-600 hover:bg-navy-700 text-gray-300 rounded text-[10px]">
                               Cancel
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <button
-                          onClick={() => setSnapshotFormOpen(true)}
-                          className="w-full bg-navy-700 hover:bg-navy-600 border border-navy-600 text-gray-300 px-2 py-1.5 rounded text-xs transition-colors"
-                        >
-                          Save Snapshot ({multiSelected.length} selected)
+                        <button onClick={() => setSnapshotFormOpen(true)}
+                          className="w-full bg-navy-700 hover:bg-navy-600 border border-navy-600 text-gray-300 px-2 py-1.5 rounded text-xs transition-colors">
+                          Save as Snapshot ({multiSelected.length} selected)
                         </button>
                       )}
                     </div>
@@ -1460,121 +1730,156 @@ function NetworkPageInner() {
                       <p className="text-[10px] text-gray-500 px-3 pb-2">No snapshots saved.</p>
                     ) : (
                       snapshots.map((snap) => (
-                        <div
-                          key={snap.id}
+                        <div key={snap.id}
                           className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border-b border-navy-700 hover:bg-navy-700 cursor-pointer transition-colors ${
                             activeSnapshotId === snap.id ? 'bg-navy-700 text-accent-blue' : 'text-gray-300'
-                          }`}
-                        >
-                          <div
-                            className="flex-1 min-w-0"
-                            onClick={() => loadSnapshotView(snap.id)}
-                          >
+                          }`}>
+                          <div className="flex-1 min-w-0" onClick={() => loadSnapshotView(snap.id)}>
                             <div className="truncate font-medium">{snap.name}</div>
                             <div className="text-[10px] text-gray-500">
                               {snap.entity_count} entities &middot; {new Date(snap.created_at).toLocaleDateString()}
                             </div>
                           </div>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); deleteSnapshot(snap.id); }}
-                            className="text-red-400 hover:text-red-300 text-[10px] flex-none"
-                          >
-                            Del
-                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); deleteSnapshot(snap.id); }}
+                            className="text-red-400 hover:text-red-300 text-[10px] flex-none">Del</button>
                         </div>
                       ))
                     )}
                   </div>
                 </div>
               </>
-            ) : (
+            ) : leftTab === 'statistics' ? (
               <div className="flex-1 overflow-y-auto p-3">
-                {stats ? (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-navy-700 rounded p-2 text-center">
-                        <div className="text-lg font-bold text-accent-blue">{stats.total_nodes}</div>
-                        <div className="text-xs text-gray-400">Nodes</div>
-                      </div>
-                      <div className="bg-navy-700 rounded p-2 text-center">
-                        <div className="text-lg font-bold text-accent-blue">{stats.total_edges}</div>
-                        <div className="text-xs text-gray-400">Edges</div>
-                      </div>
-                      <div className="bg-navy-700 rounded p-2 text-center">
-                        <div className="text-lg font-bold text-accent-blue">{typeof stats.density === 'number' ? stats.density.toFixed(4) : stats.density}</div>
-                        <div className="text-xs text-gray-400">Density</div>
-                      </div>
-                      <div className="bg-navy-700 rounded p-2 text-center">
-                        <div className="text-lg font-bold text-accent-blue">{stats.connected_components}</div>
-                        <div className="text-xs text-gray-400">Components</div>
-                      </div>
+                <h4 className="text-xs font-semibold text-gray-400 mb-2">Edge Overview</h4>
+                {(() => {
+                  // Aggregate edges by relationship type
+                  const relCounts: Record<string, { count: number; avgConf: number; totalConf: number }> = {};
+                  graphEdges.forEach(e => {
+                    const rt = e.rel_type || 'UNKNOWN';
+                    if (!relCounts[rt]) relCounts[rt] = { count: 0, avgConf: 0, totalConf: 0 };
+                    relCounts[rt].count++;
+                    relCounts[rt].totalConf += (e.confidence ?? 0.5);
+                  });
+                  Object.values(relCounts).forEach(v => { v.avgConf = v.count > 0 ? v.totalConf / v.count : 0; });
+                  const sorted = Object.entries(relCounts).sort((a, b) => b[1].count - a[1].count);
+                  const maxCount = sorted.length > 0 ? sorted[0][1].count : 1;
+                  return (
+                    <div className="space-y-1">
+                      {sorted.map(([rt, data]) => (
+                        <div key={rt} className="bg-navy-700 rounded p-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-300 font-medium">{formatRelType(rt)}</span>
+                            <span className="text-gray-500">{data.count}</span>
+                          </div>
+                          <div className="w-full bg-navy-800 rounded-full h-1.5 mt-1">
+                            <div className="bg-accent-blue h-1.5 rounded-full" style={{ width: `${(data.count / maxCount) * 100}%` }} />
+                          </div>
+                          <div className="text-[10px] text-gray-500 mt-0.5">
+                            Avg confidence: {(data.avgConf * 100).toFixed(0)}%
+                          </div>
+                        </div>
+                      ))}
+                      {sorted.length === 0 && <p className="text-xs text-gray-500">No edges in graph.</p>}
                     </div>
-                    {/* Min Confidence */}
-                    <div className="bg-navy-700 rounded p-3">
-                      <label className="text-xs text-gray-400 font-medium">Min Confidence</label>
-                      <input
-                        type="range"
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        value={confidenceThreshold}
-                        onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
-                        className="w-full accent-accent-blue mt-2"
-                      />
-                      <div className="flex justify-between text-xs text-gray-500 mt-1">
-                        <span>0</span>
-                        <span className="text-accent-blue font-medium">{confidenceThreshold.toFixed(2)}</span>
-                        <span>1.00</span>
-                      </div>
-                    </div>
-                    {/* Island Method */}
-                    <div className="bg-navy-700 rounded p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="text-xs text-gray-400 font-medium">
-                          Island Method
-                        </label>
-                        <select
-                          value={islandMetric}
-                          onChange={(e) => {
-                            setIslandMetric(e.target.value as typeof islandMetric);
-                            setIslandThreshold(0);
-                          }}
-                          className="bg-navy-800 border border-navy-600 rounded px-2 py-0.5 text-xs text-gray-300"
-                        >
-                          <option value="degree">Degree</option>
-                          <option value="betweenness">Betweenness</option>
-                          <option value="eigenvector">Eigenvector</option>
-                          <option value="pagerank">PageRank</option>
-                          <option value="closeness">Closeness</option>
-                        </select>
-                      </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={islandMetric === 'degree' ? Math.max(maxVals.degree, 1) : Math.max(maxVals[islandMetric], 0.01)}
-                        step={islandMetric === 'degree' ? 1 : islandMetric === 'pagerank' ? 0.001 : 0.01}
-                        value={islandThreshold}
-                        onChange={(e) => setIslandThreshold(Number(e.target.value))}
-                        className="w-full accent-accent-blue"
-                      />
-                      <div className="flex justify-between text-xs text-gray-500 mt-1">
-                        <span>0</span>
-                        <span className="text-accent-blue font-medium">
-                          {islandMetric === 'degree' ? islandThreshold : islandThreshold.toFixed(islandMetric === 'pagerank' ? 3 : 2)}
-                        </span>
-                        <span>{islandMetric === 'degree' ? maxVals.degree : maxVals[islandMetric].toFixed(islandMetric === 'pagerank' ? 3 : 2)}</span>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Showing nodes with {islandMetric} &ge; {islandMetric === 'degree' ? islandThreshold : islandThreshold.toFixed(islandMetric === 'pagerank' ? 3 : 2)}
-                      </p>
-                    </div>
-                    <p className="text-xs text-gray-500">See full statistics table in expanded view by clicking a column header to sort.</p>
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-500">Loading statistics...</p>
-                )}
+                  );
+                })()}
               </div>
-            )}
+            ) : leftTab === 'analysis' ? (
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                {/* Structural Holes / Brokers */}
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-400 mb-2">Structural Holes (Brokers)</h4>
+                  <p className="text-[10px] text-gray-500 mb-2">Low constraint + high effective size = broker bridging groups.</p>
+                  {structuralHoles.length > 0 ? (
+                    <div className="space-y-1">
+                      {structuralHoles.slice(0, 10).map((sh) => (
+                        <div
+                          key={sh.id}
+                          className={`text-xs rounded p-2 cursor-pointer transition-colors ${sh.is_broker ? 'bg-purple-900/40 border border-purple-700/50' : 'bg-navy-700'} hover:bg-navy-600`}
+                          onClick={() => selectEntity({ id: sh.id, name: sh.name, entity_type: sh.entity_type })}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-200 font-medium truncate">{sh.name}</span>
+                            {sh.is_broker && <span className="text-[9px] px-1.5 py-0.5 bg-purple-600 text-white rounded">Broker</span>}
+                          </div>
+                          <div className="flex gap-3 mt-1 text-[10px] text-gray-400">
+                            <span>Constraint: <span className={sh.constraint < 0.5 ? 'text-green-400' : 'text-gray-300'}>{sh.constraint.toFixed(3)}</span></span>
+                            <span>Eff. Size: <span className={sh.effective_size > 1.5 ? 'text-blue-400' : 'text-gray-300'}>{sh.effective_size.toFixed(2)}</span></span>
+                            <span>Deg: {sh.degree}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-gray-500">No data available.</p>
+                  )}
+                </div>
+
+                {/* Influence Propagation */}
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-400 mb-2">Influence Propagation</h4>
+                  <p className="text-[10px] text-gray-500 mb-2">Simulate how influence spreads from selected entities.</p>
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <label className="text-[10px] text-gray-500">Steps</label>
+                        <input type="number" min={1} max={10} value={influenceSteps} onChange={(e) => setInfluenceSteps(Number(e.target.value))}
+                          className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs" />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] text-gray-500">Threshold</label>
+                        <input type="number" min={0} max={1} step={0.1} value={influenceThreshold} onChange={(e) => setInfluenceThreshold(Number(e.target.value))}
+                          className="w-full bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs" />
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const seeds = multiSelected.length > 0 ? multiSelected.map(e => e.id) : selectedEntity ? [selectedEntity.id] : [];
+                        if (seeds.length > 0) runInfluencePropagation(seeds);
+                      }}
+                      disabled={influenceLoading || (!selectedEntity && multiSelected.length === 0)}
+                      className="w-full bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+                    >
+                      {influenceLoading ? 'Running...' : `Run from ${multiSelected.length > 0 ? multiSelected.length + ' selected' : selectedEntity?.name || 'no entity'}`}
+                    </button>
+                  </div>
+
+                  {influenceResult && (
+                    <div className="mt-2 space-y-1.5">
+                      <div className="flex gap-2 text-[10px]">
+                        <span className="bg-navy-700 rounded px-2 py-1">
+                          Reach: <span className="text-orange-400 font-bold">{(influenceResult.reach_ratio * 100).toFixed(1)}%</span>
+                        </span>
+                        <span className="bg-navy-700 rounded px-2 py-1">
+                          Activated: <span className="text-orange-400 font-bold">{influenceResult.total_activated}</span> / {influenceResult.total_nodes}
+                        </span>
+                      </div>
+                      {influenceResult.steps.map((step) => (
+                        <div key={step.step} className="bg-navy-700 rounded p-2">
+                          <div className="text-[10px] text-gray-400 mb-1">
+                            Step {step.step}: +{step.newly_activated.length} activated ({step.cumulative_count} total)
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {step.newly_activated.slice(0, 8).map((n) => (
+                              <span
+                                key={n.id}
+                                className="text-[9px] px-1.5 py-0.5 bg-navy-600 text-gray-300 rounded cursor-pointer hover:bg-navy-500"
+                                onClick={() => selectEntity({ id: n.id, name: n.name, entity_type: n.entity_type })}
+                              >
+                                {n.name}
+                              </span>
+                            ))}
+                            {step.newly_activated.length > 8 && (
+                              <span className="text-[9px] text-gray-500">+{step.newly_activated.length - 8} more</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {/* Center - Graph or Statistics Table */}
@@ -1650,6 +1955,7 @@ function NetworkPageInner() {
                       layout={layoutMode}
                       colorMode={colorMode}
                       communityMap={communityMap}
+                      egoHighlightDepth={egoHighlightDepth}
                     />
                   ) : (
                     <div className="flex items-center justify-center h-full text-gray-500">
@@ -2045,6 +2351,72 @@ function NetworkPageInner() {
                     </div>
                   ) : (
                     <p className="text-xs text-gray-500">No source documents found.</p>
+                  )}
+                </div>
+
+                {/* Ego Network */}
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold text-gray-400">Ego Network</h4>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={egoHops}
+                      onChange={(e) => setEgoHops(Number(e.target.value))}
+                      className="bg-navy-700 border border-navy-600 rounded px-2 py-1.5 text-xs"
+                    >
+                      <option value={1}>1 hop</option>
+                      <option value={2}>2 hops</option>
+                      <option value={3}>3 hops</option>
+                      <option value={4}>4 hops</option>
+                    </select>
+                    <button
+                      onClick={() => loadEgoNetwork(selectedEntity.id)}
+                      disabled={egoLoading}
+                      className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50 transition-colors"
+                    >
+                      {egoLoading ? 'Loading...' : 'Extract'}
+                    </button>
+                  </div>
+                  {egoNetwork && egoNetwork.center === selectedEntity.id && (
+                    <div className="bg-navy-700 rounded p-2 space-y-1.5">
+                      <div className="flex gap-2 text-[10px] text-gray-400">
+                        <span>{egoNetwork.node_count} nodes</span>
+                        <span>{egoNetwork.edge_count} edges</span>
+                        <span>{egoNetwork.hops} hops</span>
+                      </div>
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {egoNetwork.nodes.filter(n => n.id !== selectedEntity.id).slice(0, 15).map((n) => (
+                          <div
+                            key={n.id}
+                            className="flex items-center justify-between text-[10px] px-1.5 py-1 bg-navy-800 rounded cursor-pointer hover:bg-navy-600"
+                            onClick={() => selectEntity({ id: n.id, name: n.name, entity_type: n.entity_type })}
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className={`w-1.5 h-1.5 rounded-full flex-none ${n.hop_distance === 1 ? 'bg-blue-400' : n.hop_distance === 2 ? 'bg-blue-600' : 'bg-blue-800'}`} />
+                              <span className="text-gray-300 truncate">{n.name}</span>
+                            </div>
+                            <span className="text-gray-500 flex-none ml-1">h{n.hop_distance} pr:{n.local_pagerank.toFixed(3)}</span>
+                          </div>
+                        ))}
+                        {egoNetwork.nodes.length > 16 && (
+                          <p className="text-[10px] text-gray-500 text-center">+{egoNetwork.nodes.length - 16} more</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          // Focus the graph on the ego network by filtering
+                          const egoIds = new Set(egoNetwork.nodes.map(n => n.id));
+                          setFilteredGraphNodes(graphNodes.filter(n => egoIds.has(n.id)));
+                          setFilteredGraphEdges(graphEdges.filter(e => {
+                            const srcId = e.source_id || e.source;
+                            const tgtId = e.target_id || e.target;
+                            return egoIds.has(srcId) && egoIds.has(tgtId);
+                          }));
+                        }}
+                        className="w-full bg-navy-600 hover:bg-navy-500 text-gray-300 px-2 py-1 rounded text-[10px] transition-colors"
+                      >
+                        Focus Graph on Ego Network
+                      </button>
+                    </div>
                   )}
                 </div>
 
