@@ -126,9 +126,10 @@ CONFIDENCE_LABEL: [Almost No Chance | Very Unlikely | Unlikely | Roughly Even Ch
             "tokens_used": result.total_tokens,
             **saved,
         }
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to generate assessment for entity %s", req.entity_id)
-        return {"error": str(e), "entity_name": entity_name}
+        # SECURITY: don't leak internal error details to client
+        return {"error": "Assessment generation failed", "entity_name": entity_name}
 
 
 @router.post("/assess/multi")

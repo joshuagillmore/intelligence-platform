@@ -80,6 +80,9 @@ if _frontend_dir.exists() and (_frontend_dir / "server.js").exists():
     @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def proxy_frontend(request: Request, path: str):
         """Proxy non-API requests to the Next.js frontend server."""
+        # SECURITY: reject path traversal and protocol injection attempts
+        if ".." in path or path.startswith("/") or "://" in path:
+            return Response(status_code=400)
         # Don't proxy API, health, or MCP routes
         if path.startswith(("api/", "health", "mcp/", "openapi", "docs")):
             return Response(status_code=404)

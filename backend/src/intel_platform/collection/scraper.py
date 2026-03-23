@@ -11,6 +11,15 @@ class WebScraper:
         self._max_size = max_content_size
 
     async def scrape_url(self, url: str, timeout: float = 30) -> dict:
+        # SECURITY: reject non-HTTP(S) schemes and private/internal network URLs
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(f"Unsupported URL scheme: {parsed.scheme}")
+        hostname = (parsed.hostname or "").lower()
+        if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or hostname.startswith("169.254.") or hostname.startswith("10.") or hostname.startswith("192.168."):
+            raise ValueError("URLs pointing to internal/private networks are not allowed")
+
         html = await self._client.fetch_text(url, timeout=timeout)
         if len(html) > self._max_size:
             html = html[: self._max_size]

@@ -186,6 +186,9 @@ export const adminApi = {
   getProxy: () => api.get('/admin/proxy'),
   updateProxy: (data: { mode: string; proxy_url?: string; tor_port?: number }) =>
     api.put('/admin/proxy', data),
+  listModels: () => api.get('/admin/llm/models'),
+  selectModel: (provider: string, model: string) =>
+    api.put('/admin/llm/select', { provider, model }),
 };
 
 export const watchlistApi = {
@@ -230,9 +233,12 @@ export const documentsApi = {
 export const healthApi = {
   check: () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-    const apiKey = process.env.NEXT_PUBLIC_API_KEY || 'dev-api-key-change-in-production';
-    const authValue = token ? `Bearer ${token}` : `Bearer ${apiKey}`;
-    return axios.get(`${API_BASE}/health`, { headers: { 'Authorization': authValue } });
+    // SECURITY: only use token if available, don't fall back to hardcoded keys
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return axios.get(`${API_BASE}/health`, { headers });
   },
 };
 

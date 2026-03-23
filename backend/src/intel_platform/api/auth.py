@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, Depends
@@ -6,7 +7,14 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 import bcrypt
 
+_logger = logging.getLogger(__name__)
+
+# SECURITY: JWT secret must be set via environment in production.
+# The default is only for local development convenience.
 SECRET_KEY = os.environ.get("JWT_SECRET", "intel-platform-dev-secret-change-in-production")
+_IS_DEFAULT_SECRET = SECRET_KEY == "intel-platform-dev-secret-change-in-production"
+if _IS_DEFAULT_SECRET:
+    _logger.warning("SECURITY: Using default JWT secret. Set JWT_SECRET env var in production.")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
 
