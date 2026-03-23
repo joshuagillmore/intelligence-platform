@@ -132,6 +132,27 @@ def test_cluster_documents_doc_map_populated():
     assert "doc2" in all_mapped_ids
 
 
+def test_cluster_documents_produces_multiple_topics():
+    """Regression: documents on distinct topics MUST produce multiple clusters,
+    not a single degenerate topic node.  Previously the TF-IDF vocabulary
+    filter (df >= 2) was too aggressive and dropped most discriminating terms,
+    collapsing everything into one cluster."""
+    docs = [
+        ("doc1", "Iran is developing nuclear weapons capabilities. International sanctions imposed on Iran nuclear program."),
+        ("doc2", "Russia has deployed military forces near the Ukraine border. Moscow denies invasion plans. NATO increases readiness."),
+        ("doc3", "APT29 conducted cyber espionage against government targets. The malware uses zero-day exploits."),
+        ("doc4", "China expands naval operations in the South China Sea. Beijing asserts territorial claims."),
+        ("doc5", "Iran sanctions enforcement involves financial institutions. Treasury department designates new entities."),
+    ]
+    tree, doc_map, kw_map = cluster_documents(docs, "test-multi-topic")
+    assert tree is not None
+    assert tree["count"] == 5
+    # Must have children — a single root with no children means degenerate clustering
+    assert len(tree.get("children", [])) >= 2, (
+        f"Expected multiple topic clusters but got {len(tree.get('children', []))} children"
+    )
+
+
 # ---------------------------------------------------------------------------
 # LLM Label Refinement
 # ---------------------------------------------------------------------------

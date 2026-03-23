@@ -45,11 +45,33 @@ class TopicTreeService:
             "children": [],
         }
 
-        # Topics (document content clustering) — only branch in the tree
+        # Topics (document content clustering)
         full_docs = self._store.search_entities(project_id=project_id, entity_type="Document", limit=500)
         topic_branch = await self._build_topic_branch(full_docs, project_id)
         if topic_branch and topic_branch.get("children"):
             tree["children"].extend(topic_branch.get("children", []))
+
+        # Entity-based branches — give the mind map more traversable nodes
+        if non_docs:
+            # Thematic clusters via community detection on the entity graph
+            theme_branch = self._build_theme_branch(G, entity_map, non_docs)
+            if theme_branch.get("children"):
+                tree["children"].append(theme_branch)
+
+            # Entities grouped by type (Person, Organization, Location, etc.)
+            type_branch = self._build_type_branch(non_docs)
+            if type_branch.get("children"):
+                tree["children"].append(type_branch)
+
+            # Geographic regions
+            geo_branch = self._build_geo_branch(non_docs)
+            if geo_branch.get("children"):
+                tree["children"].append(geo_branch)
+
+            # Key actors and organizations
+            actor_branch = self._build_actor_branch(non_docs, G)
+            if actor_branch.get("children"):
+                tree["children"].append(actor_branch)
 
         # Detect cross-cutting themes: documents appearing in multiple topic clusters
         cross_references = self._detect_cross_references(project_id, full_docs)

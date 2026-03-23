@@ -63,11 +63,14 @@ def build_tfidf(
             if t not in vocab:
                 vocab[t] = len(vocab)
 
-    # Filter vocabulary
-    if n_docs < 5:
-        valid = {t for t in vocab if df[t] >= 1}
+    # Filter vocabulary — keep terms that appear in at least 1 doc but not in
+    # almost every doc (pure stopword-like terms).  For small corpora (< 20 docs)
+    # we must keep df=1 terms because they carry the most discriminating signal.
+    max_df = max(2, int(0.85 * n_docs))
+    if n_docs < 20:
+        valid = {t for t in vocab if df[t] <= max_df}
     else:
-        valid = {t for t in vocab if 2 <= df[t] <= 0.9 * n_docs}
+        valid = {t for t in vocab if 2 <= df[t] <= max_df}
 
     if not valid:
         # Fallback: use all terms
