@@ -111,6 +111,12 @@ class UpdateEntityTypeRequest(BaseModel):
 @router.put("/entities/{entity_id}/type")
 def update_entity_type(entity_id: str, req: UpdateEntityTypeRequest, store: GraphStore = Depends(get_graph_store)):
     """Update an entity's type (e.g., fix a misclassification)."""
+    # SECURITY: validate against known entity types to prevent arbitrary values
+    from intel_platform.models.entities import EntityType
+    valid_types = {e.value for e in EntityType}
+    if req.entity_type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"Invalid entity type: {req.entity_type}")
+
     entity = store.get_entity(entity_id)
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")

@@ -313,7 +313,10 @@ Provide a structured answer with:
                 model = result.model
                 tokens_used = result.total_tokens
         except Exception as e:
-            answer = f"LLM generation failed: {str(e)}\n\nRaw context:\n{context[:2000]}"
+            import logging as _logging
+            _logging.getLogger(__name__).exception("LLM generation failed in GraphRAG query")
+            # SECURITY: don't leak internal error details to client
+            answer = "LLM generation failed. Using raw graph context as fallback."
 
         # Fallback if no LLM available
         if not answer:

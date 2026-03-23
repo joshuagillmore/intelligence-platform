@@ -11,9 +11,18 @@ class LoginRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
+    # SECURITY: constrain registration inputs to prevent abuse
     username: str
     password: str
     role: str = "analyst"
+
+    def model_post_init(self, __context) -> None:
+        if len(self.username) < 3 or len(self.username) > 50:
+            raise ValueError("Username must be 3-50 characters")
+        if len(self.password) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if self.role not in ("analyst", "admin"):
+            raise ValueError("Role must be 'analyst' or 'admin'")
 
 
 class TokenResponse(BaseModel):
