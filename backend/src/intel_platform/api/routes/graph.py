@@ -18,12 +18,11 @@ def get_full_graph(project_id: str, limit: int = 500, min_centrality: float = 0,
 
     data = store.get_full_graph(project_id=project_id, limit=limit)
 
-    # Use the cache to get/build the DiGraph
+    # PERF: reuse already-fetched data for building the NetworkX graph
+    # instead of issuing a second query to Neo4j
     G = graph_cache.get_or_build_graph(
         project_id,
-        lambda: build_networkx_from_data(
-            store.get_full_graph(project_id=project_id, limit=10000)
-        ),
+        lambda: build_networkx_from_data(data),
     )
 
     try:

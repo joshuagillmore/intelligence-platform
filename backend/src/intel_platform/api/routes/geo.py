@@ -147,18 +147,20 @@ def get_entity_timeline(
                     "label": f"{rel.get('rel_type', '')} → {target_name}",
                 })
 
+        # PERF: single fetch per relationship target instead of separate fetches
+        # for Date and Document checks
+        target = store.get_entity(rel.get("target_id", ""))
+        rel_type = rel.get("rel_type", "")
+
         # Connected Date entities (OCCURRED_ON relationships)
-        if rel.get("rel_type") == "OCCURRED_ON":
-            target = store.get_entity(rel.get("target_id", ""))
-            if target and target.get("entity_type") == "Date":
-                events.append({
-                    "date": target.get("name", ""),  # Date entity name IS the date string
-                    "type": "event_date",
-                    "label": f"Event on {target.get('name', '')}",
-                })
+        if rel_type == "OCCURRED_ON" and target and target.get("entity_type") == "Date":
+            events.append({
+                "date": target.get("name", ""),
+                "type": "event_date",
+                "label": f"Event on {target.get('name', '')}",
+            })
 
         # Connected Document entities — ingestion date
-        target = store.get_entity(rel.get("target_id", ""))
         if target and target.get("entity_type") == "Document":
             doc_created = normalize_datetime(target.get("created_at"))
             if doc_created:

@@ -12,42 +12,51 @@ class GraphRAGPipeline:
     def understand_query(self, query: str, project_id: str) -> dict:
         """Extract target entities and intent from natural language query."""
         candidates = []
+        seen_ids: set[str] = set()
 
+        def _add_candidates(results: list[dict]) -> None:
+            for r in results:
+                rid = r.get("id", "")
+                if rid and rid not in seen_ids:
+                    seen_ids.add(rid)
+                    candidates.append(r)
+
+        # PERF: short-circuit early if full query finds enough results
         results = self._store.search_entities(project_id=project_id, query=query.strip(), limit=10)
-        candidates.extend(results)
+        _add_candidates(results)
 
-        words = query.split()
-        for n in (3, 2):
-            for i in range(len(words) - n + 1):
-                phrase = " ".join(words[i:i + n])
-                if len(phrase) >= 4:
-                    results = self._store.search_entities(project_id=project_id, query=phrase, limit=5)
-                    candidates.extend(results)
+        # Only do phrase/word searches if we don't have enough candidates
+        if len(candidates) < 10:
+            words = query.split()
+            for n in (3, 2):
+                if len(candidates) >= 15:
+                    break
+                for i in range(len(words) - n + 1):
+                    phrase = " ".join(words[i:i + n])
+                    if len(phrase) >= 4:
+                        results = self._store.search_entities(project_id=project_id, query=phrase, limit=5)
+                        _add_candidates(results)
 
-        stop_words = {"the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
-                      "her", "was", "one", "our", "out", "what", "with", "about", "this",
-                      "that", "from", "have", "how", "who", "which", "their", "been", "know",
-                      "tell", "show", "find", "does"}
-        for word in words:
-            clean = word.strip("?.,!;:'\"").lower()
-            if len(clean) >= 3 and clean not in stop_words:
-                results = self._store.search_entities(project_id=project_id, query=clean, limit=5)
-                candidates.extend(results)
+        if len(candidates) < 10:
+            stop_words = {"the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
+                          "her", "was", "one", "our", "out", "what", "with", "about", "this",
+                          "that", "from", "have", "how", "who", "which", "their", "been", "know",
+                          "tell", "show", "find", "does"}
+            for word in words:
+                if len(candidates) >= 15:
+                    break
+                clean = word.strip("?.,!;:'\"").lower()
+                if len(clean) >= 3 and clean not in stop_words:
+                    results = self._store.search_entities(project_id=project_id, query=clean, limit=5)
+                    _add_candidates(results)
 
         if not candidates:
-            candidates = self._store.search_entities(project_id=project_id, limit=20)
-
-        seen = set()
-        entities = []
-        for c in candidates:
-            eid = c.get("id", "")
-            if eid and eid not in seen:
-                seen.add(eid)
-                entities.append(c)
+            results = self._store.search_entities(project_id=project_id, limit=20)
+            _add_candidates(results)
 
         return {
             "query": query,
-            "target_entities": entities[:15],
+            "target_entities": candidates[:15],
             "intent": "general_query",
         }
 
