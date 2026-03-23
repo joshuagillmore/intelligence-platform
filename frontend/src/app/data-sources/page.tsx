@@ -197,7 +197,7 @@ export default function DataSourcesPage() {
 
   /* -- Auto-generate summary ------------------------------------------ */
 
-  const generateSummary = useCallback(async (nodeId: string, nodeName: string, ctx: EntityContext | null) => {
+  const generateSummary = useCallback(async (nodeId: string, nodeName: string, _ctx: EntityContext | null) => {
     if (!activeProject || !nodeName) return;
 
     // Check cache first
@@ -209,17 +209,42 @@ export default function DataSourcesPage() {
     setSummaryLoading(true);
     setSummary(null);
     try {
-      const excerpts = ctx?.document_excerpts || [];
-      let query = `Provide a comprehensive intelligence summary about "${nodeName}". What do we know from our sources?`;
-      if (excerpts.length > 0) {
-        const excerptText = excerpts.map(e => `**${e.name}:**\n${e.content}`).join('\n\n---\n\n');
-        query = `Provide a comprehensive intelligence summary about "${nodeName}" based on the following source documents.\n\n${excerptText}\n\nSummarize the key findings, themes, and intelligence value.`;
+      const url = topicsApi.summarizeUrl(nodeId);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: activeProject.id, level: 'topic' }),
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response body');
+
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        // Parse SSE events
+        for (const line of chunk.split('\n')) {
+          if (line.startsWith('data: ')) {
+            const payload = line.slice(6);
+            if (payload === '[DONE]') break;
+            fullText += payload;
+            setSummary(fullText);
+          }
+        }
       }
-      const res = await queryApi.rag(activeProject.id, query);
-      const text = res.data.answer || res.data.response || JSON.stringify(res.data);
-      setSummary(text);
-      setSummaryCache((prev: Record<string, string>) => ({ ...prev, [nodeId]: text }));
-      setConversation([{ role: 'assistant', content: text }]);
+
+      if (fullText) {
+        setSummaryCache((prev: Record<string, string>) => ({ ...prev, [nodeId]: fullText }));
+        setConversation([{ role: 'assistant', content: fullText }]);
+      } else {
+        setSummary('No summary content returned.');
+      }
     } catch {
       setSummary('Unable to generate summary at this time.');
     } finally {
@@ -264,11 +289,7 @@ export default function DataSourcesPage() {
       setEntityContext(data);
       setKeywords(data.keywords || []);
 
-      // Auto-generate summary with 500ms debounce
-      const timeoutId = setTimeout(() => {
-        generateSummary(node.id, node.name, data);
-      }, 500);
-      return () => clearTimeout(timeoutId);
+      // Summary is now generated on-demand via button, not auto-generated
     } catch (e) {
       console.error('Failed to load entity context', e);
       setEntityContext({
@@ -279,7 +300,7 @@ export default function DataSourcesPage() {
     } finally {
       setContextLoading(false);
     }
-  }, [activeProject, summaryCache, generateSummary]);
+  }, [activeProject, summaryCache]);
 
   /* -- Ask about selected topic --------------------------------------- */
 
@@ -661,7 +682,20 @@ export default function DataSourcesPage() {
                         {summary}
                       </p>
                     ) : (
-                      <p className="text-sm text-gray-500">Summary will be generated automatically...</p>
+                      <div className="flex flex-col items-center gap-3 py-4">
+                        <p className="text-sm text-gray-500">Click below to generate an intelligence summary.</p>
+                        <button
+                          onClick={() => {
+                            if (selectedNodeId && selectedNodeName) {
+                              generateSummary(selectedNodeId, selectedNodeName, entityContext);
+                            }
+                          }}
+                          className="bg-[#adc6ff]/10 hover:bg-[#adc6ff]/20 text-[#adc6ff] px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition-colors border border-[#adc6ff]/20 flex items-center gap-2"
+                        >
+                          <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                          Generate Intelligence Summary
+                        </button>
+                      </div>
                     )}
                   </div>
 
