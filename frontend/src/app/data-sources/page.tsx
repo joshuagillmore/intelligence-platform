@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import TopicMindMap from '@/components/TopicMindMap';
@@ -106,8 +106,6 @@ function getStoredLayout(): LayoutMode {
 export default function DataSourcesPage() {
   const { activeProject } = useProject();
   const router = useRouter();
-  const mindmapSvgRef = useRef<SVGSVGElement | null>(null);
-
   // Mind map tree data
   const [topicTree, setTopicTree] = useState<TreeNode>({ name: 'Knowledge Base', id: 'root', children: [] });
   const [loading, setLoading] = useState(false);

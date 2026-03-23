@@ -23,7 +23,26 @@ class SkillListResponse(BaseModel):
 
 
 def _get_provider():
-    """Get the configured LLM provider."""
+    """Get the configured LLM provider, respecting runtime overrides."""
+    from intel_platform.api.routes.admin_config import get_active_provider, get_active_model
+
+    provider_name = get_active_provider()
+    model = get_active_model()
+
+    if provider_name == "ollama":
+        from intel_platform.llm.ollama import OllamaProvider
+        return OllamaProvider(base_url=settings.ollama_base_url, model=model or "qwen2.5:14b")
+    if provider_name == "cohere" and settings.cohere_api_key:
+        from intel_platform.llm.cohere_provider import CohereProvider
+        return CohereProvider(api_key=settings.cohere_api_key)
+    if provider_name == "anthropic" and settings.anthropic_api_key:
+        from intel_platform.llm.anthropic import AnthropicProvider
+        return AnthropicProvider(api_key=settings.anthropic_api_key)
+    if provider_name == "openai" and settings.openai_api_key:
+        from intel_platform.llm.openai_provider import OpenAIProvider
+        return OpenAIProvider(api_key=settings.openai_api_key)
+
+    # Fallback: try any available provider
     if settings.cohere_api_key:
         from intel_platform.llm.cohere_provider import CohereProvider
         return CohereProvider(api_key=settings.cohere_api_key)
@@ -33,7 +52,10 @@ def _get_provider():
     if settings.openai_api_key:
         from intel_platform.llm.openai_provider import OpenAIProvider
         return OpenAIProvider(api_key=settings.openai_api_key)
-    return None
+
+    # Last resort: try Ollama
+    from intel_platform.llm.ollama import OllamaProvider
+    return OllamaProvider(base_url=settings.ollama_base_url, model=model or "qwen2.5:14b")
 
 
 @router.post("/llm/query")

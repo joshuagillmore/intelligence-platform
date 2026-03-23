@@ -1,7 +1,31 @@
+import logging
+import time
+from collections import defaultdict
+
 from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
-from collections import defaultdict
-import time
+
+logger = logging.getLogger("intel_platform.requests")
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Structured request logging: method, path, status, response time."""
+
+    async def dispatch(self, request: Request, call_next):
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000
+
+        client_ip = request.client.host if request.client else "-"
+        logger.info(
+            "%s %s %s %d %.1fms",
+            client_ip,
+            request.method,
+            request.url.path,
+            response.status_code,
+            duration_ms,
+        )
+        return response
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

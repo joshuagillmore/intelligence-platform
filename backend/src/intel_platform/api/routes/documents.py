@@ -14,7 +14,8 @@ def list_documents(project_id: str, store: GraphStore = Depends(get_graph_store)
             """
             MATCH (d:Document {project_id: $pid})
             OPTIONAL MATCH (d)-[r]->(m) WHERE type(r) <> 'MENTIONS'
-            RETURN properties(d) as props, count(r) as entity_count
+            WITH d, properties(d) as props, count(r) as entity_count
+            RETURN props, entity_count
             ORDER BY d.name
             LIMIT 500
             """,
