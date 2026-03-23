@@ -458,7 +458,38 @@ export default function TopicMindMap({
     return () => {
       tooltip.remove();
     };
-  }, [data, selectedNodeId, layout, searchQuery, crossReferences]);
+  }, [data, layout, searchQuery, crossReferences]); // selectedNodeId removed to prevent tree rebuild
+
+  // Separate effect to update selection visuals without rebuilding the tree
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const svg = d3.select(svgRef.current);
+
+    // Update circle styles for selection
+    svg.selectAll<SVGGElement, any>('g.node').each(function(d: any) {
+      const g = d3.select(this);
+      const isSelected = d.data?.id === selectedNodeId;
+
+      g.select('circle')
+        .attr('fill-opacity', isSelected ? 0.5 : 0.25)
+        .attr('stroke-width', isSelected ? 2.5 : 1);
+
+      // Selection spotlight: dim siblings of selected node
+      if (!searchQuery) {
+        let opacity = 1;
+        if (selectedNodeId && d.data?.id !== selectedNodeId && d.parent) {
+          const selectedSibling = (d.parent.children || []).some(
+            (c: any) => c.data.id === selectedNodeId
+          );
+          if (selectedSibling) opacity = 0.4;
+        }
+        g.attr('opacity', opacity);
+      }
+    });
+
+    // Update cross-reference links
+    svg.selectAll('path.cross-ref').remove();
+  }, [selectedNodeId, searchQuery]);
 
   return (
     <svg
