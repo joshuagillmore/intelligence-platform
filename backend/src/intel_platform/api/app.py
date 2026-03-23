@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -9,6 +10,8 @@ from intel_platform.api.middleware import RateLimitMiddleware, SecurityHeadersMi
 from intel_platform.api.deps import get_neo4j_driver
 from intel_platform.api.routes import health, projects, ingest, entities, graph, llm, collections, query, assess, topics, reports, geo, timeline, notebook, search, export, watchlist, admin_config, personas, documents, snapshots, auth
 from intel_platform.graph.schema import initialize_schema
+
+logger = logging.getLogger(__name__)
 
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
 
@@ -39,8 +42,9 @@ try:
     from intel_platform.mcp.server import get_mcp_app
     mcp_app = get_mcp_app()
     app.mount("/mcp", mcp_app)
-except ImportError:
-    pass  # MCP not available
+    logger.info("MCP server mounted at /mcp")
+except Exception as exc:
+    logger.warning("MCP server not available: %s", exc)
 
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(health.router, tags=["health"])
@@ -66,7 +70,6 @@ app.include_router(documents.router, prefix="/api", tags=["documents"])
 app.include_router(snapshots.router, prefix="/api", tags=["snapshots"])
 
 # Reverse proxy to frontend Node.js server (Railway single-port deployment)
-import os
 from pathlib import Path
 _frontend_dir = Path("/app/frontend-server")
 if _frontend_dir.exists() and (_frontend_dir / "server.js").exists():
@@ -78,7 +81,7 @@ if _frontend_dir.exists() and (_frontend_dir / "server.js").exists():
     async def proxy_frontend(request: Request, path: str):
         """Proxy non-API requests to the Next.js frontend server."""
         # Don't proxy API, health, or MCP routes
-        if path.startswith(("api/", "health", "mcp", "openapi", "docs")):
+        if path.startswith(("api/", "health", "mcp/", "openapi", "docs")):
             return Response(status_code=404)
         url = f"http://127.0.0.1:3000/{path}"
         if request.url.query:

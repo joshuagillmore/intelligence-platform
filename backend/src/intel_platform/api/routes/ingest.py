@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from typing import Optional
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.config import settings
@@ -27,8 +26,8 @@ async def _extract(text: str, doc_id: str, mode: str):
 @router.post("/ingest")
 async def ingest_document(
     project_id: str = Form(...),
-    content: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None),
+    content: str | None = Form(None),
+    file: UploadFile | None = File(None),
     reliability_rating: str = Form("C3"),
     extraction_mode: str = Form("nlp"),
     store: GraphStore = Depends(get_graph_store),

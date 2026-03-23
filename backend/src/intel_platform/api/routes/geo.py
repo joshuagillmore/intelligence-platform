@@ -1,29 +1,11 @@
 from collections import defaultdict
-from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.geocoding import geocode_all_locations
+from intel_platform.services.text_utils import normalize_datetime
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
-
-
-def _parse_neo4j_datetime(dt_val) -> str | None:
-    """Extract ISO string from various Neo4j datetime formats."""
-    if not dt_val:
-        return None
-    if isinstance(dt_val, str):
-        return dt_val
-    if hasattr(dt_val, 'isoformat'):
-        return dt_val.isoformat()
-    if isinstance(dt_val, dict):
-        d = dt_val.get("_DateTime__date", {})
-        t = dt_val.get("_DateTime__time", {})
-        try:
-            return f"{d.get('_Date__year', 2026)}-{d.get('_Date__month', 1):02d}-{d.get('_Date__day', 1):02d}T{t.get('_Time__hour', 0):02d}:{t.get('_Time__minute', 0):02d}:00Z"
-        except (TypeError, ValueError):
-            return None
-    return str(dt_val)
 
 
 def _compute_location_edges(locations: list[dict], store: GraphStore) -> list[dict]:
@@ -135,7 +117,7 @@ def get_entity_timeline(
     events = []
 
     # 1. Entity's own creation/event date
-    created = _parse_neo4j_datetime(entity.get("created_at"))
+    created = normalize_datetime(entity.get("created_at"))
     if created:
         events.append({
             "date": created,
@@ -146,7 +128,7 @@ def get_entity_timeline(
     # Check for event_datetime on Event entities
     event_dt = entity.get("event_datetime")
     if event_dt:
-        parsed = _parse_neo4j_datetime(event_dt)
+        parsed = normalize_datetime(event_dt)
         if parsed:
             events.append({"date": parsed, "type": "event", "label": entity.get("name", "")})
 
@@ -156,7 +138,7 @@ def get_entity_timeline(
         # Relationship first_seen
         first_seen = rel.get("first_seen") or rel.get("props", {}).get("first_seen")
         if first_seen:
-            parsed = _parse_neo4j_datetime(first_seen)
+            parsed = normalize_datetime(first_seen)
             if parsed:
                 target_name = rel.get("target_name", "")
                 events.append({
@@ -178,7 +160,7 @@ def get_entity_timeline(
         # Connected Document entities — ingestion date
         target = store.get_entity(rel.get("target_id", ""))
         if target and target.get("entity_type") == "Document":
-            doc_created = _parse_neo4j_datetime(target.get("created_at"))
+            doc_created = normalize_datetime(target.get("created_at"))
             if doc_created:
                 events.append({
                     "date": doc_created,

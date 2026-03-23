@@ -55,7 +55,6 @@ class MultiAssessmentRequest(BaseModel):
 async def generate_assessment(req: CreateAssessmentRequest, store: GraphStore = Depends(get_graph_store)):
     """Use LLM to generate an assessment for an entity based on graph context."""
     from intel_platform.services.graph_rag import GraphRAGPipeline
-    from intel_platform.config import settings
 
     # Get entity and its context
     entity = store.get_entity(req.entity_id)
@@ -67,14 +66,9 @@ async def generate_assessment(req: CreateAssessmentRequest, store: GraphStore = 
     rag_result = await pipeline.query(f"What do we know about {entity.get('name', '')}?", req.project_id)
     context = rag_result.get("context", "")
 
-    # Get LLM provider
-    provider = None
-    if settings.cohere_api_key:
-        from intel_platform.llm.cohere_provider import CohereProvider
-        provider = CohereProvider(api_key=settings.cohere_api_key)
-    elif settings.anthropic_api_key:
-        from intel_platform.llm.anthropic import AnthropicProvider
-        provider = AnthropicProvider(api_key=settings.anthropic_api_key)
+    # Get LLM provider (centralized selection respecting runtime overrides)
+    from intel_platform.api.routes.llm import _get_provider
+    provider = _get_provider()
 
     if not provider:
         return {"error": "No LLM provider configured", "entity_name": entity.get("name")}

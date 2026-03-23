@@ -5,6 +5,7 @@ from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.requests import CreateProjectRequest
 from intel_platform.models.responses import ProjectResponse
+from intel_platform.services.text_utils import normalize_datetime as _normalize_datetime
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -54,25 +55,6 @@ def list_projects(store: GraphStore = Depends(get_graph_store)):
             **stats,
         })
     return result
-
-
-def _normalize_datetime(val) -> str:
-    """Normalize a datetime value to ISO string."""
-    if not val:
-        return ""
-    if isinstance(val, dict):
-        dt = val.get("_DateTime__date", {})
-        tm = val.get("_DateTime__time", {})
-        year = dt.get("_Date__year", 2026)
-        month = dt.get("_Date__month", 1)
-        day = dt.get("_Date__day", 1)
-        hour = tm.get("_Time__hour", 0)
-        minute = tm.get("_Time__minute", 0)
-        second = tm.get("_Time__second", 0)
-        return f"{year}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:{second:02d}Z"
-    if hasattr(val, "isoformat"):
-        return val.isoformat()
-    return str(val)
 
 
 @router.post("/projects", response_model=ProjectResponse)
@@ -166,20 +148,7 @@ def get_project_activity(project_id: str, limit: int = 20, store: GraphStore = D
 
     activity = []
     for e in entities:
-        created = e.get("created_at", "")
-        if isinstance(created, dict):
-            dt = created.get("_DateTime__date", {})
-            tm = created.get("_DateTime__time", {})
-            year = dt.get("_Date__year", 2026)
-            month = dt.get("_Date__month", 1)
-            day = dt.get("_Date__day", 1)
-            hour = tm.get("_Time__hour", 0)
-            minute = tm.get("_Time__minute", 0)
-            created = f"{year}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00Z"
-        elif hasattr(created, "isoformat"):
-            created = created.isoformat()
-        else:
-            created = str(created) if created else ""
+        created = _normalize_datetime(e.get("created_at", ""))
 
         etype = e.get("entity_type", "")
         if etype == "Document":
