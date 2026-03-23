@@ -89,7 +89,7 @@ def merge_entities(req: MergeEntitiesRequest, store: GraphStore = Depends(get_gr
                 )
                 store.create_relationship(new_rel)
                 relationships_transferred += 1
-            except (ValueError, Exception):
+            except ValueError:
                 pass
 
         # Delete the merged entity

@@ -445,8 +445,6 @@ class TopicTreeService:
         """Stream an LLM-generated intelligence summary as SSE events."""
         global _summary_cache
 
-        from intel_platform.config import settings
-
         # Get context for this node
         context = self.get_topic_context(entity_id, project_id)
         excerpts = context.get("document_excerpts", [])
@@ -464,17 +462,9 @@ class TopicTreeService:
             yield "data: [DONE]\n\n"
             return
 
-        # Build provider
-        provider = None
-        if settings.cohere_api_key:
-            from intel_platform.llm.cohere_provider import CohereProvider
-            provider = CohereProvider(api_key=settings.cohere_api_key)
-        elif settings.anthropic_api_key:
-            from intel_platform.llm.anthropic import AnthropicProvider
-            provider = AnthropicProvider(api_key=settings.anthropic_api_key)
-        elif settings.openai_api_key:
-            from intel_platform.llm.openai_provider import OpenAIProvider
-            provider = OpenAIProvider(api_key=settings.openai_api_key)
+        # Build provider (centralized selection respecting runtime overrides)
+        from intel_platform.api.routes.llm import _get_provider
+        provider = _get_provider()
 
         if not provider:
             yield "data: No LLM provider configured.\n\n"

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n{2,}")
 
@@ -72,3 +73,31 @@ def count_keyword_matches(text: str, keywords: list[str]) -> dict[str, int]:
         if n > 0:
             counts[kw] = n
     return counts
+
+
+def normalize_datetime(val: Any) -> str:
+    """Normalize a Neo4j datetime value to an ISO string.
+
+    Handles raw strings, Python datetime objects, and the internal Neo4j
+    ``_DateTime__date`` / ``_DateTime__time`` dict representation.
+    """
+    if not val:
+        return ""
+    if isinstance(val, str):
+        return val
+    if hasattr(val, "isoformat"):
+        return val.isoformat()
+    if isinstance(val, dict):
+        dt = val.get("_DateTime__date", {})
+        tm = val.get("_DateTime__time", {})
+        try:
+            year = dt.get("_Date__year", 2026)
+            month = dt.get("_Date__month", 1)
+            day = dt.get("_Date__day", 1)
+            hour = tm.get("_Time__hour", 0)
+            minute = tm.get("_Time__minute", 0)
+            second = tm.get("_Time__second", 0)
+            return f"{year}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:{second:02d}Z"
+        except (TypeError, ValueError):
+            return ""
+    return str(val)

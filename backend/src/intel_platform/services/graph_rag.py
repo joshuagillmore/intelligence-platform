@@ -271,17 +271,8 @@ class GraphRAGPipeline:
         tokens_used = 0
 
         try:
-            from intel_platform.config import settings
-            provider = None
-            if settings.cohere_api_key:
-                from intel_platform.llm.cohere_provider import CohereProvider
-                provider = CohereProvider(api_key=settings.cohere_api_key)
-            elif settings.anthropic_api_key:
-                from intel_platform.llm.anthropic import AnthropicProvider
-                provider = AnthropicProvider(api_key=settings.anthropic_api_key)
-            elif settings.openai_api_key:
-                from intel_platform.llm.openai_provider import OpenAIProvider
-                provider = OpenAIProvider(api_key=settings.openai_api_key)
+            from intel_platform.api.routes.llm import _get_provider
+            provider = _get_provider()
 
             if provider:
                 from intel_platform.llm.skills.loader import SkillsLoader
