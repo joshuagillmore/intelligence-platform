@@ -197,6 +197,7 @@ export default function DataSourcesPage() {
 
   /* -- Auto-generate summary ------------------------------------------ */
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const generateSummary = useCallback(async (nodeId: string, nodeName: string, _ctx: EntityContext | null) => {
     if (!activeProject || !nodeName) return;
 
