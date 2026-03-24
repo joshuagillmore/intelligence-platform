@@ -9,6 +9,7 @@ import { useNotifications, useNotificationCount } from '@/components/Notificatio
 const navItems = [
   { name: 'Projects', href: '/', icon: 'folder_open' },
   { name: 'Collections', href: '/collections', icon: 'database' },
+  { name: 'Collection Plans', href: '/collection-plans', icon: 'assignment' },
   { name: 'Data Sources', href: '/data-sources', icon: 'satellite_alt' },
   { name: 'Network Analysis', href: '/network', icon: 'hub' },
   { name: 'Geo-Intelligence', href: '/geo', icon: 'public' },

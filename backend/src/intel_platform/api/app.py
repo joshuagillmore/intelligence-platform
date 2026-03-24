@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from intel_platform.api.middleware import RateLimitMiddleware, RequestLoggingMiddleware, SecurityHeadersMiddleware
 
 from intel_platform.api.deps import get_neo4j_driver
-from intel_platform.api.routes import health, projects, ingest, entities, graph, llm, collections, query, assess, topics, reports, geo, timeline, notebook, search, export, watchlist, admin_config, personas, documents, snapshots, auth
+from intel_platform.api.routes import health, projects, ingest, entities, graph, llm, collections, query, assess, topics, reports, geo, timeline, notebook, search, export, watchlist, admin_config, personas, documents, snapshots, auth, collection_plans
 from intel_platform.graph.schema import initialize_schema
 
 logger = logging.getLogger(__name__)
@@ -23,8 +23,15 @@ async def lifespan(app: FastAPI):
     # Ensure default admin user exists in Neo4j
     from intel_platform.api.auth import _ensure_default_admin
     _ensure_default_admin()
+    # Initialize PostgreSQL tables for collection management
+    from intel_platform.db.engine import init_db
+    await init_db()
+    logger.info("PostgreSQL collection management tables initialized")
     yield
     driver.close()
+    # Cleanup async engine
+    from intel_platform.db.engine import get_engine
+    await get_engine().dispose()
 
 
 app = FastAPI(title="Intelligence Platform", version="0.1.0", lifespan=lifespan)
@@ -72,6 +79,7 @@ app.include_router(admin_config.router, prefix="/api", tags=["admin"])
 app.include_router(personas.router, prefix="/api", tags=["personas"])
 app.include_router(documents.router, prefix="/api", tags=["documents"])
 app.include_router(snapshots.router, prefix="/api", tags=["snapshots"])
+app.include_router(collection_plans.router, prefix="/api", tags=["collection-plans"])
 
 # Reverse proxy to frontend Node.js server (Railway single-port deployment)
 from pathlib import Path

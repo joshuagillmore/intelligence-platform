@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = ""
 
+    # PostgreSQL
+    postgres_url: str = "postgresql+asyncpg://intel:changeme@localhost:5432/intel_platform"
+
     # API
     api_key: str = "dev-api-key-change-in-production"
     api_host: str = "0.0.0.0"
