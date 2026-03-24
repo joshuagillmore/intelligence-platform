@@ -1,6 +1,6 @@
 #!/bin/sh
-# Start frontend in background
-cd /app/frontend-server && PORT=3000 node server.js &
+# Start frontend on internal port 3000 in background
+cd /app/frontend-server && HOSTNAME=0.0.0.0 PORT=3000 node server.js &
 
 # Start backend on Railway's PORT (or default 8000)
 cd /app

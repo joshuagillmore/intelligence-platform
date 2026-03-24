@@ -29,8 +29,9 @@ RUN uv pip install --python .venv/bin/python https://github.com/explosion/spacy-
 COPY --from=frontend-build /app/frontend/.next/standalone /app/frontend-server
 COPY --from=frontend-build /app/frontend/.next/static /app/frontend-server/.next/static
 
-EXPOSE 8000
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
-# Start both: frontend on internal port 3000, backend on 8000
-# Railway exposes 8000 via the domain
-ENTRYPOINT ["sh", "-c", "cd /app/frontend-server && HOSTNAME=0.0.0.0 PORT=3000 node server.js & cd /app && exec uv run uvicorn intel_platform.api.app:app --host 0.0.0.0 --port 8000"]
+EXPOSE ${PORT:-8000}
+
+ENTRYPOINT ["/app/start.sh"]
