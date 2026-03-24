@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { collectionPlansApi, CollectionPlan, CollectionSourceEntry, AcquisitionLogEntry } from '@/lib/api';
+import { collectionPlansApi, CollectionPlan, AcquisitionLogEntry } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 
 const STATUS_COLORS: Record<string, string> = {
