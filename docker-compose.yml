@@ -15,6 +15,22 @@ services:
       timeout: 5s
       retries: 5
 
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: intel_platform
+      POSTGRES_USER: intel
+      POSTGRES_PASSWORD: changeme
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intel -d intel_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     ports:
@@ -35,6 +51,8 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -51,3 +69,4 @@ services:
 
 volumes:
   neo4j_data:
+  postgres_data:

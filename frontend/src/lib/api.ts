@@ -134,6 +134,135 @@ export const collectionsApi = {
   count: (projectId: string) => api.get(`/collections/count/${projectId}`),
 };
 
+// Collection Plans — new managed pipeline
+export interface CollectionPlan {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string;
+  requirement: string;
+  pir: string;
+  refined_pir: string;
+  status: string;
+  routing_rules: Record<string, unknown>;
+  created_by: string;
+  assigned_to: string;
+  schedule_cron: string;
+  next_run_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  sources: CollectionSourceEntry[];
+  source_count: number;
+}
+
+export interface CollectionSourceEntry {
+  id: string;
+  plan_id: string;
+  name: string;
+  source_type: string;
+  config: Record<string, unknown>;
+  schedule_cron: string;
+  enabled: boolean;
+  last_success_at: string | null;
+  last_failure_at: string | null;
+  last_error: string;
+  total_records_acquired: number;
+  acquisition_count: number;
+  next_run_at: string | null;
+  created_at: string | null;
+}
+
+export interface AcquisitionLogEntry {
+  id: string;
+  source_id: string;
+  plan_id: string;
+  result: string;
+  record_count: number;
+  error_message: string;
+  source_type: string;
+  entities_created: number;
+  relationships_created: number;
+  document_id: string;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number;
+}
+
+export interface DataCatalogEntry {
+  id: string;
+  plan_id: string;
+  source_id: string;
+  name: string;
+  file_format: string;
+  original_filename: string;
+  file_size_bytes: number;
+  row_count: number;
+  column_count: number;
+  schema_info: Record<string, unknown>;
+  profiling: Record<string, unknown>;
+  preview_rows: Record<string, unknown>[];
+  ingested_at: string | null;
+}
+
+export const collectionPlansApi = {
+  // Plans
+  create: (data: { project_id: string; name: string; description?: string; requirement?: string; pir?: string; routing_rules?: object; created_by?: string }) =>
+    api.post<CollectionPlan>('/collection-plans', data),
+  list: (projectId?: string, status?: string) =>
+    api.get<CollectionPlan[]>('/collection-plans', { params: { project_id: projectId, status } }),
+  get: (id: string) => api.get<CollectionPlan>(`/collection-plans/${id}`),
+  update: (id: string, data: Partial<CollectionPlan>) =>
+    api.put<CollectionPlan>(`/collection-plans/${id}`, data),
+  delete: (id: string) => api.delete(`/collection-plans/${id}`),
+
+  // Status transitions
+  activate: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/activate`),
+  pause: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/pause`),
+  complete: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/complete`),
+  archive: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/archive`),
+
+  // Sources
+  addSource: (planId: string, data: { name: string; source_type: string; config?: object; schedule_cron?: string; enabled?: boolean }) =>
+    api.post<CollectionSourceEntry>(`/collection-plans/${planId}/sources`, data),
+  listSources: (planId: string) =>
+    api.get<CollectionSourceEntry[]>(`/collection-plans/${planId}/sources`),
+  updateSource: (planId: string, sourceId: string, data: Partial<CollectionSourceEntry>) =>
+    api.put<CollectionSourceEntry>(`/collection-plans/${planId}/sources/${sourceId}`, data),
+  deleteSource: (planId: string, sourceId: string) =>
+    api.delete(`/collection-plans/${planId}/sources/${sourceId}`),
+
+  // File upload through pipeline
+  uploadFile: (planId: string, sourceId: string, file: File, extractionMode?: string, reliabilityRating?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (extractionMode) formData.append('extraction_mode', extractionMode);
+    if (reliabilityRating) formData.append('reliability_rating', reliabilityRating);
+    return api.post(`/collection-plans/${planId}/sources/${sourceId}/upload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  // Acquisition log
+  acquisitions: (planId: string, limit?: number) =>
+    api.get<AcquisitionLogEntry[]>(`/collection-plans/${planId}/acquisitions`, { params: { limit } }),
+  sourceAcquisitions: (planId: string, sourceId: string, limit?: number) =>
+    api.get<AcquisitionLogEntry[]>(`/collection-plans/${planId}/sources/${sourceId}/acquisitions`, { params: { limit } }),
+
+  // Data catalog
+  catalog: (planId: string) =>
+    api.get<DataCatalogEntry[]>(`/collection-plans/${planId}/catalog`),
+  catalogEntry: (catalogId: string) =>
+    api.get<DataCatalogEntry>(`/data-catalog/${catalogId}`),
+  catalogPreview: (catalogId: string, offset?: number, limit?: number) =>
+    api.get(`/data-catalog/${catalogId}/preview`, { params: { offset, limit } }),
+
+  // Dashboard
+  dashboard: (projectId: string) => api.get('/collection-dashboard', { params: { project_id: projectId } }),
+
+  // Connector types
+  connectorTypes: () => api.get('/connector-types'),
+};
+
 export const assessApi = {
   assess: (entityId: string, projectId: string, judgment: string, probability: number) =>
     api.post(`/entities/${entityId}/assess`, { entity_id: entityId, project_id: projectId, judgment, probability }),
