@@ -41,6 +41,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
+def _parse_uuid(value: str, label: str = "ID") -> uuid.UUID:
+    """Safely parse a UUID string, raising 400 on invalid input."""
+    try:
+        return uuid.UUID(value)
+    except (ValueError, AttributeError):
+        raise HTTPException(400, f"Invalid {label}: {value!r}")
+
+
 # ---------------------------------------------------------------------------
 # Request / Response schemas
 # ---------------------------------------------------------------------------
@@ -213,7 +221,7 @@ async def list_plans(
 
 @router.get("/collection-plans/{plan_id}")
 async def get_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
-    plan = await db.get(CollectionPlan, uuid.UUID(plan_id))
+    plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
         raise HTTPException(404, "Collection plan not found")
     return _plan_to_dict(plan)
@@ -221,7 +229,7 @@ async def get_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.put("/collection-plans/{plan_id}")
 async def update_plan(plan_id: str, req: UpdatePlanRequest, db: AsyncSession = Depends(get_db)):
-    plan = await db.get(CollectionPlan, uuid.UUID(plan_id))
+    plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
         raise HTTPException(404, "Collection plan not found")
 
@@ -237,7 +245,7 @@ async def update_plan(plan_id: str, req: UpdatePlanRequest, db: AsyncSession = D
 
 @router.delete("/collection-plans/{plan_id}")
 async def delete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
-    plan = await db.get(CollectionPlan, uuid.UUID(plan_id))
+    plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
         raise HTTPException(404, "Collection plan not found")
     await db.delete(plan)
@@ -251,7 +259,7 @@ async def delete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/collection-plans/{plan_id}/activate")
 async def activate_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
-    plan = await db.get(CollectionPlan, uuid.UUID(plan_id))
+    plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
         raise HTTPException(404, "Collection plan not found")
     if plan.status not in (PlanStatus.DRAFT, PlanStatus.PAUSED):
@@ -264,7 +272,7 @@ async def activate_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/collection-plans/{plan_id}/pause")
 async def pause_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
-    plan = await db.get(CollectionPlan, uuid.UUID(plan_id))
+    plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
         raise HTTPException(404, "Collection plan not found")
     if plan.status != PlanStatus.ACTIVE:
@@ -277,7 +285,7 @@ async def pause_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/collection-plans/{plan_id}/complete")
 async def complete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
-    plan = await db.get(CollectionPlan, uuid.UUID(plan_id))
+    plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
         raise HTTPException(404, "Collection plan not found")
     plan.status = PlanStatus.COMPLETED
@@ -288,7 +296,7 @@ async def complete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/collection-plans/{plan_id}/archive")
 async def archive_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
-    plan = await db.get(CollectionPlan, uuid.UUID(plan_id))
+    plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
         raise HTTPException(404, "Collection plan not found")
     plan.status = PlanStatus.ARCHIVED
@@ -303,7 +311,7 @@ async def archive_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/collection-plans/{plan_id}/sources")
 async def add_source(plan_id: str, req: AddSourceRequest, db: AsyncSession = Depends(get_db)):
-    plan = await db.get(CollectionPlan, uuid.UUID(plan_id))
+    plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
         raise HTTPException(404, "Collection plan not found")
 
@@ -320,7 +328,7 @@ async def add_source(plan_id: str, req: AddSourceRequest, db: AsyncSession = Dep
         raise HTTPException(400, f"Invalid source config: {e}")
 
     source = CollectionSource(
-        plan_id=uuid.UUID(plan_id),
+        plan_id=_parse_uuid(plan_id, "plan_id"),
         name=req.name,
         source_type=req.source_type,
         config=validated_config,
@@ -336,7 +344,7 @@ async def add_source(plan_id: str, req: AddSourceRequest, db: AsyncSession = Dep
 @router.get("/collection-plans/{plan_id}/sources")
 async def list_sources(plan_id: str, db: AsyncSession = Depends(get_db)):
     stmt = select(CollectionSource).where(
-        CollectionSource.plan_id == uuid.UUID(plan_id)
+        CollectionSource.plan_id == _parse_uuid(plan_id, "plan_id")
     ).order_by(CollectionSource.created_at)
     result = await db.execute(stmt)
     return [_source_to_dict(s) for s in result.scalars().all()]
@@ -346,7 +354,7 @@ async def list_sources(plan_id: str, db: AsyncSession = Depends(get_db)):
 async def update_source(
     plan_id: str, source_id: str, req: UpdateSourceRequest, db: AsyncSession = Depends(get_db)
 ):
-    source = await db.get(CollectionSource, uuid.UUID(source_id))
+    source = await db.get(CollectionSource, _parse_uuid(source_id, "source_id"))
     if not source or str(source.plan_id) != plan_id:
         raise HTTPException(404, "Source not found")
 
@@ -372,7 +380,7 @@ async def update_source(
 
 @router.delete("/collection-plans/{plan_id}/sources/{source_id}")
 async def delete_source(plan_id: str, source_id: str, db: AsyncSession = Depends(get_db)):
-    source = await db.get(CollectionSource, uuid.UUID(source_id))
+    source = await db.get(CollectionSource, _parse_uuid(source_id, "source_id"))
     if not source or str(source.plan_id) != plan_id:
         raise HTTPException(404, "Source not found")
     await db.delete(source)
@@ -398,11 +406,11 @@ async def upload_file_to_source(
     start_time = time.time()
 
     # Validate plan and source exist
-    plan = await db.get(CollectionPlan, uuid.UUID(plan_id))
+    plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
         raise HTTPException(404, "Collection plan not found")
 
-    source = await db.get(CollectionSource, uuid.UUID(source_id))
+    source = await db.get(CollectionSource, _parse_uuid(source_id, "source_id"))
     if not source or str(source.plan_id) != plan_id:
         raise HTTPException(404, "Source not found")
 
@@ -434,8 +442,8 @@ async def upload_file_to_source(
     if not result.success:
         # Log failed acquisition
         acq_log = AcquisitionLog(
-            source_id=uuid.UUID(source_id),
-            plan_id=uuid.UUID(plan_id),
+            source_id=_parse_uuid(source_id, "source_id"),
+            plan_id=_parse_uuid(plan_id, "plan_id"),
             result="FAILURE",
             error_message=result.error,
             source_type=source.source_type,
@@ -453,11 +461,11 @@ async def upload_file_to_source(
 
     # Store in data catalog
     catalog = DataCatalog(
-        plan_id=uuid.UUID(plan_id),
-        source_id=uuid.UUID(source_id),
+        plan_id=_parse_uuid(plan_id, "plan_id"),
+        source_id=_parse_uuid(source_id, "source_id"),
         name=safe_name,
         file_format=file_format,
-        original_filename=file.filename or "",
+        original_filename=re.sub(r'[^\w\-. ]', '_', file.filename or ""),
         file_size_bytes=len(file_bytes),
         row_count=result.record_count,
         column_count=len(result.schema_info.get("columns", [])),
@@ -507,8 +515,8 @@ async def upload_file_to_source(
 
     # Log successful acquisition
     acq_log = AcquisitionLog(
-        source_id=uuid.UUID(source_id),
-        plan_id=uuid.UUID(plan_id),
+        source_id=_parse_uuid(source_id, "source_id"),
+        plan_id=_parse_uuid(plan_id, "plan_id"),
         result="SUCCESS",
         record_count=result.record_count,
         source_type=source.source_type,
@@ -562,7 +570,7 @@ async def list_acquisitions(
 ):
     stmt = (
         select(AcquisitionLog)
-        .where(AcquisitionLog.plan_id == uuid.UUID(plan_id))
+        .where(AcquisitionLog.plan_id == _parse_uuid(plan_id, "plan_id"))
         .order_by(AcquisitionLog.started_at.desc())
         .limit(limit)
     )
@@ -579,7 +587,7 @@ async def list_source_acquisitions(
 ):
     stmt = (
         select(AcquisitionLog)
-        .where(AcquisitionLog.source_id == uuid.UUID(source_id))
+        .where(AcquisitionLog.source_id == _parse_uuid(source_id, "source_id"))
         .order_by(AcquisitionLog.started_at.desc())
         .limit(limit)
     )
@@ -595,7 +603,7 @@ async def list_source_acquisitions(
 async def list_catalog(plan_id: str, db: AsyncSession = Depends(get_db)):
     stmt = (
         select(DataCatalog)
-        .where(DataCatalog.plan_id == uuid.UUID(plan_id))
+        .where(DataCatalog.plan_id == _parse_uuid(plan_id, "plan_id"))
         .order_by(DataCatalog.ingested_at.desc())
     )
     result = await db.execute(stmt)
@@ -604,7 +612,7 @@ async def list_catalog(plan_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/data-catalog/{catalog_id}")
 async def get_catalog_entry(catalog_id: str, db: AsyncSession = Depends(get_db)):
-    entry = await db.get(DataCatalog, uuid.UUID(catalog_id))
+    entry = await db.get(DataCatalog, _parse_uuid(catalog_id, "catalog_id"))
     if not entry:
         raise HTTPException(404, "Catalog entry not found")
     return _catalog_to_dict(entry)
@@ -617,7 +625,7 @@ async def get_catalog_preview(
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
 ):
-    entry = await db.get(DataCatalog, uuid.UUID(catalog_id))
+    entry = await db.get(DataCatalog, _parse_uuid(catalog_id, "catalog_id"))
     if not entry:
         raise HTTPException(404, "Catalog entry not found")
     rows = entry.preview_rows or []

@@ -4,6 +4,14 @@ Supports:
 - CSV/TSV with encoding detection, delimiter detection, header detection
 - Excel (.xlsx) with sheet selection
 - JSON / JSONL (nested → flattened)
+
+Security:
+- CSV formula injection prevention (=, +, -, @, |, \\ prefixes sanitized)
+- Row count limits to prevent memory exhaustion
+- Column count limits
+- JSON depth limits
+- Encoding validation (whitelist of safe encodings)
+- Excel workbook resource cleanup via context manager
 """
 from __future__ import annotations
 
@@ -28,14 +36,60 @@ logger = logging.getLogger(__name__)
 SUPPORTED_FORMATS = {"csv", "tsv", "xlsx", "xls", "json", "jsonl"}
 MAX_PREVIEW_ROWS = 50
 MAX_PROFILE_UNIQUE = 100
+MAX_ROWS = 500_000  # Hard limit: refuse files with more rows
+MAX_COLUMNS = 1_000  # Hard limit: refuse files with more columns
+MAX_JSON_SIZE = 100 * 1024 * 1024  # 100MB decoded text limit for JSON
+
+# Characters that trigger formula execution in spreadsheet applications
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "|", "\\")
+
+# Safe encodings whitelist — reject exotic encodings that could cause issues
+_SAFE_ENCODINGS = {
+    "utf-8", "utf-16", "utf-16-le", "utf-16-be", "utf-32",
+    "ascii", "latin-1", "iso-8859-1", "iso-8859-2", "iso-8859-15",
+    "windows-1250", "windows-1251", "windows-1252", "windows-1253", "windows-1254",
+    "windows-1255", "windows-1256", "cp1252", "cp437", "cp850",
+    "mac-roman", "euc-jp", "shift_jis", "iso-2022-jp",
+    "euc-kr", "gb2312", "gbk", "gb18030", "big5",
+    "koi8-r", "koi8-u",
+}
+
+
+def _sanitize_cell(value: str) -> str:
+    """Sanitize a cell value to prevent CSV formula injection.
+
+    Prefixes dangerous characters with a single quote to neutralize
+    formula execution in spreadsheet applications.
+    """
+    if value and isinstance(value, str) and value.lstrip().startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
+def _sanitize_header(name: str) -> str:
+    """Sanitize a column header name."""
+    sanitized = _sanitize_cell(name)
+    # Also strip control characters from headers
+    sanitized = "".join(c for c in sanitized if c.isprintable() or c in (" ", "\t"))
+    return sanitized.strip() or "unnamed"
 
 
 def _detect_encoding(raw: bytes) -> str:
-    """Detect encoding using chardet, fallback to utf-8."""
+    """Detect encoding using chardet, fallback to utf-8.
+
+    Only accepts encodings from a safe whitelist to prevent
+    encoding-based attacks.
+    """
     try:
         import chardet
         result = chardet.detect(raw[:10000])
-        return result.get("encoding") or "utf-8"
+        detected = (result.get("encoding") or "utf-8").lower().replace("_", "-")
+        confidence = result.get("confidence", 0)
+        # Reject low-confidence detections and unsafe encodings
+        if confidence < 0.5 or detected not in _SAFE_ENCODINGS:
+            logger.warning("Rejected encoding %s (confidence=%.2f), using utf-8", detected, confidence)
+            return "utf-8"
+        return detected
     except ImportError:
         return "utf-8"
 
@@ -149,25 +203,48 @@ def parse_csv(raw: bytes, config: dict) -> AcquireResult:
     delimiter = config.get("delimiter") or _detect_delimiter(text)
     has_header = config.get("has_header", _detect_has_header(text, delimiter))
 
-    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
-    rows = list(reader)
+    # Increase CSV field size limit to handle large cells (up to 10MB per field)
+    csv.field_size_limit(10 * 1024 * 1024)
+
+    try:
+        reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+
+        # Read rows with a hard limit to prevent memory exhaustion
+        rows = []
+        for i, row in enumerate(reader):
+            if i > MAX_ROWS:
+                return AcquireResult(
+                    success=False,
+                    error=f"File exceeds maximum row limit of {MAX_ROWS:,}. Truncate or split the file.")
+            rows.append(row)
+    except csv.Error as e:
+        return AcquireResult(success=False, error=f"CSV parse error: {e}")
 
     if not rows:
         return AcquireResult(success=True, record_count=0)
 
+    # Column count check
+    if len(rows[0]) > MAX_COLUMNS:
+        return AcquireResult(
+            success=False,
+            error=f"File has {len(rows[0])} columns, exceeding limit of {MAX_COLUMNS}.")
+
     if has_header:
-        headers = [h.strip() for h in rows[0]]
+        headers = [_sanitize_header(h.strip()) for h in rows[0]]
         data_rows = rows[1:]
     else:
         headers = [f"column_{i}" for i in range(len(rows[0]))]
         data_rows = rows
 
-    # Build records
+    # Build records with formula injection sanitization
     records = []
     for row_idx, row in enumerate(data_rows):
         record = {"_row_number": row_idx + 1}
         for col_idx, header in enumerate(headers):
-            record[header] = row[col_idx].strip() if col_idx < len(row) else None
+            val = row[col_idx].strip() if col_idx < len(row) else None
+            if val is not None:
+                val = _sanitize_cell(val)
+            record[header] = val
         records.append(record)
 
     # Schema inference
@@ -204,97 +281,189 @@ def parse_csv(raw: bytes, config: dict) -> AcquireResult:
 
 
 def parse_excel(raw: bytes, config: dict) -> AcquireResult:
-    """Parse Excel bytes into structured records with profiling."""
+    """Parse Excel bytes into structured records with profiling.
+
+    Security: uses read_only + data_only mode, enforces row/column limits,
+    sanitizes cell values, and ensures workbook cleanup via try/finally.
+    """
     from openpyxl import load_workbook
+    from openpyxl.utils.exceptions import InvalidFileException
 
-    wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-    sheet_name = config.get("sheet_name") or wb.sheetnames[0]
+    wb = None
+    try:
+        try:
+            wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        except (InvalidFileException, Exception) as e:
+            return AcquireResult(
+                success=False, error=f"Invalid Excel file: {e}")
 
-    if sheet_name not in wb.sheetnames:
+        sheet_names = wb.sheetnames
+        sheet_name = config.get("sheet_name") or sheet_names[0]
+
+        if sheet_name not in sheet_names:
+            return AcquireResult(
+                success=False, error=f"Sheet '{sheet_name}' not found. Available: {sheet_names}")
+
+        ws = wb[sheet_name]
+
+        # Read rows with limits to prevent memory exhaustion
+        rows = []
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i > MAX_ROWS:
+                return AcquireResult(
+                    success=False,
+                    error=f"Sheet exceeds maximum row limit of {MAX_ROWS:,}.")
+            rows.append(row)
+
+        if not rows:
+            return AcquireResult(success=True, record_count=0, metadata={"sheets": sheet_names})
+
+        # Column count check
+        if len(rows[0]) > MAX_COLUMNS:
+            return AcquireResult(
+                success=False,
+                error=f"Sheet has {len(rows[0])} columns, exceeding limit of {MAX_COLUMNS}.")
+
+        has_header = config.get("has_header", True)
+        if has_header:
+            headers = [
+                _sanitize_header(str(h).strip()) if h is not None else f"column_{i}"
+                for i, h in enumerate(rows[0])
+            ]
+            data_rows = rows[1:]
+        else:
+            headers = [f"column_{i}" for i in range(len(rows[0]))]
+            data_rows = rows
+
+        records = []
+        for row_idx, row in enumerate(data_rows):
+            record = {"_row_number": row_idx + 1}
+            for col_idx, header in enumerate(headers):
+                val = row[col_idx] if col_idx < len(row) else None
+                # Convert datetime objects to ISO strings for JSON compatibility
+                if isinstance(val, datetime):
+                    val = val.isoformat()
+                # Sanitize string values against formula injection
+                elif isinstance(val, str):
+                    val = _sanitize_cell(val)
+                record[header] = val
+            records.append(record)
+
+        column_values = {h: [r.get(h) for r in records] for h in headers}
+        schema_info = {
+            "columns": [
+                {"name": h, "type": _infer_column_type(column_values[h]), "index": i}
+                for i, h in enumerate(headers)
+            ],
+            "sheet_name": sheet_name,
+            "available_sheets": sheet_names,
+        }
+
+        profiling = {
+            "row_count": len(records),
+            "column_count": len(headers),
+            "columns": {h: _profile_column(h, column_values[h]) for h in headers},
+        }
+
+        preview_rows = records[:MAX_PREVIEW_ROWS]
+
         return AcquireResult(
-            success=False, error=f"Sheet '{sheet_name}' not found. Available: {wb.sheetnames}")
+            success=True,
+            record_count=len(records),
+            records=records,
+            schema_info=schema_info,
+            profiling=profiling,
+            preview_rows=preview_rows,
+            metadata={"format": "xlsx", "sheet_name": sheet_name},
+        )
+    finally:
+        if wb is not None:
+            try:
+                wb.close()
+            except Exception:
+                pass
 
-    ws = wb[sheet_name]
-    rows = list(ws.iter_rows(values_only=True))
-    wb.close()
 
-    if not rows:
-        return AcquireResult(success=True, record_count=0, metadata={"sheets": wb.sheetnames})
+def _check_json_depth(obj: Any, max_depth: int = 20, current: int = 0) -> bool:
+    """Check if a JSON object exceeds maximum nesting depth."""
+    if current > max_depth:
+        return False
+    if isinstance(obj, dict):
+        return all(_check_json_depth(v, max_depth, current + 1) for v in obj.values())
+    if isinstance(obj, list):
+        return all(_check_json_depth(v, max_depth, current + 1) for v in obj[:100])
+    return True
 
-    has_header = config.get("has_header", True)
-    if has_header:
-        headers = [str(h).strip() if h is not None else f"column_{i}" for i, h in enumerate(rows[0])]
-        data_rows = rows[1:]
-    else:
-        headers = [f"column_{i}" for i in range(len(rows[0]))]
-        data_rows = rows
 
-    records = []
-    for row_idx, row in enumerate(data_rows):
-        record = {"_row_number": row_idx + 1}
-        for col_idx, header in enumerate(headers):
-            val = row[col_idx] if col_idx < len(row) else None
-            # Convert datetime objects to ISO strings for JSON compatibility
-            if isinstance(val, datetime):
-                val = val.isoformat()
-            record[header] = val
-        records.append(record)
-
-    column_values = {h: [r.get(h) for r in records] for h in headers}
-    schema_info = {
-        "columns": [
-            {"name": h, "type": _infer_column_type(column_values[h]), "index": i}
-            for i, h in enumerate(headers)
-        ],
-        "sheet_name": sheet_name,
-        "available_sheets": list(wb.sheetnames) if hasattr(wb, 'sheetnames') else [sheet_name],
-    }
-
-    profiling = {
-        "row_count": len(records),
-        "column_count": len(headers),
-        "columns": {h: _profile_column(h, column_values[h]) for h in headers},
-    }
-
-    preview_rows = records[:MAX_PREVIEW_ROWS]
-
-    return AcquireResult(
-        success=True,
-        record_count=len(records),
-        records=records,
-        schema_info=schema_info,
-        profiling=profiling,
-        preview_rows=preview_rows,
-        metadata={"format": "xlsx", "sheet_name": sheet_name},
-    )
+def _sanitize_json_value(val: Any) -> Any:
+    """Sanitize JSON values — prevent formula injection in string values."""
+    if isinstance(val, str):
+        return _sanitize_cell(val)
+    if isinstance(val, dict):
+        return {_sanitize_cell(str(k)) if isinstance(k, str) else k: _sanitize_json_value(v)
+                for k, v in val.items()}
+    if isinstance(val, list):
+        return [_sanitize_json_value(v) for v in val]
+    return val
 
 
 def parse_json(raw: bytes, config: dict) -> AcquireResult:
-    """Parse JSON/JSONL bytes into records."""
+    """Parse JSON/JSONL bytes into records.
+
+    Security: enforces size limits, nesting depth limits, row limits,
+    and sanitizes all string values against formula injection.
+    """
     encoding = config.get("encoding") or _detect_encoding(raw)
     text = raw.decode(encoding, errors="replace").strip()
+
+    # Size check for decoded text
+    if len(text) > MAX_JSON_SIZE:
+        return AcquireResult(
+            success=False,
+            error=f"JSON content exceeds {MAX_JSON_SIZE // (1024*1024)}MB limit.")
 
     records = []
     is_jsonl = config.get("jsonl", False)
 
-    if is_jsonl or "\n" in text and text.lstrip().startswith("{"):
+    if is_jsonl or ("\n" in text and text.lstrip().startswith("{")):
         # JSONL: one JSON object per line
-        for line_num, line in enumerate(text.splitlines(), 1):
+        lines = text.splitlines()
+        if len(lines) > MAX_ROWS:
+            return AcquireResult(
+                success=False,
+                error=f"JSONL file exceeds maximum row limit of {MAX_ROWS:,}.")
+        for line_num, line in enumerate(lines, 1):
             line = line.strip()
             if not line:
                 continue
             try:
                 obj = json.loads(line)
                 if isinstance(obj, dict):
+                    obj = _sanitize_json_value(obj)
                     obj["_row_number"] = line_num
                     records.append(obj)
             except json.JSONDecodeError:
                 continue
     else:
-        data = json.loads(text)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            return AcquireResult(success=False, error=f"Invalid JSON: {e}")
+
+        # Depth check to prevent JSON bomb
+        if not _check_json_depth(data):
+            return AcquireResult(
+                success=False,
+                error="JSON exceeds maximum nesting depth of 20 levels.")
+
         if isinstance(data, list):
+            if len(data) > MAX_ROWS:
+                return AcquireResult(
+                    success=False,
+                    error=f"JSON array exceeds maximum row limit of {MAX_ROWS:,}.")
             for i, item in enumerate(data):
                 if isinstance(item, dict):
+                    item = _sanitize_json_value(item)
                     item["_row_number"] = i + 1
                     records.append(item)
                 else:
@@ -312,12 +481,17 @@ def parse_json(raw: bytes, config: dict) -> AcquireResult:
                         arr = v
                         break
             if arr:
+                if len(arr) > MAX_ROWS:
+                    return AcquireResult(
+                        success=False,
+                        error=f"JSON array exceeds maximum row limit of {MAX_ROWS:,}.")
                 for i, item in enumerate(arr):
                     if isinstance(item, dict):
+                        item = _sanitize_json_value(item)
                         item["_row_number"] = i + 1
                         records.append(item)
             else:
-                records.append({"_row_number": 1, **data})
+                records.append({"_row_number": 1, **_sanitize_json_value(data)})
 
     if not records:
         return AcquireResult(success=True, record_count=0)
