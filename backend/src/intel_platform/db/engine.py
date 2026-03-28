@@ -37,6 +37,8 @@ async def get_db() -> AsyncSession:
 
 async def init_db():
     """Create all tables. Called once at startup."""
+    from sqlalchemy import text
     from intel_platform.db.models import Base
     async with get_engine().begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)

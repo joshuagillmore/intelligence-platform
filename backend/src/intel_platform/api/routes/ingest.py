@@ -75,7 +75,20 @@ async def ingest_document(
         all_relationships.extend(relationships)
 
     result = build_graph_from_extractions(store, all_entities, all_relationships, project_id, source_doc_id=doc.id)
-    return {"document_id": doc.id, "document_name": source_name, "chunks": len(chunks), **result}
+
+    # Embed chunks for vector search (non-fatal if it fails)
+    embeddings_stored = 0
+    try:
+        from intel_platform.db.engine import get_session_factory
+        from intel_platform.services.vector_search import embed_and_store_chunks
+        async with get_session_factory()() as db_session:
+            embeddings_stored = await embed_and_store_chunks(chunks, doc.id, project_id, db_session)
+            await db_session.commit()
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("Embedding failed for %s — document still ingested", doc.id, exc_info=True)
+
+    return {"document_id": doc.id, "document_name": source_name, "chunks": len(chunks), "embeddings_stored": embeddings_stored, **result}
 
 
 @router.post("/ingest/batch")
@@ -131,10 +144,22 @@ async def ingest_batch(
         total_entities += build_result["entities_created"]
         total_relationships += build_result["relationships_created"]
 
+        # Embed chunks for vector search (non-fatal)
+        embeddings_stored = 0
+        try:
+            from intel_platform.db.engine import get_session_factory
+            from intel_platform.services.vector_search import embed_and_store_chunks
+            async with get_session_factory()() as db_session:
+                embeddings_stored = await embed_and_store_chunks(chunks, doc.id, project_id, db_session)
+                await db_session.commit()
+        except Exception:
+            pass
+
         results.append({
             "document_id": doc.id,
             "document_name": source_name,
             "chunks": len(chunks),
+            "embeddings_stored": embeddings_stored,
             **build_result,
         })
 
