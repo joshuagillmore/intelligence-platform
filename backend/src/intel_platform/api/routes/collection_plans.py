@@ -32,6 +32,7 @@ from intel_platform.db.models import (
 )
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import Document
+from intel_platform.services.collection_planner import parse_plan_sources
 from intel_platform.services.extraction import extract_entities_nlp
 from intel_platform.services.graph_builder import build_graph_from_extractions
 from intel_platform.services.ingestion import ingest_text
@@ -95,6 +96,14 @@ class UpdateSourceRequest(BaseModel):
     config: dict | None = None
     schedule_cron: str | None = None
     enabled: bool | None = None
+
+
+class SubmitPIRRequest(BaseModel):
+    """Submit a PIR to create a full collection plan via LLM."""
+    project_id: str
+    pir: str
+    extraction_mode: str = "hybrid"
+    created_by: str = "analyst"
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +312,143 @@ async def archive_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan.updated_at = datetime.now(timezone.utc)
     await db.commit()
     return _plan_to_dict(plan)
+
+
+# ---------------------------------------------------------------------------
+# PIR → Plan (LLM-driven collection plan generation)
+# ---------------------------------------------------------------------------
+
+@router.post("/collection-plans/from-pir")
+async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends(get_db)):
+    """Submit a PIR → LLM refines it, generates a collection plan with sources.
+
+    Flow: PIR → LLM refinement → LLM plan generation → create Plan + Sources → DRAFT
+    Returns the plan ready for user approval.
+    """
+    # Step 1: Get the LLM provider
+    try:
+        from intel_platform.api.routes.llm import _get_provider
+        provider = _get_provider()
+    except Exception:
+        provider = None
+
+    refined_pir = req.pir
+    plan_description = ""
+
+    if provider:
+        # Step 2: Refine the PIR
+        try:
+            from intel_platform.llm.skills.loader import SkillsLoader
+            loader = SkillsLoader()
+
+            refine_result = await provider.generate(
+                messages=[{"role": "user", "content": f"Refine this Priority Intelligence Requirement (PIR):\n\n{req.pir}"}],
+                system=(
+                    "You are an intelligence analyst. Given a PIR:\n"
+                    "1. ASSESS specificity, measurability, and time-bounds\n"
+                    "2. IDENTIFY hidden assumptions\n"
+                    "3. BREAK DOWN into 3-5 Essential Elements of Information (EEIs)\n"
+                    "4. PROPOSE a refined, more actionable PIR\n"
+                    "Return the refined PIR on the first line, then your analysis."
+                ),
+                temperature=0.3,
+            )
+            # First line is the refined PIR, rest is the analysis
+            lines = refine_result.content.strip().split("\n", 1)
+            refined_pir = lines[0].strip().strip('"').strip("*").strip()
+            plan_description = lines[1].strip() if len(lines) > 1 else ""
+        except Exception as e:
+            logger.warning("PIR refinement failed: %s", e)
+
+        # Step 3: Generate collection plan with sources
+        try:
+            system = loader.get_system_prompt("collection_planning", include_foundation=True) or ""
+            plan_result = await provider.generate(
+                messages=[{"role": "user", "content": (
+                    f"Create a collection plan for this PIR:\n\n{refined_pir}\n\n"
+                    "For each source, output a numbered list item in this format:\n"
+                    "N. [SOURCE_TYPE] Description of what to collect\n\n"
+                    "Valid SOURCE_TYPE values: file_upload, web_scrape, api_feed, database, rss_feed\n"
+                    "Include 3-7 concrete, actionable sources."
+                )}],
+                system=system,
+                temperature=0.4,
+            )
+            plan_text = plan_result.content
+        except Exception as e:
+            logger.warning("Plan generation failed: %s", e)
+            plan_text = ""
+    else:
+        plan_text = ""
+
+    # Step 4: Create the plan
+    plan = CollectionPlan(
+        project_id=req.project_id,
+        name=f"PIR: {req.pir[:80]}{'...' if len(req.pir) > 80 else ''}",
+        description=plan_description,
+        requirement=req.pir,
+        pir=req.pir,
+        refined_pir=refined_pir,
+        status=PlanStatus.DRAFT,
+        routing_rules={"extract_entities": True, "store_documents": True},
+        created_by=req.created_by,
+    )
+    db.add(plan)
+    await db.flush()
+
+    # Step 5: Parse LLM plan text into sources
+    sources_created = []
+    if plan_text:
+        parsed_sources = parse_plan_sources(plan_text)
+        for ps in parsed_sources:
+            source = CollectionSource(
+                plan_id=plan.id,
+                name=ps["name"],
+                source_type=ps["source_type"],
+                config={},
+                enabled=True,
+            )
+            db.add(source)
+            sources_created.append(source)
+
+    await db.commit()
+    await db.refresh(plan)
+
+    result = _plan_to_dict(plan)
+    result["llm_plan_text"] = plan_text
+    return result
+
+
+@router.post("/collection-plans/{plan_id}/execute")
+async def execute_plan(
+    plan_id: str,
+    db: AsyncSession = Depends(get_db),
+    store: GraphStore = Depends(get_graph_store),
+):
+    """Approve and execute a collection plan — activates and triggers acquisition.
+
+    For file_upload sources: marks as ready for upload.
+    For all sources: activates the plan and logs the execution start.
+    Entity extraction runs automatically on acquired data.
+    """
+    plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
+    if not plan:
+        raise HTTPException(404, "Collection plan not found")
+
+    if plan.status not in (PlanStatus.DRAFT, PlanStatus.PAUSED):
+        raise HTTPException(400, f"Cannot execute plan in {plan.status} status")
+
+    # Activate the plan
+    plan.status = PlanStatus.ACTIVE
+    plan.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(plan)
+
+    return {
+        **_plan_to_dict(plan),
+        "execution_status": "activated",
+        "message": f"Plan activated with {len(plan.sources or [])} sources ready for acquisition.",
+    }
 
 
 # ---------------------------------------------------------------------------

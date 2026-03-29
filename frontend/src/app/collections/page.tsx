@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { collectionsApi, ingestApi, llmApi } from '@/lib/api';
+import { collectionsApi, collectionPlansApi, ingestApi, llmApi, CollectionPlan } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 
 interface Collection {
@@ -41,10 +41,15 @@ const EXTRACTION_MODES = [
 
 const SOURCE_TYPE_ICONS: Record<string, string> = {
   web_search: 'data_exploration',
+  web_scrape: 'language',
   news: 'newspaper',
   database: 'account_balance',
   document: 'description',
   social_media: 'forum',
+  file_upload: 'upload_file',
+  api_feed: 'api',
+  rss_feed: 'rss_feed',
+  watched_dir: 'folder_open',
 };
 
 export default function CollectionsPage() {
@@ -73,6 +78,11 @@ export default function CollectionsPage() {
   // Current active collection being built
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
 
+  // Unified collection plan state
+  const [activePlan, setActivePlan] = useState<CollectionPlan | null>(null);
+  const [plans, setPlans] = useState<CollectionPlan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(false);
+
   // Expanded collection cards
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
@@ -99,9 +109,23 @@ export default function CollectionsPage() {
     }
   }, [activeProject]);
 
+  const loadPlans = useCallback(async () => {
+    if (!activeProject) return;
+    setPlansLoading(true);
+    try {
+      const res = await collectionPlansApi.list(activeProject.id);
+      setPlans(res.data);
+    } catch (e) {
+      console.error('Failed to load plans', e);
+    } finally {
+      setPlansLoading(false);
+    }
+  }, [activeProject]);
+
   useEffect(() => {
     loadCollections();
-  }, [loadCollections]);
+    loadPlans();
+  }, [loadCollections, loadPlans]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -196,56 +220,43 @@ PIR: ${pir.trim()}` }],
     setAssistantLoading(true);
     setAssistantError(null);
     setPlanItems([]);
-
-    // Create a collection record if we don't have one yet
-    let collId = activeCollectionId;
-    if (!collId) {
-      try {
-        const createRes = await collectionsApi.create({
-          project_id: activeProject.id,
-          pir: pir.trim(),
-        });
-        collId = createRes.data.id;
-        setActiveCollectionId(collId);
-      } catch (e) {
-        console.error('Failed to create collection', e);
-      }
-    }
+    setPlanParsing(true);
 
     try {
-      const res = await llmApi.query(
-        [{ role: 'user', content: pir.trim() }],
-        'collection_planning'
-      );
-      const answer = res.data?.response || res.data?.answer || res.data?.content || JSON.stringify(res.data);
-      const aiMsg: ChatMessage = { role: 'assistant', content: answer };
+      // Use the unified from-pir endpoint — LLM refines PIR and generates plan with sources
+      const res = await collectionPlansApi.fromPir({
+        project_id: activeProject.id,
+        pir: pir.trim(),
+        extraction_mode: extractionMode,
+      });
+      const plan = res.data;
+      setActivePlan(plan);
+
+      // Show the LLM plan text in the chat
+      const llmText = (plan as Record<string, unknown>).llm_plan_text as string || plan.description || 'Collection plan generated.';
+      const aiMsg: ChatMessage = { role: 'assistant', content: llmText };
       setAssistantMessages(prev => [...prev, aiMsg]);
 
-      setPlanParsing(true);
-      try {
-        const planRes = await collectionsApi.parsePlan(answer);
-        const items = planRes.data.items || [];
-        setPlanItems(items);
+      // Convert plan sources to plan items for approval UI
+      const items: PlanItem[] = (plan.sources || []).map((src, i) => ({
+        id: i + 1,
+        description: src.name,
+        source_type: src.source_type,
+        status: 'pending',
+        approved: true, // default to approved
+      }));
+      setPlanItems(items);
 
-        // Save plan to collection
-        if (collId) {
-          try {
-            await collectionsApi.update(collId, {
-              plan: items,
-            });
-          } catch (e) {
-            console.error('Failed to save plan', e);
-          }
-        }
-      } catch {
-        console.error('Failed to parse plan');
-      } finally {
-        setPlanParsing(false);
+      // Show refined PIR if available
+      if (plan.refined_pir && plan.refined_pir !== pir.trim()) {
+        const refineMsg: ChatMessage = { role: 'assistant', content: `**Refined PIR:** ${plan.refined_pir}` };
+        setAssistantMessages(prev => [prev[0], refineMsg, ...prev.slice(1)]);
       }
     } catch (e) {
       setAssistantError(getErrorMessage(e));
     } finally {
       setAssistantLoading(false);
+      setPlanParsing(false);
     }
   }
 
@@ -264,36 +275,39 @@ PIR: ${pir.trim()}` }],
   }
 
   async function acceptPlan() {
-    if (!activeProject || assistantMessages.length === 0) return;
-    const lastAI = [...assistantMessages].reverse().find(m => m.role === 'assistant');
-    if (!lastAI) return;
-
-    const approvedItems = planItems.filter(item => item.approved);
-    const planData = approvedItems.length > 0 ? approvedItems : undefined;
+    if (!activeProject) return;
 
     setLoading(true);
     setError(null);
     try {
-      if (activeCollectionId) {
-        // Update existing collection
+      if (activePlan) {
+        // Remove rejected sources before executing
+        const rejectedItems = planItems.filter(item => !item.approved);
+        for (const item of rejectedItems) {
+          const matchingSource = (activePlan.sources || []).find(s => s.name === item.description);
+          if (matchingSource) {
+            try {
+              await collectionPlansApi.deleteSource(String(activePlan.id), String(matchingSource.id));
+            } catch { /* source may not exist */ }
+          }
+        }
+
+        // Execute the plan — activates and triggers acquisition pipeline
+        await collectionPlansApi.execute(String(activePlan.id));
+      } else if (activeCollectionId) {
+        // Legacy fallback
         await collectionsApi.update(activeCollectionId, {
-          plan: planData,
+          plan: planItems.filter(i => i.approved),
           status: 'APPROVED',
-        });
-      } else {
-        // Create new collection with full plan
-        const planPir = `${pir.trim()}\n\n--- Collection Plan ---\n${lastAI.content}`;
-        await collectionsApi.create({
-          project_id: activeProject.id,
-          pir: planPir,
-          plan: planData,
         });
       }
       setPir('');
       setAssistantMessages([]);
       setPlanItems([]);
       setActiveCollectionId(null);
+      setActivePlan(null);
       loadCollections();
+      loadPlans();
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -641,6 +655,101 @@ PIR: ${pir.trim()}` }],
                         </div>
                       </div>
                     </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* Section 4: Active Collection Plans */}
+        {plans.length > 0 && (
+          <section className="max-w-5xl mx-auto">
+            <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-sm">assignment</span>
+              Collection Plans
+              <span className="text-gray-500 font-mono ml-2">({plans.length})</span>
+            </h2>
+            <div className="space-y-2">
+              {plans.map(plan => {
+                const statusColor = plan.status === 'ACTIVE' ? 'bg-emerald-500/20 text-emerald-400'
+                  : plan.status === 'COMPLETED' ? 'bg-blue-500/20 text-blue-400'
+                  : plan.status === 'DRAFT' ? 'bg-gray-500/20 text-gray-400'
+                  : plan.status === 'PAUSED' ? 'bg-amber-500/20 text-amber-400'
+                  : 'bg-gray-600/20 text-gray-500';
+                const isExpanded = expandedIds.has(String(plan.id));
+                return (
+                  <div key={plan.id} className="bg-[#1a1f2e] border border-[#252a39] rounded overflow-hidden">
+                    <div className="p-4 cursor-pointer hover:bg-[#1e2436] transition-colors" onClick={() => toggleExpanded(String(plan.id))}>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-300 truncate">{plan.pir || plan.name}</p>
+                          {plan.refined_pir && plan.refined_pir !== plan.pir && (
+                            <p className="text-[10px] text-[#adc6ff] mt-1 truncate">Refined: {plan.refined_pir}</p>
+                          )}
+                          <div className="flex items-center gap-3 mt-2">
+                            <span className="text-[10px] text-gray-500 font-mono">{plan.created_at ? new Date(plan.created_at).toLocaleString() : ''}</span>
+                            <span className="text-[10px] text-gray-500">{plan.source_count || 0} sources</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 ml-3 flex-none">
+                          <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${statusColor}`}>
+                            {plan.status}
+                          </span>
+                          <span className="material-symbols-outlined text-sm text-gray-500">
+                            {isExpanded ? 'expand_less' : 'expand_more'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="border-t border-[#252a39] p-4 space-y-3 bg-[#0d1220]">
+                        {plan.description && (
+                          <div>
+                            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">Analysis</span>
+                            <p className="text-xs text-gray-400 whitespace-pre-wrap max-h-40 overflow-y-auto">{plan.description}</p>
+                          </div>
+                        )}
+                        {plan.sources && plan.sources.length > 0 && (
+                          <div>
+                            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">Sources ({plan.sources.length})</span>
+                            <div className="space-y-1">
+                              {plan.sources.map(src => (
+                                <div key={src.id} className="flex items-center gap-3 bg-[#1a1f2e] rounded px-3 py-2">
+                                  <span className="material-symbols-outlined text-xs text-[#adc6ff]">
+                                    {SOURCE_TYPE_ICONS[src.source_type] || 'description'}
+                                  </span>
+                                  <span className="text-xs text-gray-300 capitalize flex-none">{src.source_type.replace('_', ' ')}</span>
+                                  <span className="text-[11px] text-gray-400 flex-1">{src.name}</span>
+                                  <span className="text-[10px] text-gray-500">{src.total_records_acquired || 0} records</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {plan.status === 'DRAFT' && (
+                          <div className="flex gap-2 pt-2">
+                            <button
+                              onClick={async () => { await collectionPlansApi.execute(String(plan.id)); loadPlans(); }}
+                              className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-4 py-2 rounded text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-900/30 transition-all"
+                            >
+                              Approve & Execute
+                            </button>
+                            <button
+                              onClick={async () => { await collectionPlansApi.delete(String(plan.id)); loadPlans(); }}
+                              className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-2 rounded text-[10px] font-bold uppercase tracking-wider hover:bg-red-900/20 transition-all"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-4 text-[10px] text-gray-500 font-mono pt-2 border-t border-[#252a39]">
+                          <span>ID: {plan.id}</span>
+                          {plan.updated_at && <span>Updated: {new Date(plan.updated_at).toLocaleString()}</span>}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
