@@ -256,6 +256,12 @@ export const collectionPlansApi = {
   catalogPreview: (catalogId: string, offset?: number, limit?: number) =>
     api.get(`/data-catalog/${catalogId}/preview`, { params: { offset, limit } }),
 
+  // PIR-driven plan creation (unified flow)
+  fromPir: (data: { project_id: string; pir: string; extraction_mode?: string; created_by?: string }) =>
+    api.post<CollectionPlan & { llm_plan_text?: string }>('/collection-plans/from-pir', data),
+  execute: (planId: string) =>
+    api.post<CollectionPlan & { execution_status: string; message: string }>(`/collection-plans/${planId}/execute`),
+
   // Dashboard
   dashboard: (projectId: string) => api.get('/collection-dashboard', { params: { project_id: projectId } }),
 
