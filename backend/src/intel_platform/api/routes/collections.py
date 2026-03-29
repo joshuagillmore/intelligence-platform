@@ -1,3 +1,14 @@
+"""Legacy collections API — redirects to the unified collection plans system.
+
+The old Collections system stored PIR/plan data in Neo4j as pseudo-entities.
+This has been replaced by the PostgreSQL-backed collection plans system which
+provides proper relational storage, source management, acquisition logging,
+and LLM-driven PIR→Plan→Execute flow.
+
+Kept for backwards compatibility — new code should use /collection-plans.
+"""
+from __future__ import annotations
+
 import json
 import uuid
 from datetime import datetime, timezone
@@ -27,8 +38,11 @@ class UpdateCollectionRequest(BaseModel):
     status: str = ""
 
 
+# ---------------------------------------------------------------------------
+# Neo4j helpers (kept for reading legacy data)
+# ---------------------------------------------------------------------------
+
 def _save_collection_to_neo4j(store: GraphStore, collection: dict) -> None:
-    """Persist a collection record to Neo4j."""
     props = {
         "id": collection["id"],
         "project_id": collection["project_id"],
@@ -44,17 +58,12 @@ def _save_collection_to_neo4j(store: GraphStore, collection: dict) -> None:
     }
     with store._driver.session() as session:
         session.run(
-            """
-            MERGE (c:Collection {id: $id})
-            SET c += $props
-            """,
-            id=props["id"],
-            props=props,
+            "MERGE (c:Collection {id: $id}) SET c += $props",
+            id=props["id"], props=props,
         )
 
 
 def _load_collections_from_neo4j(store: GraphStore, project_id: str | None = None) -> list[dict]:
-    """Load collection records from Neo4j."""
     with store._driver.session() as session:
         if project_id:
             result = session.run(
@@ -68,7 +77,6 @@ def _load_collections_from_neo4j(store: GraphStore, project_id: str | None = Non
         collections = []
         for record in result:
             props = dict(record["props"])
-            # Parse plan from JSON
             try:
                 props["plan"] = json.loads(props.get("plan_json", "[]"))
             except (json.JSONDecodeError, TypeError):
@@ -79,7 +87,6 @@ def _load_collections_from_neo4j(store: GraphStore, project_id: str | None = Non
 
 
 def _get_collection_count(store: GraphStore, project_id: str) -> int:
-    """Get the number of collections for a project."""
     with store._driver.session() as session:
         result = session.run(
             "MATCH (c:Collection {project_id: $pid}) RETURN count(c) as cnt",
@@ -89,8 +96,13 @@ def _get_collection_count(store: GraphStore, project_id: str) -> int:
         return record["cnt"] if record else 0
 
 
+# ---------------------------------------------------------------------------
+# Legacy endpoints (backwards-compatible)
+# ---------------------------------------------------------------------------
+
 @router.post("/collections")
 def create_collection(req: CreateCollectionRequest, store: GraphStore = Depends(get_graph_store)):
+    """Legacy: create a collection. New code should use POST /collection-plans/from-pir."""
     collection = {
         "id": str(uuid.uuid4()),
         "project_id": req.project_id,
@@ -124,7 +136,6 @@ def get_collection(task_id: str, store: GraphStore = Depends(get_graph_store)):
 
 @router.put("/collections/{task_id}")
 def update_collection(task_id: str, req: UpdateCollectionRequest, store: GraphStore = Depends(get_graph_store)):
-    """Update a collection with refinement, plan, or status changes."""
     with store._driver.session() as session:
         updates = {}
         if req.refined_pir:
@@ -136,11 +147,9 @@ def update_collection(task_id: str, req: UpdateCollectionRequest, store: GraphSt
         if req.status:
             updates["status"] = req.status
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-
         if updates:
             set_clauses = ", ".join(f"c.{k} = ${k}" for k in updates)
             session.run(f"MATCH (c:Collection {{id: $id}}) SET {set_clauses}", id=task_id, **updates)
-
     return get_collection(task_id, store)
 
 
