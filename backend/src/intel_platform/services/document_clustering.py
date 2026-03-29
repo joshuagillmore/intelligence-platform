@@ -363,6 +363,76 @@ def _recursive_cluster(
     return node
 
 
+_SENTENCE_RE = re.compile(r'(?<=[.!?])\s+')
+
+
+def _chunk_into_sections(text: str, min_chunks: int = 4, target_size: int = 800) -> list[str]:
+    """Split a document into sections for sub-document topic clustering.
+
+    Strategy: paragraph boundaries first, then sentence splitting for
+    oversized chunks, then further splitting if we have too few chunks.
+    """
+    if len(text) < 500:
+        return [text]
+
+    # Step 1: Split on double-newlines (paragraph boundaries)
+    paragraphs = [p.strip() for p in re.split(r'\n\s*\n', text) if p.strip()]
+
+    # Step 2: Merge small adjacent paragraphs to reach ~target_size
+    chunks: list[str] = []
+    current = ""
+    for para in paragraphs:
+        if current and len(current) + len(para) > target_size:
+            chunks.append(current)
+            current = para
+        else:
+            current = f"{current}\n\n{para}" if current else para
+    if current:
+        chunks.append(current)
+
+    # Step 3: Split oversized chunks at sentence boundaries
+    split_chunks: list[str] = []
+    for chunk in chunks:
+        if len(chunk) <= target_size * 1.5:
+            split_chunks.append(chunk)
+            continue
+        sentences = _SENTENCE_RE.split(chunk)
+        buf = ""
+        for sent in sentences:
+            if buf and len(buf) + len(sent) > target_size:
+                split_chunks.append(buf)
+                buf = sent
+            else:
+                buf = f"{buf} {sent}" if buf else sent
+        if buf:
+            split_chunks.append(buf)
+
+    # Step 4: If too few chunks, split the longest ones further
+    while len(split_chunks) < min_chunks:
+        longest_idx = max(range(len(split_chunks)), key=lambda i: len(split_chunks[i]))
+        longest = split_chunks[longest_idx]
+        if len(longest) < 200:
+            break  # too short to split further
+        mid = len(longest) // 2
+        # Find nearest sentence or newline boundary near the midpoint
+        best_split = mid
+        for offset in range(min(200, mid)):
+            for pos in (mid + offset, mid - offset):
+                if 0 < pos < len(longest) and longest[pos - 1] in '.!?\n':
+                    best_split = pos
+                    break
+            else:
+                continue
+            break
+        split_chunks[longest_idx:longest_idx + 1] = [
+            longest[:best_split].strip(),
+            longest[best_split:].strip(),
+        ]
+        split_chunks = [c for c in split_chunks if c]
+
+    return split_chunks if len(split_chunks) >= 2 else [text]
+
+
 def cluster_documents(
     documents: list[tuple[str, str]],
     project_id: str,
@@ -382,23 +452,80 @@ def cluster_documents(
     if not documents:
         return None, doc_map, kw_map
 
-    # Edge case: single document
+    # Single document: chunk into sections and cluster those
     if len(documents) == 1:
         doc_id, text = documents[0]
-        tokens = _tokenize(text)
-        label = " / ".join(tokens[:3]) if tokens else doc_id
-        node = {
-            "id": "topic-root",
-            "name": label,
-            "entity_type": "topic",
-            "doc_ids": [doc_id],
-            "count": 1,
-            "children": [],
-            "keywords": tokens[:10],
-        }
-        doc_map_inner["topic-root"] = [doc_id]
-        kw_map_inner["topic-root"] = tokens[:10]
-        return node, doc_map, kw_map
+        sections = _chunk_into_sections(text)
+
+        if len(sections) < 2:
+            # Too short to section — produce a single leaf node
+            tokens = _tokenize(text)
+            label = " / ".join(tokens[:3]) if tokens else doc_id
+            node = {
+                "id": "topic-root",
+                "name": label,
+                "entity_type": "topic",
+                "doc_ids": [doc_id],
+                "count": 1,
+                "children": [],
+                "keywords": tokens[:10],
+            }
+            doc_map_inner["topic-root"] = [doc_id]
+            kw_map_inner["topic-root"] = tokens[:10]
+            return node, doc_map, kw_map
+
+        # Create synthetic section pairs for clustering
+        section_pairs = [(f"{doc_id}__s{i}", sec) for i, sec in enumerate(sections)]
+
+        vectors, sec_ids, vocab = build_tfidf(section_pairs)
+        if not vocab:
+            tokens = _tokenize(text)
+            label = " / ".join(tokens[:3]) if tokens else doc_id
+            node = {
+                "id": "topic-root",
+                "name": label,
+                "entity_type": "topic",
+                "doc_ids": [doc_id],
+                "count": 1,
+                "children": [],
+                "keywords": tokens[:10],
+            }
+            doc_map_inner["topic-root"] = [doc_id]
+            kw_map_inner["topic-root"] = tokens[:10]
+            return node, doc_map, kw_map
+
+        all_tokenized = [_tokenize(sec) for _, sec in section_pairs]
+        rng = np.random.RandomState(hash(project_id) % (2 ** 31))
+
+        tree = _recursive_cluster(
+            vectors=vectors,
+            doc_ids=sec_ids,
+            vocab=vocab,
+            all_tokenized=all_tokenized,
+            doc_indices=list(range(len(sec_ids))),
+            depth=0,
+            path="root",
+            rng=rng,
+            doc_map=doc_map_inner,
+            kw_map=kw_map_inner,
+            project_id=project_id,
+        )
+
+        # Post-process: replace section chunk IDs with the real doc_id
+        # so that get_topic_context() can resolve to the actual document.
+        def _fix_doc_ids(node: dict) -> None:
+            node["doc_ids"] = [doc_id]
+            node["count"] = 1
+            for child in node.get("children", []):
+                _fix_doc_ids(child)
+
+        _fix_doc_ids(tree)
+
+        # Also fix the doc_map cache entries
+        for node_id in list(doc_map_inner.keys()):
+            doc_map_inner[node_id] = [doc_id]
+
+        return tree, doc_map, kw_map
 
     # Build TF-IDF
     vectors, doc_ids, vocab = build_tfidf(documents)
