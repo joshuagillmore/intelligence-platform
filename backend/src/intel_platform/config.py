@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     default_llm_provider: str = "anthropic"
     default_llm_model: str = ""
 
+    # Embeddings
+    embedding_provider: str = "openai"  # openai | cohere | ollama
+    embedding_model: str = ""  # provider-specific default if empty
+    embedding_dimensions: int = 1536
+    vector_search_limit: int = 20
+    hybrid_graph_weight: float = 0.4  # weight for graph results in hybrid scoring
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
