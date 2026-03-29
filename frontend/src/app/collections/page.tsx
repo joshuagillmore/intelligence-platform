@@ -15,6 +15,7 @@ interface Collection {
   status: string;
   project_id: string;
   documents_acquired?: number;
+  progress?: number;
   created_at?: string;
   updated_at?: string;
   results?: unknown;
@@ -85,6 +86,7 @@ export default function CollectionsPage() {
   const [fileUploadMsg, setFileUploadMsg] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pirTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const loadCollections = useCallback(async () => {
     if (!activeProject) return;
@@ -137,6 +139,8 @@ export default function CollectionsPage() {
     if (!pir.trim() || !activeProject) return;
     const userMsg: ChatMessage = { role: 'user', content: pir.trim() };
     setAssistantMessages(prev => [...prev, userMsg]);
+    setPir('');
+    if (pirTextareaRef.current) pirTextareaRef.current.style.height = 'auto';
     setAssistantLoading(true);
     setAssistantError(null);
     setPlanItems([]);
@@ -193,6 +197,8 @@ PIR: ${pir.trim()}` }],
 
   async function generateCollectionPlan() {
     if (!pir.trim() || !activeProject) return;
+    setPir('');
+    if (pirTextareaRef.current) pirTextareaRef.current.style.height = 'auto';
     setAssistantLoading(true);
     setAssistantError(null);
     setPlanItems([]);
@@ -464,16 +470,23 @@ PIR: ${pir.trim()}` }],
 
               {/* Input Area */}
               <div className="relative mt-4">
-                <input
+                <textarea
+                  ref={pirTextareaRef}
                   value={pir}
-                  onChange={(e) => setPir(e.target.value)}
+                  onChange={(e) => {
+                    setPir(e.target.value);
+                    const ta = e.target;
+                    ta.style.height = 'auto';
+                    ta.style.height = `${ta.scrollHeight}px`;
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       if (pir.trim()) createCollection();
                     }
                   }}
-                  className="w-full bg-[#1a1f2e] border-none focus:ring-1 focus:ring-[#adc6ff] text-sm py-4 pl-4 pr-4 md:pl-6 md:pr-48 rounded font-medium placeholder:text-gray-600 placeholder:italic transition-all"
+                  rows={1}
+                  className="w-full bg-[#1a1f2e] border-none focus:ring-1 focus:ring-[#adc6ff] text-sm py-4 pl-4 pr-4 md:pl-6 md:pr-48 rounded font-medium placeholder:text-gray-600 placeholder:italic transition-all resize-none overflow-hidden"
                   placeholder="Enter your Priority Intelligence Requirement..."
                 />
                 <div className="relative mt-2 flex gap-2 md:absolute md:mt-0 md:right-2 md:top-2 md:bottom-2">
@@ -610,9 +623,11 @@ PIR: ${pir.trim()}` }],
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {activeStreams.map((col) => {
-                const progress = col.status?.toUpperCase() === 'STARTED' ? 30 :
-                                 col.status?.toUpperCase() === 'PROGRESS' ? 65 :
-                                 col.status?.toUpperCase() === 'RUNNING' ? 50 : 10;
+                const progress = col.progress != null
+                  ? Math.round(col.progress * 100)
+                  : col.status?.toUpperCase() === 'STARTED' ? 5
+                  : col.status?.toUpperCase() === 'PENDING' ? 0
+                  : 10;
                 return (
                   <div key={col.id} className="bg-[#1a1f2e] p-6 rounded relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
