@@ -326,11 +326,12 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     Returns the plan ready for user approval.
     """
     # Step 1: Get the LLM provider
+    provider = None
     try:
         from intel_platform.api.routes.llm import _get_provider
         provider = _get_provider()
-    except Exception:
-        provider = None
+    except Exception as e:
+        logger.warning("Failed to get LLM provider for PIR plan generation: %s", e)
 
     refined_pir = req.pir
     plan_description = ""
