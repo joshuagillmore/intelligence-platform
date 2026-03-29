@@ -26,6 +26,11 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+try:
+    from pgvector.sqlalchemy import Vector
+except ImportError:  # pragma: no cover
+    Vector = None  # type: ignore[assignment,misc]
+
 
 class Base(DeclarativeBase):
     pass
@@ -249,4 +254,30 @@ class DataCatalog(Base):
     __table_args__ = (
         Index("ix_catalog_plan", "plan_id"),
         Index("ix_catalog_source", "source_id"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Chunk Embeddings — pgvector-backed semantic search
+# ---------------------------------------------------------------------------
+
+class ChunkEmbedding(Base):
+    __tablename__ = "chunk_embeddings"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True,
+        comment="Neo4j Document entity ID")
+    project_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding = mapped_column(Vector(1536), nullable=False) if Vector else mapped_column(Text, nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict,
+        comment="source_url, chunk_size, etc.")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_chunk_project", "project_id"),
+        Index("ix_chunk_document", "document_id"),
     )
