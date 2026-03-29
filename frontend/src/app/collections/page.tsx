@@ -15,6 +15,7 @@ interface Collection {
   status: string;
   project_id: string;
   documents_acquired?: number;
+  progress?: number;
   created_at?: string;
   updated_at?: string;
   results?: unknown;
@@ -95,6 +96,7 @@ export default function CollectionsPage() {
   const [fileUploadMsg, setFileUploadMsg] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pirTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const loadCollections = useCallback(async () => {
     if (!activeProject) return;
@@ -161,6 +163,8 @@ export default function CollectionsPage() {
     if (!pir.trim() || !activeProject) return;
     const userMsg: ChatMessage = { role: 'user', content: pir.trim() };
     setAssistantMessages(prev => [...prev, userMsg]);
+    setPir('');
+    if (pirTextareaRef.current) pirTextareaRef.current.style.height = 'auto';
     setAssistantLoading(true);
     setAssistantError(null);
     setPlanItems([]);
@@ -217,8 +221,11 @@ PIR: ${pir.trim()}` }],
 
   async function generateCollectionPlan() {
     if (!pir.trim() || !activeProject) return;
-    const userMsg: ChatMessage = { role: 'user', content: pir.trim() };
+    const pirText = pir.trim();
+    const userMsg: ChatMessage = { role: 'user', content: pirText };
     setAssistantMessages(prev => [...prev, userMsg]);
+    setPir('');
+    if (pirTextareaRef.current) pirTextareaRef.current.style.height = 'auto';
     setAssistantLoading(true);
     setAssistantError(null);
     setPlanItems([]);
@@ -228,7 +235,7 @@ PIR: ${pir.trim()}` }],
       // Try the unified from-pir endpoint first (LLM refines PIR + generates plan server-side)
       const res = await collectionPlansApi.fromPir({
         project_id: activeProject.id,
-        pir: pir.trim(),
+        pir: pirText,
         extraction_mode: extractionMode,
       });
       const plan = res.data;
@@ -251,14 +258,14 @@ PIR: ${pir.trim()}` }],
         }));
         setPlanItems(items);
 
-        if (plan.refined_pir && plan.refined_pir !== pir.trim()) {
+        if (plan.refined_pir && plan.refined_pir !== pirText) {
           const refineMsg: ChatMessage = { role: 'assistant', content: `**Refined PIR:** ${plan.refined_pir}` };
           setAssistantMessages(prev => [...prev, refineMsg]);
         }
       } else {
         // Backend LLM unavailable — fall back to client-side LLM call
         const llmRes = await llmApi.query(
-          [{ role: 'user', content: pir.trim() }],
+          [{ role: 'user', content: pirText }],
           'collection_planning'
         );
         const answer = llmRes.data?.response || llmRes.data?.answer || llmRes.data?.content || JSON.stringify(llmRes.data);
@@ -278,7 +285,7 @@ PIR: ${pir.trim()}` }],
           try {
             await collectionPlansApi.update(String(plan.id), {
               description: answer,
-              refined_pir: pir.trim(),
+              refined_pir: pirText,
             } as Partial<CollectionPlan>);
           } catch { /* non-fatal */ }
 
@@ -530,16 +537,23 @@ PIR: ${pir.trim()}` }],
 
               {/* Input Area */}
               <div className="relative mt-4">
-                <input
+                <textarea
+                  ref={pirTextareaRef}
                   value={pir}
-                  onChange={(e) => setPir(e.target.value)}
+                  onChange={(e) => {
+                    setPir(e.target.value);
+                    const ta = e.target;
+                    ta.style.height = 'auto';
+                    ta.style.height = `${ta.scrollHeight}px`;
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       if (pir.trim()) createCollection();
                     }
                   }}
-                  className="w-full bg-[#1a1f2e] border-none focus:ring-1 focus:ring-[#adc6ff] text-sm py-4 pl-4 pr-4 md:pl-6 md:pr-48 rounded font-medium placeholder:text-gray-600 placeholder:italic transition-all"
+                  rows={1}
+                  className="w-full bg-[#1a1f2e] border-none focus:ring-1 focus:ring-[#adc6ff] text-sm py-4 pl-4 pr-4 md:pl-6 md:pr-48 rounded font-medium placeholder:text-gray-600 placeholder:italic transition-all resize-none overflow-hidden"
                   placeholder="Enter your Priority Intelligence Requirement..."
                 />
                 <div className="relative mt-2 flex gap-2 md:absolute md:mt-0 md:right-2 md:top-2 md:bottom-2">
@@ -676,9 +690,11 @@ PIR: ${pir.trim()}` }],
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {activeStreams.map((col) => {
-                const progress = col.status?.toUpperCase() === 'STARTED' ? 30 :
-                                 col.status?.toUpperCase() === 'PROGRESS' ? 65 :
-                                 col.status?.toUpperCase() === 'RUNNING' ? 50 : 10;
+                const progress = col.progress != null
+                  ? Math.round(col.progress * 100)
+                  : col.status?.toUpperCase() === 'STARTED' ? 5
+                  : col.status?.toUpperCase() === 'PENDING' ? 0
+                  : 10;
                 return (
                   <div key={col.id} className="bg-[#1a1f2e] p-6 rounded relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">

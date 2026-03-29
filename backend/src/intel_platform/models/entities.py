@@ -44,6 +44,14 @@ class EntityType(str, Enum):
     CUSTOM = "Custom"
 
 
+# Entity types that are system/metadata — excluded from the topic mind map
+# entity branches. "Collection" is not in the enum but is stored as a raw
+# string in Neo4j by the collection planner.
+SYSTEM_ENTITY_TYPES = frozenset({
+    "Document", "Topic", "Report", "Assessment", "Collection", "Project",
+})
+
+
 PROBABILITY_SCALE = [
     (0.01, 0.05, "Almost No Chance"),
     (0.05, 0.20, "Very Unlikely"),

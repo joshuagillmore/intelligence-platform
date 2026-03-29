@@ -4,6 +4,7 @@ import time
 from collections import defaultdict
 import networkx as nx
 from intel_platform.graph.store import GraphStore
+from intel_platform.models.entities import SYSTEM_ENTITY_TYPES
 from intel_platform.services.document_clustering import cluster_documents
 from intel_platform.services.text_utils import extract_relevant_passages, count_keyword_matches
 
@@ -25,7 +26,7 @@ class TopicTreeService:
         graph_data = self._store.get_full_graph(project_id=project_id, limit=10000)
 
         documents = [e for e in entities if e.get("entity_type") == "Document"]
-        non_docs = [e for e in entities if e.get("entity_type") != "Document"]
+        non_docs = [e for e in entities if e.get("entity_type") not in SYSTEM_ENTITY_TYPES]
         entity_map = {e.get("id", ""): e for e in non_docs}
 
         # Build NetworkX graph for community detection
@@ -51,26 +52,27 @@ class TopicTreeService:
         if topic_branch and topic_branch.get("children"):
             tree["children"].extend(topic_branch.get("children", []))
 
-        # Entity-based branches — give the mind map more traversable nodes
+        # Entity-based branches — only shown when enough content entities exist
+        MIN_ENTITY_BRANCH_SIZE = 3
         if non_docs:
             # Thematic clusters via community detection on the entity graph
             theme_branch = self._build_theme_branch(G, entity_map, non_docs)
-            if theme_branch.get("children"):
+            if theme_branch.get("children") and theme_branch.get("count", 0) >= MIN_ENTITY_BRANCH_SIZE:
                 tree["children"].append(theme_branch)
 
             # Entities grouped by type (Person, Organization, Location, etc.)
             type_branch = self._build_type_branch(non_docs)
-            if type_branch.get("children"):
+            if type_branch.get("children") and type_branch.get("count", 0) >= MIN_ENTITY_BRANCH_SIZE:
                 tree["children"].append(type_branch)
 
             # Geographic regions
             geo_branch = self._build_geo_branch(non_docs)
-            if geo_branch.get("children"):
+            if geo_branch.get("children") and geo_branch.get("count", 0) >= MIN_ENTITY_BRANCH_SIZE:
                 tree["children"].append(geo_branch)
 
             # Key actors and organizations
             actor_branch = self._build_actor_branch(non_docs, G)
-            if actor_branch.get("children"):
+            if actor_branch.get("children") and actor_branch.get("count", 0) >= MIN_ENTITY_BRANCH_SIZE:
                 tree["children"].append(actor_branch)
 
         # Detect cross-cutting themes: documents appearing in multiple topic clusters
