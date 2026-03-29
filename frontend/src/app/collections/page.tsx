@@ -217,13 +217,15 @@ PIR: ${pir.trim()}` }],
 
   async function generateCollectionPlan() {
     if (!pir.trim() || !activeProject) return;
+    const userMsg: ChatMessage = { role: 'user', content: pir.trim() };
+    setAssistantMessages(prev => [...prev, userMsg]);
     setAssistantLoading(true);
     setAssistantError(null);
     setPlanItems([]);
     setPlanParsing(true);
 
     try {
-      // Use the unified from-pir endpoint — LLM refines PIR and generates plan with sources
+      // Try the unified from-pir endpoint first (LLM refines PIR + generates plan server-side)
       const res = await collectionPlansApi.fromPir({
         project_id: activeProject.id,
         pir: pir.trim(),
@@ -232,25 +234,75 @@ PIR: ${pir.trim()}` }],
       const plan = res.data;
       setActivePlan(plan);
 
-      // Show the LLM plan text in the chat
-      const llmText = (plan as Record<string, unknown>).llm_plan_text as string || plan.description || 'Collection plan generated.';
-      const aiMsg: ChatMessage = { role: 'assistant', content: llmText };
-      setAssistantMessages(prev => [...prev, aiMsg]);
+      const llmText = (plan as Record<string, unknown>).llm_plan_text as string || '';
+      const hasSources = (plan.sources || []).length > 0;
 
-      // Convert plan sources to plan items for approval UI
-      const items: PlanItem[] = (plan.sources || []).map((src, i) => ({
-        id: i + 1,
-        description: src.name,
-        source_type: src.source_type,
-        status: 'pending',
-        approved: true, // default to approved
-      }));
-      setPlanItems(items);
+      if (hasSources && llmText) {
+        // Backend LLM worked — show plan text and sources
+        const aiMsg: ChatMessage = { role: 'assistant', content: llmText };
+        setAssistantMessages(prev => [...prev, aiMsg]);
 
-      // Show refined PIR if available
-      if (plan.refined_pir && plan.refined_pir !== pir.trim()) {
-        const refineMsg: ChatMessage = { role: 'assistant', content: `**Refined PIR:** ${plan.refined_pir}` };
-        setAssistantMessages(prev => [prev[0], refineMsg, ...prev.slice(1)]);
+        const items: PlanItem[] = (plan.sources || []).map((src, i) => ({
+          id: i + 1,
+          description: src.name,
+          source_type: src.source_type,
+          status: 'pending',
+          approved: true,
+        }));
+        setPlanItems(items);
+
+        if (plan.refined_pir && plan.refined_pir !== pir.trim()) {
+          const refineMsg: ChatMessage = { role: 'assistant', content: `**Refined PIR:** ${plan.refined_pir}` };
+          setAssistantMessages(prev => [...prev, refineMsg]);
+        }
+      } else {
+        // Backend LLM unavailable — fall back to client-side LLM call
+        const llmRes = await llmApi.query(
+          [{ role: 'user', content: pir.trim() }],
+          'collection_planning'
+        );
+        const answer = llmRes.data?.response || llmRes.data?.answer || llmRes.data?.content || JSON.stringify(llmRes.data);
+        const aiMsg: ChatMessage = { role: 'assistant', content: answer };
+        setAssistantMessages(prev => [...prev, aiMsg]);
+
+        // Parse the plan text into items
+        const planRes = await collectionsApi.parsePlan(answer);
+        const items: PlanItem[] = (planRes.data.items || []).map((item: PlanItem) => ({
+          ...item,
+          approved: true,
+        }));
+        setPlanItems(items);
+
+        // Update the plan with the LLM-generated description
+        if (plan.id) {
+          try {
+            await collectionPlansApi.update(String(plan.id), {
+              description: answer,
+              refined_pir: pir.trim(),
+            } as Partial<CollectionPlan>);
+          } catch { /* non-fatal */ }
+
+          // Create sources from parsed items
+          for (const item of items) {
+            try {
+              await collectionPlansApi.addSource(String(plan.id), {
+                name: item.description,
+                source_type: item.source_type === 'news' ? 'rss_feed'
+                  : item.source_type === 'document' ? 'file_upload'
+                  : item.source_type === 'social_media' ? 'web_scrape'
+                  : item.source_type === 'web_search' ? 'web_scrape'
+                  : item.source_type in ['file_upload', 'web_scrape', 'api_feed', 'database', 'rss_feed']
+                    ? item.source_type : 'file_upload',
+              });
+            } catch { /* source type may not be registered */ }
+          }
+
+          // Reload the plan to get updated sources
+          try {
+            const updated = await collectionPlansApi.get(String(plan.id));
+            setActivePlan(updated.data);
+          } catch { /* non-fatal */ }
+        }
       }
     } catch (e) {
       setAssistantError(getErrorMessage(e));
