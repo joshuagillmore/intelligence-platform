@@ -241,8 +241,23 @@ PIR: ${pir.trim()}` }],
       const plan = res.data;
       setActivePlan(plan);
 
-      const llmText = (plan as Record<string, unknown>).llm_plan_text as string || '';
+      const planData = plan as Record<string, unknown>;
+      const llmText = planData.llm_plan_text as string || '';
+      const llmAvailable = planData.llm_available as boolean;
       const hasSources = (plan.sources || []).length > 0;
+
+      // Show LLM status warning if no provider available
+      if (llmAvailable === false) {
+        const reqs = planData.llm_requirements as Record<string, string> | undefined;
+        const warningMsg = reqs?.message || 'No LLM provider configured. Plans require manual source setup.';
+        const configMsg = reqs?.configuration || '';
+        const capMsg = reqs?.minimum_capability || '';
+        const fullWarning = [warningMsg, configMsg, capMsg].filter(Boolean).join('\n\n');
+        setAssistantMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `⚠️ **LLM Required for Autonomous Collection**\n\n${fullWarning}\n\nYou can still create plans manually by adding sources and URLs.`,
+        }]);
+      }
 
       if (hasSources && llmText) {
         // Backend LLM worked — show plan text and sources

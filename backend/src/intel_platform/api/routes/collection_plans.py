@@ -327,11 +327,17 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     """
     # Step 1: Get the LLM provider
     provider = None
+    llm_available = False
+    llm_status = ""
     try:
         from intel_platform.api.routes.llm import _get_provider
         provider = _get_provider()
+        if provider:
+            llm_available = True
+            llm_status = f"Using {provider.name()}"
     except Exception as e:
         logger.warning("Failed to get LLM provider for PIR plan generation: %s", e)
+        llm_status = f"LLM unavailable: {e}"
 
     refined_pir = req.pir
     plan_description = ""
@@ -367,10 +373,21 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
             plan_result = await provider.generate(
                 messages=[{"role": "user", "content": (
                     f"Create a collection plan for this PIR:\n\n{refined_pir}\n\n"
-                    "For each source, output a numbered list item in this format:\n"
-                    "N. [SOURCE_TYPE] Description of what to collect\n\n"
-                    "Valid SOURCE_TYPE values: file_upload, web_scrape, api_feed, database, rss_feed\n"
-                    "Include 3-7 concrete, actionable sources."
+                    "For each source, output a numbered list item in EXACTLY this format:\n"
+                    'N. [SOURCE_TYPE] Description of what to collect\n'
+                    '   CONFIG: {"key": "value"}\n\n'
+                    "Valid SOURCE_TYPE values and their CONFIG keys:\n"
+                    '- web_scrape: CONFIG must include {"url": "https://..."}\n'
+                    '- rss_feed: CONFIG must include {"feed_url": "https://..."}\n'
+                    '- api_feed: CONFIG must include {"base_url": "https://..."}\n'
+                    "- file_upload: no CONFIG needed (analyst uploads manually)\n\n"
+                    "Include 3-7 concrete, actionable sources with REAL URLs.\n"
+                    "Focus on publicly accessible sources relevant to the PIR.\n"
+                    "Example:\n"
+                    '1. [web_scrape] CISA advisories on the threat actor\n'
+                    '   CONFIG: {"url": "https://www.cisa.gov/news-events/cybersecurity-advisories"}\n'
+                    '2. [rss_feed] Reuters world news feed\n'
+                    '   CONFIG: {"feed_url": "https://feeds.reuters.com/reuters/worldNews"}'
                 )}],
                 system=system,
                 temperature=0.4,
@@ -397,7 +414,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     db.add(plan)
     await db.flush()
 
-    # Step 5: Parse LLM plan text into sources
+    # Step 5: Parse LLM plan text into sources with configs
     sources_created = []
     if plan_text:
         parsed_sources = parse_plan_sources(plan_text)
@@ -406,7 +423,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
                 plan_id=plan.id,
                 name=ps["name"],
                 source_type=ps["source_type"],
-                config={},
+                config=ps.get("config", {}),
                 enabled=True,
             )
             db.add(source)
@@ -417,20 +434,33 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
 
     result = _plan_to_dict(plan)
     result["llm_plan_text"] = plan_text
+    result["llm_available"] = llm_available
+    result["llm_status"] = llm_status
+    if not llm_available:
+        result["llm_requirements"] = {
+            "message": "An LLM provider is required for autonomous plan generation. "
+                       "Without an LLM, plans must be created manually with sources and URLs.",
+            "supported_providers": ["anthropic", "openai", "cohere", "ollama"],
+            "configuration": "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, COHERE_API_KEY "
+                             "in .env, or configure Ollama at OLLAMA_BASE_URL.",
+            "minimum_capability": "The LLM must support structured output generation "
+                                  "(tool calling or JSON mode). Recommended: Claude Sonnet 4, "
+                                  "GPT-4o, Command A, or Qwen 3 30B+ via Ollama.",
+        }
     return result
 
 
 @router.post("/collection-plans/{plan_id}/execute")
-async def execute_plan(
+async def execute_plan_endpoint(
     plan_id: str,
     db: AsyncSession = Depends(get_db),
     store: GraphStore = Depends(get_graph_store),
 ):
-    """Approve and execute a collection plan — activates and triggers acquisition.
+    """Approve and execute a collection plan — activates and triggers autonomous acquisition.
 
-    For file_upload sources: marks as ready for upload.
-    For all sources: activates the plan and logs the execution start.
-    Entity extraction runs automatically on acquired data.
+    Launches a background task that iterates over all sources, acquires data
+    via registered connectors, runs entity extraction, and builds the knowledge graph.
+    File upload sources are skipped (require manual upload).
     """
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -439,17 +469,57 @@ async def execute_plan(
     if plan.status not in (PlanStatus.DRAFT, PlanStatus.PAUSED):
         raise HTTPException(400, f"Cannot execute plan in {plan.status} status")
 
+    # Check source readiness
+    sources = plan.sources or []
+    from intel_platform.services.plan_executor import _has_valid_config
+    executable = [s for s in sources if s.enabled and s.source_type != "file_upload" and _has_valid_config(s.source_type, s.config or {})]
+    file_only = [s for s in sources if s.enabled and s.source_type == "file_upload"]
+    missing_config = [s for s in sources if s.enabled and s.source_type != "file_upload" and not _has_valid_config(s.source_type, s.config or {})]
+
+    warnings = []
+    if missing_config:
+        names = [s.name for s in missing_config]
+        warnings.append(f"{len(missing_config)} source(s) missing required config (url/feed_url/base_url) and will be skipped: {', '.join(names[:5])}")
+    if file_only:
+        warnings.append(f"{len(file_only)} file_upload source(s) require manual upload")
+    if not executable and not file_only:
+        warnings.append("No sources are ready for autonomous execution. Add URLs to source configs or upload files manually.")
+
     # Activate the plan
     plan.status = PlanStatus.ACTIVE
     plan.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(plan)
 
+    # Launch autonomous execution as background task (if there are executable sources)
+    import asyncio
+    from intel_platform.db.engine import get_session_factory
+    from intel_platform.services.plan_executor import execute_plan as run_plan
+
+    if executable:
+        session_factory = get_session_factory()
+        asyncio.create_task(run_plan(plan_id, session_factory, store))
+
     return {
         **_plan_to_dict(plan),
-        "execution_status": "activated",
-        "message": f"Plan activated with {len(plan.sources or [])} sources ready for acquisition.",
+        "execution_status": "started" if executable else "no_executable_sources",
+        "message": f"Plan execution started with {len(executable)} executable source(s)." if executable
+                   else "Plan activated but no sources are ready for autonomous execution.",
+        "sources_executable": len(executable),
+        "sources_manual": len(file_only),
+        "sources_missing_config": len(missing_config),
+        "warnings": warnings,
     }
+
+
+@router.get("/collection-plans/{plan_id}/execution-status")
+async def get_execution_status(plan_id: str):
+    """Poll the execution progress of a running collection plan."""
+    from intel_platform.services.plan_executor import get_execution_status
+    status = get_execution_status(plan_id)
+    if not status:
+        return {"plan_id": plan_id, "status": "idle", "message": "No active execution"}
+    return {"plan_id": plan_id, **status}
 
 
 # ---------------------------------------------------------------------------
