@@ -367,10 +367,21 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
             plan_result = await provider.generate(
                 messages=[{"role": "user", "content": (
                     f"Create a collection plan for this PIR:\n\n{refined_pir}\n\n"
-                    "For each source, output a numbered list item in this format:\n"
-                    "N. [SOURCE_TYPE] Description of what to collect\n\n"
-                    "Valid SOURCE_TYPE values: file_upload, web_scrape, api_feed, database, rss_feed\n"
-                    "Include 3-7 concrete, actionable sources."
+                    "For each source, output a numbered list item in EXACTLY this format:\n"
+                    'N. [SOURCE_TYPE] Description of what to collect\n'
+                    '   CONFIG: {"key": "value"}\n\n'
+                    "Valid SOURCE_TYPE values and their CONFIG keys:\n"
+                    '- web_scrape: CONFIG must include {"url": "https://..."}\n'
+                    '- rss_feed: CONFIG must include {"feed_url": "https://..."}\n'
+                    '- api_feed: CONFIG must include {"base_url": "https://..."}\n'
+                    "- file_upload: no CONFIG needed (analyst uploads manually)\n\n"
+                    "Include 3-7 concrete, actionable sources with REAL URLs.\n"
+                    "Focus on publicly accessible sources relevant to the PIR.\n"
+                    "Example:\n"
+                    '1. [web_scrape] CISA advisories on the threat actor\n'
+                    '   CONFIG: {"url": "https://www.cisa.gov/news-events/cybersecurity-advisories"}\n'
+                    '2. [rss_feed] Reuters world news feed\n'
+                    '   CONFIG: {"feed_url": "https://feeds.reuters.com/reuters/worldNews"}'
                 )}],
                 system=system,
                 temperature=0.4,
@@ -397,7 +408,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     db.add(plan)
     await db.flush()
 
-    # Step 5: Parse LLM plan text into sources
+    # Step 5: Parse LLM plan text into sources with configs
     sources_created = []
     if plan_text:
         parsed_sources = parse_plan_sources(plan_text)
@@ -406,7 +417,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
                 plan_id=plan.id,
                 name=ps["name"],
                 source_type=ps["source_type"],
-                config={},
+                config=ps.get("config", {}),
                 enabled=True,
             )
             db.add(source)
@@ -421,16 +432,16 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
 
 
 @router.post("/collection-plans/{plan_id}/execute")
-async def execute_plan(
+async def execute_plan_endpoint(
     plan_id: str,
     db: AsyncSession = Depends(get_db),
     store: GraphStore = Depends(get_graph_store),
 ):
-    """Approve and execute a collection plan — activates and triggers acquisition.
+    """Approve and execute a collection plan — activates and triggers autonomous acquisition.
 
-    For file_upload sources: marks as ready for upload.
-    For all sources: activates the plan and logs the execution start.
-    Entity extraction runs automatically on acquired data.
+    Launches a background task that iterates over all sources, acquires data
+    via registered connectors, runs entity extraction, and builds the knowledge graph.
+    File upload sources are skipped (require manual upload).
     """
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -445,11 +456,29 @@ async def execute_plan(
     await db.commit()
     await db.refresh(plan)
 
+    # Launch autonomous execution as background task
+    import asyncio
+    from intel_platform.db.engine import get_session_factory
+    from intel_platform.services.plan_executor import execute_plan as run_plan
+
+    session_factory = get_session_factory()
+    asyncio.create_task(run_plan(plan_id, session_factory, store))
+
     return {
         **_plan_to_dict(plan),
-        "execution_status": "activated",
-        "message": f"Plan activated with {len(plan.sources or [])} sources ready for acquisition.",
+        "execution_status": "started",
+        "message": f"Plan execution started with {len(plan.sources or [])} sources.",
     }
+
+
+@router.get("/collection-plans/{plan_id}/execution-status")
+async def get_execution_status(plan_id: str):
+    """Poll the execution progress of a running collection plan."""
+    from intel_platform.services.plan_executor import get_execution_status
+    status = get_execution_status(plan_id)
+    if not status:
+        return {"plan_id": plan_id, "status": "idle", "message": "No active execution"}
+    return {"plan_id": plan_id, **status}
 
 
 # ---------------------------------------------------------------------------

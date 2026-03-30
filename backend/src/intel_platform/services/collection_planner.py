@@ -71,18 +71,23 @@ def parse_plan_sources(plan_text: str) -> list[dict]:
 
     Looks for patterns like:
       1. [file_upload] Description of source
+         CONFIG: {"url": "https://..."}
       2. [web_scrape] Description of source
     Falls back to keyword-based source type detection.
 
-    Returns list of {source_type, name}.
+    Returns list of {source_type, name, config}.
     """
+    import json as _json
+
     sources = []
     lines = plan_text.strip().split("\n")
 
     valid_types = {"file_upload", "web_scrape", "api_feed", "database", "rss_feed"}
 
-    for line in lines:
-        line = line.strip()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        i += 1
         if not line:
             continue
 
@@ -92,7 +97,18 @@ def parse_plan_sources(plan_text: str) -> list[dict]:
             stype = m.group(1).lower().strip()
             desc = m.group(2).strip()
             if stype in valid_types and desc:
-                sources.append({"source_type": stype, "name": desc[:256]})
+                # Check if next line has CONFIG
+                config = {}
+                if i < len(lines):
+                    config_line = lines[i].strip()
+                    config_m = re.match(r'^CONFIG:\s*(\{.*\})\s*$', config_line)
+                    if config_m:
+                        try:
+                            config = _json.loads(config_m.group(1))
+                        except _json.JSONDecodeError:
+                            pass
+                        i += 1  # consume the CONFIG line
+                sources.append({"source_type": stype, "name": desc[:256], "config": config})
                 continue
 
         # Try numbered/bulleted items with keyword detection
@@ -114,6 +130,29 @@ def parse_plan_sources(plan_text: str) -> list[dict]:
                 stype = "database"
             else:
                 stype = "file_upload"  # default
-            sources.append({"source_type": stype, "name": desc[:256]})
+            # Try to extract a URL from the description for auto-config
+            config = {}
+            url_m = re.search(r'https?://[^\s\'"<>]+', desc)
+            if url_m:
+                url = url_m.group(0).rstrip(".,;)")
+                if stype == "web_scrape":
+                    config = {"url": url}
+                elif stype == "rss_feed":
+                    config = {"feed_url": url}
+                elif stype == "api_feed":
+                    config = {"base_url": url}
+
+            # Also check next line for CONFIG
+            if i < len(lines):
+                config_line = lines[i].strip()
+                config_m2 = re.match(r'^CONFIG:\s*(\{.*\})\s*$', config_line)
+                if config_m2:
+                    try:
+                        config = _json.loads(config_m2.group(1))
+                    except _json.JSONDecodeError:
+                        pass
+                    i += 1
+
+            sources.append({"source_type": stype, "name": desc[:256], "config": config})
 
     return sources
