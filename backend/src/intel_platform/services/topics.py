@@ -20,7 +20,7 @@ class TopicTreeService:
     def __init__(self, store: GraphStore):
         self._store = store
 
-    async def build_topic_tree(self, project_id: str) -> dict:
+    async def build_topic_tree(self, project_id: str, method: str = "tfidf", granularity: str = "medium") -> dict:
         """Build a deep hierarchical topic tree using graph community structure."""
         entities = self._store.search_entities(project_id=project_id, limit=10000)
         graph_data = self._store.get_full_graph(project_id=project_id, limit=10000)
@@ -48,7 +48,7 @@ class TopicTreeService:
 
         # Topics (document content clustering)
         full_docs = self._store.search_entities(project_id=project_id, entity_type="Document", limit=500)
-        topic_branch = await self._build_topic_branch(full_docs, project_id)
+        topic_branch = await self._build_topic_branch(full_docs, project_id, method=method, granularity=granularity)
         if topic_branch and topic_branch.get("children"):
             tree["children"].extend(topic_branch.get("children", []))
 
@@ -110,7 +110,7 @@ class TopicTreeService:
 
         return cross_refs
 
-    async def _build_topic_branch(self, documents: list, project_id: str) -> dict | None:
+    async def _build_topic_branch(self, documents: list, project_id: str, method: str = "tfidf", granularity: str = "medium") -> dict | None:
         """Cluster documents by content and return a Topics branch node."""
         global _cluster_doc_map, _cluster_keywords
 
@@ -128,7 +128,11 @@ class TopicTreeService:
         if not doc_pairs:
             return None
 
-        tree_node, doc_map, kw_map = cluster_documents(doc_pairs, project_id)
+        if method == "semantic":
+            from intel_platform.services.document_clustering import cluster_semantic
+            tree_node, doc_map, kw_map = await cluster_semantic(doc_pairs, project_id, granularity=granularity)
+        else:
+            tree_node, doc_map, kw_map = cluster_documents(doc_pairs, project_id)
         if tree_node is None:
             return None
 
