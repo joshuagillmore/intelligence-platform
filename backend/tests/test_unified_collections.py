@@ -31,7 +31,9 @@ class TestParsePlanSources:
 
         sources = parse_plan_sources(text)
         assert len(sources) == 5
-        assert sources[0] == {"source_type": "web_scrape", "name": "Scrape government procurement portals for contract data"}
+        assert sources[0]["source_type"] == "web_scrape"
+        assert sources[0]["name"] == "Scrape government procurement portals for contract data"
+        assert "config" in sources[0]  # now includes config dict
         assert sources[1]["source_type"] == "database"
         assert sources[2]["source_type"] == "file_upload"
         assert sources[3]["source_type"] == "api_feed"

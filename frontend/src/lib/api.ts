@@ -221,6 +221,10 @@ export const collectionPlansApi = {
   complete: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/complete`),
   archive: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/archive`),
 
+  // Execution
+  executionStatus: (planId: string) =>
+    api.get(`/collection-plans/${planId}/execution-status`),
+
   // Sources
   addSource: (planId: string, data: { name: string; source_type: string; config?: object; schedule_cron?: string; enabled?: boolean }) =>
     api.post<CollectionSourceEntry>(`/collection-plans/${planId}/sources`, data),
