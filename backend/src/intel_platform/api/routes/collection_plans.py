@@ -327,11 +327,17 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     """
     # Step 1: Get the LLM provider
     provider = None
+    llm_available = False
+    llm_status = ""
     try:
         from intel_platform.api.routes.llm import _get_provider
         provider = _get_provider()
+        if provider:
+            llm_available = True
+            llm_status = f"Using {provider.name()}"
     except Exception as e:
         logger.warning("Failed to get LLM provider for PIR plan generation: %s", e)
+        llm_status = f"LLM unavailable: {e}"
 
     refined_pir = req.pir
     plan_description = ""
@@ -428,6 +434,19 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
 
     result = _plan_to_dict(plan)
     result["llm_plan_text"] = plan_text
+    result["llm_available"] = llm_available
+    result["llm_status"] = llm_status
+    if not llm_available:
+        result["llm_requirements"] = {
+            "message": "An LLM provider is required for autonomous plan generation. "
+                       "Without an LLM, plans must be created manually with sources and URLs.",
+            "supported_providers": ["anthropic", "openai", "cohere", "ollama"],
+            "configuration": "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, COHERE_API_KEY "
+                             "in .env, or configure Ollama at OLLAMA_BASE_URL.",
+            "minimum_capability": "The LLM must support structured output generation "
+                                  "(tool calling or JSON mode). Recommended: Claude Sonnet 4, "
+                                  "GPT-4o, Command A, or Qwen 3 30B+ via Ollama.",
+        }
     return result
 
 
@@ -450,24 +469,46 @@ async def execute_plan_endpoint(
     if plan.status not in (PlanStatus.DRAFT, PlanStatus.PAUSED):
         raise HTTPException(400, f"Cannot execute plan in {plan.status} status")
 
+    # Check source readiness
+    sources = plan.sources or []
+    from intel_platform.services.plan_executor import _has_valid_config
+    executable = [s for s in sources if s.enabled and s.source_type != "file_upload" and _has_valid_config(s.source_type, s.config or {})]
+    file_only = [s for s in sources if s.enabled and s.source_type == "file_upload"]
+    missing_config = [s for s in sources if s.enabled and s.source_type != "file_upload" and not _has_valid_config(s.source_type, s.config or {})]
+
+    warnings = []
+    if missing_config:
+        names = [s.name for s in missing_config]
+        warnings.append(f"{len(missing_config)} source(s) missing required config (url/feed_url/base_url) and will be skipped: {', '.join(names[:5])}")
+    if file_only:
+        warnings.append(f"{len(file_only)} file_upload source(s) require manual upload")
+    if not executable and not file_only:
+        warnings.append("No sources are ready for autonomous execution. Add URLs to source configs or upload files manually.")
+
     # Activate the plan
     plan.status = PlanStatus.ACTIVE
     plan.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(plan)
 
-    # Launch autonomous execution as background task
+    # Launch autonomous execution as background task (if there are executable sources)
     import asyncio
     from intel_platform.db.engine import get_session_factory
     from intel_platform.services.plan_executor import execute_plan as run_plan
 
-    session_factory = get_session_factory()
-    asyncio.create_task(run_plan(plan_id, session_factory, store))
+    if executable:
+        session_factory = get_session_factory()
+        asyncio.create_task(run_plan(plan_id, session_factory, store))
 
     return {
         **_plan_to_dict(plan),
-        "execution_status": "started",
-        "message": f"Plan execution started with {len(plan.sources or [])} sources.",
+        "execution_status": "started" if executable else "no_executable_sources",
+        "message": f"Plan execution started with {len(executable)} executable source(s)." if executable
+                   else "Plan activated but no sources are ready for autonomous execution.",
+        "sources_executable": len(executable),
+        "sources_manual": len(file_only),
+        "sources_missing_config": len(missing_config),
+        "warnings": warnings,
     }
 
 
