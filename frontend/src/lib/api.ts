@@ -281,9 +281,22 @@ export const assessApi = {
 };
 
 export const topicsApi = {
-  tree: (projectId: string) => api.get('/topics', { params: { project_id: projectId } }),
+  tree: (projectId: string, method?: string, granularity?: string) =>
+    api.get('/topics', { params: { project_id: projectId, method, granularity } }),
   context: (entityId: string, projectId: string) => api.get(`/topics/${entityId}`, { params: { project_id: projectId } }),
   summarizeUrl: (entityId: string) => `${API_BASE}/api/topics/${entityId}/summarize`,
+
+  // Node editing
+  updateNode: (nodeId: string, data: { project_id: string; name?: string; description?: string; parent_id?: string }) =>
+    api.put(`/topics/${nodeId}`, data),
+  addChild: (nodeId: string, data: { project_id: string; name: string; description?: string }) =>
+    api.post(`/topics/${nodeId}/children`, data),
+  deleteNode: (nodeId: string, projectId: string) =>
+    api.delete(`/topics/${nodeId}`, { params: { project_id: projectId } }),
+
+  // Export
+  exportMindmap: (projectId: string, format: string = 'json') =>
+    api.get('/export/mindmap', { params: { project_id: projectId, format } }),
 };
 
 export const reportsApi = {
