@@ -8,6 +8,9 @@ interface BreadcrumbItem {
   name: string;
 }
 
+export type ClusteringMethod = 'tfidf' | 'semantic';
+export type Granularity = 'broad' | 'medium' | 'detailed';
+
 interface MindMapControlsProps {
   layout: LayoutMode;
   onLayoutChange: (mode: LayoutMode) => void;
@@ -19,6 +22,12 @@ interface MindMapControlsProps {
   onCollapseAll: () => void;
   breadcrumbs: BreadcrumbItem[];
   onBreadcrumbClick: (item: BreadcrumbItem) => void;
+  // New controls
+  clusteringMethod?: ClusteringMethod;
+  onClusteringMethodChange?: (method: ClusteringMethod) => void;
+  granularity?: Granularity;
+  onGranularityChange?: (granularity: Granularity) => void;
+  onExport?: (format: string) => void;
 }
 
 export default function MindMapControls({
@@ -32,6 +41,11 @@ export default function MindMapControls({
   onCollapseAll,
   breadcrumbs,
   onBreadcrumbClick,
+  clusteringMethod,
+  onClusteringMethodChange,
+  granularity,
+  onGranularityChange,
+  onExport,
 }: MindMapControlsProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -140,6 +154,81 @@ export default function MindMapControls({
             Collapse
           </button>
         </div>
+
+        {/* Clustering method toggle */}
+        {onClusteringMethodChange && (
+          <div className="flex items-center gap-0.5 bg-[#1a1f2e] rounded-sm border border-[#252a39]">
+            <button
+              onClick={() => onClusteringMethodChange('tfidf')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors rounded-l-sm ${
+                clusteringMethod === 'tfidf'
+                  ? 'bg-[#adc6ff]/15 text-[#adc6ff]'
+                  : 'text-gray-500 hover:text-gray-300'
+              }`}
+              title="Keyword-based clustering (TF-IDF)"
+            >
+              Keywords
+            </button>
+            <button
+              onClick={() => onClusteringMethodChange('semantic')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors rounded-r-sm ${
+                clusteringMethod === 'semantic'
+                  ? 'bg-emerald-500/15 text-emerald-400'
+                  : 'text-gray-500 hover:text-gray-300'
+              }`}
+              title="Semantic embedding-based clustering"
+            >
+              Semantic
+            </button>
+          </div>
+        )}
+
+        {/* Granularity control */}
+        {onGranularityChange && (
+          <div className="flex items-center gap-0.5 bg-[#1a1f2e] rounded-sm border border-[#252a39]">
+            {(['broad', 'medium', 'detailed'] as const).map((g) => (
+              <button
+                key={g}
+                onClick={() => onGranularityChange(g)}
+                className={`px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${
+                  granularity === g
+                    ? 'bg-[#adc6ff]/15 text-[#adc6ff]'
+                    : 'text-gray-500 hover:text-gray-300'
+                }`}
+                title={`${g} granularity`}
+              >
+                {g === 'broad' ? '◉' : g === 'medium' ? '◉◉' : '◉◉◉'}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Export */}
+        {onExport && (
+          <div className="flex items-center gap-0.5 bg-[#1a1f2e] rounded-sm border border-[#252a39]">
+            <button
+              onClick={() => onExport('json')}
+              className="px-2 py-1.5 text-[9px] font-bold text-gray-500 hover:text-white transition-colors uppercase tracking-wider"
+              title="Export as JSON"
+            >
+              JSON
+            </button>
+            <button
+              onClick={() => onExport('markdown')}
+              className="px-2 py-1.5 text-[9px] font-bold text-gray-500 hover:text-white transition-colors uppercase tracking-wider"
+              title="Export as Markdown"
+            >
+              MD
+            </button>
+            <button
+              onClick={() => onExport('mermaid')}
+              className="px-2 py-1.5 text-[9px] font-bold text-gray-500 hover:text-white transition-colors uppercase tracking-wider"
+              title="Export as Mermaid diagram"
+            >
+              Mermaid
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

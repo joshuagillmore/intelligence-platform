@@ -110,6 +110,41 @@ def export_report(report_id: str, store: GraphStore = Depends(get_graph_store)):
     }
 
 
+@router.get("/export/mindmap")
+async def export_mindmap(
+    project_id: str,
+    format: str = "json",
+    store: GraphStore = Depends(get_graph_store),
+):
+    """Export the topic mind map in various formats.
+
+    format: json | markdown | mermaid
+    """
+    from intel_platform.services.topics import TopicTreeService
+    svc = TopicTreeService(store)
+    tree = await svc.build_topic_tree(project_id)
+
+    from intel_platform.services.mindmap_export import tree_to_markdown, tree_to_mermaid
+
+    if format == "markdown":
+        content = tree_to_markdown(tree)
+        return JSONResponse(
+            content={"format": "markdown", "content": content},
+            headers={"Content-Disposition": f"attachment; filename=mindmap-{project_id[:8]}.md"},
+        )
+    elif format == "mermaid":
+        content = tree_to_mermaid(tree)
+        return JSONResponse(
+            content={"format": "mermaid", "content": content},
+            headers={"Content-Disposition": f"attachment; filename=mindmap-{project_id[:8]}.mmd"},
+        )
+    else:
+        return JSONResponse(
+            content=tree,
+            headers={"Content-Disposition": f"attachment; filename=mindmap-{project_id[:8]}.json"},
+        )
+
+
 @router.get("/export/stix")
 def export_stix(project_id: str, store: GraphStore = Depends(get_graph_store)):
     """Export the knowledge graph as a STIX 2.1 bundle."""

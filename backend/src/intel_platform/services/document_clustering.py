@@ -1,10 +1,12 @@
-"""Document clustering via TF-IDF + recursive K-Means.
+"""Document clustering via TF-IDF + recursive K-Means, with optional semantic clustering.
 
 Pure algorithms — no Neo4j or FastAPI dependency.
 Uses scipy.sparse and numpy (already available via spaCy).
+Semantic clustering uses the platform's embedding providers + scipy agglomerative.
 """
 from __future__ import annotations
 
+import logging
 import math
 import re
 from collections import Counter
@@ -566,6 +568,175 @@ def cluster_documents(
     )
 
     return tree, doc_map, kw_map
+
+
+# ---------------------------------------------------------------------------
+# Semantic (embedding-based) clustering
+# ---------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
+
+# Granularity presets: (max_clusters_per_level, max_depth)
+GRANULARITY_PRESETS = {
+    "broad": (5, 2),
+    "medium": (12, 4),
+    "detailed": (30, 6),
+}
+
+
+async def cluster_semantic(
+    documents: list[tuple[str, str]],
+    project_id: str,
+    granularity: str = "medium",
+) -> tuple[dict | None, dict, dict]:
+    """Cluster documents using dense embeddings + agglomerative hierarchy.
+
+    Uses the platform's EmbeddingProvider to generate vectors, then
+    scipy Ward linkage for deterministic hierarchical clustering.
+    Falls back to TF-IDF clustering if embedding fails.
+
+    Returns (tree_node, doc_map, kw_map) — same interface as cluster_documents().
+    """
+    doc_map_inner: dict[str, list[str]] = {}
+    kw_map_inner: dict[str, list[str]] = {}
+    doc_map = {project_id: doc_map_inner}
+    kw_map = {project_id: kw_map_inner}
+
+    if not documents:
+        return None, doc_map, kw_map
+
+    # Get embedding provider
+    try:
+        from intel_platform.llm.embeddings import get_embedding_provider
+        provider = get_embedding_provider()
+    except Exception:
+        logger.warning("No embedding provider — falling back to TF-IDF clustering")
+        return cluster_documents(documents, project_id)
+
+    # Embed all documents
+    texts = [text for _, text in documents]
+    doc_ids = [did for did, _ in documents]
+
+    try:
+        # Truncate texts to avoid token limits (embedding models typically cap at 512 tokens)
+        truncated = [t[:2000] for t in texts]
+        result = await provider.embed(truncated, input_type="search_document")
+        embeddings = np.array(result.embeddings)
+    except Exception as e:
+        logger.warning("Embedding failed (%s) — falling back to TF-IDF clustering", e)
+        return cluster_documents(documents, project_id)
+
+    if len(embeddings) < 2:
+        # Single doc — delegate to TF-IDF which handles single-doc chunking
+        return cluster_documents(documents, project_id)
+
+    # Agglomerative clustering with Ward linkage (deterministic)
+    from scipy.cluster.hierarchy import linkage, fcluster
+
+    Z = linkage(embeddings, method="ward")
+
+    # Multi-level cuts based on granularity
+    max_k, max_depth = GRANULARITY_PRESETS.get(granularity, GRANULARITY_PRESETS["medium"])
+    n = len(doc_ids)
+
+    # Build tree by cutting dendrogram at multiple levels
+    level_cuts = []
+    for level in range(1, max_depth + 1):
+        k = max(2, min(max_k, n // max(1, level)))
+        if k >= n:
+            k = max(2, n - 1)
+        assignments = fcluster(Z, t=k, criterion="maxclust")
+        level_cuts.append(assignments)
+
+    # Build TF-IDF for keyword labeling (reuse existing infrastructure)
+    tfidf_vectors, _, vocab = build_tfidf(documents)
+    all_tokenized = [_tokenize(text) for _, text in documents]
+
+    # Build tree from the multi-level cuts
+    root = _build_semantic_tree(
+        doc_ids=doc_ids,
+        level_cuts=level_cuts,
+        tfidf_vectors=tfidf_vectors,
+        vocab=vocab,
+        all_tokenized=all_tokenized,
+        doc_map=doc_map_inner,
+        kw_map=kw_map_inner,
+    )
+
+    return root, doc_map, kw_map
+
+
+def _build_semantic_tree(
+    doc_ids: list[str],
+    level_cuts: list[np.ndarray],
+    tfidf_vectors,
+    vocab: list[str],
+    all_tokenized: list[list[str]],
+    doc_map: dict,
+    kw_map: dict,
+    depth: int = 0,
+    indices: list[int] | None = None,
+) -> dict:
+    """Recursively build a tree from multi-level dendrogram cuts.
+
+    At each level, groups documents by their cluster assignment, creates nodes,
+    and recurses into the next level for sub-clustering.
+    """
+    if indices is None:
+        indices = list(range(len(doc_ids)))
+
+    node_id = f"topic-sem-{depth}-{'_'.join(str(i) for i in indices[:3])}"
+
+    # Label this node using TF-IDF keywords
+    label, keywords = _label_cluster(tfidf_vectors, vocab, indices, all_tokenized) if vocab else ("documents", [])
+    current_doc_ids = [doc_ids[i] for i in indices]
+
+    doc_map[node_id] = current_doc_ids
+    kw_map[node_id] = keywords
+
+    # Base case: no more levels or too few docs
+    if depth >= len(level_cuts) or len(indices) <= MIN_CLUSTER_SIZE:
+        return {
+            "id": node_id,
+            "name": label,
+            "entity_type": "topic",
+            "doc_ids": current_doc_ids,
+            "count": len(indices),
+            "children": [],
+            "keywords": keywords,
+        }
+
+    # Get cluster assignments for this level
+    assignments = level_cuts[depth]
+    groups: dict[int, list[int]] = {}
+    for idx in indices:
+        cluster_id = int(assignments[idx])
+        groups.setdefault(cluster_id, []).append(idx)
+
+    # If all docs in one cluster, skip this level
+    if len(groups) <= 1:
+        return _build_semantic_tree(
+            doc_ids, level_cuts, tfidf_vectors, vocab, all_tokenized,
+            doc_map, kw_map, depth + 1, indices,
+        )
+
+    children = []
+    for cluster_id, group_indices in sorted(groups.items()):
+        child = _build_semantic_tree(
+            doc_ids, level_cuts, tfidf_vectors, vocab, all_tokenized,
+            doc_map, kw_map, depth + 1, group_indices,
+        )
+        children.append(child)
+
+    return {
+        "id": node_id,
+        "name": label,
+        "entity_type": "topic",
+        "doc_ids": current_doc_ids,
+        "count": len(indices),
+        "children": children,
+        "keywords": keywords,
+    }
 
 
 # ---------------------------------------------------------------------------
