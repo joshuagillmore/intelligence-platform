@@ -2,6 +2,22 @@ from __future__ import annotations
 import re
 
 
+def _detect_source_type(desc: str) -> str:
+    """Detect source type from description keywords."""
+    lower = desc.lower()
+    if any(kw in lower for kw in ["scrape", "website", "web page", "crawl", "monitor", "news", "forum", "social"]):
+        return "web_scrape"
+    if any(kw in lower for kw in ["rss", "news feed", "syndication", "feed"]):
+        return "rss_feed"
+    if any(kw in lower for kw in ["api", "endpoint", "rest", "json", "data service"]):
+        return "api_feed"
+    if any(kw in lower for kw in ["database", "registry", "whois", "query", "sql"]):
+        return "database"
+    if any(kw in lower for kw in ["upload", "file", "csv", "excel", "spreadsheet", "pdf", "report", "document"]):
+        return "file_upload"
+    return "web_scrape"  # default to web_scrape, not file_upload
+
+
 def parse_collection_plan(llm_response: str) -> list[dict]:
     """Parse an LLM-generated collection plan into structured items."""
     items = []
@@ -26,18 +42,7 @@ def parse_collection_plan(llm_response: str) -> list[dict]:
             item_id += 1
             text = numbered.group(2) if numbered else bulleted.group(1)
 
-            # Try to extract source type and search terms
-            # Check social_media before news since "media" would match news
-            source_type = "web_search"
-            lower_text = text.lower()
-            if any(kw in lower_text for kw in ["social media", "twitter", "telegram", "social network"]):
-                source_type = "social_media"
-            elif any(kw in lower_text for kw in ["news", "article", "media", "press"]):
-                source_type = "news"
-            elif any(kw in lower_text for kw in ["report", "pdf", "document", "paper"]):
-                source_type = "document"
-            elif any(kw in lower_text for kw in ["database", "registry", "whois"]):
-                source_type = "database"
+            source_type = _detect_source_type(text)
 
             current_item = {
                 "id": item_id,
@@ -73,17 +78,16 @@ def parse_plan_sources(plan_text: str) -> list[dict]:
       1. [file_upload] Description of source
          CONFIG: {"url": "https://..."}
       2. [web_scrape] Description of source
-    Falls back to keyword-based source type detection.
+    Falls back to keyword-based source type detection for numbered items only.
 
-    Returns list of {source_type, name, config}.
+    Returns list of {source_type, name, config}, max 7 items.
     """
     import json as _json
 
     sources = []
-    lines = plan_text.strip().split("\n")
-
     valid_types = {"file_upload", "web_scrape", "api_feed", "database", "rss_feed"}
 
+    lines = plan_text.strip().split("\n")
     i = 0
     while i < len(lines):
         line = lines[i].strip()
@@ -91,8 +95,8 @@ def parse_plan_sources(plan_text: str) -> list[dict]:
         if not line:
             continue
 
-        # Try structured format: N. [type] description
-        m = re.match(r'^\d+[.)]\s*\[(\w+)\]\s*(.*)', line)
+        # Primary: N. [type] description
+        m = re.match(r'^\d+[.)]\s*\[(\w+)\]\s*(.+)', line)
         if m:
             stype = m.group(1).lower().strip()
             desc = m.group(2).strip()
@@ -107,29 +111,44 @@ def parse_plan_sources(plan_text: str) -> list[dict]:
                             config = _json.loads(config_m.group(1))
                         except _json.JSONDecodeError:
                             pass
-                        i += 1  # consume the CONFIG line
+                        i += 1
                 sources.append({"source_type": stype, "name": desc[:256], "config": config})
                 continue
 
-        # Try numbered/bulleted items with keyword detection
-        m2 = re.match(r'^[\d+.)•\-*]\s*(.*)', line)
-        if m2:
-            desc = m2.group(1).strip()
-            if len(desc) < 10:
+        # Secondary: N. type_name Description (LLM puts type as prefix without brackets)
+        m_prefix = re.match(r'^(\d+)[.)]\s*(file_upload|web_scrape|api_feed|database|rss_feed)[:\s]+(.+)', line, re.IGNORECASE)
+        if m_prefix:
+            stype = m_prefix.group(2).lower().strip()
+            desc = m_prefix.group(3).strip()
+            if stype in valid_types and 10 < len(desc) < 256:
+                sources.append({"source_type": stype, "name": desc, "config": {}})
                 continue
-            lower = desc.lower()
-            if any(kw in lower for kw in ["upload", "file", "csv", "excel", "spreadsheet", "pdf"]):
-                stype = "file_upload"
-            elif any(kw in lower for kw in ["scrape", "website", "web page", "crawl"]):
-                stype = "web_scrape"
-            elif any(kw in lower for kw in ["rss", "news feed", "syndication"]):
-                stype = "rss_feed"
-            elif any(kw in lower for kw in ["api", "endpoint"]):
-                stype = "api_feed"
-            elif any(kw in lower for kw in ["database", "registry", "whois", "query"]):
-                stype = "database"
-            else:
-                stype = "file_upload"  # default
+
+        # Tertiary: N. type_name: Description (with colon separator)
+        m_colon = re.match(r'^(\d+)[.)]\s*(\w+_\w+):\s*(.+)', line)
+        if m_colon:
+            stype = m_colon.group(2).lower().strip()
+            desc = m_colon.group(3).strip()
+            if stype in valid_types and 10 < len(desc) < 256:
+                sources.append({"source_type": stype, "name": desc, "config": {}})
+                continue
+
+        # Fallback: only proper numbered items (not bullets/dashes which pick up analysis)
+        m2 = re.match(r'^(\d+)[.)]\s+(.+)', line)
+        if m2:
+            desc = m2.group(2).strip()
+            # Skip analysis text: too short, too long, or sentence-like
+            if len(desc) > 200 or len(desc) < 15:
+                continue
+            # Skip lines with multiple sentences (prose)
+            if desc.count('.') > 2:
+                continue
+            # Skip lines that start with markdown headers or bold markers
+            if desc.startswith('#') or desc.startswith('**'):
+                continue
+
+            stype = _detect_source_type(desc)
+
             # Try to extract a URL from the description for auto-config
             config = {}
             url_m = re.search(r'https?://[^\s\'"<>]+', desc)
@@ -142,7 +161,7 @@ def parse_plan_sources(plan_text: str) -> list[dict]:
                 elif stype == "api_feed":
                     config = {"base_url": url}
 
-            # Also check next line for CONFIG
+            # Check next line for CONFIG
             if i < len(lines):
                 config_line = lines[i].strip()
                 config_m2 = re.match(r'^CONFIG:\s*(\{.*\})\s*$', config_line)
@@ -155,4 +174,5 @@ def parse_plan_sources(plan_text: str) -> list[dict]:
 
             sources.append({"source_type": stype, "name": desc[:256], "config": config})
 
-    return sources
+    # Hard cap at 7
+    return sources[:7]

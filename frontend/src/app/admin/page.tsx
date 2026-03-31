@@ -31,12 +31,27 @@ interface ModelInfo {
   params: string;
   quantization: string;
   size_gb: number;
+  configured?: boolean;
 }
+
+interface StoredApiKey {
+  id: string;
+  provider: string;
+  label: string;
+  key_preview: string;
+  is_active: boolean;
+  created_at: string | null;
+}
+
+const PROVIDERS = [
+  { value: 'anthropic', label: 'Anthropic (Claude)', color: 'text-amber-400' },
+  { value: 'openai', label: 'OpenAI', color: 'text-green-400' },
+  { value: 'cohere', label: 'Cohere', color: 'text-rose-400' },
+] as const;
 
 export default function AdminPage() {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [apiKey, setApiKey] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [config, setConfig] = useState<AdminConfig | null>(null);
   const [proxy, setProxy] = useState<ProxyConfig>({ mode: 'direct' });
@@ -46,6 +61,15 @@ export default function AdminPage() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelSwitching, setModelSwitching] = useState(false);
+
+  // API Key management state
+  const [storedKeys, setStoredKeys] = useState<StoredApiKey[]>([]);
+  const [keysLoading, setKeysLoading] = useState(false);
+  const [newKeyProvider, setNewKeyProvider] = useState('anthropic');
+  const [newKeyLabel, setNewKeyLabel] = useState('');
+  const [newKeyValue, setNewKeyValue] = useState('');
+  const [addingKey, setAddingKey] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
 
   const loadHealth = useCallback(async () => {
     try {
@@ -100,6 +124,59 @@ export default function AdminPage() {
     }
   }, []);
 
+  const loadKeys = useCallback(async () => {
+    setKeysLoading(true);
+    try {
+      const res = await adminApi.listApiKeys();
+      setStoredKeys(res.data.keys || []);
+    } catch {
+      setStoredKeys([]);
+    } finally {
+      setKeysLoading(false);
+    }
+  }, []);
+
+  async function addKey() {
+    if (!newKeyValue.trim() || !newKeyLabel.trim()) return;
+    setAddingKey(true);
+    try {
+      await adminApi.addApiKey(newKeyProvider, newKeyLabel.trim(), newKeyValue.trim());
+      setNewKeyLabel('');
+      setNewKeyValue('');
+      setShowAddForm(false);
+      setToast(`API key added for ${newKeyProvider}.`);
+      loadKeys();
+      loadModels();
+    } catch {
+      setToast('Failed to add API key.');
+    } finally {
+      setAddingKey(false);
+    }
+  }
+
+  async function activateKey(keyId: string, provider: string) {
+    try {
+      await adminApi.activateApiKey(keyId, provider);
+      setToast(`Activated key for ${provider}.`);
+      loadKeys();
+      loadModels();
+    } catch {
+      setToast('Failed to activate key.');
+    }
+  }
+
+  async function deleteKey(keyId: string) {
+    if (!confirm('Delete this API key? This cannot be undone.')) return;
+    try {
+      await adminApi.deleteApiKey(keyId);
+      setToast('API key deleted.');
+      loadKeys();
+      loadModels();
+    } catch {
+      setToast('Failed to delete key.');
+    }
+  }
+
   async function switchModel(provider: string, model: string) {
     setModelSwitching(true);
     try {
@@ -131,7 +208,8 @@ export default function AdminPage() {
     loadConfig();
     loadProxy();
     loadModels();
-  }, [loadHealth, loadProjects, loadConfig, loadProxy, loadModels]);
+    loadKeys();
+  }, [loadHealth, loadProjects, loadConfig, loadProxy, loadModels, loadKeys]);
 
   useEffect(() => {
     if (toast) {
@@ -250,32 +328,52 @@ export default function AdminPage() {
                   ) : models.length === 0 ? (
                     <p className="text-gray-500 text-sm">No models found.</p>
                   ) : (
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    <div className="space-y-1.5 max-h-64 overflow-y-auto">
                       {models.map((m) => {
                         const isActive = config.llm_provider === m.provider && config.llm_model === m.model;
+                        const isConfigured = m.configured !== false;
+                        const providerColors: Record<string, string> = {
+                          ollama: 'bg-purple-600/20 text-purple-400',
+                          anthropic: 'bg-amber-600/20 text-amber-400',
+                          openai: 'bg-green-600/20 text-green-400',
+                          cohere: 'bg-rose-600/20 text-rose-400',
+                        };
+                        const dotColors: Record<string, string> = {
+                          ollama: 'bg-purple-400',
+                          anthropic: 'bg-amber-400',
+                          openai: 'bg-green-400',
+                          cohere: 'bg-rose-400',
+                        };
                         return (
                           <button
                             key={`${m.provider}:${m.model}`}
-                            onClick={() => !isActive && switchModel(m.provider, m.model)}
-                            disabled={isActive || modelSwitching}
+                            onClick={() => !isActive && isConfigured && switchModel(m.provider, m.model)}
+                            disabled={isActive || modelSwitching || !isConfigured}
                             className={`w-full text-left rounded p-2.5 border transition-colors ${
                               isActive
                                 ? 'bg-accent-blue/10 border-accent-blue/40 cursor-default'
-                                : 'bg-navy-700 border-navy-600 hover:border-accent-blue/30 hover:bg-navy-600'
+                                : !isConfigured
+                                  ? 'bg-navy-700/50 border-navy-600/50 opacity-50 cursor-not-allowed'
+                                  : 'bg-navy-700 border-navy-600 hover:border-accent-blue/30 hover:bg-navy-600'
                             } disabled:opacity-60`}
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2 min-w-0">
                                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                                  isActive ? 'bg-green-400' : m.provider === 'ollama' ? 'bg-purple-400' : 'bg-blue-400'
+                                  isActive ? 'bg-green-400' : (dotColors[m.provider] || 'bg-blue-400')
                                 }`} />
                                 <span className="text-sm text-gray-200 truncate">{m.model}</span>
                               </div>
                               <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                                 {m.params && <span className="text-[10px] text-gray-500">{m.params}</span>}
                                 {m.size_gb > 0 && <span className="text-[10px] text-gray-500">{m.size_gb}GB</span>}
+                                {!isConfigured && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-600/20 text-red-400">
+                                    no key
+                                  </span>
+                                )}
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                                  m.provider === 'ollama' ? 'bg-purple-600/20 text-purple-400' : 'bg-blue-600/20 text-blue-400'
+                                  providerColors[m.provider] || 'bg-blue-600/20 text-blue-400'
                                 }`}>{m.provider}</span>
                               </div>
                             </div>
@@ -382,23 +480,133 @@ export default function AdminPage() {
 
           {/* API Key Management */}
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-6">
-            <h3 className="text-lg font-semibold mb-4">API Key Management</h3>
-            <p className="text-gray-500 text-sm mb-3">Configure API keys for external services.</p>
-            <div className="flex gap-3">
-              <input
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                type="password"
-                placeholder="Enter new API key..."
-                className="flex-1 bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
-              />
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">API Key Management</h3>
               <button
-                className="bg-navy-600 hover:bg-navy-700 text-gray-300 px-4 py-2 rounded text-sm border border-navy-600 cursor-not-allowed opacity-50"
-                disabled
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="text-xs bg-accent-blue hover:bg-blue-600 text-white px-3 py-1.5 rounded transition-colors"
               >
-                Save (Coming Soon)
+                {showAddForm ? 'Cancel' : '+ Add Key'}
               </button>
             </div>
+            <p className="text-gray-500 text-sm mb-3">
+              Manage API keys for LLM providers. Add multiple keys per provider and select which one to use.
+            </p>
+
+            {/* Add key form */}
+            {showAddForm && (
+              <div className="bg-navy-700 rounded-lg p-4 mb-4 space-y-3 border border-navy-500">
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Provider</label>
+                  <select
+                    value={newKeyProvider}
+                    onChange={(e) => setNewKeyProvider(e.target.value)}
+                    className="w-full bg-navy-800 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
+                  >
+                    {PROVIDERS.map(p => (
+                      <option key={p.value} value={p.value}>{p.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Label</label>
+                  <input
+                    value={newKeyLabel}
+                    onChange={(e) => setNewKeyLabel(e.target.value)}
+                    placeholder="e.g. Personal, Team, Production..."
+                    className="w-full bg-navy-800 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">API Key</label>
+                  <input
+                    value={newKeyValue}
+                    onChange={(e) => setNewKeyValue(e.target.value)}
+                    type="password"
+                    placeholder="sk-..."
+                    className="w-full bg-navy-800 border border-navy-600 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-accent-blue"
+                  />
+                </div>
+                <button
+                  onClick={addKey}
+                  disabled={addingKey || !newKeyValue.trim() || !newKeyLabel.trim()}
+                  className="w-full bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50"
+                >
+                  {addingKey ? 'Adding...' : 'Save API Key'}
+                </button>
+              </div>
+            )}
+
+            {/* Stored keys list grouped by provider */}
+            {keysLoading ? (
+              <p className="text-gray-500 text-sm">Loading keys...</p>
+            ) : storedKeys.length === 0 ? (
+              <div className="text-center py-6">
+                <p className="text-gray-500 text-sm">No API keys configured.</p>
+                <p className="text-gray-600 text-xs mt-1">Add a key to enable cloud LLM providers.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {PROVIDERS.map(provider => {
+                  const providerKeys = storedKeys.filter(k => k.provider === provider.value);
+                  if (providerKeys.length === 0) return null;
+                  return (
+                    <div key={provider.value}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`text-xs font-semibold uppercase tracking-wider ${provider.color}`}>
+                          {provider.label}
+                        </span>
+                        <span className="text-[10px] text-gray-600">
+                          ({providerKeys.length} key{providerKeys.length !== 1 ? 's' : ''})
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {providerKeys.map(k => (
+                          <div
+                            key={k.id}
+                            className={`flex items-center justify-between rounded p-2.5 border transition-colors ${
+                              k.is_active
+                                ? 'bg-accent-blue/10 border-accent-blue/40'
+                                : 'bg-navy-700 border-navy-600'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                k.is_active ? 'bg-green-400' : 'bg-gray-600'
+                              }`} />
+                              <div className="min-w-0">
+                                <span className="text-sm text-gray-200 block truncate">{k.label}</span>
+                                <span className="text-[10px] text-gray-500 font-mono">{k.key_preview}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                              {k.is_active ? (
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-green-600/20 text-green-400">
+                                  active
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => activateKey(k.id, k.provider)}
+                                  className="text-[10px] px-2 py-0.5 rounded bg-navy-600 hover:bg-accent-blue/30 text-gray-400 hover:text-gray-200 border border-navy-500 transition-colors"
+                                >
+                                  activate
+                                </button>
+                              )}
+                              <button
+                                onClick={() => deleteKey(k.id)}
+                                className="text-[10px] px-2 py-0.5 rounded bg-red-600/10 hover:bg-red-600/30 text-red-400 border border-red-600/20 transition-colors"
+                              >
+                                delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Proxy Configuration */}

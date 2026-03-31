@@ -37,6 +37,31 @@ class Base(DeclarativeBase):
 
 
 # ---------------------------------------------------------------------------
+# API Keys — per-provider credential storage
+# ---------------------------------------------------------------------------
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False, index=True,
+        comment="anthropic | openai | cohere | ollama")
+    label: Mapped[str] = mapped_column(String(128), nullable=False,
+        comment="User-friendly label, e.g. 'Personal Key', 'Team Key'")
+    api_key: Mapped[str] = mapped_column(Text, nullable=False,
+        comment="The raw API key value")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False,
+        comment="Only one key per provider should be active at a time")
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_apikey_provider_active", "provider", "is_active"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
 
@@ -139,6 +164,11 @@ class CollectionSource(Base):
     schedule_cron: Mapped[str] = mapped_column(String(128), default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Collection status tracking
+    collection_status: Mapped[str] = mapped_column(
+        String(20), default="pending",
+        comment="pending | queued | collecting | succeeded | failed | skipped | awaiting_upload")
+
     # Coverage tracking
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -208,6 +238,32 @@ class AcquisitionLog(Base):
         Index("ix_acqlog_source", "source_id"),
         Index("ix_acqlog_plan", "plan_id"),
         Index("ix_acqlog_started", "started_at"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Collection Activity — event log for collection progress tracking
+# ---------------------------------------------------------------------------
+
+class CollectionActivity(Base):
+    __tablename__ = "collection_activity"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plan_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("collection_plans.id", ondelete="CASCADE"), nullable=False)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("collection_sources.id", ondelete="CASCADE"), nullable=True)
+
+    event: Mapped[str] = mapped_column(String(32), nullable=False,
+        comment="plan_started | source_queued | source_collecting | source_succeeded | source_failed | plan_completed")
+    message: Mapped[str] = mapped_column(Text, default="")
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_activity_plan", "plan_id"),
+        Index("ix_activity_created", "created_at"),
     )
 
 
