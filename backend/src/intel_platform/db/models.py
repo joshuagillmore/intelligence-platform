@@ -337,3 +337,28 @@ class ChunkEmbedding(Base):
         Index("ix_chunk_project", "project_id"),
         Index("ix_chunk_document", "document_id"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Topic Edits — user modifications overlaid on algorithmic topic tree
+# ---------------------------------------------------------------------------
+
+class TopicEdit(Base):
+    __tablename__ = "topic_edits"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    node_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True,
+        comment="Algorithmic topic node ID (e.g. topic-0-1)")
+    project_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    edit_type: Mapped[str] = mapped_column(String(20), nullable=False,
+        comment="rename | add | delete | move")
+    name: Mapped[str] = mapped_column(String(512), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    parent_id: Mapped[str] = mapped_column(String(128), default="",
+        comment="For move/add operations — target parent node ID")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_topic_edit_node_project", "node_id", "project_id"),
+    )

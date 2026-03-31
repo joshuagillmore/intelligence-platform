@@ -145,7 +145,6 @@ def _source_to_dict(src: CollectionSource) -> dict:
         "last_success_at": src.last_success_at.isoformat() if src.last_success_at else None,
         "last_failure_at": src.last_failure_at.isoformat() if src.last_failure_at else None,
         "last_error": src.last_error,
-        "collection_status": src.collection_status or "pending",
         "total_records_acquired": src.total_records_acquired,
         "acquisition_count": src.acquisition_count,
         "next_run_at": src.next_run_at.isoformat() if src.next_run_at else None,
@@ -328,11 +327,18 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     Returns the plan ready for user approval.
     """
     # Step 1: Get the LLM provider
+    provider = None
+    llm_available = False
+    llm_status = ""
     try:
         from intel_platform.api.routes.llm import _get_provider
         provider = await _get_provider()
-    except Exception:
-        provider = None
+        if provider:
+            llm_available = True
+            llm_status = f"Using {provider.name()}"
+    except Exception as e:
+        logger.warning("Failed to get LLM provider for PIR plan generation: %s", e)
+        llm_status = f"LLM unavailable: {e}"
 
     refined_pir = req.pir
     plan_description = ""
@@ -360,33 +366,37 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
             refined_pir = lines[0].strip().strip('"').strip("*").strip()
             plan_description = lines[1].strip() if len(lines) > 1 else ""
         except Exception as e:
-            logger.exception("PIR refinement failed: %s", e)
+            logger.warning("PIR refinement failed: %s", e)
 
-        # Step 3: Generate collection plan with sources (with retry for rate limits)
-        import asyncio
-        plan_text = ""
-        for attempt in range(3):
-            try:
-                if attempt > 0:
-                    await asyncio.sleep(2 ** attempt)  # 2s, 4s backoff
-                system = loader.get_system_prompt("collection_planning", include_foundation=True) or ""
-                plan_result = await provider.generate(
-                    messages=[{"role": "user", "content": (
-                        f"Create a collection plan for this PIR:\n\n{refined_pir}\n\n"
-                        "For each source, output a numbered list item in this format:\n"
-                        "N. [SOURCE_TYPE] Description of what to collect\n\n"
-                        "Valid SOURCE_TYPE values: file_upload, web_scrape, api_feed, database, rss_feed\n"
-                        "Include 3-7 concrete, actionable sources."
-                    )}],
-                    system=system,
-                    temperature=0.4,
-                )
-                plan_text = plan_result.content
-                break
-            except Exception as e:
-                logger.warning("Plan generation attempt %d failed: %s", attempt + 1, e)
-                if attempt == 2:
-                    logger.exception("Plan generation failed after 3 attempts: %s", e)
+        # Step 3: Generate collection plan with sources
+        try:
+            system = loader.get_system_prompt("collection_planning", include_foundation=True) or ""
+            plan_result = await provider.generate(
+                messages=[{"role": "user", "content": (
+                    f"Create a collection plan for this PIR:\n\n{refined_pir}\n\n"
+                    "For each source, output a numbered list item in EXACTLY this format:\n"
+                    'N. [SOURCE_TYPE] Description of what to collect\n'
+                    '   CONFIG: {"key": "value"}\n\n'
+                    "Valid SOURCE_TYPE values and their CONFIG keys:\n"
+                    '- web_scrape: CONFIG must include {"url": "https://..."}\n'
+                    '- rss_feed: CONFIG must include {"feed_url": "https://..."}\n'
+                    '- api_feed: CONFIG must include {"base_url": "https://..."}\n'
+                    "- file_upload: no CONFIG needed (analyst uploads manually)\n\n"
+                    "Include 3-7 concrete, actionable sources with REAL URLs.\n"
+                    "Focus on publicly accessible sources relevant to the PIR.\n"
+                    "Example:\n"
+                    '1. [web_scrape] CISA advisories on the threat actor\n'
+                    '   CONFIG: {"url": "https://www.cisa.gov/news-events/cybersecurity-advisories"}\n'
+                    '2. [rss_feed] Reuters world news feed\n'
+                    '   CONFIG: {"feed_url": "https://feeds.reuters.com/reuters/worldNews"}'
+                )}],
+                system=system,
+                temperature=0.4,
+            )
+            plan_text = plan_result.content
+        except Exception as e:
+            logger.warning("Plan generation failed: %s", e)
+            plan_text = ""
     else:
         plan_text = ""
 
@@ -405,7 +415,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     db.add(plan)
     await db.flush()
 
-    # Step 5: Parse LLM plan text into sources
+    # Step 5: Parse LLM plan text into sources with configs
     sources_created = []
     if plan_text:
         parsed_sources = parse_plan_sources(plan_text)
@@ -414,7 +424,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
                 plan_id=plan.id,
                 name=ps["name"],
                 source_type=ps["source_type"],
-                config={},
+                config=ps.get("config", {}),
                 enabled=True,
             )
             db.add(source)
@@ -425,26 +435,34 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
 
     result = _plan_to_dict(plan)
     result["llm_plan_text"] = plan_text
+    result["llm_available"] = llm_available
+    result["llm_status"] = llm_status
+    if not llm_available:
+        result["llm_requirements"] = {
+            "message": "An LLM provider is required for autonomous plan generation. "
+                       "Without an LLM, plans must be created manually with sources and URLs.",
+            "supported_providers": ["anthropic", "openai", "cohere", "ollama"],
+            "configuration": "Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, COHERE_API_KEY "
+                             "in .env, or configure Ollama at OLLAMA_BASE_URL.",
+            "minimum_capability": "The LLM must support structured output generation "
+                                  "(tool calling or JSON mode). Recommended: Claude Sonnet 4, "
+                                  "GPT-4o, Command A, or Qwen 3 30B+ via Ollama.",
+        }
     return result
 
 
 @router.post("/collection-plans/{plan_id}/execute")
-async def execute_plan(
+async def execute_plan_endpoint(
     plan_id: str,
     db: AsyncSession = Depends(get_db),
     store: GraphStore = Depends(get_graph_store),
 ):
-    """Approve and execute a collection plan — activates and triggers agentic acquisition.
+    """Approve and execute a collection plan — activates and triggers autonomous acquisition.
 
-    For file_upload sources: marks as awaiting_upload.
-    For automated sources: launches background agentic loop (resolve → acquire → evaluate).
-    Returns immediately — frontend polls activity log for progress.
+    Launches a background task that iterates over all sources, acquires data
+    via registered connectors, runs entity extraction, and builds the knowledge graph.
+    File upload sources are skipped (require manual upload).
     """
-    import asyncio
-    from intel_platform.collection.agentic import run_agentic_loop
-    from intel_platform.db.engine import get_session_factory
-    from intel_platform.api.routes.llm import _get_provider
-
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
         raise HTTPException(404, "Collection plan not found")
@@ -452,36 +470,44 @@ async def execute_plan(
     if plan.status not in (PlanStatus.DRAFT, PlanStatus.PAUSED):
         raise HTTPException(400, f"Cannot execute plan in {plan.status} status")
 
+    # Check source readiness
+    sources = plan.sources or []
+    from intel_platform.services.plan_executor import _has_valid_config
+    executable = [s for s in sources if s.enabled and s.source_type != "file_upload" and _has_valid_config(s.source_type, s.config or {})]
+    file_only = [s for s in sources if s.enabled and s.source_type == "file_upload"]
+    missing_config = [s for s in sources if s.enabled and s.source_type != "file_upload" and not _has_valid_config(s.source_type, s.config or {})]
+
+    warnings = []
+    if missing_config:
+        names = [s.name for s in missing_config]
+        warnings.append(f"{len(missing_config)} source(s) missing required config (url/feed_url/base_url) and will be skipped: {', '.join(names[:5])}")
+    if file_only:
+        warnings.append(f"{len(file_only)} file_upload source(s) require manual upload")
+    if not executable and not file_only:
+        warnings.append("No sources are ready for autonomous execution. Add URLs to source configs or upload files manually.")
+
     # Activate the plan
     plan.status = PlanStatus.ACTIVE
     plan.updated_at = datetime.now(timezone.utc)
-
-    sources = [s for s in (plan.sources or []) if s.enabled]
-
-    # Set initial status per source
-    for s in sources:
-        if s.source_type == "file_upload":
-            s.collection_status = "awaiting_upload"
-        else:
-            s.collection_status = "queued"
-
-    db.add(CollectionActivity(
-        plan_id=plan.id,
-        event="plan_started",
-        message=f"Plan activated with {len(sources)} sources",
-    ))
     await db.commit()
     await db.refresh(plan)
 
-    # Launch agentic loop in background for non-upload sources
-    non_upload = [s for s in sources if s.source_type != "file_upload"]
-    upload_sources = [s for s in sources if s.source_type == "file_upload"]
+    # Launch agentic execution as background task
+    # Phase 1: LLM resolves configs for sources missing URLs
+    # Phase 2: Connectors acquire content and run ingestion pipeline
+    # Phase 3: LLM evaluates results and follows up on leads
+    import asyncio
+    from intel_platform.db.engine import get_session_factory
+    from intel_platform.collection.agentic import run_agentic_loop
+    from intel_platform.api.routes.llm import _get_provider
 
-    if non_upload:
+    all_auto = [s for s in sources if s.enabled and s.source_type != "file_upload"]
+    if all_auto:
+        session_factory = get_session_factory()
         asyncio.create_task(
             run_agentic_loop(
                 plan_id=plan.id,
-                db_factory=get_session_factory(),
+                db_factory=session_factory,
                 get_store=lambda: store,
                 get_provider=_get_provider,
             )
@@ -489,11 +515,24 @@ async def execute_plan(
 
     return {
         **_plan_to_dict(plan),
-        "execution_status": "started",
-        "background": bool(non_upload),
-        "sources_queued": len(non_upload),
-        "awaiting_upload": len(upload_sources),
+        "execution_status": "started" if all_auto else "no_executable_sources",
+        "message": f"Agentic execution started with {len(all_auto)} source(s)." if all_auto
+                   else "Plan activated but no automated sources found.",
+        "sources_queued": len(all_auto),
+        "sources_manual": len(file_only),
+        "sources_missing_config": len(missing_config),
+        "warnings": warnings,
     }
+
+
+@router.get("/collection-plans/{plan_id}/execution-status")
+async def get_execution_status(plan_id: str):
+    """Poll the execution progress of a running collection plan."""
+    from intel_platform.services.plan_executor import get_execution_status
+    status = get_execution_status(plan_id)
+    if not status:
+        return {"plan_id": plan_id, "status": "idle", "message": "No active execution"}
+    return {"plan_id": plan_id, **status}
 
 
 # ---------------------------------------------------------------------------
