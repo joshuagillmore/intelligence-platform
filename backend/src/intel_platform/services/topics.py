@@ -489,7 +489,7 @@ class TopicTreeService:
 
         # Build provider (centralized selection respecting runtime overrides)
         from intel_platform.api.routes.llm import _get_provider
-        provider = _get_provider()
+        provider = await _get_provider()
 
         if not provider:
             yield "data: No LLM provider configured.\n\n"

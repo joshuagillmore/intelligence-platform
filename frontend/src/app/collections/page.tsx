@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { collectionsApi, collectionPlansApi, ingestApi, llmApi, CollectionPlan } from '@/lib/api';
+import { collectionsApi, collectionPlansApi, ingestApi, llmApi, CollectionPlan, CollectionActivityEntry } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 
 interface Collection {
@@ -19,11 +19,6 @@ interface Collection {
   created_at?: string;
   updated_at?: string;
   results?: unknown;
-}
-
-interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
 }
 
 interface PlanItem {
@@ -66,26 +61,30 @@ export default function CollectionsPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
 
-  // PIR Assistant state
-  const [assistantMessages, setAssistantMessages] = useState<ChatMessage[]>([]);
-  const [assistantLoading, setAssistantLoading] = useState(false);
-  const [assistantError, setAssistantError] = useState<string | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  // Step state
+  const [step1Open, setStep1Open] = useState(true);
+  const [step2Open, setStep2Open] = useState(false);
+  const [step3Open, setStep3Open] = useState(false);
 
-  // Structured plan state
+  // Refine state
+  const [refineLoading, setRefineLoading] = useState(false);
+  const [refineError, setRefineError] = useState<string | null>(null);
+  const [refinedPir, setRefinedPir] = useState<string | null>(null);
+  const [refineAnalysis, setRefineAnalysis] = useState<string | null>(null);
+
+  // Plan state
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
   const [planItems, setPlanItems] = useState<PlanItem[]>([]);
-  const [planParsing, setPlanParsing] = useState(false);
-
-  // Current active collection being built
-  const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
-
-  // Unified collection plan state
   const [activePlan, setActivePlan] = useState<CollectionPlan | null>(null);
   const [plans, setPlans] = useState<CollectionPlan[]>([]);
-  const [plansLoading, setPlansLoading] = useState(false);
+  const [, setPlansLoading] = useState(false);
 
   // Expanded collection cards
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  // Activity log
+  const [activityLogs, setActivityLogs] = useState<Record<string, CollectionActivityEntry[]>>({});
 
   // File upload state
   const [fileUploadOpen, setFileUploadOpen] = useState(false);
@@ -130,10 +129,6 @@ export default function CollectionsPage() {
   }, [loadCollections, loadPlans]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [assistantMessages]);
-
-  useEffect(() => {
     const activeTasks = collections.filter(c => {
       const s = c.status?.toUpperCase();
       return s === 'PENDING' || s === 'STARTED' || s === 'PROGRESS' || s === 'RUNNING';
@@ -150,6 +145,30 @@ export default function CollectionsPage() {
     return () => clearInterval(interval);
   }, [collections]);
 
+  // Poll active plans for status updates
+  useEffect(() => {
+    const activePlans = plans.filter(p => p.status === 'ACTIVE');
+    if (activePlans.length === 0) return;
+    const interval = setInterval(async () => {
+      loadPlans();
+      for (const p of activePlans) {
+        try {
+          const res = await collectionPlansApi.activity(String(p.id));
+          setActivityLogs(prev => ({ ...prev, [String(p.id)]: res.data }));
+        } catch { /* ignore */ }
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [plans, loadPlans]);
+
+  // Fetch activity when expanding a plan
+  async function loadActivity(planId: string) {
+    try {
+      const res = await collectionPlansApi.activity(planId);
+      setActivityLogs(prev => ({ ...prev, [planId]: res.data }));
+    } catch { /* ignore */ }
+  }
+
   function toggleExpanded(id: string) {
     setExpandedIds(prev => {
       const next = new Set(prev);
@@ -159,33 +178,31 @@ export default function CollectionsPage() {
     });
   }
 
-  async function refinePirWithAI() {
-    if (!pir.trim() || !activeProject) return;
-    const userMsg: ChatMessage = { role: 'user', content: pir.trim() };
-    setAssistantMessages(prev => [...prev, userMsg]);
+  function resetWorkflow() {
     setPir('');
-    if (pirTextareaRef.current) pirTextareaRef.current.style.height = 'auto';
-    setAssistantLoading(true);
-    setAssistantError(null);
+    setRefinedPir(null);
+    setRefineAnalysis(null);
+    setRefineError(null);
     setPlanItems([]);
+    setActivePlan(null);
+    setPlanError(null);
+    setError(null);
+    setStep1Open(true);
+    setStep2Open(false);
+    setStep3Open(false);
+  }
 
-    // Create a collection record if we don't have one yet
-    let collId = activeCollectionId;
-    if (!collId) {
-      try {
-        const createRes = await collectionsApi.create({
-          project_id: activeProject.id,
-          pir: pir.trim(),
-        });
-        collId = createRes.data.id;
-        setActiveCollectionId(collId);
-      } catch (e) {
-        console.error('Failed to create collection', e);
-      }
-    }
+  // ---- STEP 1: Refine PIR ----
+  async function refinePir() {
+    const pirText = pir.trim();
+    if (!pirText || !activeProject) return;
+    setRefineLoading(true);
+    setRefineError(null);
+    setRefinedPir(null);
+    setRefineAnalysis(null);
 
     try {
-      const refineResponse = await llmApi.query(
+      const res = await llmApi.query(
         [{ role: 'user', content: `As an intelligence analyst mentor, help me refine this Priority Intelligence Requirement (PIR). Do NOT answer the question. Instead:
 
 1. ASSESS the PIR: Is it specific enough? Measurable? Time-bounded?
@@ -194,54 +211,45 @@ export default function CollectionsPage() {
 4. SUGGEST which structured analytic techniques would help (ACH, Key Assumptions Check, etc.)
 5. PROPOSE a refined version of the PIR that is more actionable
 
-PIR: ${pir.trim()}` }],
+PIR: ${pirText}` }],
         undefined
       );
-      const answer = refineResponse.data?.response || refineResponse.data?.answer || refineResponse.data?.content || JSON.stringify(refineResponse.data);
-      const aiMsg: ChatMessage = { role: 'assistant', content: answer };
-      setAssistantMessages(prev => [...prev, aiMsg]);
+      const answer = res.data?.response || res.data?.answer || res.data?.content || JSON.stringify(res.data);
+      setRefineAnalysis(answer);
 
-      // Save refinement to collection
-      if (collId) {
-        try {
-          await collectionsApi.update(collId, {
-            refined_pir: pir.trim(),
-            refinement: answer,
-          });
-        } catch (e) {
-          console.error('Failed to save refinement', e);
-        }
+      // Try to extract refined PIR from the response
+      const refinedMatch = answer.match(/(?:refined|revised|improved|proposed)\s*(?:PIR|version)[:\s]*[""]?([^""]+)[""]?/i);
+      if (refinedMatch) {
+        setRefinedPir(refinedMatch[1].trim());
       }
+
+      // Auto-open step 2
+      setStep1Open(false);
+      setStep2Open(true);
     } catch (e) {
-      setAssistantError(getErrorMessage(e));
+      setRefineError(getErrorMessage(e));
     } finally {
-      setAssistantLoading(false);
+      setRefineLoading(false);
     }
   }
 
-  async function generateCollectionPlan() {
-    if (!pir.trim() || !activeProject) return;
-    setPir('');
-    if (pirTextareaRef.current) pirTextareaRef.current.style.height = 'auto';
-    setAssistantLoading(true);
-    setAssistantError(null);
+  // ---- STEP 2: Generate Plan ----
+  async function generatePlan() {
+    const pirText = refinedPir || pir.trim();
+    if (!pirText || !activeProject) return;
+    setPlanLoading(true);
+    setPlanError(null);
     setPlanItems([]);
-    setPlanParsing(true);
+    setActivePlan(null);
 
     try {
-      // Use the unified from-pir endpoint — LLM refines PIR and generates plan with sources
       const res = await collectionPlansApi.fromPir({
         project_id: activeProject.id,
-        pir: pir.trim(),
+        pir: pirText,
         extraction_mode: extractionMode,
       });
       const plan = res.data;
       setActivePlan(plan);
-
-      // Show the LLM plan text in the chat
-      const llmText = (plan as Record<string, unknown>).llm_plan_text as string || plan.description || 'Collection plan generated.';
-      const aiMsg: ChatMessage = { role: 'assistant', content: llmText };
-      setAssistantMessages(prev => [...prev, aiMsg]);
 
       // Convert plan sources to plan items for approval UI
       const items: PlanItem[] = (plan.sources || []).map((src, i) => ({
@@ -249,20 +257,26 @@ PIR: ${pir.trim()}` }],
         description: src.name,
         source_type: src.source_type,
         status: 'pending',
-        approved: true, // default to approved
+        approved: true,
       }));
       setPlanItems(items);
 
-      // Show refined PIR if available
-      if (plan.refined_pir && plan.refined_pir !== pir.trim()) {
-        const refineMsg: ChatMessage = { role: 'assistant', content: `**Refined PIR:** ${plan.refined_pir}` };
-        setAssistantMessages(prev => [prev[0], refineMsg, ...prev.slice(1)]);
+      if (plan.refined_pir && !refinedPir) {
+        setRefinedPir(plan.refined_pir);
+      }
+      if (plan.description && !refineAnalysis) {
+        setRefineAnalysis(plan.description);
+      }
+
+      // Auto-open step 3 if sources were generated
+      if (items.length > 0) {
+        setStep2Open(false);
+        setStep3Open(true);
       }
     } catch (e) {
-      setAssistantError(getErrorMessage(e));
+      setPlanError(getErrorMessage(e));
     } finally {
-      setAssistantLoading(false);
-      setPlanParsing(false);
+      setPlanLoading(false);
     }
   }
 
@@ -280,9 +294,9 @@ PIR: ${pir.trim()}` }],
     setPlanItems(prev => prev.map(item => ({ ...item, approved: false })));
   }
 
-  async function acceptPlan() {
+  // ---- STEP 3: Execute ----
+  async function executePlan() {
     if (!activeProject) return;
-
     setLoading(true);
     setError(null);
     try {
@@ -297,41 +311,11 @@ PIR: ${pir.trim()}` }],
             } catch { /* source may not exist */ }
           }
         }
-
-        // Execute the plan — activates and triggers acquisition pipeline
         await collectionPlansApi.execute(String(activePlan.id));
-      } else if (activeCollectionId) {
-        // Legacy fallback
-        await collectionsApi.update(activeCollectionId, {
-          plan: planItems.filter(i => i.approved),
-          status: 'APPROVED',
-        });
       }
-      setPir('');
-      setAssistantMessages([]);
-      setPlanItems([]);
-      setActiveCollectionId(null);
-      setActivePlan(null);
+      resetWorkflow();
       loadCollections();
       loadPlans();
-    } catch (e) {
-      setError(getErrorMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function createCollection() {
-    if (!pir.trim() || !activeProject) return;
-    setLoading(true);
-    setError(null);
-    try {
-      await collectionsApi.create({ project_id: activeProject.id, pir: pir.trim() });
-      setPir('');
-      setAssistantMessages([]);
-      setPlanItems([]);
-      setActiveCollectionId(null);
-      loadCollections();
     } catch (e) {
       setError(getErrorMessage(e));
     } finally {
@@ -414,6 +398,9 @@ PIR: ${pir.trim()}` }],
     return s !== 'PENDING' && s !== 'STARTED' && s !== 'PROGRESS' && s !== 'RUNNING';
   });
 
+  // Workflow has started if we have a PIR or any step result
+  const workflowActive = pir.trim() || refinedPir || refineAnalysis || activePlan || planItems.length > 0;
+
   if (!activeProject) {
     return (
       <div className="flex">
@@ -433,202 +420,305 @@ PIR: ${pir.trim()}` }],
       <Sidebar />
       <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8 overflow-y-auto h-screen space-y-8">
 
-        {/* Section 1: Collection Initiation (Chat Interface) */}
+        {/* Collection Pipeline */}
         <section className="max-w-5xl mx-auto">
-          <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase mb-4 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#adc6ff] animate-pulse" />
-            Collection Initiation
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[#adc6ff] animate-pulse" />
+              Collection Pipeline
+            </h2>
+            {workflowActive && (
+              <button onClick={resetWorkflow} className="text-[10px] text-gray-500 hover:text-gray-300 uppercase tracking-wider font-bold transition-colors">
+                Reset
+              </button>
+            )}
+          </div>
 
-          <div className="bg-[#1a1f2e] rounded p-1">
-            <div className="bg-[#090e1c] rounded p-6 space-y-6">
-              {/* Chat History */}
-              {assistantMessages.length > 0 && (
-                <div className="space-y-4 max-h-80 overflow-y-auto">
-                  {assistantMessages.map((msg, i) => (
-                    msg.role === 'user' ? (
-                      <div key={i} className="flex gap-4 max-w-2xl">
-                        <div className="w-8 h-8 flex-shrink-0 bg-[#304671] rounded flex items-center justify-center">
-                          <span className="material-symbols-outlined text-sm text-[#9fb5e7]">person</span>
+          <div className="space-y-2">
+
+            {/* ──── STEP 1: REFINE PIR ──── */}
+            <div className="bg-[#1a1f2e] border border-[#252a39] rounded overflow-hidden">
+              <button
+                onClick={() => setStep1Open(!step1Open)}
+                className="w-full flex items-center justify-between p-4 text-left hover:bg-[#1e2436] transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
+                    refinedPir || refineAnalysis ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                    refineLoading ? 'bg-[#adc6ff]/20 text-[#adc6ff] border border-[#adc6ff]/30 animate-pulse' :
+                    'bg-[#252a39] text-gray-400 border border-[#353a49]'
+                  }`}>
+                    {refinedPir || refineAnalysis ? <span className="material-symbols-outlined text-xs">check</span> : '1'}
+                  </span>
+                  <div>
+                    <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">Refine PIR</span>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Enter your intelligence requirement and refine it with AI</p>
+                  </div>
+                </div>
+                <span className="material-symbols-outlined text-sm text-gray-500">
+                  {step1Open ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+
+              {step1Open && (
+                <div className="border-t border-[#252a39] p-4 md:p-6 space-y-4 bg-[#0d1220]">
+                  {/* PIR Input */}
+                  <div>
+                    <textarea
+                      ref={pirTextareaRef}
+                      value={pir}
+                      onChange={(e) => {
+                        setPir(e.target.value);
+                        const ta = e.target;
+                        ta.style.height = 'auto';
+                        ta.style.height = `${ta.scrollHeight}px`;
+                      }}
+                      rows={2}
+                      className="w-full bg-[#1a1f2e] border border-[#353a49] focus:ring-1 focus:ring-[#adc6ff] focus:border-[#adc6ff] text-sm py-3 px-4 rounded font-medium placeholder:text-gray-600 placeholder:italic transition-all resize-none"
+                      placeholder="Enter your Priority Intelligence Requirement..."
+                    />
+                  </div>
+
+                  {/* Refine button */}
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={refinePir}
+                      disabled={refineLoading || !pir.trim()}
+                      className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-6 py-2 rounded text-[10px] font-black tracking-widest uppercase transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {refineLoading ? (
+                        <><LoadingSpinner size="sm" /> Refining...</>
+                      ) : (
+                        <><span className="material-symbols-outlined text-xs">auto_fix_high</span> Refine with AI</>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => { setStep1Open(false); setStep2Open(true); }}
+                      disabled={!pir.trim()}
+                      className="text-[10px] text-gray-400 hover:text-gray-200 uppercase tracking-wider font-bold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      Skip to Plan &rarr;
+                    </button>
+                  </div>
+
+                  {refineError && <p className="text-red-400 text-xs">{refineError}</p>}
+
+                  {/* Refinement Result */}
+                  {refineAnalysis && (
+                    <div className="space-y-3">
+                      {refinedPir && (
+                        <div className="bg-[#1a1f2e] border-l-2 border-emerald-500 rounded p-4">
+                          <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold block mb-1">Refined PIR</span>
+                          <p className="text-sm text-gray-200">{refinedPir}</p>
                         </div>
-                        <div className="bg-[#252a39] p-4 rounded-xl rounded-tl-none border-l-2 border-[#4d8eff]">
-                          <p className="text-sm text-gray-200 leading-relaxed italic">&ldquo;{msg.content}&rdquo;</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div key={i} className="flex gap-4 max-w-2xl ml-auto flex-row-reverse">
-                        <div className="w-8 h-8 flex-shrink-0 bg-[#df7412] rounded flex items-center justify-center">
-                          <span className="material-symbols-outlined text-sm text-[#461f00]">smart_toy</span>
-                        </div>
-                        <div className="bg-[#2f3444] p-4 rounded-xl rounded-tr-none border-r-2 border-[#ffb786]">
-                          <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-                        </div>
-                      </div>
-                    )
-                  ))}
-                  {assistantLoading && (
-                    <div className="flex gap-4 max-w-2xl ml-auto flex-row-reverse">
-                      <div className="w-8 h-8 flex-shrink-0 bg-[#df7412] rounded flex items-center justify-center">
-                        <span className="material-symbols-outlined text-sm text-[#461f00]">smart_toy</span>
-                      </div>
-                      <div className="bg-[#2f3444] p-4 rounded-xl rounded-tr-none border-r-2 border-[#ffb786]">
-                        <LoadingSpinner size="sm" />
+                      )}
+                      <div className="bg-[#1a1f2e] rounded p-4 max-h-60 overflow-y-auto">
+                        <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-2">Analysis</span>
+                        <p className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed">{refineAnalysis}</p>
                       </div>
                     </div>
                   )}
-                  <div ref={chatEndRef} />
                 </div>
-              )}
-
-              {assistantError && <p className="text-red-400 text-xs">{assistantError}</p>}
-
-              {/* Input Area */}
-              <div className="relative mt-4">
-                <textarea
-                  ref={pirTextareaRef}
-                  value={pir}
-                  onChange={(e) => {
-                    setPir(e.target.value);
-                    const ta = e.target;
-                    ta.style.height = 'auto';
-                    ta.style.height = `${ta.scrollHeight}px`;
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      if (pir.trim()) createCollection();
-                    }
-                  }}
-                  rows={1}
-                  className="w-full bg-[#1a1f2e] border-none focus:ring-1 focus:ring-[#adc6ff] text-sm py-4 pl-4 pr-4 md:pl-6 md:pr-48 rounded font-medium placeholder:text-gray-600 placeholder:italic transition-all resize-none overflow-hidden"
-                  placeholder="Enter your Priority Intelligence Requirement..."
-                />
-                <div className="relative mt-2 flex gap-2 md:absolute md:mt-0 md:right-2 md:top-2 md:bottom-2">
-                  <button
-                    onClick={refinePirWithAI}
-                    disabled={assistantLoading || !pir.trim()}
-                    className="bg-[#252a39] hover:bg-[#2f3444] text-[#adc6ff] border border-[#adc6ff]/30 px-3 py-2 md:py-0 rounded text-[10px] font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider"
-                    title={!pir.trim() ? 'Enter a PIR first' : 'Refine your PIR with AI'}
-                  >
-                    Refine
-                  </button>
-                  <button
-                    onClick={generateCollectionPlan}
-                    disabled={assistantLoading || !pir.trim()}
-                    className="bg-[#252a39] hover:bg-[#2f3444] text-emerald-400 border border-emerald-500/30 px-3 rounded text-[10px] font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider"
-                    title={!pir.trim() ? 'Enter a PIR first' : 'Generate a collection plan'}
-                  >
-                    Plan
-                  </button>
-                  <button
-                    onClick={createCollection}
-                    disabled={loading || !pir.trim()}
-                    className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-4 py-2 md:py-0 rounded text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    title={!pir.trim() ? 'Enter a PIR first' : 'Execute collection'}
-                  >
-                    EXECUTE
-                    <span className="material-symbols-outlined text-xs">send</span>
-                  </button>
-                </div>
-              </div>
-              {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
-              {!pir.trim() && !error && (
-                <p className="text-gray-500 text-[10px] mt-2 italic">Enter a Priority Intelligence Requirement above to begin.</p>
               )}
             </div>
+
+            {/* ──── STEP 2: GENERATE PLAN ──── */}
+            <div className={`bg-[#1a1f2e] border border-[#252a39] rounded overflow-hidden transition-opacity ${
+              !pir.trim() && !refinedPir ? 'opacity-40 pointer-events-none' : ''
+            }`}>
+              <button
+                onClick={() => setStep2Open(!step2Open)}
+                disabled={!pir.trim() && !refinedPir}
+                className="w-full flex items-center justify-between p-4 text-left hover:bg-[#1e2436] transition-colors disabled:cursor-not-allowed"
+              >
+                <div className="flex items-center gap-3">
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
+                    activePlan ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                    planLoading ? 'bg-[#adc6ff]/20 text-[#adc6ff] border border-[#adc6ff]/30 animate-pulse' :
+                    'bg-[#252a39] text-gray-400 border border-[#353a49]'
+                  }`}>
+                    {activePlan ? <span className="material-symbols-outlined text-xs">check</span> : '2'}
+                  </span>
+                  <div>
+                    <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">Generate Collection Plan</span>
+                    <p className="text-[10px] text-gray-500 mt-0.5">AI generates sources and collection strategy</p>
+                  </div>
+                </div>
+                <span className="material-symbols-outlined text-sm text-gray-500">
+                  {step2Open ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+
+              {step2Open && (
+                <div className="border-t border-[#252a39] p-4 md:p-6 space-y-4 bg-[#0d1220]">
+                  {/* Show what PIR will be used */}
+                  <div className="bg-[#1a1f2e] rounded p-3">
+                    <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">PIR to Plan</span>
+                    <p className="text-sm text-gray-300">{refinedPir || pir.trim()}</p>
+                    {refinedPir && refinedPir !== pir.trim() && (
+                      <p className="text-[10px] text-gray-500 mt-1 italic">Using refined version</p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={generatePlan}
+                      disabled={planLoading}
+                      className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 px-6 py-2 rounded text-[10px] font-black tracking-widest uppercase transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {planLoading ? (
+                        <><LoadingSpinner size="sm" /> Generating Plan...</>
+                      ) : (
+                        <><span className="material-symbols-outlined text-xs">account_tree</span> Generate Plan</>
+                      )}
+                    </button>
+                  </div>
+
+                  {planError && <p className="text-red-400 text-xs">{planError}</p>}
+
+                  {/* Plan Result - show sources table if plan returned but with no sources */}
+                  {activePlan && planItems.length === 0 && (
+                    <div className="bg-amber-500/10 border border-amber-500/20 rounded p-4">
+                      <p className="text-xs text-amber-400">Plan was created but no collection sources were generated. The LLM may have been rate-limited. Try generating again.</p>
+                    </div>
+                  )}
+
+                  {activePlan && planItems.length > 0 && (
+                    <div className="bg-[#161b2a] rounded overflow-x-auto">
+                      <table className="w-full text-left border-separate border-spacing-y-1 min-w-[500px]">
+                        <thead className="bg-[#2f3444]">
+                          <tr>
+                            <th className="px-4 py-2 text-[10px] font-bold text-gray-400 tracking-widest uppercase">Source</th>
+                            <th className="px-4 py-2 text-[10px] font-bold text-gray-400 tracking-widest uppercase">Description</th>
+                            <th className="px-4 py-2 text-[10px] font-bold text-gray-400 tracking-widest uppercase text-right">Include</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {planItems.map(item => (
+                            <tr key={item.id} className="bg-[#1a1f2e] hover:bg-[#343949] transition-colors group">
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="material-symbols-outlined text-xs text-[#adc6ff]">
+                                    {SOURCE_TYPE_ICONS[item.source_type] || 'description'}
+                                  </span>
+                                  <span className="text-xs font-semibold capitalize">{item.source_type.replace('_', ' ')}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className="text-[11px] text-gray-400">{item.description}</span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <button onClick={() => togglePlanItem(item.id)} className="transition-colors">
+                                  <span className={`material-symbols-outlined text-sm ${item.approved ? 'text-emerald-400' : 'text-gray-600'}`}>
+                                    {item.approved ? 'check_circle' : 'radio_button_unchecked'}
+                                  </span>
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div className="px-4 py-3 flex justify-between items-center border-t border-[#252a39]">
+                        <span className="text-[10px] text-gray-500 font-mono">
+                          {planItems.filter(i => i.approved).length}/{planItems.length} selected
+                        </span>
+                        <div className="flex gap-2">
+                          <button onClick={approveAllPlanItems} className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold uppercase tracking-wider transition-colors">
+                            All
+                          </button>
+                          <span className="text-gray-600">|</span>
+                          <button onClick={rejectAllPlanItems} className="text-[10px] text-gray-400 hover:text-gray-300 font-bold uppercase tracking-wider transition-colors">
+                            None
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Analysis from plan if available */}
+                  {activePlan?.description && (
+                    <div className="bg-[#1a1f2e] rounded p-4 max-h-40 overflow-y-auto">
+                      <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-2">Plan Analysis</span>
+                      <p className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed">{activePlan.description}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ──── STEP 3: EXECUTE ──── */}
+            <div className={`bg-[#1a1f2e] border border-[#252a39] rounded overflow-hidden transition-opacity ${
+              !activePlan ? 'opacity-40 pointer-events-none' : ''
+            }`}>
+              <button
+                onClick={() => setStep3Open(!step3Open)}
+                disabled={!activePlan}
+                className="w-full flex items-center justify-between p-4 text-left hover:bg-[#1e2436] transition-colors disabled:cursor-not-allowed"
+              >
+                <div className="flex items-center gap-3">
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
+                    'bg-[#252a39] text-gray-400 border border-[#353a49]'
+                  }`}>
+                    3
+                  </span>
+                  <div>
+                    <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">Approve & Execute</span>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Review and launch the collection plan</p>
+                  </div>
+                </div>
+                <span className="material-symbols-outlined text-sm text-gray-500">
+                  {step3Open ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+
+              {step3Open && activePlan && (
+                <div className="border-t border-[#252a39] p-4 md:p-6 space-y-4 bg-[#0d1220]">
+                  {/* Summary */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-[#1a1f2e] rounded p-3">
+                      <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">PIR</span>
+                      <p className="text-xs text-gray-300">{activePlan.refined_pir || activePlan.pir || pir}</p>
+                    </div>
+                    <div className="bg-[#1a1f2e] rounded p-3">
+                      <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">Sources</span>
+                      <p className="text-lg font-black text-[#adc6ff]">{planItems.filter(i => i.approved).length}</p>
+                      <p className="text-[10px] text-gray-500">of {planItems.length} approved</p>
+                    </div>
+                    <div className="bg-[#1a1f2e] rounded p-3">
+                      <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">Status</span>
+                      <p className="text-xs text-amber-400 font-bold uppercase">Awaiting Approval</p>
+                    </div>
+                  </div>
+
+                  {error && <p className="text-red-400 text-xs">{error}</p>}
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={executePlan}
+                      disabled={loading || planItems.filter(i => i.approved).length === 0}
+                      className="bg-gradient-to-br from-[#adc6ff] to-[#4d8eff] text-[#002e6a] px-8 py-2.5 rounded text-xs font-black tracking-widest uppercase hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shadow-[0_0_8px_rgba(173,198,255,0.3)] flex items-center gap-2"
+                    >
+                      {loading ? (
+                        <><LoadingSpinner size="sm" /> Executing...</>
+                      ) : (
+                        <><span className="material-symbols-outlined text-sm">rocket_launch</span> Approve & Execute</>
+                      )}
+                    </button>
+                    <button
+                      onClick={resetWorkflow}
+                      className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-2 rounded text-[10px] font-bold uppercase tracking-wider hover:bg-red-900/20 transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
           </div>
         </section>
 
-        {/* Section 2: Collection Plan Review */}
-        {(planItems.length > 0 || planParsing) && (
-          <section className="max-w-5xl mx-auto">
-            <div className="flex justify-between items-end mb-4">
-              <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#ffb786]" />
-                Strategic Plan Review
-              </h2>
-              <span className="text-[10px] font-mono text-gray-500 uppercase tracking-tighter">
-                Queue: {String(planItems.length).padStart(2, '0')} tasks pending validation
-              </span>
-            </div>
-
-            {planParsing ? (
-              <div className="flex items-center gap-2 text-xs text-gray-400 p-4">
-                <LoadingSpinner size="sm" /> Parsing plan...
-              </div>
-            ) : (
-              <div className="bg-[#161b2a] rounded overflow-x-auto">
-                <table className="w-full text-left border-separate border-spacing-y-1 min-w-[600px]">
-                  <thead className="bg-[#2f3444]">
-                    <tr>
-                      <th className="px-6 py-3 text-[10px] font-bold text-gray-400 tracking-widest uppercase">Source Type</th>
-                      <th className="px-6 py-3 text-[10px] font-bold text-gray-400 tracking-widest uppercase">Description</th>
-                      <th className="px-6 py-3 text-[10px] font-bold text-gray-400 tracking-widest uppercase">Status</th>
-                      <th className="px-6 py-3 text-[10px] font-bold text-gray-400 tracking-widest uppercase text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {planItems.map(item => (
-                      <tr key={item.id} className="bg-[#1a1f2e] hover:bg-[#343949] transition-colors group">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <span className="material-symbols-outlined text-xs text-[#adc6ff]">
-                              {SOURCE_TYPE_ICONS[item.source_type] || 'description'}
-                            </span>
-                            <span className="text-xs font-semibold capitalize">{item.source_type.replace('_', ' ')}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="text-[11px] text-gray-400">{item.description}</span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <span className={`w-1.5 h-1.5 rounded-full ${item.approved ? 'bg-green-400' : 'bg-[#ffb786]'}`} />
-                            <span className={`text-[10px] font-bold uppercase ${item.approved ? 'text-green-400' : 'text-[#ffb786]'}`}>
-                              {item.approved ? 'Approved' : 'Pending Approval'}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex justify-end gap-2 opacity-40 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => togglePlanItem(item.id)} className="p-1 hover:text-green-400 transition-colors">
-                              <span className="material-symbols-outlined text-sm">{item.approved ? 'close' : 'check'}</span>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div className="p-4 md:p-6 bg-[#161b2a] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div className="flex gap-4">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Approved Items</span>
-                      <span className="text-xs font-mono text-[#adc6ff]">{planItems.filter(i => i.approved).length} of {planItems.length}</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={approveAllPlanItems} className="bg-[#252a39] border border-green-500/30 text-green-400 px-4 py-2 rounded text-[10px] font-bold tracking-widest uppercase hover:bg-green-900/20 transition-all">
-                      Approve All
-                    </button>
-                    <button onClick={rejectAllPlanItems} className="bg-[#252a39] border border-red-500/30 text-red-400 px-4 py-2 rounded text-[10px] font-bold tracking-widest uppercase hover:bg-red-900/20 transition-all">
-                      Reject All
-                    </button>
-                    <button
-                      onClick={acceptPlan}
-                      disabled={loading || planItems.filter(i => i.approved).length === 0}
-                      className="bg-gradient-to-br from-[#adc6ff] to-[#4d8eff] text-[#002e6a] px-8 py-2 rounded text-xs font-black tracking-widest uppercase hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shadow-[0_0_8px_rgba(173,198,255,0.3)]"
-                    >
-                      {loading ? 'Creating...' : 'Approve & Execute'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* Section 3: Active Streams */}
+        {/* Active Streams */}
         {activeStreams.length > 0 && (
           <section className="max-w-5xl mx-auto">
             <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase mb-4 flex items-center gap-2">
@@ -677,7 +767,7 @@ PIR: ${pir.trim()}` }],
           </section>
         )}
 
-        {/* Section 4: Active Collection Plans */}
+        {/* Collection Plans */}
         {plans.length > 0 && (
           <section className="max-w-5xl mx-auto">
             <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase mb-4 flex items-center gap-2">
@@ -695,7 +785,7 @@ PIR: ${pir.trim()}` }],
                 const isExpanded = expandedIds.has(String(plan.id));
                 return (
                   <div key={plan.id} className="bg-[#1a1f2e] border border-[#252a39] rounded overflow-hidden">
-                    <div className="p-4 cursor-pointer hover:bg-[#1e2436] transition-colors" onClick={() => toggleExpanded(String(plan.id))}>
+                    <div className="p-4 cursor-pointer hover:bg-[#1e2436] transition-colors" onClick={() => { toggleExpanded(String(plan.id)); loadActivity(String(plan.id)); }}>
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-gray-300 truncate">{plan.pir || plan.name}</p>
@@ -730,23 +820,77 @@ PIR: ${pir.trim()}` }],
                           <div>
                             <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">Sources ({plan.sources.length})</span>
                             <div className="space-y-1">
-                              {plan.sources.map(src => (
-                                <div key={src.id} className="flex items-center gap-3 bg-[#1a1f2e] rounded px-3 py-2">
-                                  <span className="material-symbols-outlined text-xs text-[#adc6ff]">
-                                    {SOURCE_TYPE_ICONS[src.source_type] || 'description'}
-                                  </span>
-                                  <span className="text-xs text-gray-300 capitalize flex-none">{src.source_type.replace('_', ' ')}</span>
-                                  <span className="text-[11px] text-gray-400 flex-1">{src.name}</span>
-                                  <span className="text-[10px] text-gray-500">{src.total_records_acquired || 0} records</span>
-                                </div>
-                              ))}
+                              {plan.sources.map(src => {
+                                const cs = src.collection_status || 'pending';
+                                const statusIcon = cs === 'succeeded' ? 'check_circle'
+                                  : cs === 'failed' ? 'error'
+                                  : cs === 'collecting' ? 'sync'
+                                  : cs === 'queued' ? 'schedule'
+                                  : cs === 'awaiting_upload' ? 'upload_file'
+                                  : 'radio_button_unchecked';
+                                const statusColor = cs === 'succeeded' ? 'text-emerald-400'
+                                  : cs === 'failed' ? 'text-red-400'
+                                  : cs === 'collecting' ? 'text-[#adc6ff] animate-spin'
+                                  : cs === 'queued' ? 'text-amber-400'
+                                  : cs === 'awaiting_upload' ? 'text-orange-400'
+                                  : 'text-gray-500';
+                                return (
+                                  <div key={src.id} className="flex items-center gap-3 bg-[#1a1f2e] rounded px-3 py-2">
+                                    <span className="material-symbols-outlined text-xs text-[#adc6ff]">
+                                      {SOURCE_TYPE_ICONS[src.source_type] || 'description'}
+                                    </span>
+                                    <span className="text-xs text-gray-300 capitalize flex-none w-20">{src.source_type.replace('_', ' ')}</span>
+                                    <span className="text-[11px] text-gray-400 flex-1 truncate">{src.name}</span>
+                                    <div className="flex items-center gap-1.5 flex-none">
+                                      <span className={`material-symbols-outlined text-xs ${statusColor}`}>{statusIcon}</span>
+                                      <span className={`text-[10px] font-bold uppercase ${statusColor.replace(' animate-spin', '')}`}>
+                                        {cs.replace('_', ' ')}
+                                      </span>
+                                    </div>
+                                    {src.total_records_acquired > 0 && (
+                                      <span className="text-[10px] text-gray-500 flex-none">{src.total_records_acquired} rec</span>
+                                    )}
+                                    {cs === 'failed' && src.last_error && (
+                                      <span className="text-[10px] text-red-400/70 truncate max-w-[150px]" title={src.last_error}>{src.last_error}</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         )}
+
+                        {/* Activity Log */}
+                        {activityLogs[String(plan.id)] && activityLogs[String(plan.id)].length > 0 && (
+                          <div>
+                            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">Activity Log</span>
+                            <div className="bg-[#1a1f2e] rounded p-3 max-h-40 overflow-y-auto space-y-1 font-mono">
+                              {activityLogs[String(plan.id)].map(a => {
+                                const eventColor = a.event.includes('failed') ? 'text-red-400'
+                                  : a.event.includes('succeeded') || a.event.includes('completed') ? 'text-emerald-400'
+                                  : a.event.includes('collecting') ? 'text-[#adc6ff]'
+                                  : a.event.includes('started') ? 'text-amber-400'
+                                  : 'text-gray-500';
+                                return (
+                                  <div key={a.id} className="flex items-start gap-2 text-[10px]">
+                                    <span className="text-gray-600 flex-none whitespace-nowrap">
+                                      {new Date(a.created_at).toLocaleTimeString()}
+                                    </span>
+                                    <span className={`${eventColor} flex-none uppercase font-bold w-24`}>
+                                      {a.event.replace('source_', '').replace('plan_', '')}
+                                    </span>
+                                    <span className="text-gray-400">{a.message}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
                         {plan.status === 'DRAFT' && (
                           <div className="flex gap-2 pt-2">
                             <button
-                              onClick={async () => { await collectionPlansApi.execute(String(plan.id)); loadPlans(); }}
+                              onClick={async () => { await collectionPlansApi.execute(String(plan.id)); loadPlans(); loadActivity(String(plan.id)); }}
                               className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-4 py-2 rounded text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-900/30 transition-all"
                             >
                               Approve & Execute

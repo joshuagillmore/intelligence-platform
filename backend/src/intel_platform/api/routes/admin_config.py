@@ -1,11 +1,19 @@
 import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy import select, update
+
 from intel_platform.api.deps import verify_api_key
 from intel_platform.config import settings
+from intel_platform.db.engine import get_session_factory
+from intel_platform.db.models import ApiKey
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
+
+# ---------------------------------------------------------------------------
+# Request / response schemas
+# ---------------------------------------------------------------------------
 
 class ProxyConfigRequest(BaseModel):
     mode: str = "direct"  # direct | proxy | tor
@@ -18,11 +26,30 @@ class LLMConfigRequest(BaseModel):
     model: str = ""
 
 
+class ApiKeyCreateRequest(BaseModel):
+    provider: str  # anthropic | openai | cohere
+    label: str
+    api_key: str
+
+
+class ApiKeyActivateRequest(BaseModel):
+    key_id: str
+    provider: str
+
+
+# ---------------------------------------------------------------------------
+# In-memory state
+# ---------------------------------------------------------------------------
+
 _proxy_config: dict = {"mode": "direct", "proxy_url": "", "tor_port": 9050}
 
 # Runtime-mutable LLM overrides (survive until container restart)
 _llm_override: dict = {"provider": "", "model": ""}
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def get_active_provider() -> str:
     """Return the currently active LLM provider name."""
@@ -37,6 +64,56 @@ def get_active_model() -> str:
         return _llm_override["model"]
     return settings.default_llm_model
 
+
+def _mask_key(key: str) -> str:
+    """Show only the last 4 characters of a key."""
+    if len(key) <= 4:
+        return "****"
+    return "*" * (len(key) - 4) + key[-4:]
+
+
+async def get_active_api_key(provider: str) -> str | None:
+    """Return the active API key for a provider from the database, or None."""
+    factory = get_session_factory()
+    async with factory() as session:
+        result = await session.execute(
+            select(ApiKey.api_key).where(
+                ApiKey.provider == provider,
+                ApiKey.is_active == True,  # noqa: E712
+            )
+        )
+        row = result.scalar_one_or_none()
+        return row
+
+
+async def _provider_has_key(provider: str) -> bool:
+    """Check if a provider has at least one API key stored in the database."""
+    factory = get_session_factory()
+    async with factory() as session:
+        result = await session.execute(
+            select(ApiKey.id).where(ApiKey.provider == provider).limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
+
+async def _provider_has_active_key(provider: str) -> bool:
+    """Check if a provider has an active API key (DB or env)."""
+    # Check DB first
+    db_key = await get_active_api_key(provider)
+    if db_key:
+        return True
+    # Fall back to env vars
+    env_keys = {
+        "anthropic": settings.anthropic_api_key,
+        "openai": settings.openai_api_key,
+        "cohere": settings.cohere_api_key,
+    }
+    return bool(env_keys.get(provider, ""))
+
+
+# ---------------------------------------------------------------------------
+# Config endpoints
+# ---------------------------------------------------------------------------
 
 @router.get("/admin/config")
 def get_config():
@@ -53,6 +130,126 @@ def get_config():
         "proxy": _proxy_config,
     }
 
+
+# ---------------------------------------------------------------------------
+# API Key management endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/admin/api-keys")
+async def list_api_keys():
+    """List all stored API keys with masked values."""
+    factory = get_session_factory()
+    async with factory() as session:
+        result = await session.execute(
+            select(ApiKey).order_by(ApiKey.provider, ApiKey.created_at)
+        )
+        keys = result.scalars().all()
+        return {
+            "keys": [
+                {
+                    "id": str(k.id),
+                    "provider": k.provider,
+                    "label": k.label,
+                    "key_preview": _mask_key(k.api_key),
+                    "is_active": k.is_active,
+                    "created_at": k.created_at.isoformat() if k.created_at else None,
+                }
+                for k in keys
+            ]
+        }
+
+
+@router.post("/admin/api-keys")
+async def add_api_key(req: ApiKeyCreateRequest):
+    """Add a new API key for a provider."""
+    factory = get_session_factory()
+    async with factory() as session:
+        # Check how many keys exist for this provider
+        result = await session.execute(
+            select(ApiKey).where(ApiKey.provider == req.provider)
+        )
+        existing = result.scalars().all()
+
+        # If this is the first key for the provider, make it active
+        is_active = len(existing) == 0
+
+        new_key = ApiKey(
+            provider=req.provider,
+            label=req.label,
+            api_key=req.api_key,
+            is_active=is_active,
+        )
+        session.add(new_key)
+        await session.commit()
+        await session.refresh(new_key)
+
+        return {
+            "id": str(new_key.id),
+            "provider": new_key.provider,
+            "label": new_key.label,
+            "key_preview": _mask_key(new_key.api_key),
+            "is_active": new_key.is_active,
+            "status": "ok",
+        }
+
+
+@router.put("/admin/api-keys/activate")
+async def activate_api_key(req: ApiKeyActivateRequest):
+    """Set a specific key as the active key for its provider."""
+    factory = get_session_factory()
+    async with factory() as session:
+        # Deactivate all keys for this provider
+        await session.execute(
+            update(ApiKey)
+            .where(ApiKey.provider == req.provider)
+            .values(is_active=False)
+        )
+        # Activate the selected key
+        await session.execute(
+            update(ApiKey)
+            .where(ApiKey.id == req.key_id)
+            .values(is_active=True)
+        )
+        await session.commit()
+        return {"status": "ok", "active_key_id": req.key_id}
+
+
+@router.delete("/admin/api-keys/{key_id}")
+async def delete_api_key(key_id: str):
+    """Delete an API key by ID."""
+    factory = get_session_factory()
+    async with factory() as session:
+        result = await session.execute(
+            select(ApiKey).where(ApiKey.id == key_id)
+        )
+        key = result.scalar_one_or_none()
+        if not key:
+            return {"status": "not_found"}
+
+        was_active = key.is_active
+        provider = key.provider
+        await session.delete(key)
+        await session.flush()
+
+        # If the deleted key was active, promote another key for this provider
+        if was_active:
+            result = await session.execute(
+                select(ApiKey)
+                .where(ApiKey.provider == provider)
+                .order_by(ApiKey.created_at)
+                .limit(1)
+            )
+            next_key = result.scalar_one_or_none()
+            if next_key:
+                next_key.is_active = True
+
+        await session.commit()
+        return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# LLM model listing & selection
+# ---------------------------------------------------------------------------
 
 @router.get("/admin/llm/models")
 async def list_available_models():
@@ -72,17 +269,33 @@ async def list_available_models():
                         "params": m.get("details", {}).get("parameter_size", ""),
                         "quantization": m.get("details", {}).get("quantization_level", ""),
                         "size_gb": size_gb,
+                        "configured": True,
                     })
     except Exception:
         pass
 
-    # Cloud providers (just show configured ones)
-    if settings.cohere_api_key:
-        models.append({"provider": "cohere", "model": "command-a-03-2025", "params": "", "quantization": "", "size_gb": 0})
-    if settings.anthropic_api_key:
-        models.append({"provider": "anthropic", "model": "claude-sonnet-4-20250514", "params": "", "quantization": "", "size_gb": 0})
-    if settings.openai_api_key:
-        models.append({"provider": "openai", "model": "gpt-4o", "params": "", "quantization": "", "size_gb": 0})
+    # Cloud providers – always list; check DB + env for configured status
+    cloud_models = [
+        ("anthropic", "claude-sonnet-4-20250514"),
+        ("anthropic", "claude-opus-4-20250514"),
+        ("anthropic", "claude-haiku-4-5-20251001"),
+        ("openai", "gpt-4o"),
+        ("openai", "gpt-4o-mini"),
+        ("openai", "o3-mini"),
+        ("cohere", "command-a-03-2025"),
+        ("cohere", "command-r-plus"),
+        ("cohere", "command-r"),
+    ]
+    for provider, model in cloud_models:
+        configured = await _provider_has_active_key(provider)
+        models.append({
+            "provider": provider,
+            "model": model,
+            "params": "",
+            "quantization": "",
+            "size_gb": 0,
+            "configured": configured,
+        })
 
     return {
         "models": models,
@@ -102,6 +315,10 @@ def select_llm(req: LLMConfigRequest):
         "status": "ok",
     }
 
+
+# ---------------------------------------------------------------------------
+# Proxy configuration
+# ---------------------------------------------------------------------------
 
 @router.get("/admin/proxy")
 def get_proxy_config():

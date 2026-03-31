@@ -22,8 +22,22 @@ class SkillListResponse(BaseModel):
     skills: list[dict]
 
 
-def _get_provider():
-    """Get the configured LLM provider, respecting runtime overrides."""
+async def _resolve_api_key(provider_name: str) -> str | None:
+    """Resolve an API key for a provider: check DB first, then env vars."""
+    from intel_platform.api.routes.admin_config import get_active_api_key
+    db_key = await get_active_api_key(provider_name)
+    if db_key:
+        return db_key
+    env_keys = {
+        "anthropic": settings.anthropic_api_key,
+        "openai": settings.openai_api_key,
+        "cohere": settings.cohere_api_key,
+    }
+    return env_keys.get(provider_name) or None
+
+
+async def _get_provider():
+    """Get the configured LLM provider, respecting runtime overrides and DB keys."""
     from intel_platform.api.routes.admin_config import get_active_provider, get_active_model
 
     provider_name = get_active_provider()
@@ -31,31 +45,37 @@ def _get_provider():
 
     if provider_name == "ollama":
         from intel_platform.llm.ollama import OllamaProvider
-        return OllamaProvider(base_url=settings.ollama_base_url, model=model or "qwen2.5:14b")
-    if provider_name == "cohere" and settings.cohere_api_key:
-        from intel_platform.llm.cohere_provider import CohereProvider
-        return CohereProvider(api_key=settings.cohere_api_key)
-    if provider_name == "anthropic" and settings.anthropic_api_key:
-        from intel_platform.llm.anthropic import AnthropicProvider
-        return AnthropicProvider(api_key=settings.anthropic_api_key)
-    if provider_name == "openai" and settings.openai_api_key:
-        from intel_platform.llm.openai_provider import OpenAIProvider
-        return OpenAIProvider(api_key=settings.openai_api_key)
+        return OllamaProvider(base_url=settings.ollama_base_url, model=model or settings.default_llm_model or "qwen3.5:9b-q4_K_M")
 
-    # Fallback: try any available provider
-    if settings.cohere_api_key:
-        from intel_platform.llm.cohere_provider import CohereProvider
-        return CohereProvider(api_key=settings.cohere_api_key)
-    if settings.anthropic_api_key:
-        from intel_platform.llm.anthropic import AnthropicProvider
-        return AnthropicProvider(api_key=settings.anthropic_api_key)
-    if settings.openai_api_key:
-        from intel_platform.llm.openai_provider import OpenAIProvider
-        return OpenAIProvider(api_key=settings.openai_api_key)
+    api_key = await _resolve_api_key(provider_name)
+    if api_key:
+        if provider_name == "cohere":
+            from intel_platform.llm.cohere_provider import CohereProvider
+            return CohereProvider(api_key=api_key, model=model or "command-a-03-2025")
+        if provider_name == "anthropic":
+            from intel_platform.llm.anthropic import AnthropicProvider
+            return AnthropicProvider(api_key=api_key, model=model or "claude-sonnet-4-20250514")
+        if provider_name == "openai":
+            from intel_platform.llm.openai_provider import OpenAIProvider
+            return OpenAIProvider(api_key=api_key, model=model or "gpt-4o")
+
+    # Fallback: try any provider with a key (DB or env)
+    for fallback in ["cohere", "anthropic", "openai"]:
+        key = await _resolve_api_key(fallback)
+        if key:
+            if fallback == "cohere":
+                from intel_platform.llm.cohere_provider import CohereProvider
+                return CohereProvider(api_key=key)
+            if fallback == "anthropic":
+                from intel_platform.llm.anthropic import AnthropicProvider
+                return AnthropicProvider(api_key=key)
+            if fallback == "openai":
+                from intel_platform.llm.openai_provider import OpenAIProvider
+                return OpenAIProvider(api_key=key)
 
     # Last resort: try Ollama
     from intel_platform.llm.ollama import OllamaProvider
-    return OllamaProvider(base_url=settings.ollama_base_url, model=model or "qwen2.5:14b")
+    return OllamaProvider(base_url=settings.ollama_base_url, model=model or settings.default_llm_model or "qwen3.5:9b-q4_K_M")
 
 
 @router.post("/llm/query")
@@ -69,7 +89,7 @@ async def llm_query(req: LLMQueryRequest):
         if skill_prompt:
             system = f"{skill_prompt}\n\n{system}" if system else skill_prompt
 
-    provider = _get_provider()
+    provider = await _get_provider()
     if not provider:
         return {
             "content": "No LLM provider configured. Add API keys to .env file.",
