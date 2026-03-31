@@ -5,7 +5,7 @@ import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import TopicMindMap from '@/components/TopicMindMap';
 import MindMapControls from '@/components/MindMapControls';
-import type { LayoutMode } from '@/components/MindMapControls';
+import type { LayoutMode, ClusteringMethod, Granularity } from '@/components/MindMapControls';
 import HighlightedExcerpt from '@/components/HighlightedExcerpt';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
@@ -144,6 +144,10 @@ export default function DataSourcesPage() {
   // Expanded documents
   const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
 
+  // Clustering controls
+  const [clusteringMethod, setClusteringMethod] = useState<ClusteringMethod>('tfidf');
+  const [granularity, setGranularity] = useState<Granularity>('medium');
+
   // Load stored layout preference
   useEffect(() => {
     setLayout(getStoredLayout());
@@ -156,7 +160,7 @@ export default function DataSourcesPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await topicsApi.tree(activeProject.id);
+      const res = await topicsApi.tree(activeProject.id, clusteringMethod, granularity);
       const data = res.data;
 
       if (data && typeof data === 'object' && !Array.isArray(data) && data.children) {
@@ -189,7 +193,7 @@ export default function DataSourcesPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeProject]);
+  }, [activeProject, clusteringMethod, granularity]);
 
   useEffect(() => {
     loadTopics();
@@ -438,6 +442,24 @@ export default function DataSourcesPage() {
               onCollapseAll={handleCollapseAll}
               breadcrumbs={breadcrumbs}
               onBreadcrumbClick={handleBreadcrumbClick}
+              clusteringMethod={clusteringMethod}
+              onClusteringMethodChange={setClusteringMethod}
+              granularity={granularity}
+              onGranularityChange={setGranularity}
+              onExport={async (format) => {
+                if (!activeProject) return;
+                try {
+                  const res = await topicsApi.exportMindmap(activeProject.id, format);
+                  const content = format === 'json' ? JSON.stringify(res.data, null, 2) : (res.data?.content || JSON.stringify(res.data));
+                  const blob = new Blob([content], { type: 'text/plain' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `mindmap.${format === 'mermaid' ? 'mmd' : format === 'markdown' ? 'md' : 'json'}`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } catch (e) { console.error('Export failed', e); }
+              }}
             />
           </div>
 

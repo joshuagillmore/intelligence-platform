@@ -40,7 +40,7 @@ RESOLVE_SYSTEM = """You are a collection source resolver for intelligence analys
 Given a source description and type, generate the concrete configuration
 needed to collect data from this source.
 
-For web_scrape sources, generate: {"urls": ["url1", "url2", ...], "max_pages": 10}
+For web_scrape sources, generate: {"urls": ["url1", "url2", ...]}
   - Generate 3-8 specific, real URLs that would contain relevant information
   - Include news sites, government sources, think tanks, or domain-specific sites
   - URLs must be real, publicly accessible homepage or section URLs (NOT fabricated article URLs)
@@ -51,7 +51,10 @@ For rss_feed sources, generate: {"feed_url": "url", "max_items": 20, "fetch_full
   - Use well-known, real RSS/Atom feed URLs (e.g., https://feeds.bbci.co.uk/news/world/rss.xml)
   - Common patterns: /rss, /feed, /atom.xml, /feeds/
 
-For database sources, generate: {"urls": ["url1", ...], "max_pages": 5}
+For api_feed sources, generate: {"base_url": "url", "endpoint": "path", "response_path": "data.results"}
+  - Use real, publicly accessible JSON APIs
+
+For database sources, generate: {"urls": ["url1", ...]}
   - Use real public registry URLs (NVD, CVE, WHOIS, UNHCR, WHO, etc.)
   - Prefer search/listing pages over specific record URLs
 
@@ -395,7 +398,30 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp"):
     from intel_platform.config import settings
 
     connector = get_connector(source.source_type)
-    result = await connector.acquire(source.config or {})
+    config = source.config or {}
+
+    # Handle multi-URL for web_scrape/database: upstream connector takes single "url",
+    # but agentic resolve generates "urls" list. Acquire each URL separately.
+    if source.source_type in ("web_scrape", "database") and "urls" in config and isinstance(config["urls"], list):
+        from intel_platform.connectors.base import AcquireResult as AR
+        all_records = []
+        errors = []
+        for url in config["urls"][:10]:
+            single_config = {**config, "url": url}
+            try:
+                r = await connector.acquire(single_config)
+                all_records.extend(r.records)
+            except Exception as e:
+                errors.append(f"{url}: {e}")
+            await asyncio.sleep(1)  # Rate limit
+        result = AR(
+            success=len(all_records) > 0,
+            record_count=len(all_records),
+            records=all_records,
+            error="; ".join(errors) if errors else "",
+        )
+    else:
+        result = await connector.acquire(config)
 
     if not result.success and result.record_count == 0:
         raise RuntimeError(result.error or "Acquisition returned no data")
