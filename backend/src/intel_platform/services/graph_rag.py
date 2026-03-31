@@ -281,7 +281,7 @@ class GraphRAGPipeline:
 
         try:
             from intel_platform.api.routes.llm import _get_provider
-            provider = _get_provider()
+            provider = await _get_provider()
 
             if provider:
                 from intel_platform.llm.skills.loader import SkillsLoader

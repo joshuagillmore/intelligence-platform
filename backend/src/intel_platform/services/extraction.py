@@ -559,7 +559,7 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
 
     # Use the centralized provider selection (respects runtime overrides)
     from intel_platform.api.routes.llm import _get_provider
-    provider = _get_provider()
+    provider = await _get_provider()
 
     if not provider:
         # Fallback to NLP if no LLM configured

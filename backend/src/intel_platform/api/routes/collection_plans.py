@@ -24,6 +24,7 @@ from intel_platform.connectors.flat_file import detect_format, SUPPORTED_FORMATS
 from intel_platform.db.engine import get_db
 from intel_platform.db.models import (
     AcquisitionLog,
+    CollectionActivity,
     CollectionPlan,
     CollectionSource,
     DataCatalog,
@@ -331,7 +332,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     llm_status = ""
     try:
         from intel_platform.api.routes.llm import _get_provider
-        provider = _get_provider()
+        provider = await _get_provider()
         if provider:
             llm_available = True
             llm_status = f"Using {provider.name()}"
@@ -491,21 +492,33 @@ async def execute_plan_endpoint(
     await db.commit()
     await db.refresh(plan)
 
-    # Launch autonomous execution as background task (if there are executable sources)
+    # Launch agentic execution as background task
+    # Phase 1: LLM resolves configs for sources missing URLs
+    # Phase 2: Connectors acquire content and run ingestion pipeline
+    # Phase 3: LLM evaluates results and follows up on leads
     import asyncio
     from intel_platform.db.engine import get_session_factory
-    from intel_platform.services.plan_executor import execute_plan as run_plan
+    from intel_platform.collection.agentic import run_agentic_loop
+    from intel_platform.api.routes.llm import _get_provider
 
-    if executable:
+    all_auto = [s for s in sources if s.enabled and s.source_type != "file_upload"]
+    if all_auto:
         session_factory = get_session_factory()
-        asyncio.create_task(run_plan(plan_id, session_factory, store))
+        asyncio.create_task(
+            run_agentic_loop(
+                plan_id=plan.id,
+                db_factory=session_factory,
+                get_store=lambda: store,
+                get_provider=_get_provider,
+            )
+        )
 
     return {
         **_plan_to_dict(plan),
-        "execution_status": "started" if executable else "no_executable_sources",
-        "message": f"Plan execution started with {len(executable)} executable source(s)." if executable
-                   else "Plan activated but no sources are ready for autonomous execution.",
-        "sources_executable": len(executable),
+        "execution_status": "started" if all_auto else "no_executable_sources",
+        "message": f"Agentic execution started with {len(all_auto)} source(s)." if all_auto
+                   else "Plan activated but no automated sources found.",
+        "sources_queued": len(all_auto),
         "sources_manual": len(file_only),
         "sources_missing_config": len(missing_config),
         "warnings": warnings,
@@ -810,6 +823,38 @@ async def list_source_acquisitions(
     )
     result = await db.execute(stmt)
     return [_log_to_dict(log) for log in result.scalars().all()]
+
+
+# ---------------------------------------------------------------------------
+# Activity log
+# ---------------------------------------------------------------------------
+
+@router.get("/collection-plans/{plan_id}/activity")
+async def get_activity(plan_id: str, since: str | None = None, db: AsyncSession = Depends(get_db)):
+    """Get the activity log for a collection plan, optionally filtered by timestamp."""
+    stmt = (
+        select(CollectionActivity)
+        .where(CollectionActivity.plan_id == _parse_uuid(plan_id, "plan_id"))
+        .order_by(CollectionActivity.created_at.asc())
+    )
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since)
+            stmt = stmt.where(CollectionActivity.created_at > since_dt)
+        except ValueError:
+            pass
+    result = await db.execute(stmt)
+    return [
+        {
+            "id": str(a.id),
+            "plan_id": str(a.plan_id),
+            "source_id": str(a.source_id) if a.source_id else None,
+            "event": a.event,
+            "message": a.message,
+            "created_at": a.created_at.isoformat(),
+        }
+        for a in result.scalars().all()
+    ]
 
 
 # ---------------------------------------------------------------------------
