@@ -1,0 +1,684 @@
+"""Agentic collection orchestrator.
+
+Three-phase execution:
+1. RESOLVE — LLM translates source names into concrete configs (URLs, feed URLs)
+2. ACQUIRE — Real connectors fetch content, ingestion pipeline processes it
+3. EVALUATE — LLM reviews results vs PIR, can add follow-up URLs (bounded)
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import re
+import time
+import uuid
+from datetime import datetime, timezone
+
+from intel_platform.connectors.base import get_connector
+from intel_platform.db.models import (
+    AcquisitionLog,
+    CollectionActivity,
+    CollectionPlan,
+    CollectionSource,
+    PlanStatus,
+)
+from intel_platform.models.entities import Document
+from intel_platform.services.graph_builder import build_graph_from_extractions
+from intel_platform.services.ingestion import ingest_text
+
+logger = logging.getLogger(__name__)
+
+# Max follow-up rounds per source in the evaluate phase
+MAX_FOLLOWUP_ROUNDS = 2
+
+# ---------------------------------------------------------------------------
+# LLM Prompts
+# ---------------------------------------------------------------------------
+
+RESOLVE_SYSTEM = """You are a collection source resolver for intelligence analysis.
+Given a source description and type, generate the concrete configuration
+needed to collect data from this source.
+
+For web_scrape sources, generate: {"urls": ["url1", "url2", ...], "max_pages": 10}
+  - Generate 3-8 specific, real URLs that would contain relevant information
+  - Include news sites, government sources, think tanks, or domain-specific sites
+  - URLs must be real, publicly accessible homepage or section URLs (NOT fabricated article URLs)
+  - Prefer root/section URLs like https://reuters.com/world/middle-east/ over specific article URLs
+  - NEVER invent article slugs or dates in URLs — use only URLs you are confident exist
+
+For rss_feed sources, generate: {"feed_url": "url", "max_items": 20, "fetch_full_content": true}
+  - Use well-known, real RSS/Atom feed URLs (e.g., https://feeds.bbci.co.uk/news/world/rss.xml)
+  - Common patterns: /rss, /feed, /atom.xml, /feeds/
+
+For database sources, generate: {"urls": ["url1", ...], "max_pages": 5}
+  - Use real public registry URLs (NVD, CVE, WHOIS, UNHCR, WHO, etc.)
+  - Prefer search/listing pages over specific record URLs
+
+Respond with ONLY valid JSON. No explanation, no markdown."""
+
+RESOLVE_USER = """PIR: {pir}
+Source: {source_name}
+Type: {source_type}
+Generate the acquisition config."""
+
+EVALUATE_SYSTEM = """You are evaluating intelligence collection results against a PIR.
+Respond with ONLY valid JSON:
+{
+  "satisfied": true/false,
+  "follow_up_urls": ["url1", ...],
+  "notes": "brief reasoning"
+}
+
+Rules:
+- Set satisfied=true if the collected content adequately addresses the source's role in the PIR
+- Only suggest follow_up_urls if you found specific leads in the content (max 3 URLs)
+- Do not suggest URLs that are search engines or generic portals
+- If the content is thin or irrelevant, set satisfied=false but only suggest follow-ups if you have specific URLs"""
+
+EVALUATE_USER = """PIR: {pir}
+Source: {source_name}
+Collected {record_count} documents totaling {total_chars} characters.
+
+Content summaries:
+{summaries}
+
+Should we follow up on any specific leads found in this content?"""
+
+
+# ---------------------------------------------------------------------------
+# Helper: Extract entities from text content
+# ---------------------------------------------------------------------------
+
+def _clean_scraped_content(text: str) -> str:
+    """Remove navigation, boilerplate, and noise from scraped web content."""
+    lines = text.split('\n')
+    cleaned = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Skip very short lines (nav items, menu labels)
+        if len(line) < 15:
+            continue
+        # Skip lines that look like navigation/UI elements
+        lower = line.lower()
+        skip_patterns = [
+            'all newsletters', 'subscribe', 'sign up', 'log in', 'sign in',
+            'cookie', 'privacy policy', 'terms of', 'advertis', 'follow us',
+            'share this', 'read more', 'load more', 'show more', 'see all',
+            'add to cart', 'buy now', 'download app', 'get the app',
+            'back to top', 'skip to', 'jump to', 'table of contents',
+            'copyright ©', 'all rights reserved', '© 20',
+        ]
+        if any(p in lower for p in skip_patterns):
+            continue
+        # Skip lines that are mostly special characters or look like menus
+        alpha_ratio = sum(1 for c in line if c.isalpha()) / max(len(line), 1)
+        if alpha_ratio < 0.4:
+            continue
+        # Skip lines with excessive pipes/bullets (nav menus)
+        if line.count('|') > 2 or line.count('•') > 2:
+            continue
+        cleaned.append(line)
+    return '\n'.join(cleaned)
+
+
+async def _extract_entities(text: str, doc_id: str, mode: str):
+    """Run entity extraction in the configured mode."""
+    from intel_platform.services.extraction import extract_entities_nlp
+    if mode == "llm":
+        from intel_platform.services.extraction import extract_entities_llm
+        return await extract_entities_llm(text, doc_id)
+    elif mode == "hybrid":
+        from intel_platform.services.extraction import extract_entities_hybrid
+        return await extract_entities_hybrid(text, doc_id)
+    return extract_entities_nlp(text, doc_id)
+
+
+def _parse_llm_json(text: str) -> dict | None:
+    """Parse JSON from LLM response, with multiple fallback strategies."""
+    if not text or not text.strip():
+        return None
+
+    text = text.strip()
+
+    # Strip markdown code fences (```json ... ``` or ``` ... ```)
+    text = re.sub(r'^```(?:json)?\s*\n?', '', text, flags=re.MULTILINE)
+    text = re.sub(r'\n?```\s*$', '', text, flags=re.MULTILINE)
+    text = text.strip()
+
+    # Strategy 1: Direct parse
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Strategy 2: Find the first complete JSON object using brace counting
+    start = text.find('{')
+    if start >= 0:
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(text)):
+            c = text[i]
+            if escape:
+                escape = False
+                continue
+            if c == '\\' and in_string:
+                escape = True
+                continue
+            if c == '"' and not escape:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start:i + 1])
+                    except json.JSONDecodeError:
+                        break
+
+    # Strategy 3: Try to fix common LLM JSON issues
+    # Remove trailing commas before } or ]
+    cleaned = re.sub(r',\s*([}\]])', r'\1', text)
+    # Remove single-line comments
+    cleaned = re.sub(r'//[^\n]*', '', cleaned)
+    start = cleaned.find('{')
+    if start >= 0:
+        end = cleaned.rfind('}')
+        if end > start:
+            try:
+                return json.loads(cleaned[start:end + 1])
+            except json.JSONDecodeError:
+                pass
+
+    return None
+
+
+async def _get_agentic_provider(get_provider):
+    """Get the best available provider for agentic steps (prefers cloud for JSON reliability).
+
+    If the configured provider is Ollama, checks if a cloud provider key
+    is available in the DB and uses that instead. Falls back to Ollama if no cloud key.
+    """
+    provider = await get_provider()
+    provider_name = provider.name() if provider else ""
+
+    # If already a cloud provider, use it
+    if not provider_name.startswith("ollama"):
+        logger.info("Agentic provider: %s", provider_name)
+        return provider
+
+    # Ollama is configured — check for cloud keys
+    try:
+        from intel_platform.api.routes.llm import _resolve_api_key
+        for cloud_provider in ["cohere", "anthropic", "openai"]:
+            key = await _resolve_api_key(cloud_provider)
+            if key:
+                if cloud_provider == "cohere":
+                    from intel_platform.llm.cohere_provider import CohereProvider
+                    logger.info("Agentic provider: cohere (preferred over Ollama for structured output)")
+                    return CohereProvider(api_key=key)
+                elif cloud_provider == "anthropic":
+                    from intel_platform.llm.anthropic import AnthropicProvider
+                    logger.info("Agentic provider: anthropic (preferred over Ollama for structured output)")
+                    return AnthropicProvider(api_key=key)
+                elif cloud_provider == "openai":
+                    from intel_platform.llm.openai_provider import OpenAIProvider
+                    logger.info("Agentic provider: openai (preferred over Ollama for structured output)")
+                    return OpenAIProvider(api_key=key)
+    except Exception as e:
+        logger.debug("Cloud provider lookup failed, using Ollama: %s", e)
+
+    logger.info("Agentic provider: %s (no cloud keys available)", provider_name)
+    return provider
+
+
+async def _structured_generate(provider, messages, system, expected_keys=None, max_retries=3):
+    """Generate a structured JSON response with retry logic for unreliable models.
+
+    Args:
+        provider: LLM provider instance
+        messages: List of message dicts
+        system: System prompt
+        expected_keys: Optional list of keys the JSON must contain (e.g., ["urls"])
+        max_retries: Max attempts (default 3)
+
+    Returns:
+        Parsed dict or None if all attempts fail.
+    """
+    temps = [0.2, 0.3, 0.4]
+
+    for attempt in range(max_retries):
+        try:
+            msgs = list(messages)  # copy
+            if attempt > 0:
+                # Add a stronger reminder on retries
+                last_msg = msgs[-1].copy()
+                last_msg["content"] += "\n\nIMPORTANT: Respond with ONLY valid JSON. No explanation, no markdown, no preamble."
+                msgs[-1] = last_msg
+
+            result = await provider.generate(
+                messages=msgs,
+                system=system,
+                temperature=temps[min(attempt, len(temps) - 1)],
+                max_tokens=1024,
+            )
+
+            parsed = _parse_llm_json(result.content)
+            if parsed is None:
+                logger.warning("Structured generate attempt %d: JSON parse failed", attempt + 1)
+                continue
+
+            # Validate expected keys
+            if expected_keys:
+                missing = [k for k in expected_keys if k not in parsed]
+                if missing:
+                    logger.warning("Structured generate attempt %d: missing keys %s", attempt + 1, missing)
+                    continue
+
+            return parsed
+
+        except Exception as e:
+            logger.warning("Structured generate attempt %d failed: %s", attempt + 1, e)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(1)
+
+    return None
+
+
+def _validate_urls(urls: list) -> list[str]:
+    """Filter URLs to only valid, public HTTP(S) URLs."""
+    from urllib.parse import urlparse
+    valid = []
+    for url in urls:
+        if not isinstance(url, str):
+            continue
+        url = url.strip()
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme not in ("http", "https"):
+                continue
+            if not parsed.netloc or '.' not in parsed.netloc:
+                continue
+            hostname = (parsed.hostname or "").lower()
+            # Reject internal/private
+            if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+                continue
+            if hostname.startswith(("10.", "192.168.", "169.254.")):
+                continue
+            valid.append(url)
+        except Exception:
+            continue
+    return valid
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: RESOLVE — LLM generates concrete configs for each source
+# ---------------------------------------------------------------------------
+
+async def resolve_sources(plan, sources, db, provider):
+    """Ask the LLM to generate concrete acquisition configs for each source."""
+    pir = plan.refined_pir or plan.pir or plan.requirement
+
+    for source in sources:
+        if source.source_type == "file_upload":
+            continue
+
+        source.collection_status = "resolving"
+        db.add(CollectionActivity(
+            plan_id=plan.id, source_id=source.id,
+            event="source_resolving",
+            message=f"Resolving config for: {source.name}",
+        ))
+        await db.commit()
+
+        try:
+            # Determine expected keys based on source type
+            expected = ["urls"] if source.source_type in ("web_scrape", "database", "api_feed") else ["feed_url"]
+
+            config = await _structured_generate(
+                provider,
+                messages=[{"role": "user", "content": RESOLVE_USER.format(
+                    pir=pir, source_name=source.name, source_type=source.source_type,
+                )}],
+                system=RESOLVE_SYSTEM,
+                expected_keys=expected,
+            )
+            if not config:
+                raise ValueError("All JSON parse attempts failed for source resolution")
+
+            # Validate URLs — filter out obviously bad ones
+            if "urls" in config and isinstance(config["urls"], list):
+                config["urls"] = _validate_urls(config["urls"])
+            if "feed_url" in config:
+                valid = _validate_urls([config["feed_url"]])
+                if not valid:
+                    config["feed_url"] = ""
+
+            # Merge into existing config (preserve any user-set values)
+            source.config = {**(source.config or {}), **config}
+            source.collection_status = "queued"
+
+            db.add(CollectionActivity(
+                plan_id=plan.id, source_id=source.id,
+                event="source_resolved",
+                message=f"Resolved: {json.dumps(config)[:200]}",
+            ))
+        except Exception as e:
+            logger.warning("Failed to resolve source %s: %s", source.name, e)
+            source.collection_status = "failed"
+            source.last_error = f"Resolution failed: {str(e)[:300]}"
+            db.add(CollectionActivity(
+                plan_id=plan.id, source_id=source.id,
+                event="source_failed",
+                message=f"Resolution failed: {str(e)[:200]}",
+            ))
+
+        await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: ACQUIRE — fetch content and run through ingestion pipeline
+# ---------------------------------------------------------------------------
+
+async def acquire_source(source, plan, db, store, extraction_mode="nlp"):
+    """Fetch content from a source and run it through the ingestion pipeline.
+
+    Returns dict with record_count, entities_created, relationships_created.
+    """
+    from intel_platform.config import settings
+
+    connector = get_connector(source.source_type)
+    result = await connector.acquire(source.config or {})
+
+    if not result.success and result.record_count == 0:
+        raise RuntimeError(result.error or "Acquisition returned no data")
+
+    total_entities = 0
+    total_rels = 0
+    total_chars = 0
+
+    for record in result.records:
+        content = record.get("content", "")
+        if not content or len(content) < 50:
+            continue
+
+        # Clean scraped content to remove navigation, boilerplate, ads
+        content = _clean_scraped_content(content)
+        if not content or len(content) < 50:
+            continue
+
+        total_chars += len(content)
+        title = record.get("title", "")
+        url = record.get("url", "")
+
+        # Store as Document in Neo4j
+        doc = Document(
+            name=f"[Collection] {title or url or source.name}"[:256],
+            content=content[:50000],  # Cap at 50k chars per doc
+            reliability_rating="C3",
+            project_id=plan.project_id,
+        )
+        store.create_entity(doc)
+
+        # Chunk and extract
+        chunk_size = getattr(settings, 'chunk_size', 1200)
+        chunk_overlap = getattr(settings, 'chunk_overlap', 200)
+        chunks = ingest_text(content, chunk_size, chunk_overlap)
+
+        all_entities = []
+        all_rels = []
+        for chunk in chunks:
+            try:
+                ents, rels = await _extract_entities(chunk["content"], doc.id, extraction_mode)
+                all_entities.extend(ents)
+                all_rels.extend(rels)
+            except Exception as e:
+                logger.debug("Extraction failed for chunk: %s", e)
+
+        if all_entities or all_rels:
+            build_result = build_graph_from_extractions(
+                store, all_entities, all_rels, plan.project_id,
+                source_doc_id=doc.id,
+            )
+            total_entities += build_result.get("entities_created", 0)
+            total_rels += build_result.get("relationships_created", 0)
+
+    # Log acquisition
+    acq_log = AcquisitionLog(
+        source_id=source.id,
+        plan_id=plan.id,
+        result="SUCCESS" if result.record_count > 0 else "PARTIAL",
+        record_count=result.record_count,
+        source_type=source.source_type,
+        source_config_snapshot=source.config or {},
+        entities_created=total_entities,
+        relationships_created=total_rels,
+        started_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(timezone.utc),
+    )
+    db.add(acq_log)
+
+    return {
+        "record_count": result.record_count,
+        "total_chars": total_chars,
+        "entities_created": total_entities,
+        "relationships_created": total_rels,
+        "records": result.records,  # For evaluate phase
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: EVALUATE — LLM reviews results and may suggest follow-ups
+# ---------------------------------------------------------------------------
+
+async def evaluate_results(source, plan, acquire_result, provider):
+    """Ask the LLM to evaluate collected content and suggest follow-ups."""
+    pir = plan.refined_pir or plan.pir or plan.requirement
+    records = acquire_result.get("records", [])
+
+    # Build content summaries (first 500 chars of each, max 5)
+    summaries = []
+    for r in records[:5]:
+        title = r.get("title", "")
+        content = r.get("content", "")[:500]
+        summaries.append(f"- {title}: {content}...")
+
+    evaluation = await _structured_generate(
+        provider,
+        messages=[{"role": "user", "content": EVALUATE_USER.format(
+            pir=pir,
+            source_name=source.name,
+            record_count=acquire_result.get("record_count", 0),
+            total_chars=acquire_result.get("total_chars", 0),
+            summaries="\n".join(summaries) if summaries else "(no content collected)",
+        )}],
+        system=EVALUATE_SYSTEM,
+        expected_keys=["satisfied"],
+    )
+    if evaluation:
+        # Ensure defaults
+        evaluation.setdefault("follow_up_urls", [])
+        evaluation.setdefault("notes", "")
+        return evaluation
+    return {"satisfied": True, "follow_up_urls": [], "notes": "Could not parse evaluation after retries"}
+
+
+# ---------------------------------------------------------------------------
+# Main entry point: run_agentic_loop
+# ---------------------------------------------------------------------------
+
+async def run_agentic_loop(plan_id, db_factory, get_store, get_provider):
+    """Background task: resolve, acquire, and evaluate all sources in a plan.
+
+    Args:
+        plan_id: UUID of the collection plan
+        db_factory: async_sessionmaker (not request-scoped)
+        get_store: callable returning GraphStore
+        get_provider: async callable returning LLM provider
+    """
+    try:
+        provider = await _get_agentic_provider(get_provider)
+    except Exception as e:
+        logger.error("Failed to get LLM provider for agentic loop: %s", e)
+        # Mark plan failed
+        async with db_factory() as db:
+            plan = await db.get(CollectionPlan, plan_id)
+            if plan:
+                plan.status = PlanStatus.COMPLETED
+                db.add(CollectionActivity(
+                    plan_id=plan_id, event="plan_failed",
+                    message=f"No LLM provider available: {e}",
+                ))
+                await db.commit()
+        return
+
+    store = get_store()
+
+    # Phase 1: Resolve all source configs
+    async with db_factory() as db:
+        plan = await db.get(CollectionPlan, plan_id)
+        if not plan:
+            logger.error("Plan %s not found", plan_id)
+            return
+
+        sources = [s for s in (plan.sources or []) if s.enabled and s.source_type != "file_upload"]
+
+        db.add(CollectionActivity(
+            plan_id=plan.id, event="plan_resolving",
+            message=f"Resolving configs for {len(sources)} sources",
+        ))
+        await db.commit()
+
+        await resolve_sources(plan, sources, db, provider)
+
+    # Phase 2 & 3: Acquire and evaluate each source
+    completed = 0
+    failed = 0
+
+    async with db_factory() as db:
+        plan = await db.get(CollectionPlan, plan_id)
+        sources = [s for s in (plan.sources or []) if s.enabled and s.source_type != "file_upload"]
+
+        extraction_mode = (plan.routing_rules or {}).get("extraction_mode", "nlp")
+
+        for source in sources:
+            if source.collection_status == "failed":
+                failed += 1
+                continue
+
+            # Mark collecting
+            source.collection_status = "collecting"
+            db.add(CollectionActivity(
+                plan_id=plan.id, source_id=source.id,
+                event="source_collecting",
+                message=f"Acquiring: {source.name}",
+            ))
+            await db.commit()
+
+            try:
+                acquire_result = await acquire_source(source, plan, db, store, extraction_mode)
+
+                ent_count = acquire_result.get("entities_created", 0)
+                rel_count = acquire_result.get("relationships_created", 0)
+                rec_count = acquire_result.get("record_count", 0)
+
+                db.add(CollectionActivity(
+                    plan_id=plan.id, source_id=source.id,
+                    event="source_acquired",
+                    message=f"Acquired {rec_count} docs, {ent_count} entities, {rel_count} relationships",
+                ))
+                await db.commit()
+
+                # Phase 3: Evaluate and follow up
+                for round_num in range(MAX_FOLLOWUP_ROUNDS):
+                    evaluation = await evaluate_results(source, plan, acquire_result, provider)
+
+                    follow_ups = evaluation.get("follow_up_urls", [])
+                    notes = evaluation.get("notes", "")
+
+                    if not follow_ups or evaluation.get("satisfied", True):
+                        db.add(CollectionActivity(
+                            plan_id=plan.id, source_id=source.id,
+                            event="source_evaluated",
+                            message=f"Evaluation: satisfied. {notes}",
+                        ))
+                        await db.commit()
+                        break
+
+                    # Follow up on suggested URLs
+                    db.add(CollectionActivity(
+                        plan_id=plan.id, source_id=source.id,
+                        event="source_followup",
+                        message=f"Follow-up round {round_num + 1}: {len(follow_ups)} URLs. {notes}",
+                    ))
+                    await db.commit()
+
+                    # Add follow-up URLs to config and re-acquire
+                    existing_urls = source.config.get("urls", [])
+                    new_urls = [u for u in follow_ups[:3] if u not in existing_urls]
+                    if new_urls:
+                        source.config = {**source.config, "urls": new_urls, "max_pages": len(new_urls)}
+                        await db.commit()
+
+                        followup_result = await acquire_source(source, plan, db, store, extraction_mode)
+                        fu_ent = followup_result.get("entities_created", 0)
+                        fu_rel = followup_result.get("relationships_created", 0)
+
+                        db.add(CollectionActivity(
+                            plan_id=plan.id, source_id=source.id,
+                            event="source_followup_done",
+                            message=f"Follow-up: {followup_result.get('record_count', 0)} docs, {fu_ent} entities, {fu_rel} rels",
+                        ))
+                        await db.commit()
+
+                        # Merge results for next evaluation round
+                        acquire_result["records"] = acquire_result.get("records", []) + followup_result.get("records", [])
+                        acquire_result["record_count"] = acquire_result.get("record_count", 0) + followup_result.get("record_count", 0)
+
+                source.collection_status = "succeeded"
+                source.last_success_at = datetime.now(timezone.utc)
+                source.total_records_acquired += acquire_result.get("record_count", 0)
+
+                db.add(CollectionActivity(
+                    plan_id=plan.id, source_id=source.id,
+                    event="source_succeeded",
+                    message=f"Completed: {source.name} ({acquire_result.get('record_count', 0)} total records)",
+                ))
+                completed += 1
+
+            except Exception as e:
+                source.collection_status = "failed"
+                source.last_failure_at = datetime.now(timezone.utc)
+                source.last_error = str(e)[:500]
+
+                db.add(CollectionActivity(
+                    plan_id=plan.id, source_id=source.id,
+                    event="source_failed",
+                    message=f"Failed: {str(e)[:300]}",
+                ))
+                failed += 1
+                logger.warning("Source %s failed: %s", source.name, e)
+
+            await db.commit()
+
+        # Final status
+        upload_sources = [s for s in (plan.sources or []) if s.source_type == "file_upload" and s.enabled]
+        if not upload_sources:
+            plan.status = PlanStatus.COMPLETED
+
+        db.add(CollectionActivity(
+            plan_id=plan.id, event="plan_completed",
+            message=f"Collection complete: {completed} succeeded, {failed} failed" + (
+                f", {len(upload_sources)} file uploads pending" if upload_sources else ""),
+        ))
+        plan.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+
+    logger.info("Agentic loop completed for plan %s: %d ok, %d failed", plan_id, completed, failed)

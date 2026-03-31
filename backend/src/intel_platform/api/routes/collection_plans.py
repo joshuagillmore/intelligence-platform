@@ -24,6 +24,7 @@ from intel_platform.connectors.flat_file import detect_format, SUPPORTED_FORMATS
 from intel_platform.db.engine import get_db
 from intel_platform.db.models import (
     AcquisitionLog,
+    CollectionActivity,
     CollectionPlan,
     CollectionSource,
     DataCatalog,
@@ -144,6 +145,7 @@ def _source_to_dict(src: CollectionSource) -> dict:
         "last_success_at": src.last_success_at.isoformat() if src.last_success_at else None,
         "last_failure_at": src.last_failure_at.isoformat() if src.last_failure_at else None,
         "last_error": src.last_error,
+        "collection_status": src.collection_status or "pending",
         "total_records_acquired": src.total_records_acquired,
         "acquisition_count": src.acquisition_count,
         "next_run_at": src.next_run_at.isoformat() if src.next_run_at else None,
@@ -328,7 +330,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     # Step 1: Get the LLM provider
     try:
         from intel_platform.api.routes.llm import _get_provider
-        provider = _get_provider()
+        provider = await _get_provider()
     except Exception:
         provider = None
 
@@ -358,26 +360,33 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
             refined_pir = lines[0].strip().strip('"').strip("*").strip()
             plan_description = lines[1].strip() if len(lines) > 1 else ""
         except Exception as e:
-            logger.warning("PIR refinement failed: %s", e)
+            logger.exception("PIR refinement failed: %s", e)
 
-        # Step 3: Generate collection plan with sources
-        try:
-            system = loader.get_system_prompt("collection_planning", include_foundation=True) or ""
-            plan_result = await provider.generate(
-                messages=[{"role": "user", "content": (
-                    f"Create a collection plan for this PIR:\n\n{refined_pir}\n\n"
-                    "For each source, output a numbered list item in this format:\n"
-                    "N. [SOURCE_TYPE] Description of what to collect\n\n"
-                    "Valid SOURCE_TYPE values: file_upload, web_scrape, api_feed, database, rss_feed\n"
-                    "Include 3-7 concrete, actionable sources."
-                )}],
-                system=system,
-                temperature=0.4,
-            )
-            plan_text = plan_result.content
-        except Exception as e:
-            logger.warning("Plan generation failed: %s", e)
-            plan_text = ""
+        # Step 3: Generate collection plan with sources (with retry for rate limits)
+        import asyncio
+        plan_text = ""
+        for attempt in range(3):
+            try:
+                if attempt > 0:
+                    await asyncio.sleep(2 ** attempt)  # 2s, 4s backoff
+                system = loader.get_system_prompt("collection_planning", include_foundation=True) or ""
+                plan_result = await provider.generate(
+                    messages=[{"role": "user", "content": (
+                        f"Create a collection plan for this PIR:\n\n{refined_pir}\n\n"
+                        "For each source, output a numbered list item in this format:\n"
+                        "N. [SOURCE_TYPE] Description of what to collect\n\n"
+                        "Valid SOURCE_TYPE values: file_upload, web_scrape, api_feed, database, rss_feed\n"
+                        "Include 3-7 concrete, actionable sources."
+                    )}],
+                    system=system,
+                    temperature=0.4,
+                )
+                plan_text = plan_result.content
+                break
+            except Exception as e:
+                logger.warning("Plan generation attempt %d failed: %s", attempt + 1, e)
+                if attempt == 2:
+                    logger.exception("Plan generation failed after 3 attempts: %s", e)
     else:
         plan_text = ""
 
@@ -425,12 +434,17 @@ async def execute_plan(
     db: AsyncSession = Depends(get_db),
     store: GraphStore = Depends(get_graph_store),
 ):
-    """Approve and execute a collection plan — activates and triggers acquisition.
+    """Approve and execute a collection plan — activates and triggers agentic acquisition.
 
-    For file_upload sources: marks as ready for upload.
-    For all sources: activates the plan and logs the execution start.
-    Entity extraction runs automatically on acquired data.
+    For file_upload sources: marks as awaiting_upload.
+    For automated sources: launches background agentic loop (resolve → acquire → evaluate).
+    Returns immediately — frontend polls activity log for progress.
     """
+    import asyncio
+    from intel_platform.collection.agentic import run_agentic_loop
+    from intel_platform.db.engine import get_session_factory
+    from intel_platform.api.routes.llm import _get_provider
+
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
         raise HTTPException(404, "Collection plan not found")
@@ -441,13 +455,44 @@ async def execute_plan(
     # Activate the plan
     plan.status = PlanStatus.ACTIVE
     plan.updated_at = datetime.now(timezone.utc)
+
+    sources = [s for s in (plan.sources or []) if s.enabled]
+
+    # Set initial status per source
+    for s in sources:
+        if s.source_type == "file_upload":
+            s.collection_status = "awaiting_upload"
+        else:
+            s.collection_status = "queued"
+
+    db.add(CollectionActivity(
+        plan_id=plan.id,
+        event="plan_started",
+        message=f"Plan activated with {len(sources)} sources",
+    ))
     await db.commit()
     await db.refresh(plan)
 
+    # Launch agentic loop in background for non-upload sources
+    non_upload = [s for s in sources if s.source_type != "file_upload"]
+    upload_sources = [s for s in sources if s.source_type == "file_upload"]
+
+    if non_upload:
+        asyncio.create_task(
+            run_agentic_loop(
+                plan_id=plan.id,
+                db_factory=get_session_factory(),
+                get_store=lambda: store,
+                get_provider=_get_provider,
+            )
+        )
+
     return {
         **_plan_to_dict(plan),
-        "execution_status": "activated",
-        "message": f"Plan activated with {len(plan.sources or [])} sources ready for acquisition.",
+        "execution_status": "started",
+        "background": bool(non_upload),
+        "sources_queued": len(non_upload),
+        "awaiting_upload": len(upload_sources),
     }
 
 
@@ -739,6 +784,38 @@ async def list_source_acquisitions(
     )
     result = await db.execute(stmt)
     return [_log_to_dict(log) for log in result.scalars().all()]
+
+
+# ---------------------------------------------------------------------------
+# Activity log
+# ---------------------------------------------------------------------------
+
+@router.get("/collection-plans/{plan_id}/activity")
+async def get_activity(plan_id: str, since: str | None = None, db: AsyncSession = Depends(get_db)):
+    """Get the activity log for a collection plan, optionally filtered by timestamp."""
+    stmt = (
+        select(CollectionActivity)
+        .where(CollectionActivity.plan_id == _parse_uuid(plan_id, "plan_id"))
+        .order_by(CollectionActivity.created_at.asc())
+    )
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since)
+            stmt = stmt.where(CollectionActivity.created_at > since_dt)
+        except ValueError:
+            pass
+    result = await db.execute(stmt)
+    return [
+        {
+            "id": str(a.id),
+            "plan_id": str(a.plan_id),
+            "source_id": str(a.source_id) if a.source_id else None,
+            "event": a.event,
+            "message": a.message,
+            "created_at": a.created_at.isoformat(),
+        }
+        for a in result.scalars().all()
+    ]
 
 
 # ---------------------------------------------------------------------------

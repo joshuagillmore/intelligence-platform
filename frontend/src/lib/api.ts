@@ -5,6 +5,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
 const api = axios.create({
   baseURL: `${API_BASE}/api`,
+  timeout: 300000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -166,10 +167,20 @@ export interface CollectionSourceEntry {
   last_success_at: string | null;
   last_failure_at: string | null;
   last_error: string;
+  collection_status: string;
   total_records_acquired: number;
   acquisition_count: number;
   next_run_at: string | null;
   created_at: string | null;
+}
+
+export interface CollectionActivityEntry {
+  id: string;
+  plan_id: string;
+  source_id: string | null;
+  event: string;
+  message: string;
+  created_at: string;
 }
 
 export interface AcquisitionLogEntry {
@@ -256,6 +267,10 @@ export const collectionPlansApi = {
   catalogPreview: (catalogId: string, offset?: number, limit?: number) =>
     api.get(`/data-catalog/${catalogId}/preview`, { params: { offset, limit } }),
 
+  // Activity log
+  activity: (planId: string, since?: string) =>
+    api.get<CollectionActivityEntry[]>(`/collection-plans/${planId}/activity`, { params: { since } }),
+
   // PIR-driven plan creation (unified flow)
   fromPir: (data: { project_id: string; pir: string; extraction_mode?: string; created_by?: string }) =>
     api.post<CollectionPlan & { llm_plan_text?: string }>('/collection-plans/from-pir', data),
@@ -330,6 +345,14 @@ export const adminApi = {
   listModels: () => api.get('/admin/llm/models'),
   selectModel: (provider: string, model: string) =>
     api.put('/admin/llm/select', { provider, model }),
+  // API Key management
+  listApiKeys: () => api.get('/admin/api-keys'),
+  addApiKey: (provider: string, label: string, apiKey: string) =>
+    api.post('/admin/api-keys', { provider, label, api_key: apiKey }),
+  activateApiKey: (keyId: string, provider: string) =>
+    api.put('/admin/api-keys/activate', { key_id: keyId, provider }),
+  deleteApiKey: (keyId: string) =>
+    api.delete(`/admin/api-keys/${keyId}`),
 };
 
 export const watchlistApi = {

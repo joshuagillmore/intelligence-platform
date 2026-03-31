@@ -37,8 +37,13 @@ async def get_db() -> AsyncSession:
 
 async def init_db():
     """Create all tables. Called once at startup."""
+    import logging
     from sqlalchemy import text
     from intel_platform.db.models import Base
+    logger = logging.getLogger(__name__)
     async with get_engine().begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        try:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        except Exception:
+            logger.warning("pgvector extension not available — vector search disabled")
         await conn.run_sync(Base.metadata.create_all)

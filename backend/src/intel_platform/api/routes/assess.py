@@ -68,7 +68,7 @@ async def generate_assessment(req: CreateAssessmentRequest, store: GraphStore = 
 
     # Get LLM provider (centralized selection respecting runtime overrides)
     from intel_platform.api.routes.llm import _get_provider
-    provider = _get_provider()
+    provider = await _get_provider()
 
     if not provider:
         return {"error": "No LLM provider configured", "entity_name": entity.get("name")}
