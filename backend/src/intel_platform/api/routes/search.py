@@ -1,5 +1,9 @@
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.db.engine import get_db
 from intel_platform.graph.store import GraphStore
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
@@ -36,3 +40,17 @@ def global_search(q: str, project_id: str, limit: int = 50, store: GraphStore = 
             categorized["entities"].append(entry)
 
     return categorized
+
+
+class SemanticSearchRequest(BaseModel):
+    project_id: str
+    query: str
+    limit: int = 20
+
+
+@router.post("/search/semantic")
+async def semantic_search(req: SemanticSearchRequest, session: AsyncSession = Depends(get_db)):
+    """Semantic similarity search across document chunks using vector embeddings."""
+    from intel_platform.services.vector_search import vector_search
+    results = await vector_search(req.query, req.project_id, session, limit=req.limit)
+    return {"results": results, "total": len(results)}

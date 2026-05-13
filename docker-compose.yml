@@ -15,6 +15,22 @@ services:
       timeout: 5s
       retries: 5
 
+  postgres:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: intel_platform
+      POSTGRES_USER: intel
+      POSTGRES_PASSWORD: changeme
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intel -d intel_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     ports:
@@ -24,6 +40,26 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
 
   backend:
     build:
@@ -35,7 +71,11 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
       redis:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
 
   frontend:
@@ -45,9 +85,11 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - BACKEND_URL=http://backend:8000
     depends_on:
       - backend
 
 volumes:
   neo4j_data:
+  postgres_data:
+  ollama_data:

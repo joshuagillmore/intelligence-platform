@@ -5,6 +5,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
 const api = axios.create({
   baseURL: `${API_BASE}/api`,
+  timeout: 300000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -134,6 +135,159 @@ export const collectionsApi = {
   count: (projectId: string) => api.get(`/collections/count/${projectId}`),
 };
 
+// Collection Plans — new managed pipeline
+export interface CollectionPlan {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string;
+  requirement: string;
+  pir: string;
+  refined_pir: string;
+  status: string;
+  routing_rules: Record<string, unknown>;
+  created_by: string;
+  assigned_to: string;
+  schedule_cron: string;
+  next_run_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  sources: CollectionSourceEntry[];
+  source_count: number;
+}
+
+export interface CollectionSourceEntry {
+  id: string;
+  plan_id: string;
+  name: string;
+  source_type: string;
+  config: Record<string, unknown>;
+  schedule_cron: string;
+  enabled: boolean;
+  last_success_at: string | null;
+  last_failure_at: string | null;
+  last_error: string;
+  collection_status: string;
+  total_records_acquired: number;
+  acquisition_count: number;
+  next_run_at: string | null;
+  created_at: string | null;
+}
+
+export interface CollectionActivityEntry {
+  id: string;
+  plan_id: string;
+  source_id: string | null;
+  event: string;
+  message: string;
+  created_at: string;
+}
+
+export interface AcquisitionLogEntry {
+  id: string;
+  source_id: string;
+  plan_id: string;
+  result: string;
+  record_count: number;
+  error_message: string;
+  source_type: string;
+  entities_created: number;
+  relationships_created: number;
+  document_id: string;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_ms: number;
+}
+
+export interface DataCatalogEntry {
+  id: string;
+  plan_id: string;
+  source_id: string;
+  name: string;
+  file_format: string;
+  original_filename: string;
+  file_size_bytes: number;
+  row_count: number;
+  column_count: number;
+  schema_info: Record<string, unknown>;
+  profiling: Record<string, unknown>;
+  preview_rows: Record<string, unknown>[];
+  ingested_at: string | null;
+}
+
+export const collectionPlansApi = {
+  // Plans
+  create: (data: { project_id: string; name: string; description?: string; requirement?: string; pir?: string; routing_rules?: object; created_by?: string }) =>
+    api.post<CollectionPlan>('/collection-plans', data),
+  list: (projectId?: string, status?: string) =>
+    api.get<CollectionPlan[]>('/collection-plans', { params: { project_id: projectId, status } }),
+  get: (id: string) => api.get<CollectionPlan>(`/collection-plans/${id}`),
+  update: (id: string, data: Partial<CollectionPlan>) =>
+    api.put<CollectionPlan>(`/collection-plans/${id}`, data),
+  delete: (id: string) => api.delete(`/collection-plans/${id}`),
+
+  // Status transitions
+  activate: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/activate`),
+  pause: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/pause`),
+  complete: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/complete`),
+  archive: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/archive`),
+
+  // Execution
+  executionStatus: (planId: string) =>
+    api.get(`/collection-plans/${planId}/execution-status`),
+
+  // Sources
+  addSource: (planId: string, data: { name: string; source_type: string; config?: object; schedule_cron?: string; enabled?: boolean }) =>
+    api.post<CollectionSourceEntry>(`/collection-plans/${planId}/sources`, data),
+  listSources: (planId: string) =>
+    api.get<CollectionSourceEntry[]>(`/collection-plans/${planId}/sources`),
+  updateSource: (planId: string, sourceId: string, data: Partial<CollectionSourceEntry>) =>
+    api.put<CollectionSourceEntry>(`/collection-plans/${planId}/sources/${sourceId}`, data),
+  deleteSource: (planId: string, sourceId: string) =>
+    api.delete(`/collection-plans/${planId}/sources/${sourceId}`),
+
+  // File upload through pipeline
+  uploadFile: (planId: string, sourceId: string, file: File, extractionMode?: string, reliabilityRating?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (extractionMode) formData.append('extraction_mode', extractionMode);
+    if (reliabilityRating) formData.append('reliability_rating', reliabilityRating);
+    return api.post(`/collection-plans/${planId}/sources/${sourceId}/upload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  // Acquisition log
+  acquisitions: (planId: string, limit?: number) =>
+    api.get<AcquisitionLogEntry[]>(`/collection-plans/${planId}/acquisitions`, { params: { limit } }),
+  sourceAcquisitions: (planId: string, sourceId: string, limit?: number) =>
+    api.get<AcquisitionLogEntry[]>(`/collection-plans/${planId}/sources/${sourceId}/acquisitions`, { params: { limit } }),
+
+  // Data catalog
+  catalog: (planId: string) =>
+    api.get<DataCatalogEntry[]>(`/collection-plans/${planId}/catalog`),
+  catalogEntry: (catalogId: string) =>
+    api.get<DataCatalogEntry>(`/data-catalog/${catalogId}`),
+  catalogPreview: (catalogId: string, offset?: number, limit?: number) =>
+    api.get(`/data-catalog/${catalogId}/preview`, { params: { offset, limit } }),
+
+  // Activity log
+  activity: (planId: string, since?: string) =>
+    api.get<CollectionActivityEntry[]>(`/collection-plans/${planId}/activity`, { params: { since } }),
+
+  // PIR-driven plan creation (unified flow)
+  fromPir: (data: { project_id: string; pir: string; extraction_mode?: string; created_by?: string }) =>
+    api.post<CollectionPlan & { llm_plan_text?: string }>('/collection-plans/from-pir', data),
+  execute: (planId: string) =>
+    api.post<CollectionPlan & { execution_status: string; message: string }>(`/collection-plans/${planId}/execute`),
+
+  // Dashboard
+  dashboard: (projectId: string) => api.get('/collection-dashboard', { params: { project_id: projectId } }),
+
+  // Connector types
+  connectorTypes: () => api.get('/connector-types'),
+};
+
 export const assessApi = {
   assess: (entityId: string, projectId: string, judgment: string, probability: number) =>
     api.post(`/entities/${entityId}/assess`, { entity_id: entityId, project_id: projectId, judgment, probability }),
@@ -146,9 +300,22 @@ export const assessApi = {
 };
 
 export const topicsApi = {
-  tree: (projectId: string) => api.get('/topics', { params: { project_id: projectId } }),
+  tree: (projectId: string, method?: string, granularity?: string) =>
+    api.get('/topics', { params: { project_id: projectId, method, granularity } }),
   context: (entityId: string, projectId: string) => api.get(`/topics/${entityId}`, { params: { project_id: projectId } }),
   summarizeUrl: (entityId: string) => `${API_BASE}/api/topics/${entityId}/summarize`,
+
+  // Node editing
+  updateNode: (nodeId: string, data: { project_id: string; name?: string; description?: string; parent_id?: string }) =>
+    api.put(`/topics/${nodeId}`, data),
+  addChild: (nodeId: string, data: { project_id: string; name: string; description?: string }) =>
+    api.post(`/topics/${nodeId}/children`, data),
+  deleteNode: (nodeId: string, projectId: string) =>
+    api.delete(`/topics/${nodeId}`, { params: { project_id: projectId } }),
+
+  // Export
+  exportMindmap: (projectId: string, format: string = 'json') =>
+    api.get('/export/mindmap', { params: { project_id: projectId, format } }),
 };
 
 export const reportsApi = {
@@ -195,6 +362,14 @@ export const adminApi = {
   listModels: () => api.get('/admin/llm/models'),
   selectModel: (provider: string, model: string) =>
     api.put('/admin/llm/select', { provider, model }),
+  // API Key management
+  listApiKeys: () => api.get('/admin/api-keys'),
+  addApiKey: (provider: string, label: string, apiKey: string) =>
+    api.post('/admin/api-keys', { provider, label, api_key: apiKey }),
+  activateApiKey: (keyId: string, provider: string) =>
+    api.put('/admin/api-keys/activate', { key_id: keyId, provider }),
+  deleteApiKey: (keyId: string) =>
+    api.delete(`/admin/api-keys/${keyId}`),
 };
 
 export const watchlistApi = {
