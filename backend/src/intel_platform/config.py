@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = ""
 
+    # PostgreSQL
+    postgres_url: str = "postgresql+asyncpg://intel:changeme@localhost:5432/intel_platform"
+
     # API
     api_key: str = "dev-api-key-change-in-production"
     api_host: str = "0.0.0.0"
@@ -30,6 +33,13 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     default_llm_provider: str = "anthropic"
     default_llm_model: str = ""
+
+    # Embeddings
+    embedding_provider: str = "openai"  # openai | cohere | ollama
+    embedding_model: str = ""  # provider-specific default if empty
+    embedding_dimensions: int = 1536
+    vector_search_limit: int = 20
+    hybrid_graph_weight: float = 0.4  # weight for graph results in hybrid scoring
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

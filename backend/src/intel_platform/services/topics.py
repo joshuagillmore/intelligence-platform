@@ -4,6 +4,7 @@ import time
 from collections import defaultdict
 import networkx as nx
 from intel_platform.graph.store import GraphStore
+from intel_platform.models.entities import SYSTEM_ENTITY_TYPES
 from intel_platform.services.document_clustering import cluster_documents
 from intel_platform.services.text_utils import extract_relevant_passages, count_keyword_matches
 
@@ -19,13 +20,13 @@ class TopicTreeService:
     def __init__(self, store: GraphStore):
         self._store = store
 
-    async def build_topic_tree(self, project_id: str) -> dict:
+    async def build_topic_tree(self, project_id: str, method: str = "tfidf", granularity: str = "medium") -> dict:
         """Build a deep hierarchical topic tree using graph community structure."""
         entities = self._store.search_entities(project_id=project_id, limit=10000)
         graph_data = self._store.get_full_graph(project_id=project_id, limit=10000)
 
         documents = [e for e in entities if e.get("entity_type") == "Document"]
-        non_docs = [e for e in entities if e.get("entity_type") != "Document"]
+        non_docs = [e for e in entities if e.get("entity_type") not in SYSTEM_ENTITY_TYPES]
         entity_map = {e.get("id", ""): e for e in non_docs}
 
         # Build NetworkX graph for community detection
@@ -47,30 +48,31 @@ class TopicTreeService:
 
         # Topics (document content clustering)
         full_docs = self._store.search_entities(project_id=project_id, entity_type="Document", limit=500)
-        topic_branch = await self._build_topic_branch(full_docs, project_id)
+        topic_branch = await self._build_topic_branch(full_docs, project_id, method=method, granularity=granularity)
         if topic_branch and topic_branch.get("children"):
             tree["children"].extend(topic_branch.get("children", []))
 
-        # Entity-based branches — give the mind map more traversable nodes
+        # Entity-based branches — only shown when enough content entities exist
+        MIN_ENTITY_BRANCH_SIZE = 3
         if non_docs:
             # Thematic clusters via community detection on the entity graph
             theme_branch = self._build_theme_branch(G, entity_map, non_docs)
-            if theme_branch.get("children"):
+            if theme_branch.get("children") and theme_branch.get("count", 0) >= MIN_ENTITY_BRANCH_SIZE:
                 tree["children"].append(theme_branch)
 
             # Entities grouped by type (Person, Organization, Location, etc.)
             type_branch = self._build_type_branch(non_docs)
-            if type_branch.get("children"):
+            if type_branch.get("children") and type_branch.get("count", 0) >= MIN_ENTITY_BRANCH_SIZE:
                 tree["children"].append(type_branch)
 
             # Geographic regions
             geo_branch = self._build_geo_branch(non_docs)
-            if geo_branch.get("children"):
+            if geo_branch.get("children") and geo_branch.get("count", 0) >= MIN_ENTITY_BRANCH_SIZE:
                 tree["children"].append(geo_branch)
 
             # Key actors and organizations
             actor_branch = self._build_actor_branch(non_docs, G)
-            if actor_branch.get("children"):
+            if actor_branch.get("children") and actor_branch.get("count", 0) >= MIN_ENTITY_BRANCH_SIZE:
                 tree["children"].append(actor_branch)
 
         # Detect cross-cutting themes: documents appearing in multiple topic clusters
@@ -108,7 +110,7 @@ class TopicTreeService:
 
         return cross_refs
 
-    async def _build_topic_branch(self, documents: list, project_id: str) -> dict | None:
+    async def _build_topic_branch(self, documents: list, project_id: str, method: str = "tfidf", granularity: str = "medium") -> dict | None:
         """Cluster documents by content and return a Topics branch node."""
         global _cluster_doc_map, _cluster_keywords
 
@@ -126,7 +128,11 @@ class TopicTreeService:
         if not doc_pairs:
             return None
 
-        tree_node, doc_map, kw_map = cluster_documents(doc_pairs, project_id)
+        if method == "semantic":
+            from intel_platform.services.document_clustering import cluster_semantic
+            tree_node, doc_map, kw_map = await cluster_semantic(doc_pairs, project_id, granularity=granularity)
+        else:
+            tree_node, doc_map, kw_map = cluster_documents(doc_pairs, project_id)
         if tree_node is None:
             return None
 
@@ -487,7 +493,7 @@ class TopicTreeService:
 
         # Build provider (centralized selection respecting runtime overrides)
         from intel_platform.api.routes.llm import _get_provider
-        provider = _get_provider()
+        provider = await _get_provider()
 
         if not provider:
             yield "data: No LLM provider configured.\n\n"

@@ -30,6 +30,14 @@ dependencies = [
     "bcrypt~=4.0",
     "crawl4ai~=0.8.6",
     "ddgs~=9.0",
+    "sqlalchemy[asyncio]~=2.0",
+    "asyncpg~=0.30",
+    "alembic~=1.13",
+    "openpyxl~=3.1",
+    "python-dateutil~=2.9",
+    "chardet~=5.2",
+    "pgvector~=0.3",
+    "feedparser~=6.0",
 ]
 
 [project.optional-dependencies]
