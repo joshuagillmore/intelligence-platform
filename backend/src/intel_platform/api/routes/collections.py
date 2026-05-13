@@ -1,15 +1,20 @@
+import asyncio
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.collection.runner import CollectionRunner
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.collection_planner import parse_collection_plan
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
+
+logger = logging.getLogger(__name__)
 
 
 class CreateCollectionRequest(BaseModel):
@@ -165,6 +170,67 @@ def parse_plan(data: dict):
     plan_text = data.get("plan_text", "")
     items = parse_collection_plan(plan_text)
     return {"items": items, "count": len(items)}
+
+
+@router.post("/collections/{task_id}/execute", status_code=202)
+async def execute_collection(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+    extraction_mode: str = "nlp",
+    store: GraphStore = Depends(get_graph_store),
+):
+    """Execute an approved collection plan: search -> crawl -> ingest -> extract."""
+    coll = get_collection(task_id, store)
+    if coll["status"] in ("STARTED", "PROGRESS"):
+        raise HTTPException(status_code=409, detail="Collection is already running")
+
+    plan = coll.get("plan", [])
+    if not any(item.get("approved") for item in plan):
+        raise HTTPException(status_code=400, detail="No approved plan items to execute")
+
+    async def _run():
+        try:
+            runner = CollectionRunner(store)
+            await runner.execute(
+                collection_id=task_id,
+                project_id=coll["project_id"],
+                plan=plan,
+                extraction_mode=extraction_mode,
+            )
+        except Exception:
+            logger.exception("Collection execution failed: %s", task_id)
+            now = datetime.now(timezone.utc).isoformat()
+            with store._driver.session() as session:
+                session.run(
+                    "MATCH (c:Collection {id: $id}) SET c.status = 'FAILURE', c.updated_at = $now",
+                    id=task_id, now=now,
+                )
+
+    background_tasks.add_task(_run)
+
+    return {"collection_id": task_id, "status": "STARTED"}
+
+
+@router.get("/collections/{task_id}/progress")
+def get_collection_progress(task_id: str, store: GraphStore = Depends(get_graph_store)):
+    """Get detailed collection execution progress."""
+    coll = get_collection(task_id, store)
+    # Count documents linked to this collection
+    with store._driver.session() as session:
+        result = session.run(
+            "MATCH (d:Document {source_doc_id: $cid, project_id: $pid}) RETURN count(d) as cnt",
+            cid=task_id, pid=coll["project_id"],
+        )
+        record = result.single()
+        doc_count = record["cnt"] if record else 0
+
+    return {
+        "collection_id": task_id,
+        "status": coll.get("status", "PENDING"),
+        "progress": coll.get("progress", 0),
+        "documents_acquired": coll.get("documents_acquired", 0),
+        "documents_in_graph": doc_count,
+    }
 
 
 @router.get("/collections")
