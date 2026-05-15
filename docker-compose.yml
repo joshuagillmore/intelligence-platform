@@ -2,8 +2,8 @@ services:
   neo4j:
     image: neo4j:5-community
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
     environment:
       NEO4J_AUTH: neo4j/changeme
       NEO4J_PLUGINS: '["apoc"]'
@@ -18,7 +18,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: intel_platform
       POSTGRES_USER: intel
@@ -34,9 +34,10 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
+    command: redis-server --requirepass changeme
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "changeme", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,7 +45,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     deploy:
