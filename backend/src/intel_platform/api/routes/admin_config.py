@@ -3,12 +3,13 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select, update
 
-from intel_platform.api.deps import verify_api_key
+from intel_platform.api.deps import require_admin, verify_api_key
 from intel_platform.config import settings
+from intel_platform.crypto import decrypt, encrypt
 from intel_platform.db.engine import get_session_factory
 from intel_platform.db.models import ApiKey
 
-router = APIRouter(dependencies=[Depends(verify_api_key)])
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +84,7 @@ async def get_active_api_key(provider: str) -> str | None:
             )
         )
         row = result.scalar_one_or_none()
-        return row
+        return decrypt(row) if row else None
 
 
 async def _provider_has_key(provider: str) -> bool:
@@ -150,7 +151,7 @@ async def list_api_keys():
                     "id": str(k.id),
                     "provider": k.provider,
                     "label": k.label,
-                    "key_preview": _mask_key(k.api_key),
+                    "key_preview": _mask_key(decrypt(k.api_key)),
                     "is_active": k.is_active,
                     "created_at": k.created_at.isoformat() if k.created_at else None,
                 }
@@ -176,7 +177,7 @@ async def add_api_key(req: ApiKeyCreateRequest):
         new_key = ApiKey(
             provider=req.provider,
             label=req.label,
-            api_key=req.api_key,
+            api_key=encrypt(req.api_key),
             is_active=is_active,
         )
         session.add(new_key)
@@ -187,7 +188,7 @@ async def add_api_key(req: ApiKeyCreateRequest):
             "id": str(new_key.id),
             "provider": new_key.provider,
             "label": new_key.label,
-            "key_preview": _mask_key(new_key.api_key),
+            "key_preview": _mask_key(req.api_key),
             "is_active": new_key.is_active,
             "status": "ok",
         }

@@ -5,7 +5,7 @@ from neo4j import Driver, GraphDatabase
 
 from intel_platform.config import settings
 from intel_platform.graph.store import GraphStore
-from intel_platform.api.auth import get_current_user
+from intel_platform.api.auth import get_current_user, require_admin
 
 _driver: Driver | None = None
 
