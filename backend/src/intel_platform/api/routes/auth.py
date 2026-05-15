@@ -1,6 +1,15 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from intel_platform.api.auth import authenticate_user, create_access_token, register_user
+from intel_platform.api.auth import (
+    authenticate_user,
+    check_login_rate_limit,
+    clear_failed_logins,
+    create_access_token,
+    get_current_user,
+    record_failed_login,
+    register_user,
+    require_admin,
+)
 
 router = APIRouter()
 
@@ -11,7 +20,6 @@ class LoginRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    # SECURITY: constrain registration inputs to prevent abuse
     username: str
     password: str
     role: str = "analyst"
@@ -33,10 +41,16 @@ class TokenResponse(BaseModel):
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    check_login_rate_limit(client_ip)
+
     user = authenticate_user(req.username, req.password)
     if not user:
+        record_failed_login(client_ip)
         raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    clear_failed_logins(client_ip)
     token = create_access_token(user["username"], user["role"])
     return TokenResponse(
         access_token=token,
@@ -46,7 +60,8 @@ def login(req: LoginRequest):
 
 
 @router.post("/auth/register", response_model=TokenResponse)
-def register(req: RegisterRequest):
+def register(req: RegisterRequest, admin: dict = Depends(require_admin)):
+    """Create a new user. Requires admin authentication."""
     user = register_user(req.username, req.password, req.role)
     token = create_access_token(user["username"], user["role"])
     return TokenResponse(

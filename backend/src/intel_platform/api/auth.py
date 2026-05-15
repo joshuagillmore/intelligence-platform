@@ -1,8 +1,10 @@
 from __future__ import annotations
 import logging
 import os
+import time
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 import bcrypt
@@ -19,6 +21,33 @@ ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
 
 security = HTTPBearer(auto_error=False)
+
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_LOCKOUT_SECONDS = 300
+_failed_logins: dict[str, list[float]] = defaultdict(list)
+
+
+def check_login_rate_limit(client_ip: str) -> None:
+    """Block login attempts after too many failures from the same IP."""
+    now = time.time()
+    # Prune old entries
+    _failed_logins[client_ip] = [
+        t for t in _failed_logins[client_ip]
+        if now - t < LOGIN_LOCKOUT_SECONDS
+    ]
+    if len(_failed_logins[client_ip]) >= MAX_LOGIN_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed login attempts. Try again later.",
+        )
+
+
+def record_failed_login(client_ip: str) -> None:
+    _failed_logins[client_ip].append(time.time())
+
+
+def clear_failed_logins(client_ip: str) -> None:
+    _failed_logins.pop(client_ip, None)
 
 
 def _hash_password(password: str) -> str:
@@ -90,6 +119,13 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    """Dependency that requires the authenticated user to have admin role."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
 
 
 def register_user(username: str, password: str, role: str = "analyst") -> dict:
