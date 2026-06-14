@@ -36,7 +36,10 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db():
-    """Create all tables. Called once at startup."""
+    """Create all tables. Called once at startup. Also runs idempotent schema patches
+    for columns the model has but the deployed table may not (since create_all never
+    ALTERs existing tables and we have no Alembic migrations).
+    """
     import logging
     from sqlalchemy import text
     from intel_platform.db.models import Base
@@ -47,3 +50,20 @@ async def init_db():
         except Exception:
             logger.warning("pgvector extension not available — vector search disabled")
         await conn.run_sync(Base.metadata.create_all)
+
+        # Idempotent ADD COLUMN IF NOT EXISTS patches for known drift on
+        # agentic collection tables (fields added after their initial create_all).
+        patches = [
+            "ALTER TABLE collection_sources ADD COLUMN IF NOT EXISTS collection_status VARCHAR(32) DEFAULT 'queued' NOT NULL",
+            "ALTER TABLE collection_sources ADD COLUMN IF NOT EXISTS last_success_at TIMESTAMP WITH TIME ZONE",
+            "ALTER TABLE collection_sources ADD COLUMN IF NOT EXISTS last_failure_at TIMESTAMP WITH TIME ZONE",
+            "ALTER TABLE collection_sources ADD COLUMN IF NOT EXISTS last_error TEXT DEFAULT '' NOT NULL",
+            "ALTER TABLE collection_sources ADD COLUMN IF NOT EXISTS total_records_acquired INTEGER DEFAULT 0 NOT NULL",
+            "ALTER TABLE collection_sources ADD COLUMN IF NOT EXISTS acquisition_count INTEGER DEFAULT 0 NOT NULL",
+            "ALTER TABLE collection_sources ADD COLUMN IF NOT EXISTS next_run_at TIMESTAMP WITH TIME ZONE",
+        ]
+        for sql in patches:
+            try:
+                await conn.execute(text(sql))
+            except Exception as e:
+                logger.warning("Schema patch skipped (%s): %s", sql[:70], e)

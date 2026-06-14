@@ -2,26 +2,141 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --ink: #0f1216;
+  --ink-soft: #1a1e24;
+  --ink-muted: #2b313a;
+  --paper: #f4f1ea;
+  --paper-2: #ebe6dc;
+  --paper-3: #e0dacc;
+  --line: #d3ccbc;
+  --line-soft: #e7e1d3;
+  --fg: #13161b;
+  --fg-2: #3a3f48;
+  --fg-3: #6b7280;
+  --fg-4: #8e8b82;
+
+  --signal: oklch(0.76 0.15 70);
+  --signal-ink: oklch(0.45 0.14 65);
+  --signal-soft: oklch(0.92 0.05 80);
+  --live: oklch(0.72 0.17 150);
+  --warn: oklch(0.64 0.18 25);
+  --cite: oklch(0.58 0.11 230);
+  --violet: oklch(0.55 0.13 295);
+
+  --sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --serif: 'IBM Plex Serif', 'Times New Roman', serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.dark {
+  --ink: #f2efe7;
+  --ink-soft: #e0dcd0;
+  --ink-muted: #b9b5a8;
+  --paper: #13161b;
+  --paper-2: #1a1e24;
+  --paper-3: #22272f;
+  --line: #2b313a;
+  --line-soft: #1f242c;
+  --fg: #f2efe7;
+  --fg-2: #c9c5b9;
+  --fg-3: #8a8778;
+  --fg-4: #5a584f;
+  --signal-ink: oklch(0.82 0.13 75);
+  --signal-soft: oklch(0.32 0.08 75);
+  --cite: oklch(0.72 0.11 230);
+  --violet: oklch(0.72 0.13 295);
+}
+
+* { box-sizing: border-box; }
 
 body {
+  font-family: var(--sans);
+  background: var(--paper);
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   min-height: 100vh;
+  margin: 0;
+  padding: 0;
 }
 
-.material-symbols-outlined {
-  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-  vertical-align: middle;
-  font-size: 1.25rem;
-  line-height: 1;
+html, body, #__next { height: 100%; overflow: hidden; }
+
+/* Sentinel redesign migration overrides.
+   Existing pages used `pl-56` to compensate for the old 224px fixed Sidebar.
+   The new SentinelShell uses flex layout, so this padding is unwanted. */
+.pl-56 { padding-left: 0 !important; }
+@media (min-width: 768px) {
+  .md\:pl-56 { padding-left: 0 !important; }
 }
 
-::-webkit-scrollbar {
-  width: 8px;
+button { font-family: inherit; font-size: inherit; color: inherit; cursor: pointer; background: none; border: none; padding: 0; }
+input, textarea, select { font-family: inherit; font-size: inherit; color: inherit; }
+::selection { background: var(--signal); color: var(--ink); }
+
+.mono { font-family: var(--mono); }
+.serif { font-family: var(--serif); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; border: 2px solid var(--paper); }
+::-webkit-scrollbar-thumb:hover { background: var(--fg-4); }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
-::-webkit-scrollbar-track {
-  background: #1a1f2e;
+@keyframes slide-up {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
-::-webkit-scrollbar-thumb {
-  background: #313849;
-  border-radius: 4px;
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes scan {
+  0% { transform: translateY(-8px); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateY(calc(100% + 8px)); opacity: 0; }
+}
+@keyframes draw {
+  from { stroke-dashoffset: var(--len); }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes caret-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+@keyframes slide-in {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ===========================================================================
+ * Sentinel responsive: desktop chrome (Header/Rail/Footer) vs mobile shell
+ * (top app header + bottom tab bar + bottom-sheet overlays).
+ * Breakpoint: ≤ 767px = mobile.
+ * =========================================================================== */
+.sentinel-desktop-only { display: block; }
+.sentinel-mobile-only  { display: none;  }
+
+@media (max-width: 767px) {
+  .sentinel-desktop-only { display: none !important; }
+  .sentinel-mobile-only  { display: block !important; }
+  /* Leave room for the fixed bottom tab bar */
+  .sentinel-main { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
 }

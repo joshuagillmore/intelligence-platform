@@ -390,7 +390,55 @@ async def resolve_sources(plan, sources, db, provider):
 # Phase 2: ACQUIRE — fetch content and run through ingestion pipeline
 # ---------------------------------------------------------------------------
 
-async def acquire_source(source, plan, db, store, extraction_mode="nlp"):
+async def _acquire_urls_concurrent(connector, config, urls, *, db, plan, source, concurrency):
+    """Fetch multiple URLs through a connector with bounded concurrency.
+
+    Network fetches run concurrently (Semaphore-gated); the shared AsyncSession is
+    guarded by a lock because it is not safe for concurrent use. Emits per-URL
+    telemetry (url_fetching / url_fetched / url_failed) for the Trace view.
+    Returns (all_records, errors).
+    """
+    sem = asyncio.Semaphore(max(1, concurrency))
+    db_lock = asyncio.Lock()
+    all_records: list = []
+    errors: list[str] = []
+
+    async def fetch_one(url: str):
+        async with db_lock:
+            db.add(CollectionActivity(
+                plan_id=plan.id, source_id=source.id,
+                event="url_fetching", message=url[:480],
+            ))
+            await db.commit()
+        async with sem:
+            single_config = {**config, "url": url}
+            try:
+                r = await connector.acquire(single_config)
+                recs = r.records or []
+                words = sum(len((rec.get("content", "") or "").split()) for rec in recs)
+                async with db_lock:
+                    all_records.extend(recs)
+                    db.add(CollectionActivity(
+                        plan_id=plan.id, source_id=source.id,
+                        event="url_fetched",
+                        message=f"{url} · {len(recs)} rec · {words}w"[:480],
+                    ))
+                    await db.commit()
+            except Exception as e:
+                async with db_lock:
+                    errors.append(f"{url}: {e}")
+                    db.add(CollectionActivity(
+                        plan_id=plan.id, source_id=source.id,
+                        event="url_failed",
+                        message=f"{url}: {str(e)[:200]}"[:480],
+                    ))
+                    await db.commit()
+
+    await asyncio.gather(*[fetch_one(u) for u in urls[:10]], return_exceptions=True)
+    return all_records, errors
+
+
+async def acquire_source(source, plan, db, store, extraction_mode="nlp", provider=None):
     """Fetch content from a source and run it through the ingestion pipeline.
 
     Returns dict with record_count, entities_created, relationships_created.
@@ -401,19 +449,14 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp"):
     config = source.config or {}
 
     # Handle multi-URL for web_scrape/database: upstream connector takes single "url",
-    # but agentic resolve generates "urls" list. Acquire each URL separately.
+    # but agentic resolve generates "urls" list. Fetch them with bounded concurrency.
     if source.source_type in ("web_scrape", "database") and "urls" in config and isinstance(config["urls"], list):
         from intel_platform.connectors.base import AcquireResult as AR
-        all_records = []
-        errors = []
-        for url in config["urls"][:10]:
-            single_config = {**config, "url": url}
-            try:
-                r = await connector.acquire(single_config)
-                all_records.extend(r.records)
-            except Exception as e:
-                errors.append(f"{url}: {e}")
-            await asyncio.sleep(1)  # Rate limit
+        concurrency = getattr(settings, "collection_crawl_concurrency", 4)
+        all_records, errors = await _acquire_urls_concurrent(
+            connector, config, config["urls"],
+            db=db, plan=plan, source=source, concurrency=concurrency,
+        )
         result = AR(
             success=len(all_records) > 0,
             record_count=len(all_records),
@@ -444,12 +487,24 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp"):
         title = record.get("title", "")
         url = record.get("url", "")
 
+        # Per-document structured summary (non-fatal): summary/key_facts/sentiment/topics.
+        summary_json = ""
+        if provider is not None:
+            try:
+                from intel_platform.services.summarization import summarize_document
+                summary = await summarize_document(content, provider)
+                if summary:
+                    summary_json = json.dumps(summary)
+            except Exception as e:
+                logger.debug("Summarization failed for %s: %s", url or title, e)
+
         # Store as Document in Neo4j
         doc = Document(
             name=f"[Collection] {title or url or source.name}"[:256],
             content=content[:50000],  # Cap at 50k chars per doc
             reliability_rating="C3",
             project_id=plan.project_id,
+            summary_json=summary_json,
         )
         store.create_entity(doc)
 
@@ -609,7 +664,7 @@ async def run_agentic_loop(plan_id, db_factory, get_store, get_provider):
             await db.commit()
 
             try:
-                acquire_result = await acquire_source(source, plan, db, store, extraction_mode)
+                acquire_result = await acquire_source(source, plan, db, store, extraction_mode, provider=provider)
 
                 ent_count = acquire_result.get("entities_created", 0)
                 rel_count = acquire_result.get("relationships_created", 0)
@@ -653,7 +708,7 @@ async def run_agentic_loop(plan_id, db_factory, get_store, get_provider):
                         source.config = {**source.config, "urls": new_urls, "max_pages": len(new_urls)}
                         await db.commit()
 
-                        followup_result = await acquire_source(source, plan, db, store, extraction_mode)
+                        followup_result = await acquire_source(source, plan, db, store, extraction_mode, provider=provider)
                         fu_ent = followup_result.get("entities_created", 0)
                         fu_rel = followup_result.get("relationships_created", 0)
 

@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     chunk_size: int = 2000
     chunk_overlap: int = 50
 
+    # Collection / agentic crawl
+    collection_crawl_concurrency: int = 4  # max concurrent URL fetches per source
+
     # LLM providers
     anthropic_api_key: str = ""
     openai_api_key: str = ""

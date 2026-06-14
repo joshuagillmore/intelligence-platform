@@ -25,6 +25,13 @@ COPY backend/src/ src/
 RUN uv sync --no-dev
 RUN uv pip install --python .venv/bin/python https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 
+# Install Chromium + its OS-level dependencies for crawl4ai's headless browser.
+# Runs as root (no unprivileged USER), so apt-based install-deps works. crawl4ai-setup
+# alone can silently skip the actual browser binary download, so install explicitly.
+RUN uv run playwright install-deps chromium \
+    && uv run playwright install chromium \
+    && uv run crawl4ai-setup
+
 # Copy frontend standalone build
 COPY --from=frontend-build /app/frontend/.next/standalone /app/frontend-server
 COPY --from=frontend-build /app/frontend/.next/static /app/frontend-server/.next/static

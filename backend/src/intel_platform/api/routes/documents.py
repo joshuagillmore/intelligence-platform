@@ -78,14 +78,26 @@ def get_document(doc_id: str, store: GraphStore = Depends(get_graph_store)):
 
     highlights.sort(key=lambda x: x["start"])
 
+    # Parse per-doc summary (stored as JSON string by the agentic collection loop).
+    summary = None
+    summary_json = doc.get("summary_json", "") or ""
+    if summary_json:
+        try:
+            import json as _json
+            summary = _json.loads(summary_json)
+        except Exception:
+            summary = None
+
     return {
         "id": doc.get("id"),
         "name": doc.get("name"),
+        "url": doc.get("url", ""),
         "reliability_rating": doc.get("reliability_rating", ""),
         "content": content,
         "entities": entities,
         "highlights": highlights,
         "entity_count": len(entities),
+        "summary": summary,  # {summary, key_facts, topics, sentiment} or null
     }
 
 

@@ -167,6 +167,7 @@ class Document(Entity):
     url: str = ""
     content: str = ""
     reliability_rating: str = ""
+    summary_json: str = ""  # per-doc structured summary (summary/key_facts/sentiment/topics)
 
 
 class Topic(Entity):
