@@ -13,3 +13,7 @@ neo4j_data/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Claude Code personal layer (per-machine, not shared)
+CLAUDE.local.md
+.claude/settings.local.json

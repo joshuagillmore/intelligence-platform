@@ -104,17 +104,15 @@ docker compose up            # neo4j:7474/7687 · postgres:5432 · redis:6379
 
 ## Known issues / watch-outs
 
-From `CODE_REVIEW_REPORT.md` (2026-03-22) — most critical/high are fixed; these
-remain live:
-
-- **`admin/admin` default credentials** — dev convenience; must be changed for
-  any real deployment.
-- **In-memory state** in `watchlist` and `snapshots` routes is lost on restart
-  (not yet persisted).
-- **SSRF surface** in the collection scraper — URL scheme/host validation exists;
-  keep it when touching `collection/scraper.py`.
-- **Neo4j / IPv6 on Railway** — connection binding has bitten deploys before;
-  verify the bolt URI/host when changing DB config or deploy settings.
+- **Auth:** ships with default development credentials — any real deployment
+  must set strong, non-default admin credentials and a real `JWT_SECRET` (never
+  the `.env.example` placeholder).
+- **In-memory state** in the `watchlist` and `snapshots` routes is lost on
+  restart (not yet persisted).
+- **Collection scraper** validates URL scheme/host before fetching — preserve
+  that validation when editing `collection/scraper.py`.
+- **Neo4j on Railway** — connection binding (IPv6) has bitten deploys before;
+  verify the bolt URI/host when changing DB or deploy config.
 
 ## Don't
 

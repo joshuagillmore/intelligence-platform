@@ -1,5 +1,8 @@
 {
   "$comment": "Shared project permissions for the Intelligence Platform. Committed so local AND Claude Code online agents inherit the same allowlist. Machine-specific overrides go in settings.local.json (gitignored).",
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "permissions": {
     "allow": [
       "Bash(uv run:*)",
