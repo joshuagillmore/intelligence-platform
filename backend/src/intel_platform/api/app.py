@@ -9,6 +9,7 @@ from intel_platform.api.middleware import RateLimitMiddleware, RequestLoggingMid
 
 from intel_platform.api.deps import get_neo4j_driver
 from intel_platform.api.routes import health, projects, ingest, entities, graph, llm, collections, query, assess, topics, reports, geo, timeline, notebook, search, export, watchlist, admin_config, personas, documents, snapshots, auth, collection_plans
+from intel_platform.config import settings
 from intel_platform.graph.schema import initialize_schema
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ app.add_middleware(
 )
 
 app.add_middleware(RequestLoggingMiddleware)
-app.add_middleware(RateLimitMiddleware, requests_per_minute=120)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.rate_limit_per_minute)
 app.add_middleware(SecurityHeadersMiddleware)
 
 # Mount MCP server

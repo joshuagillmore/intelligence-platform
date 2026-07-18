@@ -215,9 +215,13 @@ export default function DataSourcesPage() {
     setSummary(null);
     try {
       const url = topicsApi.summarizeUrl(nodeId);
+      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ project_id: activeProject.id, level: 'topic' }),
       });
 
@@ -352,15 +356,19 @@ export default function DataSourcesPage() {
     el?.__zoomReset?.();
   }, []);
 
+  const [treeCollapsed, setTreeCollapsed] = useState(false);
+  const collapseTree = (node: TreeNode, depth: number): TreeNode =>
+    depth <= 0
+      ? { ...node, children: [] }
+      : { ...node, children: (node.children || []).map((c) => collapseTree(c, depth - 1)) };
+
   const handleExpandAll = useCallback(() => {
-    // Re-render tree without collapsing
-    loadTopics();
-  }, [loadTopics]);
+    setTreeCollapsed(false);
+  }, []);
 
   const handleCollapseAll = useCallback(() => {
-    // Re-render tree (collapsed by default)
-    loadTopics();
-  }, [loadTopics]);
+    setTreeCollapsed(true);
+  }, []);
 
   const handleBreadcrumbClick = useCallback((item: { id: string; name: string }) => {
     handleTopicClick({ id: item.id, name: item.name } as TreeNode);
@@ -478,7 +486,7 @@ export default function DataSourcesPage() {
               </div>
             ) : topicTree.children && topicTree.children.length > 0 ? (
               <TopicMindMap
-                data={topicTree}
+                data={treeCollapsed ? collapseTree(topicTree, 1) : topicTree}
                 onNodeClick={handleTopicClick}
                 selectedNodeId={selectedNodeId}
                 layout={layout}

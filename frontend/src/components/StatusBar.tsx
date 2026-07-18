@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useProject } from '@/lib/ProjectContext';
+import { healthApi } from '@/lib/api';
 
 export default function StatusBar() {
   const { activeProject } = useProject();
@@ -10,11 +11,9 @@ export default function StatusBar() {
   useEffect(() => {
     const check = async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/health`);
-        setConnected(res.ok);
-        if (res.ok) {
-          setLastAction(`Last check: ${new Date().toLocaleTimeString()}`);
-        }
+        await healthApi.check();
+        setConnected(true);
+        setLastAction(`Last check: ${new Date().toLocaleTimeString()}`);
       } catch {
         setConnected(false);
       }

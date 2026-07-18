@@ -283,6 +283,7 @@ async def list_available_models():
         ("openai", "gpt-4o"),
         ("openai", "gpt-4o-mini"),
         ("openai", "o3-mini"),
+        ("cohere", "command-a-plus-05-2026"),
         ("cohere", "command-a-03-2025"),
         ("cohere", "command-r-plus"),
         ("cohere", "command-r"),

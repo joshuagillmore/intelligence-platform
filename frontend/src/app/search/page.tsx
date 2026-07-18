@@ -72,7 +72,7 @@ function SearchPageContent() {
     if (entry.entity_type === 'Report') {
       router.push(`/products`);
     } else {
-      router.push(`/network?entity=${entry.id}`);
+      router.push(`/network?select=${entry.id}`);
     }
   }
 
@@ -152,7 +152,7 @@ function SearchPageContent() {
                   {results.documents.map((d) => (
                     <button
                       key={d.id}
-                      onClick={() => navigateTo(d)}
+                      onClick={() => router.push(`/documents/${d.id}`)}
                       className="w-full text-left p-3 bg-navy-700 hover:bg-navy-600 rounded transition-colors"
                     >
                       <div className="flex items-center gap-3 mb-1">

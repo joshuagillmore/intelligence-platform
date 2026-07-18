@@ -494,6 +494,7 @@ export default function TopicMindMap({
   return (
     <svg
       ref={svgRef}
+      data-mindmap-svg
       className="w-full bg-[#0a0f1c] rounded-lg border border-[#1a1f2e]"
       style={{ height: '100%', minHeight: '300px' }}
     />

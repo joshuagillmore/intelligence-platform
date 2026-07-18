@@ -115,7 +115,7 @@ export default function WatchlistPage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <button
-                    onClick={() => router.push(`/network?entity=${entity.id}`)}
+                    onClick={() => router.push(`/network?select=${entity.id}`)}
                     className="text-xs text-accent-blue hover:text-blue-400 transition-colors"
                   >
                     View in Graph

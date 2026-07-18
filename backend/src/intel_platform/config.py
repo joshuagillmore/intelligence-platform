@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     api_key: str = "dev-api-key-change-in-production"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    # Per-client request/minute cap. High by default for the single-user
+    # workbench (the SPA fires many calls per page, and behind the local
+    # frontend proxy they all share one client IP); tighten for public deploys.
+    rate_limit_per_minute: int = 3000
 
     # Extraction
     extraction_mode: str = "nlp"  # nlp | llm | hybrid
@@ -25,6 +29,15 @@ class Settings(BaseSettings):
     # Chunking
     chunk_size: int = 2000
     chunk_overlap: int = 50
+
+    # Collection / agentic crawl
+    collection_crawl_concurrency: int = 4  # max concurrent URL fetches per source
+    # Dedicated provider for bulk collection work (source resolution + per-doc
+    # summarization), which is high-volume and would exhaust a rate-limited cloud
+    # key. Empty = use the default provider (preserves prior behavior, e.g. on
+    # deployments without a local Ollama). Set to "ollama" to offload locally.
+    collection_llm_provider: str = ""
+    collection_llm_model: str = ""
 
     # LLM providers
     anthropic_api_key: str = ""

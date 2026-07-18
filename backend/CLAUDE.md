@@ -48,6 +48,11 @@ Provider-agnostic. Pick via config (`default_llm_provider`, `default_llm_model`;
 per-module provider selection. Embeddings default to OpenAI (1536-dim), also
 Cohere/Ollama.
 
+High-volume **collection** work (source resolution + per-doc summaries) can route
+to a dedicated provider so it won't drain a rate-limited cloud key — see
+`collection_llm_provider`/`collection_llm_model` (empty = default provider,
+`ollama` = offload local) and `_get_collection_provider` in `api/routes/llm.py`.
+
 ## Conventions
 
 - **Async everywhere** (FastAPI + async SQLAlchemy + async Neo4j/httpx).

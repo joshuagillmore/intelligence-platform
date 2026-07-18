@@ -5,6 +5,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
 import { collectionPlansApi, CollectionPlan, AcquisitionLogEntry } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
+import { humanize } from '@/lib/format';
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
@@ -447,7 +448,7 @@ export default function CollectionPlansPage() {
                               </span>
                               <div>
                                 <div className="text-sm font-medium text-white">{source.name}</div>
-                                <div className="text-[10px] text-gray-500">{source.source_type} · {source.total_records_acquired.toLocaleString()} records · {source.acquisition_count} acquisitions</div>
+                                <div className="text-[10px] text-gray-500">{humanize(source.source_type)} · {source.total_records_acquired.toLocaleString()} records · {source.acquisition_count} acquisitions</div>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -575,7 +576,7 @@ export default function CollectionPlansPage() {
                         <div key={acq.id} className="flex items-center justify-between py-2 px-2 rounded hover:bg-[#090e1c] text-[11px]">
                           <div className="flex items-center gap-3">
                             <span className={`w-2 h-2 rounded-full ${acq.result === 'SUCCESS' ? 'bg-emerald-400' : acq.result === 'FAILURE' ? 'bg-red-400' : 'bg-amber-400'}`} />
-                            <span className="text-gray-300">{acq.source_type}</span>
+                            <span className="text-gray-300">{humanize(acq.source_type)}</span>
                             <span className="text-gray-500">{acq.record_count} records</span>
                             {acq.entities_created > 0 && <span className="text-gray-500">{acq.entities_created} entities</span>}
                           </div>

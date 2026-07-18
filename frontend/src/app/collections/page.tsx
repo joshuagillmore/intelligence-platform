@@ -506,10 +506,18 @@ PIR: ${pirText}` }],
                   {/* Refinement Result */}
                   {refineAnalysis && (
                     <div className="space-y-3">
-                      {refinedPir && (
+                      {refinedPir !== null && (
                         <div className="bg-[#1a1f2e] border-l-2 border-emerald-500 rounded p-4">
-                          <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold block mb-1">Refined PIR</span>
-                          <p className="text-sm text-gray-200">{refinedPir}</p>
+                          <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold block mb-1">
+                            Refined PIR <span className="text-gray-500 normal-case font-normal">· editable</span>
+                          </span>
+                          <textarea
+                            value={refinedPir}
+                            onChange={(e) => setRefinedPir(e.target.value)}
+                            rows={3}
+                            className="w-full bg-transparent text-sm text-gray-200 resize-y focus:outline-none focus:ring-1 focus:ring-emerald-500/40 rounded px-1 py-0.5"
+                            placeholder="Refined PIR (edit to adjust before generating the plan)"
+                          />
                         </div>
                       )}
                       <div className="bg-[#1a1f2e] rounded p-4 max-h-60 overflow-y-auto">
@@ -867,8 +875,8 @@ PIR: ${pirText}` }],
                             <div className="bg-[#1a1f2e] rounded p-3 max-h-40 overflow-y-auto space-y-1 font-mono">
                               {activityLogs[String(plan.id)].map(a => {
                                 const eventColor = a.event.includes('failed') ? 'text-red-400'
-                                  : a.event.includes('succeeded') || a.event.includes('completed') ? 'text-emerald-400'
-                                  : a.event.includes('collecting') ? 'text-[#adc6ff]'
+                                  : a.event.includes('fetched') || a.event.includes('succeeded') || a.event.includes('completed') ? 'text-emerald-400'
+                                  : a.event.includes('fetching') || a.event.includes('collecting') ? 'text-[#adc6ff]'
                                   : a.event.includes('started') ? 'text-amber-400'
                                   : 'text-gray-500';
                                 return (
@@ -877,7 +885,8 @@ PIR: ${pirText}` }],
                                       {new Date(a.created_at).toLocaleTimeString()}
                                     </span>
                                     <span className={`${eventColor} flex-none uppercase font-bold w-24`}>
-                                      {a.event.replace('source_', '').replace('plan_', '')}
+                                      {({ url_fetching: 'fetching', url_fetched: 'fetched', url_failed: 'failed' }[a.event])
+                                        || a.event.replace('source_', '').replace('plan_', '')}
                                     </span>
                                     <span className="text-gray-400">{a.message}</span>
                                   </div>

@@ -331,8 +331,11 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     llm_available = False
     llm_status = ""
     try:
-        from intel_platform.api.routes.llm import _get_provider
-        provider = await _get_provider()
+        # Use the collection provider (local Ollama when configured) so autonomous
+        # plan/source generation doesn't hit a rate-limited cloud key — matching the
+        # execute path. Falls back to the default provider when no collection provider.
+        from intel_platform.api.routes.llm import _get_collection_provider
+        provider = await _get_collection_provider()
         if provider:
             llm_available = True
             llm_status = f"Using {provider.name()}"
@@ -499,7 +502,7 @@ async def execute_plan_endpoint(
     import asyncio
     from intel_platform.db.engine import get_session_factory
     from intel_platform.collection.agentic import run_agentic_loop
-    from intel_platform.api.routes.llm import _get_provider
+    from intel_platform.api.routes.llm import _get_collection_provider
 
     all_auto = [s for s in sources if s.enabled and s.source_type != "file_upload"]
     if all_auto:
@@ -509,7 +512,9 @@ async def execute_plan_endpoint(
                 plan_id=plan.id,
                 db_factory=session_factory,
                 get_store=lambda: store,
-                get_provider=_get_provider,
+                # Bulk resolution + summarization → collection provider (local
+                # Ollama when configured), keeping the cloud key for products.
+                get_provider=_get_collection_provider,
             )
         )
 

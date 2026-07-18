@@ -15,6 +15,7 @@ export default function KeyboardShortcuts() {
           e.preventDefault();
           const searchInput = document.querySelector('[data-search-input]') as HTMLInputElement;
           if (searchInput) searchInput.focus();
+          else router.push('/search'); // mobile: sidebar search is hidden
           break;
         case '1': e.preventDefault(); router.push('/'); break;
         case '2': e.preventDefault(); router.push('/collections'); break;
