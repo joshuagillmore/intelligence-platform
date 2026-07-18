@@ -179,7 +179,7 @@ export default function GeoPage() {
       if (kind === 'assess') {
         const res = await assessApi.generate(selectedLocation.id, { entity_id: selectedLocation.id, project_id: activeProject.id });
         const d = res.data;
-        text = d.assessment || d.judgment || d.analysis || d.content || JSON.stringify(d);
+        text = d.assessment || d.judgment || d.analysis || d.content || d.error || JSON.stringify(d);
       } else {
         const skill = kind === 'gap' ? 'gap_analysis' : 'hypothesis_generation';
         const prompt = kind === 'gap'

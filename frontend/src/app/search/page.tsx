@@ -72,7 +72,7 @@ function SearchPageContent() {
     if (entry.entity_type === 'Report') {
       router.push(`/products`);
     } else {
-      router.push(`/network?entity=${entry.id}`);
+      router.push(`/network?select=${entry.id}`);
     }
   }
 

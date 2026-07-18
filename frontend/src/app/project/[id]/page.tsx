@@ -339,7 +339,7 @@ export default function ProjectDashboard() {
                           <button
                             className="text-sm font-medium text-left hover:underline"
                             style={{ color: colors.primary }}
-                            onClick={() => router.push(e.id ? `/network?entity=${e.id}` : '/network')}
+                            onClick={() => router.push(e.id ? `/network?select=${e.id}` : '/network')}
                           >
                             {e.name}
                           </button>
