@@ -1,0 +1,56 @@
+{
+  "$comment": "Shared project permissions for the Intelligence Platform. Committed so local AND Claude Code online agents inherit the same allowlist. Machine-specific overrides go in settings.local.json (gitignored).",
+  "permissions": {
+    "allow": [
+      "Bash(uv run:*)",
+      "Bash(uv sync)",
+      "Bash(uv add:*)",
+      "Bash(uv lock)",
+      "Bash(npm install)",
+      "Bash(npm ci)",
+      "Bash(npm run:*)",
+      "Bash(npx next:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(git merge:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull:*)",
+      "Bash(git push:*)",
+      "Bash(git stash:*)",
+      "Bash(git restore:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker logs:*)",
+      "Bash(railway status:*)",
+      "Bash(railway logs:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(echo:*)",
+      "Bash(pwd)",
+      "Bash(sed:*)"
+    ],
+    "ask": [
+      "Bash(rm:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(railway up:*)",
+      "Bash(railway deploy:*)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)"
+    ]
+  }
+}
