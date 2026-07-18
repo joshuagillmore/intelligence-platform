@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     api_key: str = "dev-api-key-change-in-production"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    # Per-client request/minute cap. High by default for the single-user
+    # workbench (the SPA fires many calls per page, and behind the local
+    # frontend proxy they all share one client IP); tighten for public deploys.
+    rate_limit_per_minute: int = 3000
 
     # Extraction
     extraction_mode: str = "nlp"  # nlp | llm | hybrid
