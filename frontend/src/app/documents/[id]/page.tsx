@@ -20,7 +20,31 @@ interface DocData {
   entities: Array<{ id: string; name: string; entity_type: string }>;
   highlights: Highlight[];
   entity_count: number;
+  summary_json?: string;
 }
+
+interface DocSummary {
+  summary?: string;
+  key_facts?: string[];
+  topics?: string[];
+  sentiment?: string;
+}
+
+function parseSummary(raw?: string): DocSummary | null {
+  if (!raw || !raw.trim()) return null;
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === 'object' && (obj.summary || obj.key_facts || obj.topics)) return obj as DocSummary;
+  } catch { /* ignore malformed */ }
+  return null;
+}
+
+const sentimentColor: Record<string, string> = {
+  positive: 'bg-green-500/20 text-green-300 border-green-500/30',
+  negative: 'bg-red-500/20 text-red-300 border-red-500/30',
+  neutral: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+  mixed: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+};
 
 const typeColor: Record<string, string> = {
   Person: '#f97316',
@@ -143,6 +167,41 @@ export default function DocumentViewer() {
             )}
             <span className="text-xs text-gray-500">{doc.entity_count} entities</span>
           </div>
+          {(() => {
+            const s = parseSummary(doc.summary_json);
+            if (!s) return null;
+            return (
+              <div className="mb-4 bg-navy-800 border border-[#adc6ff]/30 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-[#adc6ff] text-sm">auto_awesome</span>
+                  <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#adc6ff]">AI Summary</h3>
+                  {s.sentiment && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ml-auto ${sentimentColor[s.sentiment.toLowerCase()] || sentimentColor.neutral}`}>
+                      {s.sentiment}
+                    </span>
+                  )}
+                </div>
+                {s.summary && <p className="text-sm text-gray-200/90 leading-relaxed mb-3">{s.summary}</p>}
+                {Array.isArray(s.key_facts) && s.key_facts.length > 0 && (
+                  <div className="mb-3">
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Key Facts</div>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      {s.key_facts.slice(0, 8).map((f, i) => (
+                        <li key={i} className="text-xs text-gray-300/90 leading-snug">{f}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {Array.isArray(s.topics) && s.topics.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {s.topics.slice(0, 12).map((t, i) => (
+                      <span key={i} className="text-[10px] bg-[#adc6ff]/15 text-[#adc6ff] border border-[#adc6ff]/30 px-2 py-0.5 rounded-full">{t}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <div className="flex-1 bg-navy-800 border border-navy-600 rounded-lg p-6 overflow-y-auto">
             {renderHighlightedContent()}
           </div>

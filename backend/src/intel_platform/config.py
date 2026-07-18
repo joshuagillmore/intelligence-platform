@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     chunk_size: int = 2000
     chunk_overlap: int = 50
 
+    # Collection / agentic crawl
+    collection_crawl_concurrency: int = 4  # max concurrent URL fetches per source
+    # Dedicated provider for bulk collection work (source resolution + per-doc
+    # summarization), which is high-volume and would exhaust a rate-limited cloud
+    # key. Empty = use the default provider (preserves prior behavior, e.g. on
+    # deployments without a local Ollama). Set to "ollama" to offload locally.
+    collection_llm_provider: str = ""
+    collection_llm_model: str = ""
+
     # LLM providers
     anthropic_api_key: str = ""
     openai_api_key: str = ""

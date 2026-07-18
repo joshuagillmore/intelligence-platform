@@ -31,6 +31,7 @@ def list_documents(project_id: str, store: GraphStore = Depends(get_graph_store)
                 "content_length": len(props.get("content", "") or ""),
                 "entity_count": record["entity_count"],
                 "created_at": str(props.get("created_at", "")),
+                "summary_json": props.get("summary_json", ""),
             })
     return {"documents": docs, "count": len(docs)}
 
@@ -86,6 +87,7 @@ def get_document(doc_id: str, store: GraphStore = Depends(get_graph_store)):
         "entities": entities,
         "highlights": highlights,
         "entity_count": len(entities),
+        "summary_json": doc.get("summary_json", ""),
     }
 
 

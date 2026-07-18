@@ -499,7 +499,7 @@ async def execute_plan_endpoint(
     import asyncio
     from intel_platform.db.engine import get_session_factory
     from intel_platform.collection.agentic import run_agentic_loop
-    from intel_platform.api.routes.llm import _get_provider
+    from intel_platform.api.routes.llm import _get_collection_provider
 
     all_auto = [s for s in sources if s.enabled and s.source_type != "file_upload"]
     if all_auto:
@@ -509,7 +509,9 @@ async def execute_plan_endpoint(
                 plan_id=plan.id,
                 db_factory=session_factory,
                 get_store=lambda: store,
-                get_provider=_get_provider,
+                # Bulk resolution + summarization → collection provider (local
+                # Ollama when configured), keeping the cloud key for products.
+                get_provider=_get_collection_provider,
             )
         )
 

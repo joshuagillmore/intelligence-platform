@@ -36,6 +36,22 @@ async def _resolve_api_key(provider_name: str) -> str | None:
     return env_keys.get(provider_name) or None
 
 
+async def _get_collection_provider():
+    """Provider for bulk collection work (source resolution + per-doc summaries).
+
+    Routes to a dedicated, rate-limit-free provider (local Ollama) when
+    ``collection_llm_provider`` is configured, so heavy collection runs don't
+    exhaust a rate-limited cloud key. Falls back to the default provider when
+    unset (e.g. deployments without a local Ollama).
+    """
+    prov = (getattr(settings, "collection_llm_provider", "") or "").strip()
+    if prov == "ollama":
+        from intel_platform.llm.ollama import OllamaProvider
+        model = (getattr(settings, "collection_llm_model", "") or "").strip() or "qwen2.5:14b"
+        return OllamaProvider(base_url=settings.ollama_base_url, model=model)
+    return await _get_provider()
+
+
 async def _get_provider():
     """Get the configured LLM provider, respecting runtime overrides and DB keys."""
     from intel_platform.api.routes.admin_config import get_active_provider, get_active_model
@@ -51,7 +67,7 @@ async def _get_provider():
     if api_key:
         if provider_name == "cohere":
             from intel_platform.llm.cohere_provider import CohereProvider
-            return CohereProvider(api_key=api_key, model=model or "command-a-03-2025")
+            return CohereProvider(api_key=api_key, model=model or "command-a-plus-05-2026")
         if provider_name == "anthropic":
             from intel_platform.llm.anthropic import AnthropicProvider
             return AnthropicProvider(api_key=api_key, model=model or "claude-sonnet-4-20250514")

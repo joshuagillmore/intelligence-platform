@@ -318,6 +318,11 @@ export default function AdminPage() {
                   {config.llm_model && (
                     <div className="text-xs text-gray-500 font-mono">{config.llm_model}</div>
                   )}
+                  <p className="text-[11px] text-gray-500 mt-2 leading-snug">
+                    Used for analyst products (PIR refinement, report generation). Bulk collection
+                    work (source resolution &amp; per-document summaries) runs on local Ollama when
+                    configured, to avoid cloud rate limits.
+                  </p>
                 </div>
 
                 {/* Model selector */}

@@ -867,8 +867,8 @@ PIR: ${pirText}` }],
                             <div className="bg-[#1a1f2e] rounded p-3 max-h-40 overflow-y-auto space-y-1 font-mono">
                               {activityLogs[String(plan.id)].map(a => {
                                 const eventColor = a.event.includes('failed') ? 'text-red-400'
-                                  : a.event.includes('succeeded') || a.event.includes('completed') ? 'text-emerald-400'
-                                  : a.event.includes('collecting') ? 'text-[#adc6ff]'
+                                  : a.event.includes('fetched') || a.event.includes('succeeded') || a.event.includes('completed') ? 'text-emerald-400'
+                                  : a.event.includes('fetching') || a.event.includes('collecting') ? 'text-[#adc6ff]'
                                   : a.event.includes('started') ? 'text-amber-400'
                                   : 'text-gray-500';
                                 return (
@@ -877,7 +877,8 @@ PIR: ${pirText}` }],
                                       {new Date(a.created_at).toLocaleTimeString()}
                                     </span>
                                     <span className={`${eventColor} flex-none uppercase font-bold w-24`}>
-                                      {a.event.replace('source_', '').replace('plan_', '')}
+                                      {({ url_fetching: 'fetching', url_fetched: 'fetched', url_failed: 'failed' }[a.event])
+                                        || a.event.replace('source_', '').replace('plan_', '')}
                                     </span>
                                     <span className="text-gray-400">{a.message}</span>
                                   </div>
