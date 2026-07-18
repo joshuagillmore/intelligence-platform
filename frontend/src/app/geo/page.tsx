@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic';
 import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { geoApi, queryApi, entitiesApi } from '@/lib/api';
+import { geoApi, queryApi, entitiesApi, llmApi, assessApi } from '@/lib/api';
 
 const GeoMap = dynamic(() => import('@/components/GeoMap'), { ssr: false });
 
@@ -168,6 +168,35 @@ export default function GeoPage() {
     }
   }
 
+  async function runIntelOp(kind: 'gap' | 'assess' | 'hypothesis') {
+    if (!selectedLocation || !activeProject) return;
+    const label = kind === 'gap' ? 'Gap Analysis' : kind === 'assess' ? 'Generate Assessment' : 'Hypothesis Generation';
+    setChatOpen(true);
+    setChatMessages(prev => [...prev, { role: 'user', text: `${label} — ${selectedLocation.name}` }]);
+    setChatLoading(true);
+    try {
+      let text: string;
+      if (kind === 'assess') {
+        const res = await assessApi.generate(selectedLocation.id, { entity_id: selectedLocation.id, project_id: activeProject.id });
+        const d = res.data;
+        text = d.assessment || d.judgment || d.analysis || d.content || JSON.stringify(d);
+      } else {
+        const skill = kind === 'gap' ? 'gap_analysis' : 'hypothesis_generation';
+        const prompt = kind === 'gap'
+          ? `Perform a gap analysis of intelligence coverage for the location "${selectedLocation.name}" and its connected entities.`
+          : `Generate competing hypotheses about the significance of the location "${selectedLocation.name}" in this intelligence picture.`;
+        const res = await llmApi.query([{ role: 'user', content: prompt }], skill);
+        const d = res.data;
+        text = d.response || d.answer || d.content || d.result || JSON.stringify(d);
+      }
+      setChatMessages(prev => [...prev, { role: 'ai', text }]);
+    } catch {
+      setChatMessages(prev => [...prev, { role: 'ai', text: `${label} failed.` }]);
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
   const totalConnections = locations.reduce((sum, l) => sum + (l.connections || 0), 0);
   const geocodedCount = locations.filter(l => isGeocoded(l)).length;
 
@@ -222,6 +251,15 @@ export default function GeoPage() {
     ? entityTimeline.buckets.map(b => b.count)
     : [0];
 
+  // Temporal Window: filter the selected location's timeline events by From/To
+  const displayedTimelineEvents = entityTimeline.events.filter(evt => {
+    const day = evt.date?.slice(0, 10);
+    if (!day) return true;
+    if (temporalStart && day < temporalStart) return false;
+    if (temporalEnd && day > temporalEnd) return false;
+    return true;
+  });
+
   if (!activeProject) {
     return (
       <div className="flex">
@@ -262,6 +300,8 @@ export default function GeoPage() {
                   }))}
                 onLocationClick={handleLocationClick}
                 selectedLocationId={selectedLocation?.id}
+                showRelationships={layers.relationships}
+                heatMap={layers.heatMap}
               />
             )}
           </div>
@@ -275,25 +315,32 @@ export default function GeoPage() {
               Layer Control
             </h4>
             {([
-              ['threatActors', 'Threat Actors'],
-              ['infrastructure', 'Infrastructure'],
-              ['targets', 'Targets'],
-              ['relationships', 'Relationships'],
-              ['heatMap', 'Heat Map'],
-            ] as const).map(([key, label]) => (
-              <label key={key} className="flex items-center justify-between mb-2 cursor-pointer text-sm text-gray-300">
+              ['threatActors', 'Threat Actors', false],
+              ['infrastructure', 'Infrastructure', false],
+              ['targets', 'Targets', false],
+              ['relationships', 'Relationships', true],
+              ['heatMap', 'Heat Map', true],
+            ] as const).map(([key, label, enabled]) => (
+              <label
+                key={key}
+                title={enabled ? undefined : 'Entity categorization not yet available'}
+                className={`flex items-center justify-between mb-2 text-sm ${enabled ? 'cursor-pointer text-gray-300' : 'cursor-not-allowed text-gray-600'}`}
+              >
                 <span>{label}</span>
                 <button
-                  onClick={() => toggleLayer(key as keyof typeof layers)}
+                  disabled={!enabled}
+                  onClick={() => enabled && toggleLayer(key as keyof typeof layers)}
                   className="relative w-9 h-5 rounded-full transition-colors"
                   style={{
-                    background: layers[key as keyof typeof layers] ? C.primary : C.border,
+                    background: enabled && layers[key as keyof typeof layers] ? C.primary : C.border,
+                    opacity: enabled ? 1 : 0.4,
+                    cursor: enabled ? 'pointer' : 'not-allowed',
                   }}
                 >
                   <span
                     className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform"
                     style={{
-                      left: layers[key as keyof typeof layers] ? '18px' : '2px',
+                      left: enabled && layers[key as keyof typeof layers] ? '18px' : '2px',
                     }}
                   />
                 </button>
@@ -553,19 +600,25 @@ export default function GeoPage() {
                   </h4>
                   <div className="flex flex-col gap-2">
                     <button
-                      className="w-full rounded-md py-2 text-sm font-medium transition-opacity hover:opacity-90"
+                      onClick={() => runIntelOp('gap')}
+                      disabled={chatLoading}
+                      className="w-full rounded-md py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
                       style={{ background: C.primary, color: C.surface }}
                     >
                       Gap Analysis
                     </button>
                     <button
-                      className="w-full rounded-md py-2 text-sm font-medium transition-opacity hover:opacity-90 border"
+                      onClick={() => runIntelOp('assess')}
+                      disabled={chatLoading}
+                      className="w-full rounded-md py-2 text-sm font-medium transition-opacity hover:opacity-90 border disabled:opacity-50"
                       style={{ background: 'transparent', color: C.primary, borderColor: C.primary }}
                     >
                       Generate Assessment
                     </button>
                     <button
-                      className="w-full rounded-md py-2 text-sm font-medium transition-opacity hover:opacity-90 border"
+                      onClick={() => runIntelOp('hypothesis')}
+                      disabled={chatLoading}
+                      className="w-full rounded-md py-2 text-sm font-medium transition-opacity hover:opacity-90 border disabled:opacity-50"
                       style={{ background: 'transparent', color: C.primary, borderColor: C.primary }}
                     >
                       Hypothesis Generation
@@ -576,13 +629,13 @@ export default function GeoPage() {
                 {/* ── Activity Timeline ── */}
                 <div>
                   <h4 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: C.textDim }}>
-                    {timelineLoading ? 'Loading Timeline...' : `Activity Timeline (${entityTimeline.events.length} events)`}
+                    {timelineLoading ? 'Loading Timeline...' : `Activity Timeline (${displayedTimelineEvents.length} events)`}
                   </h4>
 
                   {/* Events list */}
-                  {entityTimeline.events.length > 0 && (
+                  {displayedTimelineEvents.length > 0 && (
                     <div className="space-y-1 mb-3 max-h-24 overflow-y-auto">
-                      {entityTimeline.events.slice(0, 8).map((evt, i) => (
+                      {displayedTimelineEvents.slice(0, 8).map((evt, i) => (
                         <div key={i} className="text-[10px] flex gap-2" style={{ color: C.textMuted }}>
                           <span className="font-mono shrink-0">{evt.date?.slice(0, 10) || '?'}</span>
                           <span className="truncate text-gray-300">{evt.label}</span>

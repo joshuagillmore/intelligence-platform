@@ -356,15 +356,19 @@ export default function DataSourcesPage() {
     el?.__zoomReset?.();
   }, []);
 
+  const [treeCollapsed, setTreeCollapsed] = useState(false);
+  const collapseTree = (node: TreeNode, depth: number): TreeNode =>
+    depth <= 0
+      ? { ...node, children: [] }
+      : { ...node, children: (node.children || []).map((c) => collapseTree(c, depth - 1)) };
+
   const handleExpandAll = useCallback(() => {
-    // Re-render tree without collapsing
-    loadTopics();
-  }, [loadTopics]);
+    setTreeCollapsed(false);
+  }, []);
 
   const handleCollapseAll = useCallback(() => {
-    // Re-render tree (collapsed by default)
-    loadTopics();
-  }, [loadTopics]);
+    setTreeCollapsed(true);
+  }, []);
 
   const handleBreadcrumbClick = useCallback((item: { id: string; name: string }) => {
     handleTopicClick({ id: item.id, name: item.name } as TreeNode);
@@ -482,7 +486,7 @@ export default function DataSourcesPage() {
               </div>
             ) : topicTree.children && topicTree.children.length > 0 ? (
               <TopicMindMap
-                data={topicTree}
+                data={treeCollapsed ? collapseTree(topicTree, 1) : topicTree}
                 onNodeClick={handleTopicClick}
                 selectedNodeId={selectedNodeId}
                 layout={layout}

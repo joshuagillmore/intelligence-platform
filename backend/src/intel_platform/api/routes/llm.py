@@ -12,6 +12,7 @@ class LLMQueryRequest(BaseModel):
     messages: list[dict]
     system: str = ""
     skill_name: str | None = None
+    system_prompt: str | None = None  # explicit override of the skill's system prompt (LLM Hub skill editor)
     temperature: float = 0.3
     max_tokens: int = 4096
     provider: str | None = None
@@ -100,7 +101,10 @@ async def llm_query(req: LLMQueryRequest):
     loader = SkillsLoader()
 
     system = req.system
-    if req.skill_name:
+    if req.system_prompt:
+        # Explicit system-prompt override (e.g. LLM Hub skill editor) wins over the skill's stored prompt.
+        system = req.system_prompt
+    elif req.skill_name:
         skill_prompt = loader.get_system_prompt(req.skill_name, include_foundation=True)
         if skill_prompt:
             system = f"{skill_prompt}\n\n{system}" if system else skill_prompt

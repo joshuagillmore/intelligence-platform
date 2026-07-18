@@ -44,6 +44,8 @@ export default function LlmHubPage() {
       let arr: Skill[] = [];
       if (Array.isArray(data)) {
         arr = data;
+      } else if (data && Array.isArray(data.skills)) {
+        arr = data.skills as Skill[];
       } else if (typeof data === 'object') {
         arr = Object.entries(data).map(([name, val]) => ({
           name,
@@ -72,21 +74,41 @@ export default function LlmHubPage() {
   }, [loadSkills, loadPersonas]);
 
   useEffect(() => {
-    if (selectedSkill) {
-      setEditablePrompt(selectedSkill.system_prompt || '');
-      setTemperature(selectedSkill.temperature ?? 0.3);
-      setMaxTokens(selectedSkill.max_tokens ?? 2048);
-    }
+    if (!selectedSkill) return;
+    let saved: { system_prompt?: string; temperature?: number; max_tokens?: number } | null = null;
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem(`skillcfg:${selectedSkill.name}`) : null;
+      if (raw) saved = JSON.parse(raw);
+    } catch { /* ignore malformed cache */ }
+    setEditablePrompt(saved?.system_prompt ?? selectedSkill.system_prompt ?? '');
+    setTemperature(saved?.temperature ?? selectedSkill.temperature ?? 0.3);
+    setMaxTokens(saved?.max_tokens ?? selectedSkill.max_tokens ?? 2048);
   }, [selectedSkill]);
+
+  // Persist per-skill config edits so they survive reload
+  useEffect(() => {
+    if (!selectedSkill || typeof window === 'undefined') return;
+    localStorage.setItem(
+      `skillcfg:${selectedSkill.name}`,
+      JSON.stringify({ system_prompt: editablePrompt, temperature, max_tokens: maxTokens }),
+    );
+  }, [selectedSkill, editablePrompt, temperature, maxTokens]);
 
   async function testSkill() {
     if (!prompt.trim()) return;
     setLoading(true);
     setResult(null);
     try {
+      const isCustom = !!selectedSkill && !builtInSkills.includes(selectedSkill.name);
+      const overrides: { system_prompt?: string; temperature?: number; max_tokens?: number } = {
+        temperature,
+        max_tokens: maxTokens,
+      };
+      if (isCustom && editablePrompt.trim()) overrides.system_prompt = editablePrompt;
       const res = await llmApi.query(
         [{ role: 'user', content: prompt.trim() }],
-        selectedSkill?.name || undefined
+        selectedSkill?.name || undefined,
+        overrides
       );
       setResult(res.data.content || res.data.response || JSON.stringify(res.data, null, 2));
     } catch {

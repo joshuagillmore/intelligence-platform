@@ -31,6 +31,8 @@ interface GeoMapProps {
   connectionLines?: ConnectionLine[];
   onLocationClick?: (location: GeoLocation) => void;
   selectedLocationId?: string | null;
+  showRelationships?: boolean;
+  heatMap?: boolean;
 }
 
 function getLat(loc: GeoLocation): number | null {
@@ -41,7 +43,7 @@ function getLng(loc: GeoLocation): number | null {
   return (loc.longitude ?? loc.lng ?? (loc.properties?.longitude as number | undefined)) || null;
 }
 
-export default function GeoMap({ locations, connectionLines = [], onLocationClick, selectedLocationId }: GeoMapProps) {
+export default function GeoMap({ locations, connectionLines = [], onLocationClick, selectedLocationId, showRelationships = true, heatMap = false }: GeoMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [mapReady, setMapReady] = useState(false);
   const [error, setError] = useState(false);
@@ -117,7 +119,7 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
 
     // Add connection lines between locations (edges based on shared entities)
     const maxWeight = Math.max(1, ...connectionLines.map(l => l.weight || 1));
-    connectionLines.forEach(line => {
+    if (showRelationships) connectionLines.forEach(line => {
       const w = line.weight || 1;
       const lineWidth = Math.max(1, Math.min(6, (w / maxWeight) * 6));
       const opacity = Math.max(0.3, Math.min(0.8, 0.3 + (w / maxWeight) * 0.5));
@@ -139,18 +141,24 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
     // Add markers for geocoded locations
     const geocoded = locations.filter(loc => getLat(loc) != null && getLng(loc) != null);
 
+    const maxConn = Math.max(1, ...geocoded.map(l => l.connections || l.connection_count || 0));
     geocoded.forEach(loc => {
       const lat = getLat(loc)!;
       const lng = getLng(loc)!;
       const connCount = loc.connections || loc.connection_count || 0;
-      const radius = Math.max(6, Math.min(16, (connCount || 1) * 2));
+      const t = maxConn > 0 ? connCount / maxConn : 0;
+      // Heat Map layer: warm gradient + larger radius for higher-connection hubs
+      const heatFill = t > 0.66 ? '#ef4444' : t > 0.33 ? '#f59e0b' : '#3b82f6';
+      const radius = heatMap
+        ? Math.max(8, Math.min(28, 8 + t * 20))
+        : Math.max(6, Math.min(16, (connCount || 1) * 2));
       const isSelected = selectedLocationId === loc.id;
 
       const marker = L.circleMarker([lat, lng], {
         radius,
-        fillColor: isSelected ? '#f97316' : '#3b82f6',
-        fillOpacity: 0.8,
-        color: isSelected ? '#f97316' : '#60a5fa',
+        fillColor: isSelected ? '#f97316' : (heatMap ? heatFill : '#3b82f6'),
+        fillOpacity: heatMap ? 0.55 : 0.8,
+        color: isSelected ? '#f97316' : (heatMap ? heatFill : '#60a5fa'),
         weight: 2,
       }).addTo(map);
 
@@ -162,7 +170,7 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
 
       markersRef.current.push(marker);
     });
-  }, [locations, connectionLines, mapReady, selectedLocationId, onLocationClick]);
+  }, [locations, connectionLines, mapReady, selectedLocationId, onLocationClick, showRelationships, heatMap]);
 
   if (error) {
     // Fallback: show location table
