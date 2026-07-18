@@ -506,10 +506,18 @@ PIR: ${pirText}` }],
                   {/* Refinement Result */}
                   {refineAnalysis && (
                     <div className="space-y-3">
-                      {refinedPir && (
+                      {refinedPir !== null && (
                         <div className="bg-[#1a1f2e] border-l-2 border-emerald-500 rounded p-4">
-                          <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold block mb-1">Refined PIR</span>
-                          <p className="text-sm text-gray-200">{refinedPir}</p>
+                          <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold block mb-1">
+                            Refined PIR <span className="text-gray-500 normal-case font-normal">· editable</span>
+                          </span>
+                          <textarea
+                            value={refinedPir}
+                            onChange={(e) => setRefinedPir(e.target.value)}
+                            rows={3}
+                            className="w-full bg-transparent text-sm text-gray-200 resize-y focus:outline-none focus:ring-1 focus:ring-emerald-500/40 rounded px-1 py-0.5"
+                            placeholder="Refined PIR (edit to adjust before generating the plan)"
+                          />
                         </div>
                       )}
                       <div className="bg-[#1a1f2e] rounded p-4 max-h-60 overflow-y-auto">

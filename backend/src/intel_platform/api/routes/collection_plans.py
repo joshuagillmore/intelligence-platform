@@ -331,8 +331,11 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     llm_available = False
     llm_status = ""
     try:
-        from intel_platform.api.routes.llm import _get_provider
-        provider = await _get_provider()
+        # Use the collection provider (local Ollama when configured) so autonomous
+        # plan/source generation doesn't hit a rate-limited cloud key — matching the
+        # execute path. Falls back to the default provider when no collection provider.
+        from intel_platform.api.routes.llm import _get_collection_provider
+        provider = await _get_collection_provider()
         if provider:
             llm_available = True
             llm_status = f"Using {provider.name()}"
