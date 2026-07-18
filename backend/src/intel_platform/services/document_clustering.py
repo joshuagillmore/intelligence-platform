@@ -6,6 +6,7 @@ Semantic clustering uses the platform's embedding providers + scipy agglomerativ
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import re
@@ -750,7 +751,9 @@ async def refine_labels_with_llm(
     """Walk the cluster tree and replace keyword labels with LLM-generated names.
 
     Falls back to existing keyword labels if no LLM provider is configured.
-    Returns the tree with refined labels (mutated in place).
+    Returns the tree with refined labels (mutated in place). Each node's
+    refine only touches that node's own dict entries, so the per-node LLM
+    calls run concurrently (Semaphore-gated) instead of one at a time.
     """
     from intel_platform.config import settings
 
@@ -775,8 +778,12 @@ async def refine_labels_with_llm(
     # Build a lookup of doc_id -> text for excerpt extraction
     doc_text_map = {doc_id: text for doc_id, text in doc_pairs}
 
+    # Bound concurrent LLM round-trips so a "detailed" tree with dozens of
+    # nodes doesn't fan out unbounded requests against a rate-limited provider.
+    sem = asyncio.Semaphore(5)
+
     async def _refine_node(node: dict) -> None:
-        """Refine a single node's label via LLM."""
+        """Refine a single node's label via LLM. Only mutates this node."""
         if node.get("entity_type") != "topic":
             return
 
@@ -802,12 +809,13 @@ async def refine_labels_with_llm(
         user_msg = "\n\n".join(prompt_parts)
 
         try:
-            result = await provider.generate(
-                messages=[{"role": "user", "content": user_msg}],
-                system=system,
-                temperature=0.2,
-                max_tokens=256,
-            )
+            async with sem:
+                result = await provider.generate(
+                    messages=[{"role": "user", "content": user_msg}],
+                    system=system,
+                    temperature=0.2,
+                    max_tokens=256,
+                )
             content = result.content.strip()
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0]
@@ -828,9 +836,18 @@ async def refine_labels_with_llm(
             # Keep original keyword label on any failure
             pass
 
-        # Recurse into children
-        for child in node.get("children", []):
-            await _refine_node(child)
+    def _flatten(node: dict) -> list[dict]:
+        """Collect every node in the tree (pre-order) so refines can run as one batch.
 
-    await _refine_node(tree_node)
+        Mirrors the original sequential walk: a non-"topic" node is included
+        (so its no-op refine still runs) but its children are not descended
+        into, matching `_refine_node`'s early return for non-topic nodes.
+        """
+        nodes = [node]
+        if node.get("entity_type") == "topic":
+            for child in node.get("children", []):
+                nodes.extend(_flatten(child))
+        return nodes
+
+    await asyncio.gather(*(_refine_node(n) for n in _flatten(tree_node)), return_exceptions=True)
     return tree_node

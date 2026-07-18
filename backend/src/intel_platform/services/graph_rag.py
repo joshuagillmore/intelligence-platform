@@ -100,12 +100,17 @@ class GraphRAGPipeline:
 
         # Retrieve source document text for evidence
         # Strategy 1: Documents found in subgraph
-        doc_texts: dict[str, str] = {}
+        # Each entry carries content + reliability_rating so assemble_context can
+        # weight/caveat claims by source quality (Admiralty rating).
+        doc_texts: dict[str, dict] = {}
         for node in all_nodes:
             if node.get("entity_type") == "Document":
                 content = node.get("content", "")
                 if content:
-                    doc_texts[node.get("name", "")] = content
+                    doc_texts[node.get("name", "")] = {
+                        "content": content,
+                        "reliability_rating": node.get("reliability_rating", ""),
+                    }
 
         # Strategy 2: Fetch documents by source ID from entity properties
         # Entities store their source document ID in the 'source' field
@@ -118,7 +123,10 @@ class GraphRAGPipeline:
                 if content:
                     doc_name = doc_node.get("name", doc_id)
                     if doc_name not in doc_texts:
-                        doc_texts[doc_name] = content
+                        doc_texts[doc_name] = {
+                            "content": content,
+                            "reliability_rating": doc_node.get("reliability_rating", ""),
+                        }
 
         # Strategy 3: If still no documents, search for all project documents
         if not doc_texts:
@@ -130,7 +138,10 @@ class GraphRAGPipeline:
                 if doc_full:
                     content = doc_full.get("content", "")
                     if content:
-                        doc_texts[doc_full.get("name", "")] = content
+                        doc_texts[doc_full.get("name", "")] = {
+                            "content": content,
+                            "reliability_rating": doc_full.get("reliability_rating", ""),
+                        }
 
         return {
             "nodes": all_nodes,
@@ -205,8 +216,10 @@ class GraphRAGPipeline:
                         query_words.add(word.lower())
 
             lines.append(f"\n### Source Document Evidence ({len(doc_texts)} documents)")
-            for doc_name, text in list(doc_texts.items())[:5]:
-                lines.append(f"\n**{doc_name}:**")
+            for doc_name, doc_info in list(doc_texts.items())[:5]:
+                text = doc_info.get("content", "")
+                rating = doc_info.get("reliability_rating", "") or "unrated"
+                lines.append(f"\n**{doc_name}** [source reliability: {rating}]:")
 
                 # Extract relevant passages: sentences containing entity names
                 passages = self._extract_relevant_passages(text, entity_names, query_words, max_chars=3000)

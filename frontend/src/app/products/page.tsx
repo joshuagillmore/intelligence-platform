@@ -2,7 +2,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
-import { llmApi, entitiesApi, reportsApi, exportApi } from '@/lib/api';
+import { entitiesApi, reportsApi, exportApi } from '@/lib/api';
 import { useNotifications } from '@/components/NotificationProvider';
 
 const REPORT_TYPES = [
@@ -61,6 +61,7 @@ export default function ProductsPage() {
   const [searchResults, setSearchResults] = useState<SearchedEntity[]>([]);
   const [selectedEntities, setSelectedEntities] = useState<SearchedEntity[]>([]);
   const [generatedReport, setGeneratedReport] = useState<string | null>(null);
+  const [reportMeta, setReportMeta] = useState<{ retrievalMode: string; contextNodes: number; contextEdges: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [reportHistory, setReportHistory] = useState<ReportHistoryItem[]>([]);
@@ -136,9 +137,10 @@ export default function ProductsPage() {
   }
 
   async function generateReport() {
-    if (selectedEntities.length === 0) return;
+    if (selectedEntities.length === 0 || !activeProject) return;
     setLoading(true);
     setGeneratedReport(null);
+    setReportMeta(null);
     setViewingHistoryId(null);
     setViewingSavedReport(null);
     const rt = REPORT_TYPES.find(r => r.value === reportType);
@@ -148,15 +150,24 @@ export default function ProductsPage() {
       message: `Creating ${rt?.label || reportType} report...`,
     });
     try {
-      const entityContext = selectedEntities.map(e => `${e.name} (${e.entity_type})`).join(', ');
-      const prompt = `Generate a ${rt?.label || reportType} report covering the following entities: ${entityContext}.${activeProject ? ` Project context: ${activeProject.name}.` : ''}${includeEvidence ? ' Include evidence chains for all assessments.' : ''}${probabilityAssessments ? ' Include probability assessments using standard intelligence community language.' : ''} Provide a comprehensive, structured intelligence product.`;
-
-      const res = await llmApi.query(
-        [{ role: 'user', content: prompt }],
-        rt?.skill || 'report_writing'
-      );
-      const content = res.data.content || res.data.response || JSON.stringify(res.data);
+      // Grounded generation: the backend retrieves real graph + document evidence
+      // for these entities via the Graph-RAG pipeline before drafting — it doesn't
+      // just hand the LLM a bare list of names.
+      const res = await reportsApi.generate({
+        project_id: activeProject.id,
+        report_type: rt?.label || reportType,
+        skill_name: rt?.skill || 'report_writing',
+        entity_ids: selectedEntities.map(e => e.id),
+        include_evidence: includeEvidence,
+        probability_assessments: probabilityAssessments,
+      });
+      const content = res.data.content || JSON.stringify(res.data);
       setGeneratedReport(content);
+      setReportMeta({
+        retrievalMode: res.data.retrieval_mode || 'ungrounded',
+        contextNodes: res.data.context_nodes || 0,
+        contextEdges: res.data.context_edges || 0,
+      });
 
       // Add to history
       setReportHistory(prev => [{
@@ -167,10 +178,13 @@ export default function ProductsPage() {
         timestamp: new Date(),
       }, ...prev]);
 
+      const grounded = res.data.retrieval_mode === 'grounded';
       updateNotification(notifId, {
         type: 'success',
         title: 'Report Ready',
-        message: `${rt?.label || reportType} report generated successfully.`,
+        message: grounded
+          ? `${rt?.label || reportType} report generated from graph evidence.`
+          : `${rt?.label || reportType} report generated — no supporting evidence was found for these entities.`,
         link: '/products',
       });
     } catch {
@@ -225,6 +239,7 @@ export default function ProductsPage() {
   async function viewSavedReport(report: SavedReport) {
     setViewingSavedReport(report);
     setViewingHistoryId(null);
+    setReportMeta(null);
     // If content is available directly, use it
     if (report.content) {
       setGeneratedReport(report.content);
@@ -255,6 +270,7 @@ export default function ProductsPage() {
     setGeneratedReport(item.content);
     setViewingHistoryId(item.id);
     setViewingSavedReport(null);
+    setReportMeta(null);
   }
 
   function getStatusBadge(report: SavedReport) {
@@ -473,6 +489,22 @@ export default function ProductsPage() {
                     </button>
                   </div>
                 </div>
+
+                {reportMeta && (
+                  <div className="mb-4">
+                    {reportMeta.retrievalMode === 'grounded' ? (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] text-green-400 bg-green-500/10 border border-green-500/20 rounded-md px-2.5 py-1">
+                        <span className="material-symbols-outlined text-[13px]">verified</span>
+                        Grounded in {reportMeta.contextNodes} graph entities, {reportMeta.contextEdges} relationships
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-md px-2.5 py-1">
+                        <span className="material-symbols-outlined text-[13px]">warning</span>
+                        No graph or document evidence found for these entities — ungrounded draft
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* Save form */}
                 {showSaveForm && (
