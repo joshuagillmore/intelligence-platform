@@ -202,11 +202,8 @@ export default function GeoPage() {
       return;
     }
     setTimelineLoading(true);
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/geo/entity-timeline?entity_id=${selectedLocation.id}&project_id=${activeProject.id}`, {
-      headers: { 'Authorization': `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('auth_token') || 'dev-api-key-change-in-production' : 'dev-api-key-change-in-production'}` },
-    })
-      .then(r => r.json())
-      .then(data => {
+    geoApi.entityTimeline(selectedLocation.id, activeProject.id)
+      .then(({ data }) => {
         setEntityTimeline({
           events: data.events || [],
           buckets: data.buckets || [],

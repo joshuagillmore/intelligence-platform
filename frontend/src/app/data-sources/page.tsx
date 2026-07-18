@@ -215,9 +215,13 @@ export default function DataSourcesPage() {
     setSummary(null);
     try {
       const url = topicsApi.summarizeUrl(nodeId);
+      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ project_id: activeProject.id, level: 'topic' }),
       });
 

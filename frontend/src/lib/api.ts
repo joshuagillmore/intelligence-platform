@@ -91,8 +91,12 @@ export const queryApi = {
 
 export const llmApi = {
   skills: () => api.get('/llm/skills'),
-  query: (messages: Array<{role: string; content: string}>, skillName?: string) =>
-    api.post('/llm/query', { messages, skill_name: skillName }),
+  query: (
+    messages: Array<{role: string; content: string}>,
+    skillName?: string,
+    overrides?: { system_prompt?: string; temperature?: number; max_tokens?: number },
+  ) =>
+    api.post('/llm/query', { messages, skill_name: skillName, ...(overrides || {}) }),
 };
 
 export const ingestApi = {
@@ -340,6 +344,8 @@ export const notebookApi = {
 
 export const geoApi = {
   locations: (projectId: string) => api.get('/geo/locations', { params: { project_id: projectId } }),
+  entityTimeline: (entityId: string, projectId: string) =>
+    api.get('/geo/entity-timeline', { params: { entity_id: entityId, project_id: projectId } }),
 };
 
 export const searchApi = {

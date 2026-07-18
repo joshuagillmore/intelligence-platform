@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
-import { projectsApi, graphApi, reportsApi, timelineApi, type Project } from '@/lib/api';
+import { projectsApi, graphApi, reportsApi, timelineApi, exportApi, type Project } from '@/lib/api';
 
 // Design tokens
 const colors = {
@@ -180,8 +180,19 @@ export default function ProjectDashboard() {
           </div>
           <div className="flex gap-3">
             <button
-              onClick={() => {
-                window.open(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/export/stix?project_id=${projectId}`, '_blank');
+              onClick={async () => {
+                try {
+                  const res = await exportApi.stix(projectId);
+                  const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `stix-export-${projectId.substring(0, 8)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } catch (err) {
+                  console.error('Failed to export STIX report', err);
+                }
               }}
               className="px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
               style={{
@@ -328,7 +339,7 @@ export default function ProjectDashboard() {
                           <button
                             className="text-sm font-medium text-left hover:underline"
                             style={{ color: colors.primary }}
-                            onClick={() => router.push('/network')}
+                            onClick={() => router.push(e.id ? `/network?entity=${e.id}` : '/network')}
                           >
                             {e.name}
                           </button>

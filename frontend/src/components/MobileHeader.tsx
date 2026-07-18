@@ -83,10 +83,14 @@ export default function MobileHeader() {
                   <div className="px-3 py-6 text-center text-xs text-gray-500">No notifications</div>
                 ) : (
                   notifications.slice(0, 10).map(n => (
-                    <div key={n.id} className="px-3 py-2 border-b border-[#1a1f2e]/50 hover:bg-[#1a1f2e]/50">
+                    <div
+                      key={n.id}
+                      onClick={() => { if (n.link && typeof window !== 'undefined') window.location.href = n.link; }}
+                      className={`px-3 py-2 border-b border-[#1a1f2e]/50 hover:bg-[#1a1f2e]/50 ${n.link ? 'cursor-pointer' : ''}`}
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-[11px] font-medium text-gray-200 truncate">{n.title}</span>
-                        <button onClick={() => removeNotification(n.id)} className="text-gray-600 text-[10px]">&times;</button>
+                        <button onClick={(e) => { e.stopPropagation(); removeNotification(n.id); }} className="text-gray-600 text-[10px]">&times;</button>
                       </div>
                       <p className="text-[10px] text-gray-500 mt-0.5">{n.message}</p>
                       <p className="text-[9px] text-gray-600 mt-0.5" suppressHydrationWarning>{formatTimeAgo(n.timestamp)}</p>

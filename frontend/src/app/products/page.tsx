@@ -562,16 +562,16 @@ export default function ProductsPage() {
                               <button
                                 onClick={(e) => { e.stopPropagation(); viewSavedReport(report); }}
                                 className="p-1 rounded hover:bg-navy-600 text-gray-400 hover:text-[#adc6ff] transition-colors"
-                                title="Edit"
+                                title="View"
                               >
-                                <span className="material-symbols-outlined text-sm">edit</span>
+                                <span className="material-symbols-outlined text-sm">visibility</span>
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(report.content || ''); setToast('Report content copied.'); }}
                                 className="p-1 rounded hover:bg-navy-600 text-gray-400 hover:text-gray-200 transition-colors"
-                                title="Share"
+                                title="Copy"
                               >
-                                <span className="material-symbols-outlined text-sm">share</span>
+                                <span className="material-symbols-outlined text-sm">content_copy</span>
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); deleteSavedReport(report.id); }}
