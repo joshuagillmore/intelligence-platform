@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { llmApi, personasApi } from '@/lib/api';
+import { humanize } from '@/lib/format';
 
 interface Skill {
   name: string;
@@ -177,7 +178,7 @@ export default function LlmHubPage() {
                 onClick={() => setSelectedSkill(skill)}
               >
                 <div className="flex items-center justify-between">
-                  <h4 className="font-medium text-sm truncate">{skill.name}</h4>
+                  <h4 className="font-medium text-sm truncate">{humanize(skill.name)}</h4>
                   <span className={`text-xs px-2 py-0.5 rounded flex-shrink-0 ml-2 ${
                     skill.active !== false ? 'bg-green-900/30 text-green-400' : 'bg-gray-900/30 text-gray-400'
                   }`}>
@@ -201,7 +202,7 @@ export default function LlmHubPage() {
           {selectedSkill ? (
             <div className="flex-1 overflow-y-auto pr-1 space-y-4">
               <div className="bg-navy-800 border border-navy-600 rounded-lg p-4">
-                <h4 className="text-base font-semibold mb-1">{selectedSkill.name}</h4>
+                <h4 className="text-base font-semibold mb-1">{humanize(selectedSkill.name)}</h4>
                 {selectedSkill.description && (
                   <p className="text-sm text-gray-400 mb-4">{selectedSkill.description}</p>
                 )}
@@ -317,7 +318,7 @@ export default function LlmHubPage() {
                 <div className="flex flex-wrap gap-1 mb-2">
                   {persona.skills.map(s => (
                     <span key={s} className="text-[10px] bg-navy-700 text-gray-400 px-1.5 py-0.5 rounded">
-                      {s}
+                      {humanize(s)}
                     </span>
                   ))}
                 </div>
@@ -392,7 +393,7 @@ export default function LlmHubPage() {
                             : 'bg-navy-700 border-navy-600 text-gray-400 hover:border-navy-500'
                         }`}
                       >
-                        {s.name}
+                        {humanize(s.name)}
                       </button>
                     ))}
                   </div>
