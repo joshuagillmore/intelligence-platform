@@ -23,7 +23,7 @@ class CohereProvider(LLMProvider):
         # the output token budget and can crowd out the visible answer (empty
         # text). Fully disabling thinking returns a Cohere 500 for this model, so
         # instead cap the thinking budget and add headroom so the answer fits.
-        if "plus" in self._model or "reasoning" in self._model:
+        if "command-a-plus" in self._model or "reasoning" in self._model:
             think_budget = 1024
             chat_kwargs["thinking"] = {"type": "enabled", "token_budget": think_budget}
             chat_kwargs["max_tokens"] = max_tokens + think_budget
@@ -54,7 +54,7 @@ class CohereProvider(LLMProvider):
         stream_kwargs = dict(
             model=self._model, messages=msgs, temperature=temperature, max_tokens=max_tokens,
         )
-        if "plus" in self._model or "reasoning" in self._model:
+        if "command-a-plus" in self._model or "reasoning" in self._model:
             think_budget = 1024
             stream_kwargs["thinking"] = {"type": "enabled", "token_budget": think_budget}
             stream_kwargs["max_tokens"] = max_tokens + think_budget

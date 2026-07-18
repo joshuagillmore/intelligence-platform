@@ -30,13 +30,33 @@ interface DocSummary {
   sentiment?: string;
 }
 
+function asString(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim() ? v : undefined;
+}
+
+function asStringArray(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const items = v.filter((x): x is string => typeof x === 'string');
+  return items.length ? items : undefined;
+}
+
 function parseSummary(raw?: string): DocSummary | null {
   if (!raw || !raw.trim()) return null;
+  let obj: unknown;
   try {
-    const obj = JSON.parse(raw);
-    if (obj && typeof obj === 'object' && (obj.summary || obj.key_facts || obj.topics)) return obj as DocSummary;
-  } catch { /* ignore malformed */ }
-  return null;
+    obj = JSON.parse(raw);
+  } catch {
+    return null; // malformed JSON
+  }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+  const src = obj as Record<string, unknown>;
+  const summary = asString(src.summary);
+  const key_facts = asStringArray(src.key_facts);
+  const topics = asStringArray(src.topics);
+  const sentiment = asString(src.sentiment);
+  // Nothing usable — hide the card rather than render an empty shell.
+  if (!summary && !key_facts && !topics) return null;
+  return { summary, key_facts, topics, sentiment };
 }
 
 const sentimentColor: Record<string, string> = {

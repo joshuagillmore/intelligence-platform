@@ -466,7 +466,7 @@ class TestCohereProviderUnit:
         with patch("cohere.AsyncClientV2"):
             from intel_platform.llm.cohere_provider import CohereProvider
             provider = CohereProvider(api_key="test-key")
-            assert provider.name() == "cohere:command-a-03-2025"
+            assert provider.name() == "cohere:command-a-plus-05-2026"
 
     def test_cohere_provider_custom_model(self):
         with patch("cohere.AsyncClientV2"):
@@ -504,7 +504,7 @@ class TestCohereProviderUnit:
         assert result.content == '{"entities": [], "relationships": []}'
         assert result.input_tokens == 100
         assert result.output_tokens == 50
-        assert result.model == "command-a-03-2025"
+        assert result.model == "command-a-plus-05-2026"
 
 
 # ---------------------------------------------------------------------------
