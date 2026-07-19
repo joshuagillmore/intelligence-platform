@@ -57,7 +57,14 @@ Confirmed with the user (2026-07-19): relationships → **prune hard, keep evide
 | Holdout NLP | 0.614 | 0.912 | 0.734 | 0.000 | — | — |
 | **Holdout hybrid** | **0.875** | 0.800 | **0.830** | **0.301** | 62 | 40 |
 
-Precision + relationship F1 + leanness all jump dramatically; recall trades down (LLM is selective) — recall-recovery is the next tune. Full suite still 443 (NLP path untouched; LLM/hybrid falls back to NLP without a provider).
+Precision + relationship F1 + leanness all jump dramatically; recall trades down (LLM is selective) — recovered next.
+
+### Cycle 4b — recall recovery ✅
+**Action:** The LLM-primary merge added back only regex IOCs; also add back the **high-signal** unmatched spaCy entities (known-list or repeated-mention, confidence ≥0.8) the LLM missed — recovers real entities without the one-off over-extraction (base 0.7 / short 0.5).
+**Verify:** Train entity **R 0.733→0.877, F1 0.708→0.762** (P 0.713→0.688); Holdout **R 0.800→0.867, F1 0.830→0.854** (P 0.875→0.849). F1 up on both; the ~0.02 precision dip is well worth the recall gain. Final hybrid (holdout, unseen): **P=0.849 R=0.867 F1=0.854, Rel F1=0.301** — vs NLP baseline P=0.614 R=0.912 F1=0.734 Rel F1=0.
+
+### Cycle 4c — make the app use hybrid+Ollama ✅
+**Action:** `extraction_mode` default `nlp`→`hybrid`; added `extraction_llm_provider`/`_model` + `_get_extraction_provider()` (mirrors the collection-provider routing) so per-doc extraction routes to a dedicated model; `extract_entities_llm` uses it. docker-compose backend now sets `EXTRACTION_MODE=hybrid`, `EXTRACTION_LLM_PROVIDER=ollama`, `OLLAMA_BASE_URL=http://ollama:11434` (local stack uses in-network Ollama). `.env.example` documents it. conftest forces `EXTRACTION_MODE=nlp` for deterministic, LLM-free tests. Full suite **447 passed**.
 
 ### Cycle 5 — Show Evidence surfaces real per-edge evidence + UI trim ✅ (`f6b8ab13`)
 **Action:** Frontend now renders each edge's persisted `evidence` sentence directly (network list + selected-edge panel; cyber/geo lists) with a "re-run extraction" fallback — deleted the ~70-line client-side document-substring reconstruction. Compacted relationship rows (confidence chip vs full-width bar); Edge Overview hides noise-tier ASSOCIATED_WITH behind a default-collapsed disclosure. lint + build clean.

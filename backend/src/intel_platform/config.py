@@ -31,7 +31,14 @@ class Settings(BaseSettings):
     mcp_enabled: bool = False
 
     # Extraction
-    extraction_mode: str = "nlp"  # nlp | llm | hybrid
+    # hybrid (NLP + LLM) is the recommended default: the LLM contributes typed,
+    # evidence-backed relationships and higher-precision entities, NLP/regex
+    # contributes deterministic IOCs. Falls back to NLP when no LLM provider is
+    # reachable. Set extraction_llm_provider=ollama to route extraction to a
+    # local, rate-limit-free model (see _get_extraction_provider).
+    extraction_mode: str = "hybrid"  # nlp | llm | hybrid
+    extraction_llm_provider: str = ""  # "" = default provider; "ollama" = local
+    extraction_llm_model: str = ""
     spacy_model: str = "en_core_web_lg"
     coreference_enabled: bool = False
     entity_resolution_threshold: float = 0.92

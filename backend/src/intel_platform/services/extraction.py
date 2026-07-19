@@ -798,9 +798,10 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
 async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list[dict]]:
     """Extract entities using LLM. Returns (entities, relationships)."""
 
-    # Use the centralized provider selection (respects runtime overrides)
-    from intel_platform.api.routes.llm import _get_provider
-    provider = await _get_provider()
+    # Use the extraction-specific provider selection (routes to local Ollama
+    # when extraction_llm_provider=ollama; respects runtime overrides otherwise).
+    from intel_platform.api.routes.llm import _get_extraction_provider
+    provider = await _get_extraction_provider()
 
     if not provider:
         # Fallback to NLP if no LLM configured
@@ -902,9 +903,11 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], l
                     _merge_attributes(llm_e, e)
                     break
             continue
-        # Unmatched NLP entity: keep ONLY deterministic regex IOCs, not the
-        # spaCy over-extraction.
-        if e.get("method") == "regex":
+        # Unmatched NLP entity: keep deterministic regex IOCs, plus high-signal
+        # spaCy entities the LLM missed — known-list matches or repeated mentions
+        # (confidence >= 0.8). This recovers real entities without re-admitting
+        # the one-off spaCy over-extraction (base confidence 0.7 / short 0.5).
+        if e.get("method") == "regex" or e.get("confidence", 0) >= 0.8:
             merged_entities.append(e)
             llm_name_list.append(e_lower)
 
