@@ -29,6 +29,7 @@ interface Relationship {
   confidence?: number;
   source_name?: string;
   target_name?: string;
+  evidence?: string;
 }
 
 interface GraphNode {
@@ -46,6 +47,7 @@ interface GraphEdge {
   last_seen?: string;
   source: string;
   target: string;
+  evidence?: string;
   [key: string]: unknown;
 }
 
@@ -216,11 +218,10 @@ function NetworkPageInner() {
   const [snapshotNameInput, setSnapshotNameInput] = useState('');
   const [snapshotFormOpen, setSnapshotFormOpen] = useState(false);
   const [activeSnapshotId, setActiveSnapshotId] = useState<string | null>(null);
-  // Relationship evidence
+  // Relationship evidence (rel.evidence is persisted on the edge — just toggle visibility, no fetch)
   const [relEvidenceOpen, setRelEvidenceOpen] = useState<Record<number, boolean>>({});
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [relEvidenceData, setRelEvidenceData] = useState<Record<number, any[]>>({});
-  const [relEvidenceLoading, setRelEvidenceLoading] = useState<Record<number, boolean>>({});
+  // De-emphasize noise-tier ASSOCIATED_WITH edges in the Edge Overview stats
+  const [showLowSignalRel, setShowLowSignalRel] = useState(false);
   const [mobileLeftOpen, setMobileLeftOpen] = useState(false);
   const [mobileRightOpen, setMobileRightOpen] = useState(false);
   // Ego highlight depth for graph selection
@@ -469,74 +470,10 @@ function NetworkPageInner() {
     }
   }
 
-  async function toggleRelEvidence(relIndex: number, rel: Relationship) {
-    if (relEvidenceOpen[relIndex]) {
-      setRelEvidenceOpen(prev => ({ ...prev, [relIndex]: false }));
-      return;
-    }
-    setRelEvidenceOpen(prev => ({ ...prev, [relIndex]: true }));
-    if (relEvidenceData[relIndex]) return; // Already loaded
-
-    if (!activeProject) return;
-    setRelEvidenceLoading(prev => ({ ...prev, [relIndex]: true }));
-    try {
-      const docsRes = await documentsApi.list(activeProject.id);
-      const allDocs = docsRes.data.documents || [];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const passages: any[] = [];
-      const sourceName = rel.source_name || '';
-      const targetName = rel.target_name || '';
-      for (const doc of allDocs) {
-        try {
-          // First try the evidence endpoint for co-occurring passages
-          if (sourceName) {
-            const evRes = await documentsApi.evidence(doc.id, sourceName);
-            if (evRes.data.count > 0) {
-              for (const p of evRes.data.passages) {
-                if (targetName && p.text.includes(targetName)) {
-                  passages.push({ ...p, document_name: doc.name, document_id: doc.id });
-                }
-              }
-            }
-          }
-          // Fallback: fetch full document and search for co-occurrence in content
-          if (passages.filter(p => p.document_id === doc.id).length === 0 && sourceName && targetName) {
-            const docRes = await documentsApi.get(doc.id);
-            const content = docRes.data.content || '';
-            if (content.includes(sourceName) && content.includes(targetName)) {
-              // Find passages containing both names — search sentence by sentence
-              const sentences = content.split(/(?<=[.!?])\s+/);
-              let accumulated = '';
-              for (const sentence of sentences) {
-                accumulated += (accumulated ? ' ' : '') + sentence;
-                if (accumulated.includes(sourceName) && accumulated.includes(targetName)) {
-                  // Trim to ~400 chars around the relevant area
-                  const trimmed = accumulated.length > 400 ? '...' + accumulated.slice(-400) : accumulated;
-                  passages.push({
-                    text: trimmed,
-                    document_name: doc.name || docRes.data.name,
-                    document_id: doc.id,
-                    entity_name: sourceName,
-                  });
-                  accumulated = '';
-                  break;
-                }
-                if (accumulated.length > 600) {
-                  accumulated = sentence;
-                }
-              }
-            }
-          }
-        } catch {
-          // skip
-        }
-      }
-      setRelEvidenceData(prev => ({ ...prev, [relIndex]: passages }));
-    } catch {
-      setRelEvidenceData(prev => ({ ...prev, [relIndex]: [] }));
-    } finally {
-      setRelEvidenceLoading(prev => ({ ...prev, [relIndex]: false }));
-    }
+  // Relationship evidence is persisted on the edge itself (rel.evidence) — just toggle the
+  // collapsible open/closed. No document fetching / client-side co-occurrence search.
+  function toggleRelEvidence(relIndex: number) {
+    setRelEvidenceOpen(prev => ({ ...prev, [relIndex]: !prev[relIndex] }));
   }
 
   useEffect(() => {
@@ -713,8 +650,6 @@ function NetworkPageInner() {
     setTypeDropdownOpen(false);
     setEvidenceDocs([]);
     setRelEvidenceOpen({});
-    setRelEvidenceData({});
-    setRelEvidenceLoading({});
     checkWatchlistStatus(entity.id);
     try {
       const res = await entitiesApi.get(entity.id);
@@ -1762,25 +1697,42 @@ function NetworkPageInner() {
                     relCounts[rt].totalConf += (e.confidence ?? 0.5);
                   });
                   Object.values(relCounts).forEach(v => { v.avgConf = v.count > 0 ? v.totalConf / v.count : 0; });
-                  const sorted = Object.entries(relCounts).sort((a, b) => b[1].count - a[1].count);
-                  const maxCount = sorted.length > 0 ? sorted[0][1].count : 1;
+                  const entries = Object.entries(relCounts);
+                  // ASSOCIATED_WITH is a noise-tier catch-all relation that tends to dominate this
+                  // list with little analytic value — de-emphasize it behind a collapsed disclosure.
+                  const typed = entries.filter(([rt]) => rt !== 'ASSOCIATED_WITH').sort((a, b) => b[1].count - a[1].count);
+                  const noise = entries.filter(([rt]) => rt === 'ASSOCIATED_WITH');
+                  const maxCount = entries.length > 0 ? Math.max(...entries.map(([, d]) => d.count)) : 1;
+                  const renderRow = ([rt, data]: [string, { count: number; avgConf: number; totalConf: number }]) => (
+                    <div key={rt} className="bg-navy-700 rounded p-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-300 font-medium">{formatRelType(rt)}</span>
+                        <span className="text-gray-500">{data.count}</span>
+                      </div>
+                      <div className="w-full bg-navy-800 rounded-full h-1.5 mt-1">
+                        <div className="bg-accent-blue h-1.5 rounded-full" style={{ width: `${(data.count / maxCount) * 100}%` }} />
+                      </div>
+                      <div className="text-[10px] text-gray-500 mt-0.5">
+                        Avg confidence: {(data.avgConf * 100).toFixed(0)}%
+                      </div>
+                    </div>
+                  );
                   return (
                     <div className="space-y-1">
-                      {sorted.map(([rt, data]) => (
-                        <div key={rt} className="bg-navy-700 rounded p-2">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-gray-300 font-medium">{formatRelType(rt)}</span>
-                            <span className="text-gray-500">{data.count}</span>
-                          </div>
-                          <div className="w-full bg-navy-800 rounded-full h-1.5 mt-1">
-                            <div className="bg-accent-blue h-1.5 rounded-full" style={{ width: `${(data.count / maxCount) * 100}%` }} />
-                          </div>
-                          <div className="text-[10px] text-gray-500 mt-0.5">
-                            Avg confidence: {(data.avgConf * 100).toFixed(0)}%
-                          </div>
+                      {typed.map(renderRow)}
+                      {typed.length === 0 && noise.length === 0 && <p className="text-xs text-gray-500">No edges in graph.</p>}
+                      {noise.length > 0 && (
+                        <div className={typed.length > 0 ? 'pt-1' : ''}>
+                          <button
+                            onClick={() => setShowLowSignalRel(v => !v)}
+                            className="w-full flex items-center justify-between text-[10px] text-gray-500 hover:text-gray-300 px-1 py-1"
+                          >
+                            <span>{showLowSignalRel ? '▾' : '▸'} Low-signal (Associated With)</span>
+                            <span>{noise[0][1].count}</span>
+                          </button>
+                          {showLowSignalRel && noise.map(renderRow)}
                         </div>
-                      ))}
-                      {sorted.length === 0 && <p className="text-xs text-gray-500">No edges in graph.</p>}
+                      )}
                     </div>
                   );
                 })()}
@@ -2283,7 +2235,7 @@ function NetworkPageInner() {
                           return (srcId === selectedEntity.id && tgtId === otherId) || (tgtId === selectedEntity.id && srcId === otherId);
                         }).length;
                         const conf = rel.confidence;
-                        const confBarColor = conf !== undefined
+                        const confDotColor = conf !== undefined
                           ? conf >= 0.8 ? 'bg-green-500'
                           : conf >= 0.5 ? 'bg-accent-blue'
                           : conf >= 0.3 ? 'bg-yellow-500'
@@ -2291,37 +2243,32 @@ function NetworkPageInner() {
                           : '';
                         return (
                         <div key={i} className="text-xs bg-navy-700 rounded p-2">
-                          <span className="text-accent-blue">{formatRelType(rel.rel_type)}{edgeWeight > 1 ? ` (${edgeWeight})` : ''}</span>
-                          {conf !== undefined && (
-                            <span className="text-gray-500 ml-2">({(conf * 100).toFixed(0)}%)</span>
-                          )}
-                          {conf !== undefined && (
-                            <div className="w-full bg-navy-800 rounded-full h-1.5 mt-1">
-                              <div className={`${confBarColor} h-1.5 rounded-full transition-all`} style={{ width: `${conf * 100}%` }} />
-                            </div>
-                          )}
-                          <div className="text-gray-400 mt-0.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-accent-blue truncate">{formatRelType(rel.rel_type)}{edgeWeight > 1 ? ` (${edgeWeight})` : ''}</span>
+                            {conf !== undefined && (
+                              <span className="inline-flex items-center gap-1 text-gray-500 flex-none">
+                                <span className={`w-1.5 h-1.5 rounded-full ${confDotColor}`} />
+                                {(conf * 100).toFixed(0)}%
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-gray-400 mt-0.5 truncate">
                             {rel.source_name || rel.source_id} &rarr; {rel.target_name || rel.target_id}
                           </div>
                           <button
-                            onClick={() => toggleRelEvidence(i, rel)}
+                            onClick={() => toggleRelEvidence(i)}
                             className="text-[10px] text-accent-blue hover:underline mt-1"
                           >
                             {relEvidenceOpen[i] ? 'Hide Evidence' : 'Show Evidence'}
                           </button>
                           {relEvidenceOpen[i] && (
-                            <div className="mt-1.5 space-y-1">
-                              {relEvidenceLoading[i] ? (
-                                <p className="text-[10px] text-gray-500">Loading evidence...</p>
-                              ) : relEvidenceData[i] && relEvidenceData[i].length > 0 ? (
-                                relEvidenceData[i].map((passage: { text: string; document_name: string; document_id: string }, pi: number) => (
-                                  <div key={pi} className="bg-navy-800 rounded p-1.5 text-[10px]">
-                                    <div className="text-gray-500 mb-0.5 font-medium">{passage.document_name}</div>
-                                    <div className="text-gray-400 leading-relaxed">&ldquo;{passage.text}&rdquo;</div>
-                                  </div>
-                                ))
+                            <div className="mt-1.5">
+                              {rel.evidence ? (
+                                <div className="bg-navy-800 rounded p-1.5 text-[10px] text-gray-400 leading-relaxed italic">
+                                  &ldquo;{rel.evidence}&rdquo;
+                                </div>
                               ) : (
-                                <p className="text-[10px] text-gray-500">No co-occurring passages found in source documents.</p>
+                                <p className="text-[10px] text-gray-500 italic">No captured evidence — re-run extraction to populate.</p>
                               )}
                             </div>
                           )}
@@ -2541,6 +2488,16 @@ function NetworkPageInner() {
                       <span className="text-gray-300">{String(selectedEdge['method'])}</span>
                     </div>
                   )}
+                  <div>
+                    <span className="text-gray-500">Evidence:</span>
+                    {selectedEdge.evidence ? (
+                      <div className="mt-1 bg-navy-700 rounded p-1.5 text-gray-300 italic leading-relaxed">
+                        &ldquo;{selectedEdge.evidence}&rdquo;
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-gray-500 italic">No captured evidence — re-run extraction to populate.</div>
+                    )}
+                  </div>
                 </div>
                 <button
                   onClick={() => setSelectedEdge(null)}

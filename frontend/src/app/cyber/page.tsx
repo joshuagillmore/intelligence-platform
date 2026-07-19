@@ -22,6 +22,7 @@ interface Relationship {
   confidence?: number;
   source_name?: string;
   target_name?: string;
+  evidence?: string;
 }
 
 interface GraphNode {
@@ -469,14 +470,21 @@ export default function CyberPage() {
                                       {rels.length > 0 ? (
                                         <div className="space-y-1 max-h-40 overflow-y-auto">
                                           {rels.map((r, i) => (
-                                            <div key={i} className="text-xs rounded p-2 flex items-center gap-2" style={{ backgroundColor: '#1a1f2e' }}>
-                                              <span className="font-medium" style={{ color: '#adc6ff' }}>{r.rel_type}</span>
-                                              {r.confidence !== undefined && (
-                                                <span className="text-gray-500">({(r.confidence * 100).toFixed(0)}%)</span>
+                                            <div key={i} className="text-xs rounded p-2" style={{ backgroundColor: '#1a1f2e' }}>
+                                              <div className="flex items-center gap-2">
+                                                <span className="font-medium" style={{ color: '#adc6ff' }}>{r.rel_type}</span>
+                                                {r.confidence !== undefined && (
+                                                  <span className="text-gray-500">({(r.confidence * 100).toFixed(0)}%)</span>
+                                                )}
+                                                <span className="text-gray-400 ml-auto truncate">
+                                                  {r.source_name || r.source_id} &rarr; {r.target_name || r.target_id}
+                                                </span>
+                                              </div>
+                                              {r.evidence && (
+                                                <div className="mt-1 text-gray-500 italic truncate" title={r.evidence}>
+                                                  &ldquo;{r.evidence}&rdquo;
+                                                </div>
                                               )}
-                                              <span className="text-gray-400 ml-auto truncate">
-                                                {r.source_name || r.source_id} &rarr; {r.target_name || r.target_id}
-                                              </span>
                                             </div>
                                           ))}
                                         </div>
@@ -711,14 +719,21 @@ export default function CyberPage() {
                               {rels.length > 0 ? (
                                 <div className="space-y-1 max-h-48 overflow-y-auto">
                                   {rels.map((r, i) => (
-                                    <div key={i} className="text-xs rounded p-2 flex items-center gap-2" style={{ backgroundColor: '#2f3444' }}>
-                                      <span className="font-medium" style={{ color: '#adc6ff' }}>{r.rel_type}</span>
-                                      {r.confidence !== undefined && (
-                                        <span className="text-gray-500">({(r.confidence * 100).toFixed(0)}%)</span>
+                                    <div key={i} className="text-xs rounded p-2" style={{ backgroundColor: '#2f3444' }}>
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-medium" style={{ color: '#adc6ff' }}>{r.rel_type}</span>
+                                        {r.confidence !== undefined && (
+                                          <span className="text-gray-500">({(r.confidence * 100).toFixed(0)}%)</span>
+                                        )}
+                                        <span className="text-gray-400 ml-auto truncate">
+                                          {r.source_name || r.source_id} &rarr; {r.target_name || r.target_id}
+                                        </span>
+                                      </div>
+                                      {r.evidence && (
+                                        <div className="mt-1 text-gray-500 italic truncate" title={r.evidence}>
+                                          &ldquo;{r.evidence}&rdquo;
+                                        </div>
                                       )}
-                                      <span className="text-gray-400 ml-auto truncate">
-                                        {r.source_name || r.source_id} &rarr; {r.target_name || r.target_id}
-                                      </span>
                                     </div>
                                   ))}
                                 </div>
