@@ -596,7 +596,7 @@ class TopicTreeService:
                     # Include longer excerpt for LLM summary generation
                     if full_content:
                         document_excerpts.append({
-                            "name": doc.get("name", ""),
+                            "name": doc.get("name") or "",
                             "content": full_content[:3000],
                         })
                     # Find entities extracted from this document
@@ -707,7 +707,7 @@ class TopicTreeService:
             content = (doc_full.get("content", "") if doc_full else "") or ""
             if content:
                 document_excerpts.append({
-                    "name": d.get("name", ""),
+                    "name": d.get("name") or "",
                     "content": content[:3000],
                 })
         # Focus the summary on this entity and the entities it connects to.
