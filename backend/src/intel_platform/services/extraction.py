@@ -226,6 +226,19 @@ def _get_nlp():
     return _nlp
 
 
+# Co-occurrence is a last-resort guess, not the default: cap how many
+# trailing neighbors in a sentence's entity list each entity pairs with, so a
+# dense sentence (many named entities) produces O(n) fallback edges instead
+# of the full O(n^2) cross-product. This still keeps every entity in a
+# sentence connected via the resulting chain (useful for graph traversal)
+# without the quadratic edge count that was flooding the graph with noise
+# (eval: 45 predicted vs 15 expected relationships on cyber_threat_report_1,
+# driven by this blowup). 2 was chosen over a stricter window of 1 because it
+# was the smallest value that didn't drop any true positives across the eval
+# fixture set — some genuine ASSOCIATED_WITH pairs (e.g. two officials named
+# together with an intervening Date/Location mention) are 2 apart, not 1.
+COOCCURRENCE_WINDOW = 2
+
 HASH_CONTEXT_KEYWORDS = re.compile(
     r'\b(?:hash|md5|sha1|sha256|sha-1|sha-256|checksum|ioc|indicator|malware|sample|binary|payload|artifact)\b',
     re.IGNORECASE,
@@ -537,11 +550,16 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
 
     relationships = []
     seen_rel_keys: set[tuple[str, str, str]] = set()
+    # Tracks every pair that already has *some* relationship (any type, from
+    # any stage), so the co-occurrence fallback below never piles a blanket
+    # ASSOCIATED_WITH on top of a pair a typed/pattern relation already links.
+    linked_pairs: set[frozenset[str]] = set()
 
     def _add_rel(src_name: str, tgt_name: str, rel_type: str, confidence: float) -> None:
         key = (src_name, tgt_name, rel_type)
         if key not in seen_rel_keys:
             seen_rel_keys.add(key)
+            linked_pairs.add(frozenset((src_name, tgt_name)))
             relationships.append({
                 "source_name": src_name, "target_name": tgt_name,
                 "rel_type": rel_type, "confidence": confidence,
@@ -595,26 +613,37 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
                 _add_rel(subj_ent["name"], obj_ent["name"], rel_type_from_verb, 0.7)
 
         # ── Stage B: Co-occurrence relationships (fallback) ──
+        # Bounded to nearby entities (COOCCURRENCE_WINDOW), not the full
+        # cross-product, and skipped wherever Stage A (or an earlier
+        # sentence) already linked the pair with a real relationship —
+        # ASSOCIATED_WITH only fires when nothing better connects the two.
         for i, e1 in enumerate(sent_entities_list):
-            for e2 in sent_entities_list[i + 1:]:
+            for e2 in sent_entities_list[i + 1:i + 1 + COOCCURRENCE_WINDOW]:
                 if e1.get("entity_type") == "Date" or e2.get("entity_type") == "Date":
                     if e1.get("entity_type") == "Date":
                         src, tgt = e2, e1
                     else:
                         src, tgt = e1, e2
                     _add_rel(src["name"], tgt["name"], "OCCURRED_ON", 0.7)
-                else:
+                elif frozenset((e1["name"], e2["name"])) not in linked_pairs:
                     _add_rel(e1["name"], e2["name"], "ASSOCIATED_WITH", 0.5)
 
         # ── Stage C: Cross-sentence relationship detection ──
+        # A discourse marker signals the two *sentences* are connected, not
+        # that every entity in one relates to every entity in the other —
+        # bridge them at a single point (last entity of the previous
+        # sentence to the first of this one) instead of an n*m cross-product.
         if prev_sent_entities and sent_entities_list:
             sent_lower = sent_text.lower()
             has_discourse_marker = any(marker in sent_lower for marker in discourse_markers)
             if has_discourse_marker:
-                for prev_e in prev_sent_entities:
-                    for curr_e in sent_entities_list:
-                        if prev_e["name"] != curr_e["name"]:
-                            _add_rel(prev_e["name"], curr_e["name"], "ASSOCIATED_WITH", 0.4)
+                prev_e = prev_sent_entities[-1]
+                curr_e = sent_entities_list[0]
+                if (
+                    prev_e["name"] != curr_e["name"]
+                    and frozenset((prev_e["name"], curr_e["name"])) not in linked_pairs
+                ):
+                    _add_rel(prev_e["name"], curr_e["name"], "ASSOCIATED_WITH", 0.4)
 
         prev_sent_entities = sent_entities_list
 

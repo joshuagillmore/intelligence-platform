@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     coreference_enabled: bool = False
     entity_resolution_threshold: float = 0.92
     extraction_confidence_min: float = 0.0
+    # Storage-time floor for blanket co-occurrence relationships
+    # (ASSOCIATED_WITH) specifically — these are a last-resort "these two
+    # entities appeared near each other" guess, not a typed/pattern-derived
+    # relation, so they need a higher bar to be worth persisting to the
+    # graph. Verb/pattern-derived and LLM-typed relationships are unaffected.
+    cooccurrence_confidence_min: float = 0.55
 
     # Chunking
     chunk_size: int = 2000
