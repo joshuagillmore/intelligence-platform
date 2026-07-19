@@ -1,0 +1,35 @@
+{
+  "entities": [
+    {"name": "Russian Black Sea Fleet", "entity_type": "Organization"},
+    {"name": "Standing Maritime Group Two", "entity_type": "Organization", "aliases": ["SNMG2"]},
+    {"name": "Ukrainian Navy", "entity_type": "Organization"},
+    {"name": "Turkish Naval Forces", "entity_type": "Organization"},
+    {"name": "Royal Navy", "entity_type": "Organization"},
+    {"name": "Oleg Sviridov", "entity_type": "Person"},
+    {"name": "Ian Ashworth", "entity_type": "Person"},
+    {"name": "RFS Admiral Grigorovich", "entity_type": "MilitaryAsset"},
+    {"name": "HMS Diamond", "entity_type": "MilitaryAsset"},
+    {"name": "TCG Kinaliada", "entity_type": "MilitaryAsset"},
+    {"name": "Project 11356", "entity_type": "EquipmentType", "aliases": ["Krivak IV-class"]},
+    {"name": "Ada-class", "entity_type": "EquipmentType"},
+    {"name": "Sea Baby", "entity_type": "EquipmentType"},
+    {"name": "Sea Shield 2026", "entity_type": "MilitaryExercise"},
+    {"name": "Montreux Convention", "entity_type": "Legislation"},
+    {"name": "Sevastopol", "entity_type": "Location"},
+    {"name": "Novorossiysk", "entity_type": "Location"},
+    {"name": "Bosphorus Strait", "entity_type": "Location"},
+    {"name": "Istanbul", "entity_type": "Location"},
+    {"name": "Odesa", "entity_type": "Location"},
+    {"name": "Black Sea", "entity_type": "Location"}
+  ],
+  "relationships": [
+    {"source": "Oleg Sviridov", "target": "Russian Black Sea Fleet", "rel_type": "COMMANDS"},
+    {"source": "Ian Ashworth", "target": "Standing Maritime Group Two", "rel_type": "COMMANDS"},
+    {"source": "RFS Admiral Grigorovich", "target": "Russian Black Sea Fleet", "rel_type": "BELONGS_TO"},
+    {"source": "RFS Admiral Grigorovich", "target": "Project 11356", "rel_type": "INSTANCE_OF"},
+    {"source": "TCG Kinaliada", "target": "Turkish Naval Forces", "rel_type": "BELONGS_TO"},
+    {"source": "TCG Kinaliada", "target": "Ada-class", "rel_type": "INSTANCE_OF"},
+    {"source": "Standing Maritime Group Two", "target": "Sea Shield 2026", "rel_type": "CONDUCTS"},
+    {"source": "RFS Admiral Grigorovich", "target": "Sevastopol", "rel_type": "DEPLOYED_FROM"}
+  ]
+}

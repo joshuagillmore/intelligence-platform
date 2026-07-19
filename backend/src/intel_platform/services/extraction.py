@@ -370,6 +370,17 @@ def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
                 "source": doc_id, "method": "regex", "confidence": 0.9,
             })
 
+    # Military hardware designations (e.g. "Type 075", "Type 052D") — spaCy
+    # misses these entirely, so extract them as EquipmentType directly.
+    for match in re.finditer(r'\bType[- ]?\d{2,4}[A-Z]?\b', text):
+        desig = match.group().strip()
+        if desig not in seen and len(desig) >= 6:
+            seen.add(desig)
+            cyber_entities.append({
+                "name": desig, "entity_type": "EquipmentType",
+                "source": doc_id, "method": "regex", "confidence": 0.85,
+            })
+
     # Date extraction
     for pattern in DATE_PATTERNS:
         for match in pattern.finditer(text):
@@ -401,6 +412,22 @@ DEMONYMS = {
     "iranian", "israeli", "ukrainian", "japanese", "korean", "north korean",
     "south korean", "indian", "pakistani", "turkish", "syrian", "iraqi", "saudi",
     "arab", "african", "asian", "western", "eastern", "afghan", "chechen",
+}
+
+# Threat-actor naming: APT-NN and CrowdStrike-style "<Adjective> <Animal>"
+# adversary handles (Cozy Bear, Wicked Panda). Capitalization required to avoid
+# firing on a lone common noun.
+_THREAT_ACTOR_RE = re.compile(
+    r"^(?:APT[- ]?\d+|[A-Z][A-Za-z]+ "
+    r"(?:Panda|Bear|Kitten|Spider|Chollima|Jackal|Buffalo|Tiger|Crane|Lynx|Leopard|Ocelot|Dragon|Hawk))$"
+)
+# Military hardware designations: "Type 052", "Type 075D" -> EquipmentType.
+_MIL_EQUIP_RE = re.compile(r"^Type[- ]?\d{2,4}[A-Z]?$", re.IGNORECASE)
+# Well-known malware families spaCy tends to tag Organization/Person.
+KNOWN_MALWARE = {
+    "mimikatz", "plugx", "shadowpad", "wellmess", "wellmail", "cobalt strike",
+    "emotet", "trickbot", "qakbot", "wannacry", "notpetya", "sunburst",
+    "china chopper", "graphicalneutrino", "gootloader", "bruteratel",
 }
 
 
@@ -453,6 +480,15 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         mitre_re = re.compile(r'^T\d{4}(?:\.\d{3})?$')
         if mitre_re.match(name):
             e["entity_type"] = "TTP"
+
+        # Domain typing that spaCy misses: threat actors, military hardware,
+        # known malware (else they leak in as Organization/Person/Location).
+        if _THREAT_ACTOR_RE.match(name):
+            e["entity_type"] = "ThreatActor"
+        elif _MIL_EQUIP_RE.match(name):
+            e["entity_type"] = "EquipmentType"
+        elif name_lower in KNOWN_MALWARE:
+            e["entity_type"] = "Malware"
 
         # Force known persons
         if name_lower in known_pers:
@@ -600,9 +636,8 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
 
     # ── Relationship extraction ────────────────────────────────────────────
     # Load verb-to-relationship mappings from YAML
-    from intel_platform.data import get_verb_mappings, get_discourse_markers
+    from intel_platform.data import get_verb_mappings
     verb_map = get_verb_mappings()
-    discourse_markers = get_discourse_markers()
 
     relationships = []
     seen_rel_keys: set[tuple[str, str, str]] = set()
@@ -623,8 +658,6 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
                 # The in-context span this relation was read from — surfaced as evidence.
                 "evidence": _clean_evidence(evidence, src_name, tgt_name),
             })
-
-    prev_sent_entities: list[dict] = []
 
     for sent in doc.sents:
         sent_text = sent.text
@@ -696,25 +729,6 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
                 # on top of a pair a typed/pattern relation already links.
                 if (j - i) <= COOCCURRENCE_WINDOW and frozenset((e1["name"], e2["name"])) not in linked_pairs:
                     _add_rel(e1["name"], e2["name"], "ASSOCIATED_WITH", 0.5, sent_text)
-
-        # ── Stage C: Cross-sentence relationship detection ──
-        # A discourse marker signals the two *sentences* are connected, not
-        # that every entity in one relates to every entity in the other —
-        # bridge them at a single point (last entity of the previous
-        # sentence to the first of this one) instead of an n*m cross-product.
-        if prev_sent_entities and sent_entities_list:
-            sent_lower = sent_text.lower()
-            has_discourse_marker = any(marker in sent_lower for marker in discourse_markers)
-            if has_discourse_marker:
-                prev_e = prev_sent_entities[-1]
-                curr_e = sent_entities_list[0]
-                if (
-                    prev_e["name"] != curr_e["name"]
-                    and frozenset((prev_e["name"], curr_e["name"])) not in linked_pairs
-                ):
-                    _add_rel(prev_e["name"], curr_e["name"], "ASSOCIATED_WITH", 0.4, sent_text)
-
-        prev_sent_entities = sent_entities_list
 
     # Resolve event_datetime on Event entities from their OCCURRED_ON Date links
     _link_event_dates(entities, relationships)

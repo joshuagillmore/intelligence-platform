@@ -1,0 +1,27 @@
+OPEN SOURCE INTELLIGENCE REPORT: BLACK SEA NAVAL ACTIVITY ASSESSMENT
+
+Report ID: OSINT-BLKSEA-2026-0057
+Date: 22 May 2026
+Classification: UNCLASSIFIED // FOR OFFICIAL USE ONLY
+Source Reliability: B2 (Usually reliable source, probably true)
+Prepared by: Maritime Fusion Cell, Allied Maritime Command
+
+EXECUTIVE SUMMARY
+
+This report assesses naval activity in the Black Sea during April and May 2026, drawing on open-source ship tracking data, commercial satellite imagery, and Turkish General Staff notifications issued under the Montreux Convention. The Russian Black Sea Fleet, NATO's Standing Maritime Group Two (SNMG2), and the Ukrainian Navy have all conducted notable operations during the period.
+
+RUSSIAN BLACK SEA FLEET POSTURE
+
+Vice Admiral Oleg Sviridov, Commander of the Russian Black Sea Fleet, oversaw the repositioning of the frigate RFS Admiral Grigorovich, a Project 11356 Krivak IV-class frigate, from its home port at Sevastopol to a forward anchorage near Novorossiysk following renewed Ukrainian long-range strikes on Crimean port facilities. Commercial satellite imagery confirmed the frigate's presence at Novorossiysk alongside auxiliary support vessels.
+
+NATO RESPONSE
+
+Commodore Ian Ashworth, Royal Navy, Commander of SNMG2, led the destroyer HMS Diamond into the Black Sea via the Bosphorus Strait, in accordance with transit notifications submitted to Turkish authorities under the Montreux Convention, which restricts the tonnage and duration of non-riparian warship presence. HMS Diamond subsequently participated in exercise Sea Shield 2026, a multinational mine countermeasures and maritime security exercise coordinated with the Turkish Naval Forces corvette TCG Kinaliada, an Ada-class corvette based at Istanbul.
+
+UKRAINIAN MARITIME OPERATIONS
+
+The Ukrainian Navy has continued employing Sea Baby uncrewed surface vessels against Russian shipping and Crimean infrastructure, launching strikes from staging areas near Odesa. Ukrainian officials, speaking through the Navy's press office in Odesa, credited the Sea Baby campaign with restricting Russian Black Sea Fleet operations east of a line running from Sevastopol to Novorossiysk.
+
+ASSESSMENT
+
+The Maritime Fusion Cell assesses with moderate confidence that continued Ukrainian strikes will keep pressuring the Russian Black Sea Fleet toward its eastern anchorages, while NATO's Sea Shield 2026 rotation signals sustained allied presence in the Black Sea through the Bosphorus Strait chokepoint, itself governed by the Montreux Convention.

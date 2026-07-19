@@ -1,0 +1,25 @@
+CYBER THREAT INTELLIGENCE REPORT: OBSIDIAN KESTREL TARGETS GULF ENERGY SECTOR
+
+Report ID: CTI-GULF-2026-0118
+Date: 03 June 2026
+Classification: SECRET // REL TO GCC
+Source Reliability: B2 (Usually reliable source, probably true)
+Prepared by: Gulf Cyber Defense Center (GCDC), Threat Intelligence Division
+
+EXECUTIVE SUMMARY
+
+This report details a targeted intrusion campaign attributed with high confidence to APT-52, also known as Obsidian Kestrel, a threat actor assessed to operate on behalf of Iran's Ministry of Intelligence and Security (MOIS). The campaign, designated SANDSTORM VEIL, has targeted energy-sector organizations across the Gulf since at least April 2026, including Khalij Energy Holdings, headquartered in Abu Dhabi, and Gulf Horizon Petrochemicals, headquartered in Doha.
+
+TECHNICAL ANALYSIS
+
+Initial access was achieved by exploiting CVE-2025-44821, a critical authentication-bypass vulnerability in FortiOS SSL-VPN appliances with a CVSS score of 9.3. Following exploitation, APT-52 deployed a custom backdoor named DustPetal to maintain persistence on compromised perimeter devices.
+
+DustPetal communicates with command-and-control infrastructure at 154.213.87.60 and via the domain energy-portal-update.net, which resolves to 45.152.68.19. Analysts observed the actor's use of MITRE ATT&CK technique T1190 (Exploit Public-Facing Application) for initial access and T1071.001 (Application Layer Protocol: Web Protocols) for command-and-control communications.
+
+ATTRIBUTION
+
+Mandiant assesses with high confidence that APT-52 is attributed to MOIS based on infrastructure overlaps with previously identified Iranian state-linked operations and targeting patterns consistent with Iranian intelligence collection priorities against Gulf hydrocarbon exporters. GCDC has independently corroborated the DustPetal indicators against telemetry shared by member-state computer emergency response teams.
+
+IMPACT AND TARGETS
+
+APT-52 has targeted Khalij Energy Holdings' bidding and logistics systems and Gulf Horizon Petrochemicals' industrial control network monitoring segment. No disruption to physical operations has been confirmed as of this reporting period. GCDC recommends immediate patching of FortiOS appliances and blocking of the identified indicators of compromise across member-state networks.

@@ -1,0 +1,442 @@
+{
+  "results": [
+    {
+      "name": "cyber_intrusion_holdout",
+      "extraction_time_s": 0.514,
+      "text_length": 2322,
+      "entities_predicted": 23,
+      "entities_expected": 16,
+      "relationships_predicted": 31,
+      "relationships_expected": 8,
+      "entity_metrics": {
+        "precision": 0.6087,
+        "recall": 0.875,
+        "f1": 0.7179,
+        "true_positives": 14,
+        "false_positives": 9,
+        "false_negatives": 2,
+        "per_type": {
+          "Campaign": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 0,
+            "expected": 1,
+            "true_positives": 0
+          },
+          "Date": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 4,
+            "expected": 0,
+            "true_positives": 0
+          },
+          "Domain": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "predicted": 1,
+            "expected": 1,
+            "true_positives": 1
+          },
+          "IPAddress": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "predicted": 2,
+            "expected": 2,
+            "true_positives": 2
+          },
+          "Location": {
+            "precision": 0.6667,
+            "recall": 2.0,
+            "f1": 1.0,
+            "predicted": 6,
+            "expected": 2,
+            "true_positives": 4
+          },
+          "Malware": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 0,
+            "expected": 1,
+            "true_positives": 0
+          },
+          "Organization": {
+            "precision": 0.3333,
+            "recall": 0.4,
+            "f1": 0.3636,
+            "predicted": 6,
+            "expected": 5,
+            "true_positives": 2
+          },
+          "Person": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 1,
+            "expected": 0,
+            "true_positives": 0
+          },
+          "TTP": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "predicted": 2,
+            "expected": 2,
+            "true_positives": 2
+          },
+          "ThreatActor": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 0,
+            "expected": 1,
+            "true_positives": 0
+          },
+          "Vulnerability": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "predicted": 1,
+            "expected": 1,
+            "true_positives": 1
+          }
+        }
+      },
+      "relationship_metrics": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "true_positives": 0,
+        "false_positives": 31,
+        "false_negatives": 8
+      },
+      "type_accuracy": {
+        "accuracy": 0.3333,
+        "correct": 6,
+        "total": 18,
+        "confusion": {
+          "Campaign -> Vulnerability": 1,
+          "Malware -> TTP": 1,
+          "Malware -> Date": 1,
+          "IPAddress -> Date": 1,
+          "Organization -> Location": 5,
+          "ThreatActor -> Person": 1,
+          "Malware -> Location": 1,
+          "Malware -> Organization": 1
+        }
+      }
+    },
+    {
+      "name": "influence_ops_holdout",
+      "extraction_time_s": 0.081,
+      "text_length": 2469,
+      "entities_predicted": 25,
+      "entities_expected": 15,
+      "relationships_predicted": 24,
+      "relationships_expected": 7,
+      "entity_metrics": {
+        "precision": 0.56,
+        "recall": 0.9333,
+        "f1": 0.7,
+        "true_positives": 14,
+        "false_positives": 11,
+        "false_negatives": 1,
+        "per_type": {
+          "Campaign": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 0,
+            "expected": 1,
+            "true_positives": 0
+          },
+          "Date": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 3,
+            "expected": 0,
+            "true_positives": 0
+          },
+          "Location": {
+            "precision": 0.7273,
+            "recall": 1.1429,
+            "f1": 0.8889,
+            "predicted": 11,
+            "expected": 7,
+            "true_positives": 8
+          },
+          "Organization": {
+            "precision": 0.875,
+            "recall": 1.1667,
+            "f1": 1.0,
+            "predicted": 8,
+            "expected": 6,
+            "true_positives": 7
+          },
+          "Person": {
+            "precision": 0.3333,
+            "recall": 1.0,
+            "f1": 0.5,
+            "predicted": 3,
+            "expected": 1,
+            "true_positives": 1
+          }
+        }
+      },
+      "relationship_metrics": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "true_positives": 0,
+        "false_positives": 24,
+        "false_negatives": 7
+      },
+      "type_accuracy": {
+        "accuracy": 0.6818,
+        "correct": 15,
+        "total": 22,
+        "confusion": {
+          "Location -> Date": 3,
+          "Organization -> Location": 2,
+          "Organization -> Person": 2
+        }
+      }
+    },
+    {
+      "name": "maritime_osint_holdout",
+      "extraction_time_s": 0.078,
+      "text_length": 2528,
+      "entities_predicted": 28,
+      "entities_expected": 21,
+      "relationships_predicted": 32,
+      "relationships_expected": 8,
+      "entity_metrics": {
+        "precision": 0.6786,
+        "recall": 0.9048,
+        "f1": 0.7755,
+        "true_positives": 19,
+        "false_positives": 9,
+        "false_negatives": 2,
+        "per_type": {
+          "Date": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 3,
+            "expected": 0,
+            "true_positives": 0
+          },
+          "EquipmentType": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 0,
+            "expected": 3,
+            "true_positives": 0
+          },
+          "Legislation": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 0,
+            "expected": 1,
+            "true_positives": 0
+          },
+          "Location": {
+            "precision": 0.9091,
+            "recall": 1.6667,
+            "f1": 1.1765,
+            "predicted": 11,
+            "expected": 6,
+            "true_positives": 10
+          },
+          "MilitaryAsset": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 0,
+            "expected": 3,
+            "true_positives": 0
+          },
+          "MilitaryExercise": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 0,
+            "expected": 1,
+            "true_positives": 0
+          },
+          "Organization": {
+            "precision": 0.7273,
+            "recall": 1.6,
+            "f1": 1.0,
+            "predicted": 11,
+            "expected": 5,
+            "true_positives": 8
+          },
+          "Person": {
+            "precision": 1.0,
+            "recall": 1.5,
+            "f1": 1.2,
+            "predicted": 3,
+            "expected": 2,
+            "true_positives": 3
+          }
+        }
+      },
+      "relationship_metrics": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "true_positives": 0,
+        "false_positives": 32,
+        "false_negatives": 8
+      },
+      "type_accuracy": {
+        "accuracy": 0.5417,
+        "correct": 13,
+        "total": 24,
+        "confusion": {
+          "EquipmentType -> Date": 1,
+          "Organization -> Location": 5,
+          "Legislation -> Organization": 1,
+          "Person -> Location": 1,
+          "MilitaryExercise -> Date": 1,
+          "EquipmentType -> Location": 2
+        }
+      }
+    },
+    {
+      "name": "sanctions_evasion_holdout",
+      "extraction_time_s": 0.075,
+      "text_length": 2353,
+      "entities_predicted": 25,
+      "entities_expected": 16,
+      "relationships_predicted": 41,
+      "relationships_expected": 8,
+      "entity_metrics": {
+        "precision": 0.6,
+        "recall": 0.9375,
+        "f1": 0.7317,
+        "true_positives": 15,
+        "false_positives": 10,
+        "false_negatives": 1,
+        "per_type": {
+          "Campaign": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 0,
+            "expected": 1,
+            "true_positives": 0
+          },
+          "CryptoWallet": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 0,
+            "expected": 1,
+            "true_positives": 0
+          },
+          "Date": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 4,
+            "expected": 0,
+            "true_positives": 0
+          },
+          "Financial": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 2,
+            "expected": 1,
+            "true_positives": 0
+          },
+          "Legislation": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 0,
+            "expected": 1,
+            "true_positives": 0
+          },
+          "Location": {
+            "precision": 0.8,
+            "recall": 0.6667,
+            "f1": 0.7273,
+            "predicted": 5,
+            "expected": 6,
+            "true_positives": 4
+          },
+          "Organization": {
+            "precision": 0.4,
+            "recall": 1.3333,
+            "f1": 0.6154,
+            "predicted": 10,
+            "expected": 3,
+            "true_positives": 4
+          },
+          "Person": {
+            "precision": 0.3333,
+            "recall": 1.0,
+            "f1": 0.5,
+            "predicted": 3,
+            "expected": 1,
+            "true_positives": 1
+          },
+          "Product": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 1,
+            "expected": 0,
+            "true_positives": 0
+          },
+          "Vessel": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "predicted": 0,
+            "expected": 2,
+            "true_positives": 0
+          }
+        }
+      },
+      "relationship_metrics": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "true_positives": 0,
+        "false_positives": 41,
+        "false_negatives": 8
+      },
+      "type_accuracy": {
+        "accuracy": 0.5333,
+        "correct": 8,
+        "total": 15,
+        "confusion": {
+          "Person -> Date": 1,
+          "Campaign -> Organization": 1,
+          "Legislation -> Organization": 1,
+          "Campaign -> Person": 1,
+          "Vessel -> Organization": 1,
+          "Person -> Organization": 1,
+          "Location -> Person": 1
+        }
+      }
+    }
+  ],
+  "fixtures": [
+    "cyber_intrusion_holdout",
+    "influence_ops_holdout",
+    "maritime_osint_holdout",
+    "sanctions_evasion_holdout"
+  ]
+}

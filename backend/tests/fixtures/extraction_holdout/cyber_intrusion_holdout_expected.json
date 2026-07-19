@@ -1,0 +1,30 @@
+{
+  "entities": [
+    {"name": "APT-52", "entity_type": "ThreatActor", "aliases": ["Obsidian Kestrel"]},
+    {"name": "MOIS", "entity_type": "Organization", "aliases": ["Ministry of Intelligence and Security"]},
+    {"name": "SANDSTORM VEIL", "entity_type": "Campaign"},
+    {"name": "Khalij Energy Holdings", "entity_type": "Organization"},
+    {"name": "Gulf Horizon Petrochemicals", "entity_type": "Organization"},
+    {"name": "CVE-2025-44821", "entity_type": "Vulnerability"},
+    {"name": "DustPetal", "entity_type": "Malware"},
+    {"name": "154.213.87.60", "entity_type": "IPAddress"},
+    {"name": "energy-portal-update.net", "entity_type": "Domain"},
+    {"name": "45.152.68.19", "entity_type": "IPAddress"},
+    {"name": "T1190", "entity_type": "TTP"},
+    {"name": "T1071.001", "entity_type": "TTP"},
+    {"name": "Mandiant", "entity_type": "Organization"},
+    {"name": "GCDC", "entity_type": "Organization", "aliases": ["Gulf Cyber Defense Center"]},
+    {"name": "Abu Dhabi", "entity_type": "Location"},
+    {"name": "Doha", "entity_type": "Location"}
+  ],
+  "relationships": [
+    {"source": "APT-52", "target": "MOIS", "rel_type": "ATTRIBUTED_TO"},
+    {"source": "APT-52", "target": "DustPetal", "rel_type": "USES"},
+    {"source": "APT-52", "target": "CVE-2025-44821", "rel_type": "EXPLOITS"},
+    {"source": "APT-52", "target": "Khalij Energy Holdings", "rel_type": "TARGETS"},
+    {"source": "APT-52", "target": "Gulf Horizon Petrochemicals", "rel_type": "TARGETS"},
+    {"source": "DustPetal", "target": "154.213.87.60", "rel_type": "COMMUNICATES_WITH"},
+    {"source": "DustPetal", "target": "energy-portal-update.net", "rel_type": "COMMUNICATES_WITH"},
+    {"source": "energy-portal-update.net", "target": "45.152.68.19", "rel_type": "RESOLVES_TO"}
+  ]
+}
