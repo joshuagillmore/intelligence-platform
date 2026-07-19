@@ -1,0 +1,14 @@
+# gluetun control-server access control.
+#
+# gluetun's `latest` image locks its control server behind auth by default.
+# The backend queries these three routes to render the admin VPN-status panel
+# (exit IP, up/down badge, and the kill-switch toggle). The control server is
+# bound host-local only (127.0.0.1:8001) and is reachable in-network solely by
+# the backend (gluetun:8000), so these read/toggle routes run without auth.
+# To require a key instead, set auth = "apikey" + apikey = "..." here and put
+# the same value in GLUETUN_CONTROL_APIKEY (.env) — the backend already sends
+# it as X-API-Key. See docker-compose.yml (gluetun service).
+[[roles]]
+name = "backend"
+routes = ["GET /v1/publicip/ip", "GET /v1/vpn/status", "PUT /v1/vpn/status"]
+auth = "none"

@@ -113,6 +113,10 @@ services:
       - NET_ADMIN
     devices:
       - "/dev/net/tun:/dev/net/tun"
+    volumes:
+      # Allow the backend's three control-server routes (status/IP/kill-switch)
+      # through gluetun's default-deny auth. See gluetun-auth.toml.
+      - "./gluetun-auth.toml:/gluetun/auth/config.toml:ro"
     ports:
       # Control server exposed host-local only (VPN status / kill-switch).
       # Host port 8001 (not 8000) to avoid colliding with the backend's host
