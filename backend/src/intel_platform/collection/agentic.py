@@ -666,7 +666,10 @@ async def evaluate_results(source, plan, acquire_result, provider):
         evaluation.setdefault("follow_up_urls", [])
         evaluation.setdefault("notes", "")
         return evaluation
-    return {"satisfied": True, "follow_up_urls": [], "notes": "Could not parse evaluation after retries"}
+    # Parse failure must NOT be reported as satisfied — that would silently
+    # mark an unassessed collection as complete and bias the loop toward false
+    # success. Treat an unparseable evaluation as not-yet-satisfied.
+    return {"satisfied": False, "follow_up_urls": [], "notes": "Could not parse evaluation after retries"}
 
 
 # ---------------------------------------------------------------------------

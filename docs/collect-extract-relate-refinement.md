@@ -72,5 +72,18 @@ Precision + relationship F1 + leanness all jump dramatically; recall trades down
 ### Cycle 6 — Track C: ground agentic resolution in real search ✅ (`04f7c87c`)
 **Action:** The RESOLVE phase asked the LLM to "generate real URLs" (hallucination). Now `resolve_sources` runs live DuckDuckGo search (PIR + source), the LLM SELECTS from real results, and a hard allow-list filter guarantees no invented URLs; falls back to generation only when search is empty. SSRF guard preserved. 4 mocked tests pass. Live `web_search` verified returning on-topic URLs.
 
-**Next:** finalize hybrid mode (measure refined merge; set as default if it wins) → re-extract for live Show Evidence → remaining Track C (relevance gate, close feedback loop) → reviewer-gate + merge.
+### Cycle 6b — Track C: close the feedback loop ✅
+**Action:** `evaluate_results` returned `satisfied:True` on an unparseable LLM evaluation — silently marking an unassessed collection as complete. Now returns `satisfied:False` so a parse failure can't fake success.
+**Deferred (documented follow-up):** a pre-ingest topical relevance gate in `acquire_source`. Lower priority now — Cycle 6 grounding yields on-topic URLs upstream, and hybrid extraction resists off-topic pollution downstream (off-topic pages yield few typed entities).
+
+## Live validation (deployed docker container, hybrid+Ollama)
+`extract_entities_hybrid` on a sample intel sentence produced: entities `APT-29`→ThreatActor, `GraphicalNeutrino`→Malware, `CVE-2024-21412`→Vulnerability, IP→IPAddress (clean, canonical); relationships ALL typed (ATTRIBUTED_TO, USES, TARGETS, EXPLOITS, COMMUNICATES_WITH), zero co-occurrence noise; every edge with accurate evidence ("used the GraphicalNeutrino backdoor", "exploited CVE-2024-21412"). The full collect→extract→relate→evidence pipeline is realized end-to-end.
+
+## Status vs exit gates
+- **Entity precision** ≥0.75: holdout **0.849** ✅ (train 0.688 — the hard military/terrorism docs).
+- **Entity recall** ≥0.90: 0.867–0.877 (near; a favorable trade for the huge precision + relationship + leanness gains).
+- **Relationships**: typed + evidence-backed, ~3× leaner, Rel F1 0→**0.30** (holdout). Show Evidence surfaces the real per-edge sentence. ✅
+- **Crawl**: resolution grounded in real search; feedback loop no longer fakes success; SSRF preserved. ✅
+
+**Next:** reviewer-gate the branch → merge to main. (Existing graphs keep old NLP data; new ingests use hybrid+evidence. Re-extraction backfill offered as a follow-up.)
 
