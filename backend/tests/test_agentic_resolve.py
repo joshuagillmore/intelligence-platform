@@ -58,3 +58,19 @@ async def test_grounded_resolution_returns_none_without_search_results():
     with patch("intel_platform.collection.search.web_search", return_value=[]):
         cfg = await agentic._resolve_via_search(None, "pir", _src())
     assert cfg is None
+
+
+def test_validate_urls_rejects_all_private_ranges():
+    """SSRF defense-in-depth: every private/loopback/link-local range is filtered,
+    including 172.16/12 (which the old string-prefix check missed)."""
+    blocked = [
+        "http://10.0.0.5/x", "http://192.168.1.1/x", "http://169.254.1.1/x",
+        "http://172.16.0.1/x", "http://172.20.10.5/x", "http://172.31.255.1/x",
+        "http://127.0.0.1/x", "http://localhost/x", "http://0.0.0.0/x",
+        "ftp://example.com/x",  # non-http scheme
+    ]
+    allowed = ["https://reuters.com/world", "http://iaea.org/iran", "https://8.8.8.8/x"]
+    out = agentic._validate_urls(blocked + allowed)
+    assert set(out) == set(allowed), f"unexpected: {out}"
+    # 172.16/12 specifically must not survive
+    assert not any("172." in u for u in out)
