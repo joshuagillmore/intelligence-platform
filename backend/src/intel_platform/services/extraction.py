@@ -811,14 +811,14 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
     loader = SkillsLoader()
     system = loader.get_system_prompt("entity_extraction", include_foundation=True) or ""
 
-    result = await provider.generate(
-        messages=[{"role": "user", "content": f"Extract entities and relationships from this text:\n\n{text}"}],
-        system=system,
-        temperature=0.2,
-        max_tokens=8192,
-    )
-
     try:
+        result = await provider.generate(
+            messages=[{"role": "user", "content": f"Extract entities and relationships from this text:\n\n{text}"}],
+            system=system,
+            temperature=0.2,
+            max_tokens=8192,
+        )
+
         # Try to parse JSON from response
         content = result.content
         # Find JSON in response (may be wrapped in markdown code blocks)
@@ -862,9 +862,13 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
         _link_event_dates(entities, relationships)
 
         return entities, relationships
-    except (json.JSONDecodeError, KeyError, ValueError):
-        # Log failure for debugging, fall back to NLP
-        logger.warning("LLM entity extraction returned invalid JSON for doc %s, falling back to NLP", doc_id)
+    except Exception:
+        # ANY failure degrades to NLP — not just unparseable JSON but a provider
+        # that's unreachable/rate-limited/erroring (Ollama down, cloud 429/401/5xx).
+        # hybrid is the DEFAULT mode, so a provider hiccup must never 500 the
+        # ingest path (which creates the Document first) or silently drop a
+        # document's extraction in the collection paths.
+        logger.warning("LLM entity extraction failed for doc %s, falling back to NLP", doc_id, exc_info=True)
         return extract_entities_nlp(text, doc_id)
 
 
