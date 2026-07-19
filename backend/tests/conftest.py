@@ -6,6 +6,9 @@ os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USER", "neo4j")
 os.environ.setdefault("NEO4J_PASSWORD", "changeme")
 os.environ.setdefault("API_KEY", "test-key")
+# Extraction defaults to hybrid (NLP + LLM) in production; force NLP for the
+# test suite so unit tests stay deterministic and never depend on a live LLM.
+os.environ.setdefault("EXTRACTION_MODE", "nlp")
 
 
 @pytest.fixture

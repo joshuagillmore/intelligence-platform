@@ -1,0 +1,25 @@
+INFLUENCE OPERATIONS ASSESSMENT: CAMPAIGN SPICE ROUTE — PRC-LINKED INFORMATION OPERATIONS IN THE PACIFIC ISLANDS
+
+Report ID: IO-PACIFIC-2026-0029
+Date: 09 July 2026
+Classification: UNCLASSIFIED // FOR OFFICIAL USE ONLY
+Source Reliability: B2 (Usually reliable source, probably true)
+Prepared by: Open Source Intelligence Cell, Pacific Fusion Centre
+
+EXECUTIVE SUMMARY
+
+This assessment examines a coordinated inauthentic behavior campaign, designated SPICE ROUTE, that has targeted public opinion in Solomon Islands, Fiji, and Papua New Guinea since January 2026. The campaign is operated by Pacific Century Media Group (PCMG), a Hong Kong-based content network assessed to be linked to the Chinese Communist Party's United Front Work Department (UFWD).
+
+CAMPAIGN STRUCTURE
+
+PCMG is led by Chen Baoyu, identified in corporate filings as the group's editorial director, and maintains coordinated account clusters on TikTok and X Corp. The network has promoted narratives opposing deep-sea mining agreements between Pacific Island states and Western firms, framing such agreements as neocolonial exploitation, while separately amplifying content favorable to Chinese-financed port and infrastructure projects in Honiara, Suva, and Port Moresby.
+
+Independent analysis by the research firm Graphika identified more than 3,600 coordinated accounts across the two platforms, many repurposed from dormant accounts previously used in commercial spam operations. TikTok disrupted approximately 1,200 accounts linked to the network, citing violations of its platform manipulation policy. X Corp subsequently suspended an additional 640 accounts following its own internal investigation.
+
+REGIONAL CONTEXT
+
+The campaign has coincided with diplomatic outreach by PRC officials ahead of the Pacific Islands Forum leaders' meeting, and several of the narratives promoted by PCMG accounts closely mirrored talking points issued by Chinese state media outlets. The Pacific Fusion Centre assesses with moderate confidence that SPICE ROUTE is intended to shape the information environment ahead of the Forum meeting rather than to influence any single national election.
+
+ASSESSMENT
+
+The Pacific Fusion Centre assesses with high confidence that PCMG's operational security failures — including shared registration infrastructure and reused account imagery — support attribution to a China-linked influence network, though direct UFWD tasking of PCMG has not been independently confirmed.

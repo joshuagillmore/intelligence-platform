@@ -29,6 +29,7 @@ interface LocationRelationship {
   source_id: string;
   target_id: string;
   rel_type: string;
+  evidence?: string;
 }
 
 /* ── color tokens (inline styles for custom palette) ── */
@@ -600,13 +601,20 @@ export default function GeoPage() {
                     ) : (
                       selectedRels.map((rel, i) => (
                         <div key={i} className="text-xs rounded-md px-3 py-2" style={{ background: C.elevated }}>
-                          <span style={{ color: C.primary }}>{rel.rel_type}</span>
-                          <span style={{ color: C.textMuted }}> &rarr; </span>
-                          <span className="text-gray-200">
-                            {rel.source_name === selectedLocation.name
-                              ? (rel.target_name || rel.target_id)
-                              : (rel.source_name || rel.source_id)}
-                          </span>
+                          <div>
+                            <span style={{ color: C.primary }}>{rel.rel_type}</span>
+                            <span style={{ color: C.textMuted }}> &rarr; </span>
+                            <span className="text-gray-200">
+                              {rel.source_name === selectedLocation.name
+                                ? (rel.target_name || rel.target_id)
+                                : (rel.source_name || rel.source_id)}
+                            </span>
+                          </div>
+                          {rel.evidence && (
+                            <div className="mt-1 italic truncate" style={{ color: C.textMuted }} title={rel.evidence}>
+                              &ldquo;{rel.evidence}&rdquo;
+                            </div>
+                          )}
                         </div>
                       ))
                     )}

@@ -140,6 +140,87 @@ def _merge_attributes(primary: dict, secondary: dict) -> None:
     for k, v in extra.items():
         target.setdefault(k, v)
 
+
+# Relationship types the graph accepts (mirror of GraphStore.VALID_REL_TYPES —
+# keep in sync). LLM rel_types outside this set collapse to ASSOCIATED_WITH.
+_VALID_REL_TYPES = frozenset({
+    "ASSOCIATED_WITH", "BELONGS_TO", "LOCATED_AT", "COMMUNICATES_WITH",
+    "RESOLVES_TO", "EXPLOITS", "USES", "TARGETS", "ATTRIBUTED_TO",
+    "MENTIONED_IN", "MENTIONS", "PARENT_OF", "RELATED_TO", "ASSESSES",
+    "SUPPORTED_BY", "SHARED_WITH", "OCCURRED_ON",
+    "COMMANDED_BY", "FUNDED_BY", "SUPPLIED_BY", "DEPLOYED_AT",
+})
+
+# The LLM emits fine-grained subtypes; the graph + eval gold track them at a
+# coarser canonical level. Map the umbrella subtypes down, keep analytically
+# meaningful specifics (ThreatActor, Malware, Campaign, Vulnerability, TTP...)
+# as-is.
+_LLM_TYPE_CANON = {
+    # Organization umbrella
+    "governmentagency": "Organization", "intelligenceservice": "Organization",
+    "militaryunit": "Organization", "ngo": "Organization", "bank": "Organization",
+    "company": "Organization", "corporation": "Organization", "consortium": "Organization",
+    "politicalparty": "Organization", "mediaoutlet": "Organization",
+    "university": "Organization", "researchinstitute": "Organization",
+    "criminalgroup": "Organization", "terroristgroup": "Organization",
+    # Malware umbrella
+    "backdoor": "Malware", "ransomware": "Malware", "trojan": "Malware",
+    "botnet": "Malware", "malwarefamily": "Malware", "rootkit": "Malware",
+    "c2server": "Infrastructure",
+    # Location umbrella
+    "country": "Location", "city": "Location", "region": "Location",
+    "facility": "Location", "base": "Location", "port": "Location",
+    "island": "Location", "airbase": "Location", "embassy": "Location",
+    "province": "Location", "district": "Location", "territory": "Location",
+    "border": "Location", "reef": "Location",
+    # Person umbrella
+    "analyst": "Person", "operative": "Person", "diplomat": "Person",
+    "commander": "Person", "politician": "Person", "scientist": "Person",
+    "executive": "Person", "agent": "Person", "informant": "Person",
+    # Equipment / naval
+    "ship": "Vessel", "submarine": "Vessel", "aircraft": "EquipmentType",
+    "drone": "EquipmentType", "missile": "Weapon", "radar": "EquipmentType",
+    "satellite": "EquipmentType", "artillery": "Weapon", "vehicle": "EquipmentType",
+    "hardware": "EquipmentType", "tank": "MilitaryAsset",
+    # Intelligence docs
+    "report": "Document", "assessment": "Document", "briefing": "Document",
+}
+
+
+def _normalize_llm_entity_type(raw: str) -> str:
+    """Map an LLM-emitted fine-grained type down to the canonical taxonomy."""
+    if not raw:
+        return "Person"
+    return _LLM_TYPE_CANON.get(raw.strip().lower(), raw.strip())
+
+
+def _normalize_rel_type(raw: str) -> str:
+    """Collapse an unrecognized LLM relationship type to ASSOCIATED_WITH."""
+    rt = (raw or "").strip().upper()
+    return rt if rt in _VALID_REL_TYPES else "ASSOCIATED_WITH"
+
+
+def _clean_evidence(sentence: str, name_a: str, name_b: str, pad: int = 45, max_len: int = 300) -> str:
+    """Tighten a relationship's source text to the in-context span linking the pair.
+
+    spaCy sentence boundaries are noisy on intelligence docs (headers without
+    terminal punctuation get glued onto the first real sentence), so the raw
+    `sent.text` is often a multi-line boilerplate blob. Collapse whitespace and,
+    when both entity names are present, clip to a window around them so "Show
+    Evidence" surfaces the actual related reference, not a page of preamble.
+    """
+    s = re.sub(r"\s+", " ", sentence or "").strip()
+    if not s:
+        return ""
+    lo = s.lower()
+    ia, ib = lo.find(name_a.lower()), lo.find(name_b.lower())
+    if ia != -1 and ib != -1:
+        start = max(0, min(ia, ib) - pad)
+        end = min(len(s), max(ia + len(name_a), ib + len(name_b)) + pad)
+        clip = ("..." if start > 0 else "") + s[start:end] + ("..." if end < len(s) else "")
+        return clip
+    return s if len(s) <= max_len else s[:max_len] + "..."
+
 # Known intelligence-domain locations that spaCy commonly misclassifies
 KNOWN_LOCATIONS = {
     "caspian sea", "black sea", "red sea", "mediterranean", "south china sea",
@@ -348,6 +429,17 @@ def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
                 "source": doc_id, "method": "regex", "confidence": 0.9,
             })
 
+    # Military hardware designations (e.g. "Type 075", "Type 052D") — spaCy
+    # misses these entirely, so extract them as EquipmentType directly.
+    for match in re.finditer(r'\bType[- ]?\d{2,4}[A-Z]?\b', text):
+        desig = match.group().strip()
+        if desig not in seen and len(desig) >= 6:
+            seen.add(desig)
+            cyber_entities.append({
+                "name": desig, "entity_type": "EquipmentType",
+                "source": doc_id, "method": "regex", "confidence": 0.85,
+            })
+
     # Date extraction
     for pattern in DATE_PATTERNS:
         for match in pattern.finditer(text):
@@ -360,6 +452,42 @@ def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
                 })
 
     return cyber_entities
+
+
+# Intelligence-report boilerplate spaCy sometimes tags as entities (title-cased,
+# so the all-caps header filter misses them).
+REPORT_BOILERPLATE = {
+    "handling caveat", "source reliability", "executive summary", "key findings",
+    "key judgments", "key judgements", "for official use only", "distribution",
+    "classification", "prepared by", "background", "outlook", "recommendations",
+    "annex", "appendix", "table of contents", "confidence level",
+    "bottom line up front", "scope note", "this assessment",
+}
+
+# Bare nationality/regional demonyms — noise as standalone entities (spaCy tags
+# them NORP -> Organization). Multi-word orgs ("American Airlines") never match.
+DEMONYMS = {
+    "european", "american", "british", "french", "german", "russian", "chinese",
+    "iranian", "israeli", "ukrainian", "japanese", "korean", "north korean",
+    "south korean", "indian", "pakistani", "turkish", "syrian", "iraqi", "saudi",
+    "arab", "african", "asian", "western", "eastern", "afghan", "chechen",
+}
+
+# Threat-actor naming: APT-NN and CrowdStrike-style "<Adjective> <Animal>"
+# adversary handles (Cozy Bear, Wicked Panda). Capitalization required to avoid
+# firing on a lone common noun.
+_THREAT_ACTOR_RE = re.compile(
+    r"^(?:APT[- ]?\d+|[A-Z][A-Za-z]+ "
+    r"(?:Panda|Bear|Kitten|Spider|Chollima|Jackal|Buffalo|Tiger|Crane|Lynx|Leopard|Ocelot|Dragon|Hawk))$"
+)
+# Military hardware designations: "Type 052", "Type 075D" -> EquipmentType.
+_MIL_EQUIP_RE = re.compile(r"^Type[- ]?\d{2,4}[A-Z]?$", re.IGNORECASE)
+# Well-known malware families spaCy tends to tag Organization/Person.
+KNOWN_MALWARE = {
+    "mimikatz", "plugx", "shadowpad", "wellmess", "wellmail", "cobalt strike",
+    "emotet", "trickbot", "qakbot", "wannacry", "notpetya", "sunburst",
+    "china chopper", "graphicalneutrino", "gootloader", "bruteratel",
+}
 
 
 def _postprocess_entities(entities: list[dict]) -> list[dict]:
@@ -382,6 +510,20 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
             corrected.append(e)
             continue
 
+        # Strip leading determiners spaCy glues onto ORG/LOC spans ("the Russian
+        # Foreign Intelligence Service" -> "Russian Foreign Intelligence Service")
+        # — inflates false positives and breaks dedup against the canonical name.
+        stripped = re.sub(r"^(?:the|a|an)\s+", "", name, flags=re.IGNORECASE).strip()
+        if stripped and stripped != name:
+            name = stripped
+            e["name"] = name
+            name_lower = name.lower().strip()
+
+        # Drop report boilerplate and bare nationality demonyms — high-frequency
+        # false positives, not analytic entities.
+        if name_lower in REPORT_BOILERPLATE or name_lower in DEMONYMS:
+            continue
+
         # Skip all-caps headers (likely document section headings), but keep known acronyms
         if name.isupper() and len(name) > 3 and name not in known_acro:
             continue
@@ -397,6 +539,15 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         mitre_re = re.compile(r'^T\d{4}(?:\.\d{3})?$')
         if mitre_re.match(name):
             e["entity_type"] = "TTP"
+
+        # Domain typing that spaCy misses: threat actors, military hardware,
+        # known malware (else they leak in as Organization/Person/Location).
+        if _THREAT_ACTOR_RE.match(name):
+            e["entity_type"] = "ThreatActor"
+        elif _MIL_EQUIP_RE.match(name):
+            e["entity_type"] = "EquipmentType"
+        elif name_lower in KNOWN_MALWARE:
+            e["entity_type"] = "Malware"
 
         # Force known persons
         if name_lower in known_pers:
@@ -544,9 +695,8 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
 
     # ── Relationship extraction ────────────────────────────────────────────
     # Load verb-to-relationship mappings from YAML
-    from intel_platform.data import get_verb_mappings, get_discourse_markers
+    from intel_platform.data import get_verb_mappings
     verb_map = get_verb_mappings()
-    discourse_markers = get_discourse_markers()
 
     relationships = []
     seen_rel_keys: set[tuple[str, str, str]] = set()
@@ -555,7 +705,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
     # ASSOCIATED_WITH on top of a pair a typed/pattern relation already links.
     linked_pairs: set[frozenset[str]] = set()
 
-    def _add_rel(src_name: str, tgt_name: str, rel_type: str, confidence: float) -> None:
+    def _add_rel(src_name: str, tgt_name: str, rel_type: str, confidence: float, evidence: str = "") -> None:
         key = (src_name, tgt_name, rel_type)
         if key not in seen_rel_keys:
             seen_rel_keys.add(key)
@@ -564,9 +714,9 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
                 "source_name": src_name, "target_name": tgt_name,
                 "rel_type": rel_type, "confidence": confidence,
                 "source": doc_id, "method": "nlp",
+                # The in-context span this relation was read from — surfaced as evidence.
+                "evidence": _clean_evidence(evidence, src_name, tgt_name),
             })
-
-    prev_sent_entities: list[dict] = []
 
     for sent in doc.sents:
         sent_text = sent.text
@@ -610,7 +760,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
                             break
 
             if subj_ent and obj_ent and subj_ent["name"] != obj_ent["name"]:
-                _add_rel(subj_ent["name"], obj_ent["name"], rel_type_from_verb, 0.7)
+                _add_rel(subj_ent["name"], obj_ent["name"], rel_type_from_verb, 0.7, sent_text)
 
         # ── Stage B: Co-occurrence relationships (fallback) ──
         # Bounded to nearby entities (COOCCURRENCE_WINDOW), not the full
@@ -632,31 +782,12 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
                     date_ent, other = (e1, e2) if e1_is_date else (e2, e1)
                     _, parent_category = normalize_entity_type(other.get("entity_type", ""))
                     if parent_category == "Event":
-                        _add_rel(other["name"], date_ent["name"], "OCCURRED_ON", 0.7)
+                        _add_rel(other["name"], date_ent["name"], "OCCURRED_ON", 0.7, sent_text)
                         continue
                 # ASSOCIATED_WITH is noise — only emit within the window, and never
                 # on top of a pair a typed/pattern relation already links.
                 if (j - i) <= COOCCURRENCE_WINDOW and frozenset((e1["name"], e2["name"])) not in linked_pairs:
-                    _add_rel(e1["name"], e2["name"], "ASSOCIATED_WITH", 0.5)
-
-        # ── Stage C: Cross-sentence relationship detection ──
-        # A discourse marker signals the two *sentences* are connected, not
-        # that every entity in one relates to every entity in the other —
-        # bridge them at a single point (last entity of the previous
-        # sentence to the first of this one) instead of an n*m cross-product.
-        if prev_sent_entities and sent_entities_list:
-            sent_lower = sent_text.lower()
-            has_discourse_marker = any(marker in sent_lower for marker in discourse_markers)
-            if has_discourse_marker:
-                prev_e = prev_sent_entities[-1]
-                curr_e = sent_entities_list[0]
-                if (
-                    prev_e["name"] != curr_e["name"]
-                    and frozenset((prev_e["name"], curr_e["name"])) not in linked_pairs
-                ):
-                    _add_rel(prev_e["name"], curr_e["name"], "ASSOCIATED_WITH", 0.4)
-
-        prev_sent_entities = sent_entities_list
+                    _add_rel(e1["name"], e2["name"], "ASSOCIATED_WITH", 0.5, sent_text)
 
     # Resolve event_datetime on Event entities from their OCCURRED_ON Date links
     _link_event_dates(entities, relationships)
@@ -667,9 +798,10 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
 async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list[dict]]:
     """Extract entities using LLM. Returns (entities, relationships)."""
 
-    # Use the centralized provider selection (respects runtime overrides)
-    from intel_platform.api.routes.llm import _get_provider
-    provider = await _get_provider()
+    # Use the extraction-specific provider selection (routes to local Ollama
+    # when extraction_llm_provider=ollama; respects runtime overrides otherwise).
+    from intel_platform.api.routes.llm import _get_extraction_provider
+    provider = await _get_extraction_provider()
 
     if not provider:
         # Fallback to NLP if no LLM configured
@@ -679,14 +811,14 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
     loader = SkillsLoader()
     system = loader.get_system_prompt("entity_extraction", include_foundation=True) or ""
 
-    result = await provider.generate(
-        messages=[{"role": "user", "content": f"Extract entities and relationships from this text:\n\n{text}"}],
-        system=system,
-        temperature=0.2,
-        max_tokens=8192,
-    )
-
     try:
+        result = await provider.generate(
+            messages=[{"role": "user", "content": f"Extract entities and relationships from this text:\n\n{text}"}],
+            system=system,
+            temperature=0.2,
+            max_tokens=8192,
+        )
+
         # Try to parse JSON from response
         content = result.content
         # Find JSON in response (may be wrapped in markdown code blocks)
@@ -701,7 +833,7 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
         for e in data.get("entities", []):
             entity = {
                 "name": e.get("name", ""),
-                "entity_type": e.get("entity_type", "Person"),
+                "entity_type": _normalize_llm_entity_type(e.get("entity_type", "Person")),
                 "source": doc_id,
                 "method": "llm",
                 "confidence": float(e.get("confidence", 0.85)),
@@ -715,22 +847,28 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
 
         relationships = []
         for r in data.get("relationships", []):
+            src_name = r.get("source_entity", r.get("source", ""))
+            tgt_name = r.get("target_entity", r.get("target", ""))
             relationships.append({
-                "source_name": r.get("source_entity", r.get("source", "")),
-                "target_name": r.get("target_entity", r.get("target", "")),
-                "rel_type": r.get("relationship_type", r.get("rel_type", "ASSOCIATED_WITH")),
+                "source_name": src_name,
+                "target_name": tgt_name,
+                "rel_type": _normalize_rel_type(r.get("relationship_type", r.get("rel_type", ""))),
                 "confidence": float(r.get("confidence", 0.7)),
                 "source": doc_id,
                 "method": "llm",
-                "evidence": r.get("evidence", ""),
+                "evidence": _clean_evidence(r.get("evidence", ""), src_name, tgt_name),
             })
 
         _link_event_dates(entities, relationships)
 
         return entities, relationships
-    except (json.JSONDecodeError, KeyError, ValueError):
-        # Log failure for debugging, fall back to NLP
-        logger.warning("LLM entity extraction returned invalid JSON for doc %s, falling back to NLP", doc_id)
+    except Exception:
+        # ANY failure degrades to NLP — not just unparseable JSON but a provider
+        # that's unreachable/rate-limited/erroring (Ollama down, cloud 429/401/5xx).
+        # hybrid is the DEFAULT mode, so a provider hiccup must never 500 the
+        # ingest path (which creates the Document first) or silently drop a
+        # document's extraction in the collection paths.
+        logger.warning("LLM entity extraction failed for doc %s, falling back to NLP", doc_id, exc_info=True)
         return extract_entities_nlp(text, doc_id)
 
 
@@ -741,42 +879,55 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], l
     nlp_entities, nlp_rels = extract_entities_nlp(text, doc_id)
     llm_entities, llm_rels = await extract_entities_llm(text, doc_id)
 
-    # LLM entities are primary; build a name lookup for fuzzy matching
+    # ── Entities ──────────────────────────────────────────────────────────
+    # LLM entities are primary (semantic, well-typed, lean). From NLP add only
+    # the deterministic REGEX entities (IPs/domains/hashes/CVEs/TTPs/equipment
+    # designations) the LLM missed — NLP's spaCy entities over-extract and the
+    # LLM already covers the semantic ones, so unioning them back in just
+    # re-introduces the precision-killing noise the NLP-only pass fought.
     merged_entities = list(llm_entities)
     llm_name_list = [e["name"].lower() for e in llm_entities]
 
-    # Add NLP entities not found by LLM (using fuzzy matching)
+    def _match_llm(name_lower: str) -> str | None:
+        if name_lower in llm_name_list:
+            return name_lower
+        for n in llm_name_list:
+            if jellyfish.jaro_winkler_similarity(name_lower, n) >= 0.92:
+                return n
+        return None
+
     for e in nlp_entities:
         e_lower = e["name"].lower()
-        # Check exact match first
-        if e_lower in llm_name_list:
-            # Entity found by both methods — boost confidence on LLM version
+        match = _match_llm(e_lower)
+        if match is not None:
+            # Found by both — merge NLP attributes/confidence into the LLM entity.
             for llm_e in merged_entities:
-                if llm_e["name"].lower() == e_lower:
-                    llm_e["confidence"] = max(llm_e["confidence"], e["confidence"])
+                if llm_e["name"].lower() == match:
+                    llm_e["confidence"] = max(llm_e.get("confidence", 0), e.get("confidence", 0))
                     _merge_attributes(llm_e, e)
                     break
             continue
-        # Check fuzzy match
-        matched = False
-        for llm_name in llm_name_list:
-            if jellyfish.jaro_winkler_similarity(e_lower, llm_name) >= 0.90:
-                matched = True
-                for llm_e in merged_entities:
-                    if llm_e["name"].lower() == llm_name:
-                        _merge_attributes(llm_e, e)
-                        break
-                break
-        if not matched:
+        # Unmatched NLP entity: keep deterministic regex IOCs, plus high-signal
+        # spaCy entities the LLM missed — known-list matches or repeated mentions
+        # (confidence >= 0.8). This recovers real entities without re-admitting
+        # the one-off spaCy over-extraction (base confidence 0.7 / short 0.5).
+        if e.get("method") == "regex" or e.get("confidence", 0) >= 0.8:
             merged_entities.append(e)
             llm_name_list.append(e_lower)
 
-    # Merge relationships, dedup by source+target+type
+    # ── Relationships ─────────────────────────────────────────────────────
+    # LLM relations are typed + evidence-backed — primary. From NLP keep only
+    # TYPED relations (verb-derived, OCCURRED_ON, regex RESOLVES_TO) the LLM
+    # missed; drop blanket ASSOCIATED_WITH co-occurrence entirely — the LLM now
+    # supplies the real relationships, so co-occurrence is pure noise.
     seen_rels = {(r["source_name"], r["target_name"], r["rel_type"]) for r in llm_rels}
     merged_rels = list(llm_rels)
     for r in nlp_rels:
+        if r["rel_type"] == "ASSOCIATED_WITH":
+            continue
         key = (r["source_name"], r["target_name"], r["rel_type"])
         if key not in seen_rels:
+            seen_rels.add(key)
             merged_rels.append(r)
 
     # Re-resolve event_datetime over the merged set — catches cases where the

@@ -1,0 +1,21 @@
+FINANCIAL INTELLIGENCE REPORT: RUSSIAN OIL SANCTIONS EVASION NETWORK — GLACIER CIRCUIT
+
+Report ID: FININT-2026-0311
+Date: 11 April 2026
+Classification: SECRET // REL TO FVEY
+Source Reliability: B2 (Usually reliable source, probably true)
+Prepared by: Joint Financial Intelligence Task Force, Sanctions Evasion Unit
+
+EXECUTIVE SUMMARY
+
+This report describes a network, designated GLACIER CIRCUIT, that has facilitated the export of price-capped Russian crude oil in violation of EU Council Regulation 833/2014 and the G7 price cap mechanism. The network is controlled by Arkady Volin, a Cyprus-based shipping financier, through Northgate Maritime Services Ltd, registered in Limassol, and Baltic Amber Trading DMCC, registered in Dubai.
+
+NETWORK STRUCTURE
+
+Northgate Maritime Services Ltd operates two aging tankers identified as part of the "shadow fleet": MT Kara Voyager (IMO 9345671) and MT Nordic Cascade (IMO 9412233), both flagged in Gabon and lacking Western protection and indemnity (P&I) insurance. Anchorage Insurance Mutual, a newly registered offshore P&I club, has issued nominal cover for MT Kara Voyager to permit port entry despite the vessel's absence from recognized international P&I groups.
+
+Both vessels have repeatedly loaded crude oil at Novorossiysk and Primorsk before conducting ship-to-ship transfers near Fujairah, obscuring the cargo's origin before onward sale at prices exceeding the $60-per-barrel price cap. Settlement for these cargoes has been processed in part through the stablecoin wallet TXo4VDm4dncGqEyq9wDXqZUY9y3iiUpNpq, which financial investigators assess has received the equivalent of $94 million USD since October 2025. A parallel channel used a fraudulent letter of credit, reference LC-2026-0091, issued against a shell invoice for "agricultural equipment" to disguise a crude oil payment routed through Baltic Amber Trading DMCC.
+
+ASSESSMENT
+
+The task force assesses with high confidence that GLACIER CIRCUIT represents an evolution of shadow fleet tradecraft, combining flag-of-convenience registration, nominal insurance cover, and stablecoin settlement to evade the price cap. Recommended actions include designation of Northgate Maritime Services Ltd, Baltic Amber Trading DMCC, and Anchorage Insurance Mutual, along with interdiction guidance for MT Kara Voyager and MT Nordic Cascade at Fujairah.

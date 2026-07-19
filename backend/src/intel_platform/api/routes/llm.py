@@ -53,6 +53,21 @@ async def _get_collection_provider():
     return await _get_provider()
 
 
+async def _get_extraction_provider():
+    """Provider for LLM/hybrid entity+relationship extraction.
+
+    Routes to a dedicated provider (local Ollama) when ``extraction_llm_provider``
+    is configured, so per-document extraction doesn't drain a rate-limited cloud
+    key. Falls back to the default provider when unset.
+    """
+    prov = (getattr(settings, "extraction_llm_provider", "") or "").strip()
+    if prov == "ollama":
+        from intel_platform.llm.ollama import OllamaProvider
+        model = (getattr(settings, "extraction_llm_model", "") or "").strip() or "qwen2.5:14b"
+        return OllamaProvider(base_url=settings.ollama_base_url, model=model)
+    return await _get_provider()
+
+
 async def _get_provider():
     """Get the configured LLM provider, respecting runtime overrides and DB keys."""
     from intel_platform.api.routes.admin_config import get_active_provider, get_active_model

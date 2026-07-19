@@ -1,0 +1,30 @@
+{
+  "entities": [
+    {"name": "GLACIER CIRCUIT", "entity_type": "Campaign"},
+    {"name": "Arkady Volin", "entity_type": "Person"},
+    {"name": "Northgate Maritime Services Ltd", "entity_type": "Organization"},
+    {"name": "Baltic Amber Trading DMCC", "entity_type": "Organization"},
+    {"name": "Anchorage Insurance Mutual", "entity_type": "Organization"},
+    {"name": "MT Kara Voyager", "entity_type": "Vessel"},
+    {"name": "MT Nordic Cascade", "entity_type": "Vessel"},
+    {"name": "EU Council Regulation 833/2014", "entity_type": "Legislation"},
+    {"name": "Limassol", "entity_type": "Location"},
+    {"name": "Dubai", "entity_type": "Location"},
+    {"name": "Novorossiysk", "entity_type": "Location"},
+    {"name": "Primorsk", "entity_type": "Location"},
+    {"name": "Fujairah", "entity_type": "Location"},
+    {"name": "Gabon", "entity_type": "Location"},
+    {"name": "TXo4VDm4dncGqEyq9wDXqZUY9y3iiUpNpq", "entity_type": "CryptoWallet"},
+    {"name": "LC-2026-0091", "entity_type": "Financial"}
+  ],
+  "relationships": [
+    {"source": "Arkady Volin", "target": "GLACIER CIRCUIT", "rel_type": "CONTROLS"},
+    {"source": "Arkady Volin", "target": "Northgate Maritime Services Ltd", "rel_type": "DIRECTS"},
+    {"source": "Northgate Maritime Services Ltd", "target": "Limassol", "rel_type": "REGISTERED_IN"},
+    {"source": "Baltic Amber Trading DMCC", "target": "Dubai", "rel_type": "REGISTERED_IN"},
+    {"source": "Northgate Maritime Services Ltd", "target": "MT Kara Voyager", "rel_type": "OPERATES"},
+    {"source": "Northgate Maritime Services Ltd", "target": "MT Nordic Cascade", "rel_type": "OPERATES"},
+    {"source": "GLACIER CIRCUIT", "target": "EU Council Regulation 833/2014", "rel_type": "VIOLATES"},
+    {"source": "GLACIER CIRCUIT", "target": "TXo4VDm4dncGqEyq9wDXqZUY9y3iiUpNpq", "rel_type": "USES"}
+  ]
+}

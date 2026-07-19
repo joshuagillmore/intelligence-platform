@@ -69,6 +69,12 @@ services:
     ports:
       - "8000:8000"
     env_file: .env
+    environment:
+      # Route per-document LLM/hybrid extraction to the in-stack Ollama so it's
+      # local + rate-limit-free (overrides .env for the compose network URL).
+      - EXTRACTION_MODE=hybrid
+      - EXTRACTION_LLM_PROVIDER=ollama
+      - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
       neo4j:
         condition: service_healthy

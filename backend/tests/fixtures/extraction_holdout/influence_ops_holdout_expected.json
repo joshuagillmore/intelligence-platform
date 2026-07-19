@@ -1,0 +1,28 @@
+{
+  "entities": [
+    {"name": "SPICE ROUTE", "entity_type": "Campaign"},
+    {"name": "Pacific Century Media Group", "entity_type": "Organization", "aliases": ["PCMG"]},
+    {"name": "United Front Work Department", "entity_type": "Organization", "aliases": ["UFWD"]},
+    {"name": "Chen Baoyu", "entity_type": "Person"},
+    {"name": "TikTok", "entity_type": "Organization"},
+    {"name": "X Corp", "entity_type": "Organization"},
+    {"name": "Graphika", "entity_type": "Organization"},
+    {"name": "Pacific Islands Forum", "entity_type": "Organization"},
+    {"name": "Solomon Islands", "entity_type": "Location"},
+    {"name": "Fiji", "entity_type": "Location"},
+    {"name": "Papua New Guinea", "entity_type": "Location"},
+    {"name": "Hong Kong", "entity_type": "Location"},
+    {"name": "Honiara", "entity_type": "Location"},
+    {"name": "Suva", "entity_type": "Location"},
+    {"name": "Port Moresby", "entity_type": "Location"}
+  ],
+  "relationships": [
+    {"source": "Pacific Century Media Group", "target": "SPICE ROUTE", "rel_type": "CONDUCTS"},
+    {"source": "Pacific Century Media Group", "target": "United Front Work Department", "rel_type": "ATTRIBUTED_TO"},
+    {"source": "Chen Baoyu", "target": "Pacific Century Media Group", "rel_type": "LEADS"},
+    {"source": "Pacific Century Media Group", "target": "Hong Kong", "rel_type": "LOCATED_AT"},
+    {"source": "SPICE ROUTE", "target": "Solomon Islands", "rel_type": "TARGETS"},
+    {"source": "SPICE ROUTE", "target": "Fiji", "rel_type": "TARGETS"},
+    {"source": "SPICE ROUTE", "target": "Papua New Guinea", "rel_type": "TARGETS"}
+  ]
+}

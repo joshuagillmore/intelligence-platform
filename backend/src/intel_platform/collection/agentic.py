@@ -62,6 +62,18 @@ Source: {source_name}
 Type: {source_type}
 Generate the acquisition config."""
 
+SELECT_SYSTEM = """You select the most relevant sources for an intelligence PIR from REAL web-search results.
+You are given a numbered list of actual URLs with titles and snippets. Choose the ones most likely to contain
+information answering the PIR for this source's role. Respond with ONLY valid JSON, no markdown.
+
+For web_scrape / database / api_feed: {"urls": ["url", ...]} — up to 5 URLs, chosen ONLY from the list below.
+For rss_feed: {"feed_url": "url"} — the single best news/feed URL from the list.
+
+Rules:
+- Use ONLY URLs that appear verbatim in the provided results. NEVER invent, complete, or modify a URL.
+- Prefer authoritative, on-topic sources; skip social media, search engines, and generic portals.
+- If none are relevant, return an empty list."""
+
 EVALUATE_SYSTEM = """You are evaluating intelligence collection results against a PIR.
 Respond with ONLY valid JSON:
 {
@@ -331,8 +343,63 @@ def _validate_urls(urls: list) -> list[str]:
 # Phase 1: RESOLVE — LLM generates concrete configs for each source
 # ---------------------------------------------------------------------------
 
+async def _resolve_via_search(provider, pir: str, source) -> dict | None:
+    """Ground source resolution in REAL web-search results.
+
+    Instead of asking the LLM to recall (hallucinate) URLs, run a live
+    DuckDuckGo search built from the PIR + source, then let the LLM SELECT the
+    most relevant results. A hard allow-list filter guarantees the returned
+    URLs actually came from the search — the model cannot invent one. Returns
+    None when the search yields nothing (caller falls back to LLM generation).
+    """
+    import asyncio
+
+    from intel_platform.collection.search import web_search
+
+    query = f"{source.name} {pir}".strip()[:300]
+    results = await asyncio.to_thread(web_search, query, 10)
+    if not results:
+        return None
+
+    listing = "\n".join(
+        f"{i + 1}. {r['url']} — {r.get('title', '')}: {r.get('snippet', '')[:140]}"
+        for i, r in enumerate(results)
+    )
+    is_feed = source.source_type == "rss_feed"
+    key = "feed_url" if is_feed else "urls"
+    user = (
+        f"PIR: {pir}\nSource: {source.name} (type: {source.source_type})\n\n"
+        f"Real search results:\n{listing}\n\n"
+        f'Select the most relevant. Return JSON with key "{key}".'
+    )
+    config = await _structured_generate(
+        provider,
+        messages=[{"role": "user", "content": user}],
+        system=SELECT_SYSTEM,
+        expected_keys=[key],
+    )
+    if not config:
+        return None
+
+    allowed = {r["url"] for r in results}
+    if is_feed:
+        feed_url = config.get("feed_url", "")
+        if feed_url not in allowed:
+            feed_url = results[0]["url"]
+        return {"feed_url": feed_url, "max_items": 20, "fetch_full_content": True}
+
+    urls = [u for u in (config.get("urls") or []) if u in allowed]
+    if not urls:  # LLM picked nothing valid — fall back to the top real hits
+        urls = [r["url"] for r in results[:3]]
+    return {"urls": urls[:5]}
+
+
 async def resolve_sources(plan, sources, db, provider):
-    """Ask the LLM to generate concrete acquisition configs for each source."""
+    """Resolve concrete acquisition configs for each source.
+
+    Prefers grounding in live web search (`_resolve_via_search`); falls back to
+    LLM URL generation only when search returns nothing.
+    """
     pir = plan.refined_pir or plan.pir or plan.requirement
 
     for source in sources:
@@ -351,14 +418,19 @@ async def resolve_sources(plan, sources, db, provider):
             # Determine expected keys based on source type
             expected = ["urls"] if source.source_type in ("web_scrape", "database", "api_feed") else ["feed_url"]
 
-            config = await _structured_generate(
-                provider,
-                messages=[{"role": "user", "content": RESOLVE_USER.format(
-                    pir=pir, source_name=source.name, source_type=source.source_type,
-                )}],
-                system=RESOLVE_SYSTEM,
-                expected_keys=expected,
-            )
+            # Ground resolution in real web search first; fall back to LLM URL
+            # generation only when search returns nothing.
+            config = await _resolve_via_search(provider, pir, source)
+            grounded = config is not None
+            if not config:
+                config = await _structured_generate(
+                    provider,
+                    messages=[{"role": "user", "content": RESOLVE_USER.format(
+                        pir=pir, source_name=source.name, source_type=source.source_type,
+                    )}],
+                    system=RESOLVE_SYSTEM,
+                    expected_keys=expected,
+                )
             if not config:
                 raise ValueError("All JSON parse attempts failed for source resolution")
 
@@ -377,7 +449,7 @@ async def resolve_sources(plan, sources, db, provider):
             db.add(CollectionActivity(
                 plan_id=plan.id, source_id=source.id,
                 event="source_resolved",
-                message=f"Resolved: {json.dumps(config)[:200]}",
+                message=f"Resolved ({'search-grounded' if grounded else 'llm-generated'}): {json.dumps(config)[:170]}",
             ))
         except Exception as e:
             logger.warning("Failed to resolve source %s: %s", source.name, e)
@@ -594,7 +666,10 @@ async def evaluate_results(source, plan, acquire_result, provider):
         evaluation.setdefault("follow_up_urls", [])
         evaluation.setdefault("notes", "")
         return evaluation
-    return {"satisfied": True, "follow_up_urls": [], "notes": "Could not parse evaluation after retries"}
+    # Parse failure must NOT be reported as satisfied — that would silently
+    # mark an unassessed collection as complete and bias the loop toward false
+    # success. Treat an unparseable evaluation as not-yet-satisfied.
+    return {"satisfied": False, "follow_up_urls": [], "notes": "Could not parse evaluation after retries"}
 
 
 # ---------------------------------------------------------------------------

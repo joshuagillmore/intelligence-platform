@@ -21,6 +21,9 @@ class Relationship(BaseModel):
     confidence: float = 0.5
     source: str = ""
     method: str = ""
+    # The source sentence(s) that assert this relationship — the in-context
+    # reference surfaced by "Show Evidence". Empty when no span was captured.
+    evidence: str = ""
     first_seen: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_seen: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     admiralty_rating: str = ""
