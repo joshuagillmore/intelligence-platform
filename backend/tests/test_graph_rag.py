@@ -42,10 +42,10 @@ def test_assemble_context(graph_store):
     assert "Test" in context
 
 
-def test_full_query(graph_store):
+async def test_full_query(graph_store):
     p = Person(name="Query Target", project_id="test-proj-rag3")
     graph_store.create_entity(p)
     pipeline = GraphRAGPipeline(graph_store)
-    result = pipeline.query("Tell me about Query Target", "test-proj-rag3")
+    result = await pipeline.query("Tell me about Query Target", "test-proj-rag3")
     assert "context" in result
     assert result["context_nodes"] >= 1

@@ -66,14 +66,22 @@ def build_tfidf(
             if t not in vocab:
                 vocab[t] = len(vocab)
 
-    # Filter vocabulary — keep terms that appear in at least 1 doc but not in
-    # almost every doc (pure stopword-like terms).  For small corpora (< 20 docs)
-    # we must keep df=1 terms because they carry the most discriminating signal.
+    # Filter vocabulary. Prefer terms shared by >= 2 docs and not in almost
+    # every doc (pure stopword-like terms) — a term unique to a single
+    # document (df=1) gets the maximum possible IDF weight and, if kept
+    # unconditionally, can swamp a cluster's genuinely discriminating shared
+    # terms with per-document noise (see test_kmeans_two_clusters).
+    #
+    # Only fall back to allowing df=1 terms when the stricter df>=2 filter
+    # would leave some document with *no* surviving vocabulary at all (an
+    # all-zero TF-IDF row) — that full collapse is the failure mode
+    # test_cluster_documents_produces_multiple_topics guards against, and it
+    # genuinely requires the unique per-document terms to have any signal.
     max_df = max(2, int(0.85 * n_docs))
-    if n_docs < 20:
+    valid = {t for t in vocab if 2 <= df[t] <= max_df}
+    docs_covered = all(any(t in valid for t in set(tokens)) for tokens in tokenized if tokens)
+    if not valid or not docs_covered:
         valid = {t for t in vocab if df[t] <= max_df}
-    else:
-        valid = {t for t in vocab if 2 <= df[t] <= max_df}
 
     if not valid:
         # Fallback: use all terms

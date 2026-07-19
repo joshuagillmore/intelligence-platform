@@ -2,20 +2,54 @@ from __future__ import annotations
 import re
 
 
-def _detect_source_type(desc: str) -> str:
-    """Detect source type from description keywords."""
+def _detect_legacy_source_type(desc: str) -> str:
+    """Detect a legacy free-form category for `parse_collection_plan`.
+
+    This is the categorization used by the deprecated Neo4j-era
+    `/collections/parse-plan` endpoint (see `api/routes/collections.py`), which
+    predates and is independent of the `SourceType` enum (`db/models.py`) used
+    by the PIR->Plan->Execute connector pipeline. Keep these two taxonomies
+    separate: this one is display-only and was never wired to
+    `CONNECTOR_REGISTRY`/`SourceType`.
+    """
     lower = desc.lower()
-    if any(kw in lower for kw in ["scrape", "website", "web page", "crawl", "monitor", "news", "forum", "social"]):
-        return "web_scrape"
+    # Check social_media before news since "media" would match news
+    if any(kw in lower for kw in ["social media", "twitter", "telegram", "social network"]):
+        return "social_media"
+    if any(kw in lower for kw in ["news", "article", "media", "press"]):
+        return "news"
+    if any(kw in lower for kw in ["report", "pdf", "document", "paper"]):
+        return "document"
+    if any(kw in lower for kw in ["database", "registry", "whois"]):
+        return "database"
+    return "web_search"
+
+
+def _detect_source_type(desc: str) -> str:
+    """Detect a `SourceType` enum value from description keywords.
+
+    Used by `parse_plan_sources` for the PIR->Plan->Execute pipeline; the
+    returned value must be one of the `SourceType` values (`db/models.py`) so
+    it can be routed through `CONNECTOR_REGISTRY`.
+
+    Order matters: more specific categories (rss_feed, file_upload) are
+    checked before broader ones (web_scrape, database) so that e.g. "RSS news
+    feed" doesn't get swallowed by web_scrape's bare "news" keyword, and
+    "Upload CSV files from ... databases" doesn't get swallowed by database's
+    "database" keyword.
+    """
+    lower = desc.lower()
     if any(kw in lower for kw in ["rss", "news feed", "syndication", "feed"]):
         return "rss_feed"
+    if any(kw in lower for kw in ["upload", "file", "csv", "excel", "spreadsheet", "pdf", "report", "document"]):
+        return "file_upload"
+    if any(kw in lower for kw in ["scrape", "website", "web page", "crawl", "monitor", "news", "forum", "social"]):
+        return "web_scrape"
     if any(kw in lower for kw in ["api", "endpoint", "rest", "json", "data service"]):
         return "api_feed"
     if any(kw in lower for kw in ["database", "registry", "whois", "query", "sql"]):
         return "database"
-    if any(kw in lower for kw in ["upload", "file", "csv", "excel", "spreadsheet", "pdf", "report", "document"]):
-        return "file_upload"
-    return "web_scrape"  # default to web_scrape, not file_upload
+    return "file_upload"  # default
 
 
 def parse_collection_plan(llm_response: str) -> list[dict]:
@@ -42,7 +76,7 @@ def parse_collection_plan(llm_response: str) -> list[dict]:
             item_id += 1
             text = numbered.group(2) if numbered else bulleted.group(1)
 
-            source_type = _detect_source_type(text)
+            source_type = _detect_legacy_source_type(text)
 
             current_item = {
                 "id": item_id,
@@ -78,7 +112,8 @@ def parse_plan_sources(plan_text: str) -> list[dict]:
       1. [file_upload] Description of source
          CONFIG: {"url": "https://..."}
       2. [web_scrape] Description of source
-    Falls back to keyword-based source type detection for numbered items only.
+    Falls back to keyword-based source type detection for numbered items and
+    bullet points (rejecting anything that reads like prose/analysis).
 
     Returns list of {source_type, name, config}, max 7 items.
     """
@@ -133,10 +168,11 @@ def parse_plan_sources(plan_text: str) -> list[dict]:
                 sources.append({"source_type": stype, "name": desc, "config": {}})
                 continue
 
-        # Fallback: only proper numbered items (not bullets/dashes which pick up analysis)
-        m2 = re.match(r'^(\d+)[.)]\s+(.+)', line)
+        # Fallback: numbered items or bullet points (prose/analysis text is still
+        # rejected below by the length/sentence/markdown checks, not by format)
+        m2 = re.match(r'^(?:\d+[.)]|[-*•])\s+(.+)', line)
         if m2:
-            desc = m2.group(2).strip()
+            desc = m2.group(1).strip()
             # Skip analysis text: too short, too long, or sentence-like
             if len(desc) > 200 or len(desc) < 15:
                 continue
