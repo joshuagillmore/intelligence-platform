@@ -1,4 +1,3 @@
-import os
 from intel_platform.config import Settings
 
 

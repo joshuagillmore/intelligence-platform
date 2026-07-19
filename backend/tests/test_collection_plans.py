@@ -17,8 +17,8 @@ import uuid
 
 import pytest
 
-from intel_platform.connectors.base import get_connector, CONNECTOR_REGISTRY
-from intel_platform.connectors.flat_file import FlatFileConnector, parse_csv, parse_excel, parse_json
+from intel_platform.connectors.base import get_connector
+from intel_platform.connectors.flat_file import parse_csv, parse_excel, parse_json
 
 
 def _has_fastapi() -> bool:

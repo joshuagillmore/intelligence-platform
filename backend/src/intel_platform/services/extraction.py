@@ -626,7 +626,6 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
 
 async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list[dict]]:
     """Extract entities using LLM. Returns (entities, relationships)."""
-    from intel_platform.config import settings
 
     # Use the centralized provider selection (respects runtime overrides)
     from intel_platform.api.routes.llm import _get_provider

@@ -9,7 +9,6 @@ Kept for backwards compatibility — new code should use /collection-plans.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import uuid

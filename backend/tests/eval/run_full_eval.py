@@ -69,7 +69,7 @@ def print_report(results: list[dict]) -> None:
     print("ENTITY EXTRACTION QUALITY EVALUATION REPORT")
     print("=" * 80)
     print(f"Documents evaluated: {len(results)}")
-    print(f"Extraction mode: NLP (spaCy)")
+    print("Extraction mode: NLP (spaCy)")
     print()
 
     # ── Per-document summary table ──

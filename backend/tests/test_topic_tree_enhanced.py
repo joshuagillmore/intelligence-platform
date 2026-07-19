@@ -1,7 +1,6 @@
 """Tests for enhanced topic tree features: cross-references, relevant excerpts, caching."""
-import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
-from intel_platform.services.topics import TopicTreeService, _cluster_doc_map, _cluster_keywords
+from unittest.mock import MagicMock
+from intel_platform.services.topics import TopicTreeService
 
 
 # ---------------------------------------------------------------------------

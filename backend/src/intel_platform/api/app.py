@@ -83,12 +83,12 @@ app.include_router(snapshots.router, prefix="/api", tags=["snapshots"])
 app.include_router(collection_plans.router, prefix="/api", tags=["collection-plans"])
 
 # Reverse proxy to frontend Node.js server (Railway single-port deployment)
-from pathlib import Path
+from pathlib import Path  # noqa: E402
 _frontend_dir = Path("/app/frontend-server")
 if _frontend_dir.exists() and (_frontend_dir / "server.js").exists():
     import httpx
     from fastapi import Request
-    from fastapi.responses import StreamingResponse, Response
+    from fastapi.responses import Response
 
     @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def proxy_frontend(request: Request, path: str):

@@ -11,8 +11,6 @@ import asyncio
 import json
 import logging
 import re
-import time
-import uuid
 from datetime import datetime, timezone
 
 from intel_platform.connectors.base import get_connector
@@ -20,7 +18,6 @@ from intel_platform.db.models import (
     AcquisitionLog,
     CollectionActivity,
     CollectionPlan,
-    CollectionSource,
     PlanStatus,
 )
 from intel_platform.models.entities import Document

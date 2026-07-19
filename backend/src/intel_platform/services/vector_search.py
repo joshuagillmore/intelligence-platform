@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Sequence
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from intel_platform.db.models import ChunkEmbedding

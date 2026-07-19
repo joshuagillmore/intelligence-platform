@@ -4,7 +4,6 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from intel_platform.services.document_clustering import (
     cluster_documents,
-    _label_cluster,
     _tokenize,
     build_tfidf,
     refine_labels_with_llm,

@@ -1,7 +1,6 @@
 """Symmetric encryption for secrets stored at rest (API keys, credentials)."""
 from __future__ import annotations
 
-import base64
 import logging
 import os
 

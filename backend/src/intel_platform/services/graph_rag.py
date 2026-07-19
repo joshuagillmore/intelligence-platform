@@ -325,7 +325,7 @@ Provide a structured answer with:
                 answer = result.content
                 model = result.model
                 tokens_used = result.total_tokens
-        except Exception as e:
+        except Exception:
             import logging as _logging
             _logging.getLogger(__name__).exception("LLM generation failed in GraphRAG query")
             # SECURITY: don't leak internal error details to client

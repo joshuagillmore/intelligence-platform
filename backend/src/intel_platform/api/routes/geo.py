@@ -95,7 +95,7 @@ def get_geo_locations(project_id: str, store: GraphStore = Depends(get_graph_sto
         "locations": locations,
         "edges": geo_edges,
         "total": len(locations),
-        "geocoded": sum(1 for l in locations if l.get("geocoded")),
+        "geocoded": sum(1 for loc in locations if loc.get("geocoded")),
         "edge_count": len(geo_edges),
     }
 

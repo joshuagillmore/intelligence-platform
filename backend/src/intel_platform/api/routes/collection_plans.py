@@ -5,7 +5,6 @@ through the collection pipeline, acquisition logging, and a status dashboard.
 """
 from __future__ import annotations
 
-import json
 import logging
 import re
 import time
@@ -14,7 +13,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
@@ -981,7 +980,6 @@ async def list_connector_types():
     """List available connector types and their capabilities."""
     result = []
     for type_name, cls in CONNECTOR_REGISTRY.items():
-        connector = cls()
         result.append({
             "source_type": type_name,
             "description": cls.__doc__ or "",

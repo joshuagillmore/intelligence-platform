@@ -4,8 +4,7 @@ import re
 
 from neo4j import Driver
 
-from intel_platform.models.entities import Entity, EntityType
-from intel_platform.services.graph_cache import graph_cache
+from intel_platform.models.entities import Entity
 
 
 def _validate_label(label: str) -> str:

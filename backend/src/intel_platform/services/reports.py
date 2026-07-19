@@ -1,6 +1,4 @@
 from __future__ import annotations
-import uuid
-from datetime import datetime, timezone
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import Report
 from intel_platform.models.relationships import Relationship

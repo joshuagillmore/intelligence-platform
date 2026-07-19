@@ -23,11 +23,9 @@ from intel_platform.connectors.flat_file import (
     parse_json,
     _sanitize_cell,
     _sanitize_header,
-    _detect_encoding,
     _infer_column_type,
     _profile_column,
     _check_json_depth,
-    MAX_ROWS,
     MAX_COLUMNS,
 )
 from intel_platform.connectors.base import get_connector, CONNECTOR_REGISTRY

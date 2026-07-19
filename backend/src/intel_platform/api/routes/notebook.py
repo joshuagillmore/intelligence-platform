@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
-from intel_platform.models.entities import Entity, EntityType, Report
+from intel_platform.models.entities import Report
 from intel_platform.models.relationships import Relationship
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])

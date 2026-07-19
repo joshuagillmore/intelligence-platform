@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from intel_platform.collection.proxy import ProxiedClient, ProxyConfig
+from intel_platform.collection.proxy import ProxiedClient
 from intel_platform.collection.scraper import WebScraper
 from intel_platform.connectors.base import (
     AcquireResult,

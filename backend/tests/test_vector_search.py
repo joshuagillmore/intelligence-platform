@@ -6,10 +6,8 @@ layer and verify the service logic (batching, error handling, data flow).
 from __future__ import annotations
 
 import asyncio
-import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 
 from intel_platform.llm.embeddings import EmbeddingResult
 from intel_platform.services.vector_search import (
