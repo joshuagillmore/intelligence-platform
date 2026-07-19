@@ -315,6 +315,7 @@ async def _structured_generate(provider, messages, system, expected_keys=None, m
 
 def _validate_urls(urls: list) -> list[str]:
     """Filter URLs to only valid, public HTTP(S) URLs."""
+    import ipaddress
     from urllib.parse import urlparse
     valid = []
     for url in urls:
@@ -328,11 +329,17 @@ def _validate_urls(urls: list) -> list[str]:
             if not parsed.netloc or '.' not in parsed.netloc:
                 continue
             hostname = (parsed.hostname or "").lower()
-            # Reject internal/private
-            if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+            # Reject internal/private/reserved. IP-literal hosts are checked
+            # robustly via ipaddress (covers 10/8, 172.16/12, 192.168/16,
+            # 169.254/16, loopback, ::1, etc.); domain hosts fall through to the
+            # authoritative DNS-resolving guard in collection/scraper.py.
+            if hostname in ("localhost", "0.0.0.0"):
                 continue
-            if hostname.startswith(("10.", "192.168.", "169.254.")):
-                continue
+            try:
+                if not ipaddress.ip_address(hostname).is_global:
+                    continue
+            except ValueError:
+                pass  # not an IP literal — a domain
             valid.append(url)
         except Exception:
             continue
@@ -728,7 +735,8 @@ async def run_agentic_loop(plan_id, db_factory, get_store, get_provider):
         plan = await db.get(CollectionPlan, plan_id)
         sources = [s for s in (plan.sources or []) if s.enabled and s.source_type != "file_upload"]
 
-        extraction_mode = (plan.routing_rules or {}).get("extraction_mode", "nlp")
+        from intel_platform.config import settings
+        extraction_mode = (plan.routing_rules or {}).get("extraction_mode") or settings.extraction_mode
 
         for source in sources:
             if source.collection_status == "failed":

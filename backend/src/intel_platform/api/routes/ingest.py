@@ -29,9 +29,11 @@ async def ingest_document(
     content: str | None = Form(None),
     file: UploadFile | None = File(None),
     reliability_rating: str = Form("C3"),
-    extraction_mode: str = Form("nlp"),
+    extraction_mode: str | None = Form(None),
     store: GraphStore = Depends(get_graph_store),
 ):
+    # None -> the configured default (hybrid). Explicit value still honored.
+    extraction_mode = extraction_mode or settings.extraction_mode
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
     ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.md', '.csv', '.json'}
 
@@ -96,9 +98,10 @@ async def ingest_batch(
     project_id: str = Form(...),
     files: list[UploadFile] = File(...),
     reliability_rating: str = Form("C3"),
-    extraction_mode: str = Form("nlp"),
+    extraction_mode: str | None = Form(None),
     store: GraphStore = Depends(get_graph_store),
 ):
+    extraction_mode = extraction_mode or settings.extraction_mode
     import re
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
     ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.md', '.csv', '.json'}
