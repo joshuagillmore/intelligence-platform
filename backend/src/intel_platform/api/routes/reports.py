@@ -4,7 +4,7 @@ import logging
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
@@ -33,8 +33,8 @@ class GenerateReportRequest(BaseModel):
     entity_ids: list[str] = []
     include_evidence: bool = True
     probability_assessments: bool = False
-    max_hops: int = 2
-    token_budget: int = 8000
+    max_hops: int = Field(2, ge=1, le=4)
+    token_budget: int = Field(8000, ge=500, le=32000)
     use_vector: bool = True
 
 
@@ -196,7 +196,7 @@ async def generate_report(
         "context_edges": context_edges,
     }
     if req.skill_name in ("threat_assessment", "report_writing"):
-        prob_match = re.search(r'PROBABILITY:\s*(0\.\d+)', result.content)
+        prob_match = re.search(r'PROBABILITY:\s*([01]\.\d+)', result.content)
         if prob_match:
             response["probability"] = float(prob_match.group(1))
     return response
