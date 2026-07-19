@@ -139,6 +139,10 @@ def _source_to_dict(src: CollectionSource) -> dict:
         "name": src.name,
         "source_type": src.source_type,
         "config": src.config or {},
+        # The live acquisition status (resolving/queued/collecting/succeeded/
+        # failed). Was omitted here, so the UI defaulted every source to
+        # "pending" even while the pipeline progressed.
+        "collection_status": src.collection_status,
         "schedule_cron": src.schedule_cron,
         "enabled": src.enabled,
         "last_success_at": src.last_success_at.isoformat() if src.last_success_at else None,
@@ -457,9 +461,16 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     return result
 
 
+class ExecuteRequest(BaseModel):
+    # How many results to pull per source: URLs/pages for web_scrape/database/
+    # api_feed, items for rss_feed. Clamped to 1..25.
+    max_results_per_source: int = 10
+
+
 @router.post("/collection-plans/{plan_id}/execute")
 async def execute_plan_endpoint(
     plan_id: str,
+    body: ExecuteRequest | None = None,
     db: AsyncSession = Depends(get_db),
     store: GraphStore = Depends(get_graph_store),
 ):
@@ -510,6 +521,7 @@ async def execute_plan_endpoint(
     all_auto = [s for s in sources if s.enabled and s.source_type != "file_upload"]
     if all_auto:
         session_factory = get_session_factory()
+        max_results = max(1, min(25, body.max_results_per_source if body else 10))
         asyncio.create_task(
             run_agentic_loop(
                 plan_id=plan.id,
@@ -518,6 +530,7 @@ async def execute_plan_endpoint(
                 # Bulk resolution + summarization → collection provider (local
                 # Ollama when configured), keeping the cloud key for products.
                 get_provider=_get_collection_provider,
+                max_results_per_source=max_results,
             )
         )
 

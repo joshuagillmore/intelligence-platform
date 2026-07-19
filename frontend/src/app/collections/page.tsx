@@ -76,6 +76,7 @@ export default function CollectionsPage() {
   const [planLoading, setPlanLoading] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
   const [planItems, setPlanItems] = useState<PlanItem[]>([]);
+  const [maxResultsPerSource, setMaxResultsPerSource] = useState(10);
   const [activePlan, setActivePlan] = useState<CollectionPlan | null>(null);
   const [plans, setPlans] = useState<CollectionPlan[]>([]);
   const [, setPlansLoading] = useState(false);
@@ -311,7 +312,7 @@ PIR: ${pirText}` }],
             } catch { /* source may not exist */ }
           }
         }
-        await collectionPlansApi.execute(String(activePlan.id));
+        await collectionPlansApi.execute(String(activePlan.id), maxResultsPerSource);
       }
       resetWorkflow();
       loadCollections();
@@ -696,6 +697,20 @@ PIR: ${pirText}` }],
                       <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">Status</span>
                       <p className="text-xs text-amber-400 font-bold uppercase">Awaiting Approval</p>
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 bg-[#1a1f2e] rounded p-3">
+                    <label htmlFor="maxResults" className="text-[10px] text-gray-400 uppercase tracking-widest font-bold whitespace-nowrap">Results / source</label>
+                    <input
+                      id="maxResults"
+                      type="number"
+                      min={1}
+                      max={25}
+                      value={maxResultsPerSource}
+                      onChange={e => setMaxResultsPerSource(Math.max(1, Math.min(25, Number(e.target.value) || 1)))}
+                      className="w-16 bg-[#0d1220] border border-[#252a39] rounded px-2 py-1 text-xs text-gray-200 text-center focus:border-[#4d8eff] outline-none"
+                    />
+                    <span className="text-[10px] text-gray-500">URLs/pages per web source · items per feed (1–25)</span>
                   </div>
 
                   {error && <p className="text-red-400 text-xs">{error}</p>}
