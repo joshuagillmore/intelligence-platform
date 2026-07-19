@@ -70,8 +70,9 @@ def _ensure_default_admin():
         result = session.run("MATCH (u:User) RETURN count(u) as cnt")
         count = result.single()["cnt"]
         if count == 0:
-            admin_password = os.environ.get("DEFAULT_ADMIN_PASSWORD", "admin")
-            require_secure = os.environ.get("REQUIRE_SECURE_AUTH", "").lower() in ("1", "true", "yes")
+            from intel_platform.config import settings
+            admin_password = settings.default_admin_password or "admin"
+            require_secure = settings.require_secure_auth
             if require_secure and admin_password == "admin":
                 raise RuntimeError(
                     "REQUIRE_SECURE_AUTH=true: set DEFAULT_ADMIN_PASSWORD (not the default 'admin') "

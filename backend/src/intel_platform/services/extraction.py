@@ -618,14 +618,25 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
         # sentence) already linked the pair with a real relationship —
         # ASSOCIATED_WITH only fires when nothing better connects the two.
         for i, e1 in enumerate(sent_entities_list):
-            for e2 in sent_entities_list[i + 1:i + 1 + COOCCURRENCE_WINDOW]:
-                if e1.get("entity_type") == "Date" or e2.get("entity_type") == "Date":
-                    if e1.get("entity_type") == "Date":
-                        src, tgt = e2, e1
-                    else:
-                        src, tgt = e1, e2
-                    _add_rel(src["name"], tgt["name"], "OCCURRED_ON", 0.7)
-                elif frozenset((e1["name"], e2["name"])) not in linked_pairs:
+            for j in range(i + 1, len(sent_entities_list)):
+                e2 = sent_entities_list[j]
+                e1_is_date = e1.get("entity_type") == "Date"
+                e2_is_date = e2.get("entity_type") == "Date"
+                # Event<->Date gets the typed, load-bearing OCCURRED_ON across the
+                # FULL sentence (it populates Event.event_datetime for the
+                # timeline — see _link_event_dates). Crucially this fires ONLY when
+                # the non-Date side is an Event: a Date sitting next to a Person /
+                # Org / Location is not an "occurred on" and would just be noise,
+                # so it falls through to the ordinary windowed co-occurrence rule.
+                if e1_is_date != e2_is_date:
+                    date_ent, other = (e1, e2) if e1_is_date else (e2, e1)
+                    _, parent_category = normalize_entity_type(other.get("entity_type", ""))
+                    if parent_category == "Event":
+                        _add_rel(other["name"], date_ent["name"], "OCCURRED_ON", 0.7)
+                        continue
+                # ASSOCIATED_WITH is noise — only emit within the window, and never
+                # on top of a pair a typed/pattern relation already links.
+                if (j - i) <= COOCCURRENCE_WINDOW and frozenset((e1["name"], e2["name"])) not in linked_pairs:
                     _add_rel(e1["name"], e2["name"], "ASSOCIATED_WITH", 0.5)
 
         # ── Stage C: Cross-sentence relationship detection ──

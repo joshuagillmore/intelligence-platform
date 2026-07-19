@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # JWT secret / API key / admin password. Set REQUIRE_SECURE_AUTH=true on any
     # public or deployed instance.
     require_secure_auth: bool = False
+    # Seed password for the auto-created admin user (blank -> 'admin' in dev; must
+    # be set when require_secure_auth is on). Read via Settings so .env works too.
+    default_admin_password: str = ""
     # The MCP server exposes read+write graph tools and is NOT behind the REST
     # auth layer, so it is disabled by default. Enable deliberately (behind a
     # trusted network / gateway) via MCP_ENABLED=true.

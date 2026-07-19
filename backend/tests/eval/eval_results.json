@@ -2,11 +2,11 @@
   "results": [
     {
       "name": "cyber_threat_report_1",
-      "extraction_time_s": 0.489,
+      "extraction_time_s": 0.499,
       "text_length": 2084,
       "entities_predicted": 32,
       "entities_expected": 25,
-      "relationships_predicted": 45,
+      "relationships_predicted": 35,
       "relationships_expected": 15,
       "entity_metrics": {
         "precision": 0.6875,
@@ -111,7 +111,7 @@
         "recall": 0.0,
         "f1": 0.0,
         "true_positives": 0,
-        "false_positives": 45,
+        "false_positives": 35,
         "false_negatives": 15
       },
       "type_accuracy": {
@@ -134,11 +134,11 @@
     },
     {
       "name": "cyber_threat_report_2",
-      "extraction_time_s": 0.334,
+      "extraction_time_s": 0.267,
       "text_length": 8364,
       "entities_predicted": 104,
       "entities_expected": 40,
-      "relationships_predicted": 395,
+      "relationships_predicted": 180,
       "relationships_expected": 30,
       "entity_metrics": {
         "precision": 0.3846,
@@ -251,7 +251,7 @@
         "recall": 0.0,
         "f1": 0.0,
         "true_positives": 0,
-        "false_positives": 395,
+        "false_positives": 180,
         "false_negatives": 30
       },
       "type_accuracy": {
@@ -285,11 +285,11 @@
     },
     {
       "name": "edge_cases",
-      "extraction_time_s": 0.072,
+      "extraction_time_s": 0.064,
       "text_length": 1774,
       "entities_predicted": 40,
       "entities_expected": 25,
-      "relationships_predicted": 52,
+      "relationships_predicted": 40,
       "relationships_expected": 5,
       "entity_metrics": {
         "precision": 0.525,
@@ -350,11 +350,11 @@
         }
       },
       "relationship_metrics": {
-        "precision": 0.0192,
+        "precision": 0.025,
         "recall": 0.2,
-        "f1": 0.0351,
+        "f1": 0.0444,
         "true_positives": 1,
-        "false_positives": 51,
+        "false_positives": 39,
         "false_negatives": 4
       },
       "type_accuracy": {
@@ -374,11 +374,11 @@
     },
     {
       "name": "financial_sanctions_1",
-      "extraction_time_s": 0.285,
+      "extraction_time_s": 0.253,
       "text_length": 7466,
       "entities_predicted": 119,
       "entities_expected": 43,
-      "relationships_predicted": 440,
+      "relationships_predicted": 193,
       "relationships_expected": 31,
       "entity_metrics": {
         "precision": 0.3277,
@@ -483,7 +483,7 @@
         "recall": 0.0,
         "f1": 0.0,
         "true_positives": 0,
-        "false_positives": 440,
+        "false_positives": 193,
         "false_negatives": 31
       },
       "type_accuracy": {
@@ -509,11 +509,11 @@
     },
     {
       "name": "geopolitical_analysis_1",
-      "extraction_time_s": 0.075,
+      "extraction_time_s": 0.068,
       "text_length": 2051,
       "entities_predicted": 47,
       "entities_expected": 35,
-      "relationships_predicted": 161,
+      "relationships_predicted": 83,
       "relationships_expected": 7,
       "entity_metrics": {
         "precision": 0.7234,
@@ -558,11 +558,11 @@
         }
       },
       "relationship_metrics": {
-        "precision": 0.0124,
+        "precision": 0.0241,
         "recall": 0.2857,
-        "f1": 0.0238,
+        "f1": 0.0444,
         "true_positives": 2,
-        "false_positives": 159,
+        "false_positives": 81,
         "false_negatives": 5
       },
       "type_accuracy": {
@@ -582,11 +582,11 @@
     },
     {
       "name": "hybrid_warfare_1",
-      "extraction_time_s": 0.351,
+      "extraction_time_s": 0.308,
       "text_length": 9867,
       "entities_predicted": 147,
       "entities_expected": 50,
-      "relationships_predicted": 665,
+      "relationships_predicted": 304,
       "relationships_expected": 32,
       "entity_metrics": {
         "precision": 0.3333,
@@ -723,7 +723,7 @@
         "recall": 0.0,
         "f1": 0.0,
         "true_positives": 0,
-        "false_positives": 665,
+        "false_positives": 304,
         "false_negatives": 32
       },
       "type_accuracy": {
@@ -762,11 +762,11 @@
     },
     {
       "name": "military_osint_1",
-      "extraction_time_s": 0.261,
+      "extraction_time_s": 0.235,
       "text_length": 7054,
       "entities_predicted": 113,
       "entities_expected": 45,
-      "relationships_predicted": 524,
+      "relationships_predicted": 208,
       "relationships_expected": 24,
       "entity_metrics": {
         "precision": 0.3805,
@@ -863,7 +863,7 @@
         "recall": 0.0,
         "f1": 0.0,
         "true_positives": 0,
-        "false_positives": 524,
+        "false_positives": 208,
         "false_negatives": 24
       },
       "type_accuracy": {
@@ -892,11 +892,11 @@
     },
     {
       "name": "terrorism_analysis_1",
-      "extraction_time_s": 0.305,
+      "extraction_time_s": 0.272,
       "text_length": 7743,
       "entities_predicted": 125,
       "entities_expected": 37,
-      "relationships_predicted": 414,
+      "relationships_predicted": 212,
       "relationships_expected": 27,
       "entity_metrics": {
         "precision": 0.296,
@@ -969,7 +969,7 @@
         "recall": 0.0,
         "f1": 0.0,
         "true_positives": 0,
-        "false_positives": 414,
+        "false_positives": 212,
         "false_negatives": 27
       },
       "type_accuracy": {
