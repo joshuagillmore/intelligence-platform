@@ -198,6 +198,9 @@ def build_graph_from_extractions(
             rel_type=rel_data["rel_type"],
             confidence=confidence,
             source=rel_data.get("source", ""), method=rel_data.get("method", ""),
+            # Carry the source-sentence evidence through to the edge (was dropped
+            # here before, so "Show Evidence" had no real per-edge reference).
+            evidence=rel_data.get("evidence", ""),
         )
         store.create_relationship(rel)
         rels_created += 1

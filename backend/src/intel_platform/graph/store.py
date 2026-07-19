@@ -168,13 +168,16 @@ class GraphStore:
                 """
                 MATCH (n {id: $id})-[r]-(m)
                 RETURN type(r) as rel_type, properties(r) as props,
-                       n.id as source_id, m.id as target_id, m.name as target_name
+                       n.id as source_id, n.name as source_name,
+                       m.id as target_id, m.name as target_name
                 """,
                 id=entity_id,
             )
             return [
                 {"rel_type": record["rel_type"], "target_id": record["target_id"],
-                 "target_name": record["target_name"], **record["props"]}
+                 "target_name": record["target_name"],
+                 "source_id": record["source_id"], "source_name": record["source_name"],
+                 **record["props"]}
                 for record in result
             ]
 

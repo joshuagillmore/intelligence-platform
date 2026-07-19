@@ -140,6 +140,28 @@ def _merge_attributes(primary: dict, secondary: dict) -> None:
     for k, v in extra.items():
         target.setdefault(k, v)
 
+
+def _clean_evidence(sentence: str, name_a: str, name_b: str, pad: int = 45, max_len: int = 300) -> str:
+    """Tighten a relationship's source text to the in-context span linking the pair.
+
+    spaCy sentence boundaries are noisy on intelligence docs (headers without
+    terminal punctuation get glued onto the first real sentence), so the raw
+    `sent.text` is often a multi-line boilerplate blob. Collapse whitespace and,
+    when both entity names are present, clip to a window around them so "Show
+    Evidence" surfaces the actual related reference, not a page of preamble.
+    """
+    s = re.sub(r"\s+", " ", sentence or "").strip()
+    if not s:
+        return ""
+    lo = s.lower()
+    ia, ib = lo.find(name_a.lower()), lo.find(name_b.lower())
+    if ia != -1 and ib != -1:
+        start = max(0, min(ia, ib) - pad)
+        end = min(len(s), max(ia + len(name_a), ib + len(name_b)) + pad)
+        clip = ("..." if start > 0 else "") + s[start:end] + ("..." if end < len(s) else "")
+        return clip
+    return s if len(s) <= max_len else s[:max_len] + "..."
+
 # Known intelligence-domain locations that spaCy commonly misclassifies
 KNOWN_LOCATIONS = {
     "caspian sea", "black sea", "red sea", "mediterranean", "south china sea",
@@ -555,7 +577,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
     # ASSOCIATED_WITH on top of a pair a typed/pattern relation already links.
     linked_pairs: set[frozenset[str]] = set()
 
-    def _add_rel(src_name: str, tgt_name: str, rel_type: str, confidence: float) -> None:
+    def _add_rel(src_name: str, tgt_name: str, rel_type: str, confidence: float, evidence: str = "") -> None:
         key = (src_name, tgt_name, rel_type)
         if key not in seen_rel_keys:
             seen_rel_keys.add(key)
@@ -564,6 +586,8 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
                 "source_name": src_name, "target_name": tgt_name,
                 "rel_type": rel_type, "confidence": confidence,
                 "source": doc_id, "method": "nlp",
+                # The in-context span this relation was read from — surfaced as evidence.
+                "evidence": _clean_evidence(evidence, src_name, tgt_name),
             })
 
     prev_sent_entities: list[dict] = []
@@ -610,7 +634,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
                             break
 
             if subj_ent and obj_ent and subj_ent["name"] != obj_ent["name"]:
-                _add_rel(subj_ent["name"], obj_ent["name"], rel_type_from_verb, 0.7)
+                _add_rel(subj_ent["name"], obj_ent["name"], rel_type_from_verb, 0.7, sent_text)
 
         # ── Stage B: Co-occurrence relationships (fallback) ──
         # Bounded to nearby entities (COOCCURRENCE_WINDOW), not the full
@@ -632,12 +656,12 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
                     date_ent, other = (e1, e2) if e1_is_date else (e2, e1)
                     _, parent_category = normalize_entity_type(other.get("entity_type", ""))
                     if parent_category == "Event":
-                        _add_rel(other["name"], date_ent["name"], "OCCURRED_ON", 0.7)
+                        _add_rel(other["name"], date_ent["name"], "OCCURRED_ON", 0.7, sent_text)
                         continue
                 # ASSOCIATED_WITH is noise — only emit within the window, and never
                 # on top of a pair a typed/pattern relation already links.
                 if (j - i) <= COOCCURRENCE_WINDOW and frozenset((e1["name"], e2["name"])) not in linked_pairs:
-                    _add_rel(e1["name"], e2["name"], "ASSOCIATED_WITH", 0.5)
+                    _add_rel(e1["name"], e2["name"], "ASSOCIATED_WITH", 0.5, sent_text)
 
         # ── Stage C: Cross-sentence relationship detection ──
         # A discourse marker signals the two *sentences* are connected, not
@@ -654,7 +678,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
                     prev_e["name"] != curr_e["name"]
                     and frozenset((prev_e["name"], curr_e["name"])) not in linked_pairs
                 ):
-                    _add_rel(prev_e["name"], curr_e["name"], "ASSOCIATED_WITH", 0.4)
+                    _add_rel(prev_e["name"], curr_e["name"], "ASSOCIATED_WITH", 0.4, sent_text)
 
         prev_sent_entities = sent_entities_list
 
@@ -715,14 +739,16 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
 
         relationships = []
         for r in data.get("relationships", []):
+            src_name = r.get("source_entity", r.get("source", ""))
+            tgt_name = r.get("target_entity", r.get("target", ""))
             relationships.append({
-                "source_name": r.get("source_entity", r.get("source", "")),
-                "target_name": r.get("target_entity", r.get("target", "")),
+                "source_name": src_name,
+                "target_name": tgt_name,
                 "rel_type": r.get("relationship_type", r.get("rel_type", "ASSOCIATED_WITH")),
                 "confidence": float(r.get("confidence", 0.7)),
                 "source": doc_id,
                 "method": "llm",
-                "evidence": r.get("evidence", ""),
+                "evidence": _clean_evidence(r.get("evidence", ""), src_name, tgt_name),
             })
 
         _link_event_dates(entities, relationships)
