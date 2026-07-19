@@ -323,7 +323,7 @@ def _records_to_text(records: list[dict], source: CollectionSource) -> str:
             if kv_parts:
                 parts.append(". ".join(kv_parts) + ".")
 
-    return f"\n\n---\n\n".join(parts)
+    return "\n\n---\n\n".join(parts)
 
 
 async def _extract(text: str, doc_id: str, mode: str):

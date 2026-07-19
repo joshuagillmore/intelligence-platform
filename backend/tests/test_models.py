@@ -1,13 +1,6 @@
 from intel_platform.models.entities import (
-    Entity,
     Person,
-    Organization,
-    IPAddress,
-    Domain,
-    ThreatActor,
-    Campaign,
     Document,
-    Topic,
     Assessment,
     EntityType,
 )

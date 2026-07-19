@@ -20,7 +20,7 @@ import io
 import json
 import logging
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from intel_platform.connectors.base import (

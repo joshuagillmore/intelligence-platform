@@ -5,7 +5,6 @@ from intel_platform.api.auth import (
     check_login_rate_limit,
     clear_failed_logins,
     create_access_token,
-    get_current_user,
     record_failed_login,
     register_user,
     require_admin,

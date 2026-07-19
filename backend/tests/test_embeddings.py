@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 from intel_platform.llm.embeddings import (
     CohereEmbeddingProvider,
@@ -125,7 +124,6 @@ class TestOllamaEmbeddingProvider:
         assert provider.dimension() == 768
 
     def test_embed_calls_api(self):
-        import httpx
 
         mock_response = MagicMock()
         mock_response.json.return_value = {"embeddings": [[0.3] * 768]}

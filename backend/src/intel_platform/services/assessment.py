@@ -29,7 +29,7 @@ class AssessmentService:
             methodology=methodology,
             project_id=project_id,
         )
-        result = self._store.create_entity(assessment)
+        self._store.create_entity(assessment)
 
         # Link assessment to entity
         from intel_platform.models.relationships import Relationship

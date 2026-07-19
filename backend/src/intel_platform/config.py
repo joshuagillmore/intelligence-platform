@@ -18,6 +18,17 @@ class Settings(BaseSettings):
     # workbench (the SPA fires many calls per page, and behind the local
     # frontend proxy they all share one client IP); tighten for public deploys.
     rate_limit_per_minute: int = 3000
+    # Security hardening: when true, refuse to start with the built-in default
+    # JWT secret / API key / admin password. Set REQUIRE_SECURE_AUTH=true on any
+    # public or deployed instance.
+    require_secure_auth: bool = False
+    # Seed password for the auto-created admin user (blank -> 'admin' in dev; must
+    # be set when require_secure_auth is on). Read via Settings so .env works too.
+    default_admin_password: str = ""
+    # The MCP server exposes read+write graph tools and is NOT behind the REST
+    # auth layer, so it is disabled by default. Enable deliberately (behind a
+    # trusted network / gateway) via MCP_ENABLED=true.
+    mcp_enabled: bool = False
 
     # Extraction
     extraction_mode: str = "nlp"  # nlp | llm | hybrid
@@ -25,6 +36,12 @@ class Settings(BaseSettings):
     coreference_enabled: bool = False
     entity_resolution_threshold: float = 0.92
     extraction_confidence_min: float = 0.0
+    # Storage-time floor for blanket co-occurrence relationships
+    # (ASSOCIATED_WITH) specifically — these are a last-resort "these two
+    # entities appeared near each other" guess, not a typed/pattern-derived
+    # relation, so they need a higher bar to be worth persisting to the
+    # graph. Verb/pattern-derived and LLM-typed relationships are unaffected.
+    cooccurrence_confidence_min: float = 0.55
 
     # Chunking
     chunk_size: int = 2000
@@ -57,7 +74,7 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
-from functools import lru_cache
+from functools import lru_cache  # noqa: E402
 
 
 @lru_cache

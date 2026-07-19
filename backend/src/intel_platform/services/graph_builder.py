@@ -178,16 +178,25 @@ def build_graph_from_extractions(
         batch_name_to_type[name] = raw_type
         created += 1
 
+    cooccurrence_min = settings.cooccurrence_confidence_min
     rels_created = 0
     for rel_data in relationships:
         source_id = name_to_id.get(rel_data["source_name"])
         target_id = name_to_id.get(rel_data["target_name"])
         if not source_id or not target_id:
             continue
+        confidence = rel_data.get("confidence", 0.5)
+        # Blanket co-occurrence edges need a higher confidence bar to be
+        # worth storing than typed/pattern-derived relationships — this is
+        # what keeps a "these two entities appeared near each other" guess
+        # from flooding the graph and skewing SNA/Graph-RAG. Doesn't affect
+        # ASSOCIATED_WITH relationships an LLM asserted with real confidence.
+        if rel_data["rel_type"] == "ASSOCIATED_WITH" and confidence < cooccurrence_min:
+            continue
         rel = Relationship(
             source_id=source_id, target_id=target_id,
             rel_type=rel_data["rel_type"],
-            confidence=rel_data.get("confidence", 0.5),
+            confidence=confidence,
             source=rel_data.get("source", ""), method=rel_data.get("method", ""),
         )
         store.create_relationship(rel)

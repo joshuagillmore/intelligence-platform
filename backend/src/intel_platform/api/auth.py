@@ -4,7 +4,7 @@ import os
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from fastapi import HTTPException, Depends, Request
+from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 import bcrypt
@@ -70,6 +70,14 @@ def _ensure_default_admin():
         result = session.run("MATCH (u:User) RETURN count(u) as cnt")
         count = result.single()["cnt"]
         if count == 0:
+            from intel_platform.config import settings
+            admin_password = settings.default_admin_password or "admin"
+            require_secure = settings.require_secure_auth
+            if require_secure and admin_password == "admin":
+                raise RuntimeError(
+                    "REQUIRE_SECURE_AUTH=true: set DEFAULT_ADMIN_PASSWORD (not the default 'admin') "
+                    "before first boot so no default admin is seeded."
+                )
             session.run(
                 """
                 CREATE (u:User {
@@ -80,10 +88,13 @@ def _ensure_default_admin():
                 })
                 """,
                 username="admin",
-                hashed_password=_hash_password("admin"),
+                hashed_password=_hash_password(admin_password),
                 role="admin",
             )
-            _logger.warning("SECURITY: Created default admin/admin user. Change password in production!")
+            if admin_password == "admin":
+                _logger.warning("SECURITY: Created default admin/admin user. Change password in production!")
+            else:
+                _logger.info("Created initial admin user from DEFAULT_ADMIN_PASSWORD.")
 
 
 def create_access_token(username: str, role: str = "analyst") -> str:

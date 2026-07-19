@@ -2,20 +2,16 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
-import pytest
 
 from intel_platform.llm.embeddings import EmbeddingResult
 from intel_platform.services.document_clustering import (
     GRANULARITY_PRESETS,
     _build_semantic_tree,
-    _label_cluster,
     _tokenize,
     build_tfidf,
-    cluster_documents,
     cluster_semantic,
 )
 

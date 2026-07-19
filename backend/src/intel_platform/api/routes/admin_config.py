@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select, update
 
-from intel_platform.api.deps import require_admin, verify_api_key
+from intel_platform.api.deps import require_admin
 from intel_platform.config import settings
 from intel_platform.crypto import decrypt, encrypt
 from intel_platform.db.engine import get_session_factory

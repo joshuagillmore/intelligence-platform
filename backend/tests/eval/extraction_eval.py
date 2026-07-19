@@ -233,8 +233,8 @@ def load_fixture(name: str) -> tuple[str, dict]:
     text_path = fixtures_dir / f"{name}.txt"
     expected_path = fixtures_dir / f"{name}_expected.json"
 
-    text = text_path.read_text()
-    with open(expected_path) as f:
+    text = text_path.read_text(encoding="utf-8")
+    with open(expected_path, encoding="utf-8") as f:
         expected = json.load(f)
 
     return text, expected

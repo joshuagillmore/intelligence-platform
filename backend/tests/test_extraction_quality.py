@@ -6,7 +6,6 @@ and asserts minimum quality thresholds for precision, recall, and F1.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -14,7 +13,6 @@ import pytest
 from intel_platform.services.extraction import extract_entities_nlp
 from tests.eval.extraction_eval import (
     compute_entity_metrics,
-    compute_relationship_metrics,
     compute_type_accuracy,
     load_fixture,
 )

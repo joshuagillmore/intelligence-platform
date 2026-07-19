@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from intel_platform.connectors.base import AcquireResult, CONNECTOR_REGISTRY
+from intel_platform.connectors.base import CONNECTOR_REGISTRY
 
 
 def run(coro):

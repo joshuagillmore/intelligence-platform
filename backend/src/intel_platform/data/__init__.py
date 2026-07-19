@@ -5,7 +5,6 @@ Call reload_taxonomy() to pick up changes at runtime without restart.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import yaml

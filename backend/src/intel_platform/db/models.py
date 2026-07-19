@@ -15,8 +15,6 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Enum as SAEnum,
-    Float,
     ForeignKey,
     Index,
     Integer,

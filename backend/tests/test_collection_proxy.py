@@ -1,4 +1,4 @@
-from intel_platform.collection.proxy import ProxyConfig, ProxiedClient
+from intel_platform.collection.proxy import ProxyConfig
 
 
 def test_proxy_config_direct():

@@ -1,5 +1,3 @@
-import pytest
-from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import Person, Organization, ThreatActor
 from intel_platform.models.relationships import Relationship
 

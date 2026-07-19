@@ -1,5 +1,5 @@
 def test_mcp_server_imports():
-    from intel_platform.mcp.server import mcp, get_mcp_app
+    from intel_platform.mcp.server import mcp
     assert mcp is not None
 
 def test_mcp_app_is_starlette():
