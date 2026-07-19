@@ -17,8 +17,27 @@ logger = logging.getLogger(__name__)
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
 
 
+def _enforce_secure_auth() -> None:
+    """Fail-closed: refuse to start with built-in default secrets when REQUIRE_SECURE_AUTH is set."""
+    if not settings.require_secure_auth:
+        return
+    from intel_platform.api.auth import _IS_DEFAULT_SECRET
+    problems = []
+    if _IS_DEFAULT_SECRET:
+        problems.append("JWT_SECRET is the built-in default")
+    if settings.api_key == "dev-api-key-change-in-production":
+        problems.append("API_KEY is the built-in default")
+    if problems:
+        raise RuntimeError(
+            "REQUIRE_SECURE_AUTH=true but insecure defaults are in use: "
+            + "; ".join(problems)
+            + ". Set a strong JWT_SECRET and API_KEY before deploying."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _enforce_secure_auth()
     driver = get_neo4j_driver()
     initialize_schema(driver)
     # Ensure default admin user exists in Neo4j
@@ -49,14 +68,18 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.rate_limit_per_minute)
 app.add_middleware(SecurityHeadersMiddleware)
 
-# Mount MCP server
-try:
-    from intel_platform.mcp.server import get_mcp_app
-    mcp_app = get_mcp_app()
-    app.mount("/mcp", mcp_app)
-    logger.info("MCP server mounted at /mcp")
-except Exception as exc:
-    logger.warning("MCP server not available: %s", exc)
+# Mount MCP server — OFF by default: its tools include graph writes and it is not
+# behind the REST auth. Enable deliberately (behind a trusted gateway) via MCP_ENABLED=true.
+if settings.mcp_enabled:
+    try:
+        from intel_platform.mcp.server import get_mcp_app
+        mcp_app = get_mcp_app()
+        app.mount("/mcp", mcp_app)
+        logger.warning("MCP server mounted at /mcp (unauthenticated — ensure the network is trusted)")
+    except Exception as exc:
+        logger.warning("MCP server not available: %s", exc)
+else:
+    logger.info("MCP server disabled (set MCP_ENABLED=true to enable)")
 
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(health.router, tags=["health"])

@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     # workbench (the SPA fires many calls per page, and behind the local
     # frontend proxy they all share one client IP); tighten for public deploys.
     rate_limit_per_minute: int = 3000
+    # Security hardening: when true, refuse to start with the built-in default
+    # JWT secret / API key / admin password. Set REQUIRE_SECURE_AUTH=true on any
+    # public or deployed instance.
+    require_secure_auth: bool = False
+    # The MCP server exposes read+write graph tools and is NOT behind the REST
+    # auth layer, so it is disabled by default. Enable deliberately (behind a
+    # trusted network / gateway) via MCP_ENABLED=true.
+    mcp_enabled: bool = False
 
     # Extraction
     extraction_mode: str = "nlp"  # nlp | llm | hybrid

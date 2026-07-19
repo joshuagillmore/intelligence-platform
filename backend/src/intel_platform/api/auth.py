@@ -70,6 +70,13 @@ def _ensure_default_admin():
         result = session.run("MATCH (u:User) RETURN count(u) as cnt")
         count = result.single()["cnt"]
         if count == 0:
+            admin_password = os.environ.get("DEFAULT_ADMIN_PASSWORD", "admin")
+            require_secure = os.environ.get("REQUIRE_SECURE_AUTH", "").lower() in ("1", "true", "yes")
+            if require_secure and admin_password == "admin":
+                raise RuntimeError(
+                    "REQUIRE_SECURE_AUTH=true: set DEFAULT_ADMIN_PASSWORD (not the default 'admin') "
+                    "before first boot so no default admin is seeded."
+                )
             session.run(
                 """
                 CREATE (u:User {
@@ -80,10 +87,13 @@ def _ensure_default_admin():
                 })
                 """,
                 username="admin",
-                hashed_password=_hash_password("admin"),
+                hashed_password=_hash_password(admin_password),
                 role="admin",
             )
-            _logger.warning("SECURITY: Created default admin/admin user. Change password in production!")
+            if admin_password == "admin":
+                _logger.warning("SECURITY: Created default admin/admin user. Change password in production!")
+            else:
+                _logger.info("Created initial admin user from DEFAULT_ADMIN_PASSWORD.")
 
 
 def create_access_token(username: str, role: str = "analyst") -> str:
