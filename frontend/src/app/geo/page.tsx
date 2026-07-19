@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
@@ -43,6 +44,7 @@ const C = {
 };
 
 export default function GeoPage() {
+  const router = useRouter();
   const { activeProject } = useProject();
   const [locations, setLocations] = useState<GeoLocation[]>([]);
   const [loading, setLoading] = useState(false);
@@ -319,7 +321,7 @@ export default function GeoPage() {
               ['infrastructure', 'Infrastructure', false],
               ['targets', 'Targets', false],
               ['relationships', 'Relationships', true],
-              ['heatMap', 'Heat Map', true],
+              ['heatMap', 'Density', true],
             ] as const).map(([key, label, enabled]) => (
               <label
                 key={key}
@@ -353,9 +355,12 @@ export default function GeoPage() {
             className="absolute top-64 left-4 rounded-lg p-4 w-52 shadow-xl hidden md:block"
             style={{ background: C.elevated, border: `1px solid ${C.border}` }}
           >
-            <h4 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: C.textDim }}>
+            <h4 className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: C.textDim }}>
               Temporal Window
             </h4>
+            <p className="text-[10px] mb-2 leading-snug" style={{ color: C.textMuted }} title="Map locations and connection lines have no per-item timestamps yet, so they always render all-time.">
+              Filters the Activity Timeline below. Map markers &amp; connections aren&apos;t timestamped yet, so they stay all-time.
+            </p>
             <div className="space-y-2">
               <div>
                 <label className="text-[10px] uppercase" style={{ color: C.textMuted }}>From</label>
@@ -505,13 +510,23 @@ export default function GeoPage() {
                       {Number(getLat(selectedLocation)).toFixed(4)}, {Number(getLng(selectedLocation)).toFixed(4)}
                     </p>
                   )}
-                  {/* ACTIVE badge */}
-                  <span
-                    className="inline-block mt-2 text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full border"
-                    style={{ color: C.green, borderColor: C.green }}
-                  >
-                    Active
-                  </span>
+                  <div className="flex items-center gap-2 mt-2">
+                    {/* ACTIVE badge */}
+                    <span
+                      className="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full border"
+                      style={{ color: C.green, borderColor: C.green }}
+                    >
+                      Active
+                    </span>
+                    {/* Pivot to Network graph */}
+                    <button
+                      onClick={() => router.push(`/network?select=${selectedLocation.id}`)}
+                      className="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full border transition-opacity hover:opacity-80"
+                      style={{ color: C.primary, borderColor: C.primary }}
+                    >
+                      View in Graph
+                    </button>
+                  </div>
                 </div>
 
                 {/* ── Property cards grid ── */}

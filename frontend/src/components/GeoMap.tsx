@@ -147,7 +147,7 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
       const lng = getLng(loc)!;
       const connCount = loc.connections || loc.connection_count || 0;
       const t = maxConn > 0 ? connCount / maxConn : 0;
-      // Heat Map layer: warm gradient + larger radius for higher-connection hubs
+      // Density layer: warm gradient + larger radius for higher-connection hubs (raw connection count, not activity/change)
       const heatFill = t > 0.66 ? '#ef4444' : t > 0.33 ? '#f59e0b' : '#3b82f6';
       const radius = heatMap
         ? Math.max(8, Math.min(28, 8 + t * 20))

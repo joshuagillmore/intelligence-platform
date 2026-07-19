@@ -1,40 +1,38 @@
 from fastapi import APIRouter, Depends
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
+from intel_platform.services.text_utils import normalize_datetime
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
 @router.get("/timeline")
 def get_timeline(project_id: str, store: GraphStore = Depends(get_graph_store)):
-    """Get a timeline of all entities and events ordered by creation/ingestion time."""
+    """Get a timeline of entities and events, ordered by real event date when known.
+
+    Entities with a populated ``event_datetime`` (extraction resolved a real-world
+    date from the source text) are timestamped and labeled by that; everything
+    else falls back to ``created_at`` (ingestion time) — the same fallback
+    pattern geo.py's entity-timeline endpoint uses.
+    """
     entities = store.search_entities(project_id=project_id, limit=500)
 
     timeline_events = []
     for e in entities:
-        created = e.get("created_at", "")
-        # Handle Neo4j datetime objects
-        if isinstance(created, dict):
-            # Neo4j returns complex datetime objects
-            dt = created.get("_DateTime__date", {})
-            tm = created.get("_DateTime__time", {})
-            year = dt.get("_Date__year", 2026)
-            month = dt.get("_Date__month", 1)
-            day = dt.get("_Date__day", 1)
-            hour = tm.get("_Time__hour", 0)
-            minute = tm.get("_Time__minute", 0)
-            created = f"{year}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:00Z"
-        elif hasattr(created, "isoformat"):
-            created = created.isoformat()
+        event_dt = normalize_datetime(e.get("event_datetime"))
+        if event_dt:
+            timestamp = event_dt
+            event_type = "event"
         else:
-            created = str(created) if created else ""
+            timestamp = normalize_datetime(e.get("created_at"))
+            event_type = "entity_created"
 
         timeline_events.append({
             "id": e.get("id", ""),
             "name": e.get("name", ""),
             "entity_type": e.get("entity_type", ""),
-            "timestamp": created,
-            "event_type": "entity_created",
+            "timestamp": timestamp,
+            "event_type": event_type,
         })
 
     # Sort by timestamp

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime
 
 import spacy
 
@@ -11,6 +12,7 @@ from intel_platform.data import (
     get_known_acronyms, get_noise_words, get_location_keywords,
     get_org_keywords, get_tlds,
 )
+from intel_platform.models.type_hierarchy import normalize_entity_type
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,72 @@ DATE_PATTERNS = [
     # "Q1 2026", "Q3 2021"
     re.compile(r'\bQ[1-4]\s+\d{4}\b'),
 ]
+
+# Fills in date components a match doesn't specify (e.g. "May 2021" has no
+# day) so parses are deterministic instead of silently borrowing today's date.
+_EVENT_DATE_PARSE_DEFAULT = datetime(2000, 1, 1)
+
+
+def _parse_event_date(date_str: str) -> str | None:
+    """Best-effort parse of an extracted date string into an ISO datetime.
+
+    Uses dateutil (already a project dependency — no new dep needed). Returns
+    None rather than raising when the string isn't something dateutil can
+    confidently resolve (e.g. "Q1 2026" — it has no month/day dateutil knows).
+    """
+    from dateutil import parser as date_parser
+
+    try:
+        dt = date_parser.parse(date_str.strip(), default=_EVENT_DATE_PARSE_DEFAULT)
+    except (ValueError, OverflowError, TypeError):
+        return None
+    return dt.isoformat()
+
+
+def _link_event_dates(entities: list[dict], relationships: list[dict]) -> None:
+    """Attach event_datetime to Event entities linked to a Date via OCCURRED_ON.
+
+    Mutates `entities` in place. OCCURRED_ON is the relationship both the NLP
+    co-occurrence heuristic (below) and the LLM skill prompt already use to
+    connect an Event to a Date entity — this just resolves that Date's text
+    into a real datetime so build_graph_from_extractions can populate
+    Event.event_datetime (see models/entities.py) and the timeline can sort/
+    display by real event time instead of falling back to ingestion time.
+    Entities that can't be linked or parsed are left untouched (event_datetime
+    stays null; callers fall back to created_at).
+    """
+    by_name = {e["name"]: e for e in entities if e.get("name")}
+    for rel in relationships:
+        if rel.get("rel_type") != "OCCURRED_ON":
+            continue
+        source = by_name.get(rel.get("source_name", ""))
+        target = by_name.get(rel.get("target_name", ""))
+        if not source or not target or target.get("entity_type") != "Date":
+            continue
+        _, parent_category = normalize_entity_type(source.get("entity_type", ""))
+        if parent_category != "Event":
+            continue
+        if source.get("attributes", {}).get("event_datetime"):
+            continue  # already resolved (e.g. by an earlier relationship)
+        parsed = _parse_event_date(target["name"])
+        if parsed:
+            source.setdefault("attributes", {})["event_datetime"] = parsed
+
+
+def _merge_attributes(primary: dict, secondary: dict) -> None:
+    """Copy attributes from `secondary` into `primary` without overwriting.
+
+    Used when hybrid extraction matches an NLP entity to an LLM entity: the
+    LLM entity wins the merge, but attributes only the NLP pass found (e.g.
+    an event_datetime resolved via _link_event_dates) would otherwise be
+    silently dropped.
+    """
+    extra = secondary.get("attributes")
+    if not extra:
+        return
+    target = primary.setdefault("attributes", {})
+    for k, v in extra.items():
+        target.setdefault(k, v)
 
 # Known intelligence-domain locations that spaCy commonly misclassifies
 KNOWN_LOCATIONS = {
@@ -550,6 +618,9 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
 
         prev_sent_entities = sent_entities_list
 
+    # Resolve event_datetime on Event entities from their OCCURRED_ON Date links
+    _link_event_dates(entities, relationships)
+
     return entities, relationships
 
 
@@ -615,6 +686,8 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
                 "evidence": r.get("evidence", ""),
             })
 
+        _link_event_dates(entities, relationships)
+
         return entities, relationships
     except (json.JSONDecodeError, KeyError, ValueError):
         # Log failure for debugging, fall back to NLP
@@ -642,6 +715,7 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], l
             for llm_e in merged_entities:
                 if llm_e["name"].lower() == e_lower:
                     llm_e["confidence"] = max(llm_e["confidence"], e["confidence"])
+                    _merge_attributes(llm_e, e)
                     break
             continue
         # Check fuzzy match
@@ -649,6 +723,10 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], l
         for llm_name in llm_name_list:
             if jellyfish.jaro_winkler_similarity(e_lower, llm_name) >= 0.90:
                 matched = True
+                for llm_e in merged_entities:
+                    if llm_e["name"].lower() == llm_name:
+                        _merge_attributes(llm_e, e)
+                        break
                 break
         if not matched:
             merged_entities.append(e)
@@ -661,5 +739,9 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], l
         key = (r["source_name"], r["target_name"], r["rel_type"])
         if key not in seen_rels:
             merged_rels.append(r)
+
+    # Re-resolve event_datetime over the merged set — catches cases where the
+    # Event came from one method and its OCCURRED_ON Date from the other.
+    _link_event_dates(merged_entities, merged_rels)
 
     return merged_entities, merged_rels

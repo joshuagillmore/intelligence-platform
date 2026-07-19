@@ -412,7 +412,11 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
         pir=req.pir,
         refined_pir=refined_pir,
         status=PlanStatus.DRAFT,
-        routing_rules={"extract_entities": True, "store_documents": True},
+        routing_rules={
+            "extract_entities": True,
+            "store_documents": True,
+            "extraction_mode": req.extraction_mode,
+        },
         created_by=req.created_by,
     )
     db.add(plan)

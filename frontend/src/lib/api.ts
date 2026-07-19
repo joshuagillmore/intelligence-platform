@@ -325,6 +325,16 @@ export const topicsApi = {
 export const reportsApi = {
   save: (data: { project_id: string; title: string; content: string; report_type: string; entity_ids?: string[] }) =>
     api.post('/reports', data),
+  // Grounded generation: retrieves real graph + document evidence for the selected
+  // entities via the Graph-RAG pipeline before drafting, instead of a bare LLM call.
+  generate: (data: {
+    project_id: string;
+    report_type: string;
+    skill_name: string;
+    entity_ids: string[];
+    include_evidence?: boolean;
+    probability_assessments?: boolean;
+  }) => api.post('/reports/generate', data),
   list: (projectId: string) => api.get('/reports', { params: { project_id: projectId } }),
   get: (id: string) => api.get(`/reports/${id}`),
   delete: (id: string) => api.delete(`/reports/${id}`),

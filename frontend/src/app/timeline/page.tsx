@@ -251,10 +251,10 @@ export default function TimelinePage() {
                                 </span>
                               </div>
                               <span className="text-xs text-gray-500">
-                                {event.timestamp ? new Date(event.timestamp).toLocaleTimeString() : ''}
+                                {event.timestamp ? new Date(event.timestamp).toLocaleDateString() : ''}
                               </span>
                             </div>
-                            <p className="text-xs text-gray-400">Entity created</p>
+                            <p className="text-xs text-gray-400">{event.event_type === 'event' ? 'Occurred' : 'Added to graph'}</p>
                           </div>
                         </div>
                       ))}
