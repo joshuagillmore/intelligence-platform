@@ -361,10 +361,13 @@ async def _resolve_via_search(provider, pir: str, source, max_results: int = 10)
     """
     import asyncio
 
+    from intel_platform.collection.proxy import get_active_proxy_config
     from intel_platform.collection.search import web_search
 
+    # Route the search egress through the active collection proxy (if any).
+    proxy = (await get_active_proxy_config()).get_proxy_url()
     query = f"{source.name} {pir}".strip()[:300]
-    results = await asyncio.to_thread(web_search, query, max(10, max_results))
+    results = await asyncio.to_thread(web_search, query, max(10, max_results), proxy)
     if not results:
         return None
 

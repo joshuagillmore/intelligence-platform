@@ -96,6 +96,48 @@ services:
     depends_on:
       - backend
 
+  # ---------------------------------------------------------------------------
+  # Optional collection-egress VPN/Tor sidecars — OFF by default.
+  # Started only with: docker compose --profile vpn up
+  # LOCAL / self-hosted only: gluetun needs NET_ADMIN + /dev/net/tun, which
+  # Railway can't grant. Tor works anywhere. The backend reaches these by
+  # service name (gluetun:8888 HTTP proxy, tor:9050 SOCKS5) once the profile is
+  # up — it is NOT placed in gluetun's network namespace, so plain
+  # `docker compose up` (no profile) is unaffected. There is deliberately no
+  # hard depends_on from backend to these (that would force the profile).
+  # ---------------------------------------------------------------------------
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    profiles: ["vpn"]
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    ports:
+      # Control server exposed host-local only (VPN status / kill-switch).
+      # Host port 8001 (not 8000) to avoid colliding with the backend's host
+      # 8000; the backend still reaches the control API in-network at
+      # gluetun:8000 (gluetun_control_url), which is unaffected by this mapping.
+      - "127.0.0.1:8001:8000"
+    environment:
+      VPN_SERVICE_PROVIDER: surfshark
+      VPN_TYPE: ${SURFSHARK_VPN_TYPE:-wireguard}
+      WIREGUARD_PRIVATE_KEY: ${SURFSHARK_WG_PRIVATE_KEY:-}
+      WIREGUARD_ADDRESSES: ${SURFSHARK_WG_ADDRESSES:-}
+      OPENVPN_USER: ${SURFSHARK_OVPN_USER:-}
+      OPENVPN_PASSWORD: ${SURFSHARK_OVPN_PASSWORD:-}
+      SERVER_COUNTRIES: ${SURFSHARK_COUNTRIES:-Netherlands}
+      HTTPPROXY: "on"
+      HTTPPROXY_LISTENING_ADDRESS: ":8888"
+      HTTP_CONTROL_SERVER_ADDRESS: ":8000"
+    restart: unless-stopped
+
+  tor:
+    image: osminogin/tor-simple
+    profiles: ["vpn"]
+    # SOCKS5 on 9050; no extra capabilities needed.
+    restart: unless-stopped
+
 volumes:
   neo4j_data:
   postgres_data:

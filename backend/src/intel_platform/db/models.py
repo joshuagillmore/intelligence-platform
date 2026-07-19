@@ -60,6 +60,23 @@ class ApiKey(Base):
 
 
 # ---------------------------------------------------------------------------
+# App Settings — small key/value store for runtime config that must survive
+# restarts (e.g. the active collection-egress proxy mode).
+# ---------------------------------------------------------------------------
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True,
+        comment="Setting key, e.g. 'collection_proxy_mode'")
+    value: Mapped[str] = mapped_column(Text, default="",
+        comment="Setting value as a string")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc))
+
+
+# ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
 

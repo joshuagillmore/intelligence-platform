@@ -3,18 +3,34 @@ from __future__ import annotations
 import logging
 from typing import Callable
 
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
+from crawl4ai import ProxyConfig as Crawl4aiProxyConfig
+
+from intel_platform.collection.proxy import get_active_proxy_config
 
 logger = logging.getLogger(__name__)
 
-_browser_cfg = BrowserConfig(headless=True, browser_type="chromium")
+
+def _browser_proxy_server(purl: str) -> str:
+    """Adapt an egress proxy URL to what Chromium's --proxy-server accepts.
+
+    Chromium understands ``socks5://host:port`` (and resolves DNS through the
+    SOCKS proxy) but not the ``socks5h://`` scheme we use for httpx/Tor, so
+    translate the scheme for the browser. HTTP proxies (gluetun) pass through
+    unchanged. Note: Chromium cannot do *authenticated* SOCKS5 — our gluetun
+    path is HTTP and Tor is unauthenticated SOCKS5, so both are fine.
+    """
+    if purl.startswith("socks5h://"):
+        return "socks5://" + purl[len("socks5h://"):]
+    return purl
 
 
-def _make_run_cfg(timeout_ms: int = 30000) -> CrawlerRunConfig:
+def _make_run_cfg(timeout_ms: int = 30000, proxy: Crawl4aiProxyConfig | None = None) -> CrawlerRunConfig:
     return CrawlerRunConfig(
         cache_mode=CacheMode.BYPASS,
         word_count_threshold=50,
         page_timeout=timeout_ms,
+        proxy_config=proxy,
     )
 
 
@@ -36,10 +52,23 @@ async def crawl_urls(
     if not urls:
         return []
 
-    run_cfg = _make_run_cfg(timeout_ms)
+    # Resolve the active collection-egress proxy (fail-safe to direct) and
+    # build the browser + run config PER CRAWL so a proxy-mode change takes
+    # effect immediately (no module-level singleton to go stale).
+    cfg = await get_active_proxy_config()
+    purl = cfg.get_proxy_url()
+    crawl_proxy = Crawl4aiProxyConfig(server=_browser_proxy_server(purl)) if purl else None
+
+    browser_cfg = BrowserConfig(
+        headless=True,
+        browser_type="chromium",
+        proxy_config=crawl_proxy,
+        extra_args=["--dns-prefetch-disable"] if purl else [],
+    )
+    run_cfg = _make_run_cfg(timeout_ms, crawl_proxy)
     documents = []
 
-    async with AsyncWebCrawler(config=_browser_cfg) as crawler:
+    async with AsyncWebCrawler(config=browser_cfg) as crawler:
         results = await crawler.arun_many(urls=urls, config=run_cfg)
 
         for result in results:

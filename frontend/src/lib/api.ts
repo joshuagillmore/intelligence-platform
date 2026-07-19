@@ -376,8 +376,11 @@ export const exportApi = {
 export const adminApi = {
   config: () => api.get('/admin/config'),
   getProxy: () => api.get('/admin/proxy'),
-  updateProxy: (data: { mode: string; proxy_url?: string; tor_port?: number }) =>
+  updateProxy: (data: { mode: 'direct' | 'vpn' | 'tor'; proxy_url?: string; tor_port?: number }) =>
     api.put('/admin/proxy', data),
+  // Collection egress VPN (gluetun sidecar, docker compose --profile vpn)
+  getVpnStatus: () => api.get('/admin/vpn/status'),
+  setVpnStatus: (action: 'start' | 'stop') => api.put('/admin/vpn/status', { action }),
   listModels: () => api.get('/admin/llm/models'),
   selectModel: (provider: string, model: string) =>
     api.put('/admin/llm/select', { provider, model }),

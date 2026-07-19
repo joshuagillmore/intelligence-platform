@@ -4,10 +4,11 @@ from pydantic import BaseModel
 from sqlalchemy import select, update
 
 from intel_platform.api.deps import require_admin
+from intel_platform.collection.proxy import PROXY_MODE_KEY, VALID_PROXY_MODES
 from intel_platform.config import settings
 from intel_platform.crypto import decrypt, encrypt
 from intel_platform.db.engine import get_session_factory
-from intel_platform.db.models import ApiKey
+from intel_platform.db.models import ApiKey, AppSetting
 
 router = APIRouter(dependencies=[Depends(require_admin)])
 
@@ -17,9 +18,13 @@ router = APIRouter(dependencies=[Depends(require_admin)])
 # ---------------------------------------------------------------------------
 
 class ProxyConfigRequest(BaseModel):
-    mode: str = "direct"  # direct | proxy | tor
+    mode: str = "direct"  # direct | vpn | tor | proxy
     proxy_url: str = ""
     tor_port: int = 9050
+
+
+class VpnActionRequest(BaseModel):
+    action: str = "start"  # start | stop
 
 
 class LLMConfigRequest(BaseModel):
@@ -42,10 +47,19 @@ class ApiKeyActivateRequest(BaseModel):
 # In-memory state
 # ---------------------------------------------------------------------------
 
-_proxy_config: dict = {"mode": "direct", "proxy_url": "", "tor_port": 9050}
-
 # Runtime-mutable LLM overrides (survive until container restart)
 _llm_override: dict = {"provider": "", "model": ""}
+
+
+async def _read_proxy_mode() -> str:
+    """Read the persisted collection-egress proxy mode (fail-safe to direct)."""
+    factory = get_session_factory()
+    async with factory() as session:
+        result = await session.execute(
+            select(AppSetting.value).where(AppSetting.key == PROXY_MODE_KEY)
+        )
+        mode = result.scalar_one_or_none()
+    return mode if mode in VALID_PROXY_MODES else "direct"
 
 
 # ---------------------------------------------------------------------------
@@ -117,10 +131,14 @@ async def _provider_has_active_key(provider: str) -> bool:
 # ---------------------------------------------------------------------------
 
 @router.get("/admin/config")
-def get_config():
+async def get_config():
     """Return non-sensitive configuration info."""
     provider = get_active_provider()
     model = get_active_model()
+    try:
+        proxy_mode = await _read_proxy_mode()
+    except Exception:
+        proxy_mode = "direct"
     return {
         "llm_provider": provider,
         "llm_model": model,
@@ -128,7 +146,7 @@ def get_config():
         "chunk_size": settings.chunk_size,
         "chunk_overlap": settings.chunk_overlap,
         "neo4j_uri": settings.neo4j_uri.split("@")[-1] if "@" in settings.neo4j_uri else settings.neo4j_uri,
-        "proxy": _proxy_config,
+        "proxy": {"mode": proxy_mode},
     }
 
 
@@ -319,17 +337,124 @@ def select_llm(req: LLMConfigRequest):
 
 
 # ---------------------------------------------------------------------------
-# Proxy configuration
+# Collection-egress proxy configuration (persisted; OFF by default)
+#
+# Only the web-collection egress (crawl4ai + ddgs + httpx connectors) is
+# proxied. LLM / cloud API calls always go out direct. The active mode lives
+# in Postgres (AppSetting) so it survives restarts.
 # ---------------------------------------------------------------------------
 
+def _proxy_state(mode: str) -> dict:
+    """Response body: the active mode plus the configured proxy URLs (display)."""
+    return {
+        "mode": mode,
+        "vpn_http_proxy": settings.vpn_http_proxy,
+        "tor_socks_proxy": settings.tor_socks_proxy,
+    }
+
+
 @router.get("/admin/proxy")
-def get_proxy_config():
-    return _proxy_config
+async def get_proxy_config():
+    try:
+        mode = await _read_proxy_mode()
+    except Exception:
+        mode = "direct"
+    return _proxy_state(mode)
 
 
 @router.put("/admin/proxy")
-def update_proxy_config(req: ProxyConfigRequest):
-    _proxy_config["mode"] = req.mode
-    _proxy_config["proxy_url"] = req.proxy_url
-    _proxy_config["tor_port"] = req.tor_port
-    return _proxy_config
+async def update_proxy_config(req: ProxyConfigRequest):
+    mode = req.mode if req.mode in VALID_PROXY_MODES else "direct"
+    factory = get_session_factory()
+    async with factory() as session:
+        result = await session.execute(
+            select(AppSetting).where(AppSetting.key == PROXY_MODE_KEY)
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            session.add(AppSetting(key=PROXY_MODE_KEY, value=mode))
+        else:
+            row.value = mode
+        await session.commit()
+    return _proxy_state(mode)
+
+
+# ---------------------------------------------------------------------------
+# VPN status / kill-switch — proxies gluetun's control server.
+#
+# These calls go DIRECTLY to gluetun's control API (not through the tunnel).
+# Errors never propagate to the client: gluetun-unreachable degrades to a
+# clean {reachable: false} payload rather than a 500.
+# ---------------------------------------------------------------------------
+
+def _gluetun_headers() -> dict:
+    key = settings.gluetun_control_apikey
+    return {"X-API-Key": key} if key else {}
+
+
+@router.get("/admin/vpn/status")
+async def get_vpn_status():
+    """Report gluetun VPN status + public IP. Never 500s on an unreachable VPN."""
+    base = settings.gluetun_control_url.rstrip("/")
+    headers = _gluetun_headers()
+    try:
+        import asyncio
+        async with httpx.AsyncClient(timeout=5) as client:
+            ip_resp, status_resp = await asyncio.gather(
+                client.get(f"{base}/v1/publicip/ip", headers=headers),
+                client.get(f"{base}/v1/vpn/status", headers=headers),
+            )
+    except Exception:
+        return {"reachable": False, "running": False}
+
+    try:
+        mode = await _read_proxy_mode()
+    except Exception:
+        mode = "direct"
+
+    ip_data: dict = {}
+    status_data: dict = {}
+    try:
+        ip_data = ip_resp.json()
+    except Exception:
+        pass
+    try:
+        status_data = status_resp.json()
+    except Exception:
+        pass
+
+    status_val = str(status_data.get("status", "")).lower()
+    return {
+        "reachable": True,
+        "running": status_val == "running",
+        "status": status_val,
+        "public_ip": ip_data.get("public_ip", "") or ip_data.get("ip", ""),
+        "country": ip_data.get("country", ""),
+        "region": ip_data.get("region", ""),
+        "city": ip_data.get("city", ""),
+        "mode": mode,
+    }
+
+
+@router.put("/admin/vpn/status")
+async def set_vpn_status(req: VpnActionRequest):
+    """Stop (kill-switch) or start the gluetun VPN tunnel."""
+    base = settings.gluetun_control_url.rstrip("/")
+    headers = _gluetun_headers()
+    desired = "stopped" if req.action == "stop" else "running"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.put(
+                f"{base}/v1/vpn/status", json={"status": desired}, headers=headers,
+            )
+    except Exception:
+        return {"ok": False, "reachable": False}
+
+    if resp.status_code >= 400:
+        return {"ok": False, "reachable": True}
+    outcome = desired
+    try:
+        outcome = resp.json().get("outcome", desired)
+    except Exception:
+        pass
+    return {"ok": True, "reachable": True, "outcome": outcome}

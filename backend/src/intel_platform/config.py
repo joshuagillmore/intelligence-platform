@@ -56,6 +56,20 @@ class Settings(BaseSettings):
 
     # Collection / agentic crawl
     collection_crawl_concurrency: int = 4  # max concurrent URL fetches per source
+
+    # Collection egress proxy (optional; OFF by default). ONLY web-collection
+    # egress (crawl4ai + ddgs + the httpx connectors) is routed through the
+    # selected proxy. The active mode is persisted in Postgres (AppSetting
+    # "collection_proxy_mode": direct|vpn|tor) and defaults to direct. LLM /
+    # cloud API calls are NEVER proxied — they always go out direct.
+    #   vpn  -> gluetun's local HTTP proxy (self-hosted sidecar; local only)
+    #   tor  -> Tor SOCKS5 with remote DNS (socks5h)
+    vpn_http_proxy: str = "http://gluetun:8888"
+    tor_socks_proxy: str = "socks5h://tor:9050"
+    # gluetun control server (queried DIRECTLY, never through the tunnel) for
+    # VPN status / kill-switch. gluetun_control_apikey is an optional X-API-Key.
+    gluetun_control_url: str = "http://gluetun:8000"
+    gluetun_control_apikey: str = ""
     # Dedicated provider for bulk collection work (source resolution + per-doc
     # summarization), which is high-volume and would exhaust a rate-limited cloud
     # key. Empty = use the default provider (preserves prior behavior, e.g. on
