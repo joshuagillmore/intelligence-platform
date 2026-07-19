@@ -11,6 +11,7 @@ import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchl
 import { getErrorMessage } from '@/lib/errorMessages';
 import { collapseToCommunities } from '@/lib/graphLayout';
 import { useNotifications } from '@/components/NotificationProvider';
+import Markdown from '@/components/Markdown';
 
 interface Entity {
   id: string;
@@ -2017,7 +2018,11 @@ function NetworkPageInner() {
                             <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                               <div className={`max-w-[85%] rounded-lg px-3 py-2 text-xs ${msg.role === 'user' ? 'text-gray-900' : 'text-gray-200'}`}
                                 style={{ background: msg.role === 'user' ? '#adc6ff' : '#0e1321' }}>
-                                <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+                                {msg.role === 'assistant' ? (
+                                  <Markdown content={msg.content} />
+                                ) : (
+                                  <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+                                )}
                               </div>
                             </div>
                             {msg.role === 'assistant' && msg.content && msg.content.length > 50 && (
@@ -2481,8 +2486,8 @@ function NetworkPageInner() {
                 {aiResult && (
                   <div>
                     <h4 className="text-sm font-semibold text-gray-400 mb-2">AI Result</h4>
-                    <div className="bg-navy-700 rounded p-3 text-xs text-gray-300 whitespace-pre-wrap max-h-64 overflow-y-auto">
-                      {aiResult}
+                    <div className="bg-navy-700 rounded p-3 text-xs max-h-64 overflow-y-auto">
+                      <Markdown content={aiResult} />
                     </div>
                   </div>
                 )}

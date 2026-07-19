@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { llmApi, personasApi } from '@/lib/api';
 import { humanize } from '@/lib/format';
+import Markdown from '@/components/Markdown';
 
 interface Skill {
   name: string;
@@ -273,7 +274,7 @@ export default function LlmHubPage() {
                 </button>
                 {result && (
                   <div className="mt-3 bg-navy-700 rounded p-3 max-h-48 overflow-y-auto">
-                    <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono">{result}</pre>
+                    <Markdown content={result} className="text-xs" />
                   </div>
                 )}
               </div>
