@@ -697,6 +697,23 @@ class TopicTreeService:
                                 "content_preview": (doc_full.get("content", "") or "")[:500],
                             })
 
+        # Build LLM-ready excerpts + keywords from the resolved documents. The
+        # entity path previously returned neither, so stream_summary fed the
+        # model an empty "Source documents:" block and it refused with "no
+        # source documents were provided" (the cluster path already does this).
+        document_excerpts: list[dict[str, str]] = []
+        for d in documents:
+            doc_full = self._store.get_entity(d.get("id", ""))
+            content = (doc_full.get("content", "") if doc_full else "") or ""
+            if content:
+                document_excerpts.append({
+                    "name": d.get("name", ""),
+                    "content": content[:3000],
+                })
+        # Focus the summary on this entity and the entities it connects to.
+        keywords = [entity.get("name", "")] + [c.get("name", "") for c in connected[:8]]
+        keywords = [k for k in keywords if k]
+
         return {
             "entity": {
                 "id": entity.get("id"),
@@ -705,7 +722,9 @@ class TopicTreeService:
             },
             "documents": documents,
             "source_documents": documents,  # Include both keys for frontend compat
+            "document_excerpts": document_excerpts,
             "connected_entities": connected,
+            "keywords": keywords,
             "relationship_count": len(relationships),
             "document_count": len(documents),
         }
