@@ -6,6 +6,7 @@ import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
 import { geoApi, queryApi, entitiesApi, llmApi, assessApi } from '@/lib/api';
+import Markdown from '@/components/Markdown';
 
 const GeoMap = dynamic(() => import('@/components/GeoMap'), { ssr: false });
 
@@ -454,7 +455,11 @@ export default function GeoPage() {
                           color: msg.role === 'user' ? C.surface : '#d1d5db',
                         }}
                       >
-                        <pre className="whitespace-pre-wrap font-sans">{msg.text}</pre>
+                        {msg.role === 'ai' ? (
+                          <Markdown content={msg.text} />
+                        ) : (
+                          <pre className="whitespace-pre-wrap font-sans">{msg.text}</pre>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -716,7 +721,7 @@ export default function GeoPage() {
               </div>
               {queryResult && (
                 <div className="mt-3 text-xs max-h-48 overflow-y-auto rounded-md p-3" style={{ background: C.elevated, color: '#d1d5db' }}>
-                  <pre className="whitespace-pre-wrap">{queryResult}</pre>
+                  <Markdown content={queryResult} />
                 </div>
               )}
             </div>

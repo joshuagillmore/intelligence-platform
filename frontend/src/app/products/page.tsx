@@ -4,6 +4,7 @@ import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
 import { entitiesApi, reportsApi, exportApi } from '@/lib/api';
 import { useNotifications } from '@/components/NotificationProvider';
+import Markdown from '@/components/Markdown';
 
 const REPORT_TYPES = [
   { value: 'threat_assessment', label: 'Threat Assessment', skill: 'threat_assessment', icon: 'warning', description: 'Evaluate threat actors, capabilities, and intent against targets' },
@@ -532,9 +533,9 @@ export default function ProductsPage() {
                 )}
 
                 <div className="prose prose-invert prose-sm max-w-none">
-                  <pre className="whitespace-pre-wrap text-sm text-gray-300 font-sans leading-relaxed rounded-lg p-4 max-h-[600px] overflow-y-auto border border-navy-600" style={{ backgroundColor: '#0e1321' }}>
-                    {generatedReport}
-                  </pre>
+                  <div className="text-sm rounded-lg p-4 max-h-[600px] overflow-y-auto border border-navy-600" style={{ backgroundColor: '#0e1321' }}>
+                    <Markdown content={generatedReport} />
+                  </div>
                 </div>
               </div>
             )}

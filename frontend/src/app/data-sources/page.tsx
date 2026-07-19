@@ -11,6 +11,7 @@ import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
 import { topicsApi, queryApi } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
+import Markdown from '@/components/Markdown';
 
 /* -- Types ------------------------------------------------------------ */
 
@@ -709,9 +710,7 @@ export default function DataSourcesPage() {
                         <span className="text-sm text-gray-400">Generating intelligence summary...</span>
                       </div>
                     ) : summary ? (
-                      <p className="text-[13px] leading-relaxed text-gray-200/90 whitespace-pre-wrap">
-                        {summary}
-                      </p>
+                      <Markdown content={summary} className="text-[13px]" />
                     ) : (
                       <div className="flex flex-col items-center gap-3 py-4">
                         <p className="text-sm text-gray-500">Click below to generate an intelligence summary.</p>
@@ -736,16 +735,20 @@ export default function DataSourcesPage() {
                       {conversation.slice(1).map((msg, i) => (
                         <div
                           key={i}
-                          className={`rounded-sm p-3 text-sm whitespace-pre-wrap ${
+                          className={`rounded-sm p-3 text-sm ${
                             msg.role === 'user'
-                              ? 'bg-[#1a1f2e] text-gray-300 border-l-2 border-[#adc6ff]/40'
+                              ? 'bg-[#1a1f2e] text-gray-300 border-l-2 border-[#adc6ff]/40 whitespace-pre-wrap'
                               : 'bg-[#090e1c] text-gray-400 border border-[#1a1f2e]'
                           }`}
                         >
                           <span className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">
                             {msg.role === 'user' ? 'You' : 'Analysis'}
                           </span>
-                          {msg.content}
+                          {msg.role === 'assistant' ? (
+                            <Markdown content={msg.content} />
+                          ) : (
+                            msg.content
+                          )}
                         </div>
                       ))}
                     </div>
