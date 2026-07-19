@@ -551,6 +551,38 @@ class TopicTreeService:
 
         yield "data: [DONE]\n\n"
 
+    def _rebuild_topic_clusters_sync(self, project_id: str) -> None:
+        """Synchronously repopulate the module-level cluster caches.
+
+        `get_topic_context` is a synchronous method (the `/topics/{entity_id}`
+        route calls it without awaiting, and several tests call it directly),
+        so on a cache miss it cannot await the full `build_topic_tree`, which
+        is async because it supports semantic (embedding-based) clustering and
+        LLM-based label refinement. Those aren't needed just to answer "which
+        documents belong to this cluster", so this helper redoes only the
+        synchronous tfidf clustering step that populates `_cluster_doc_map`
+        and `_cluster_keywords`.
+        """
+        global _cluster_doc_map, _cluster_keywords
+
+        full_docs = self._store.search_entities(project_id=project_id, entity_type="Document", limit=500)
+        doc_pairs: list[tuple[str, str]] = []
+        for doc in full_docs:
+            doc_id = doc.get("id", "")
+            content = doc.get("content", "") or ""
+            if doc_id and content.strip():
+                doc_pairs.append((doc_id, content))
+
+        if not doc_pairs:
+            return
+
+        tree_node, doc_map, kw_map = cluster_documents(doc_pairs, project_id)
+        if tree_node is None:
+            return
+
+        _cluster_doc_map.update(doc_map)
+        _cluster_keywords.update(kw_map)
+
     def get_topic_context(self, entity_id: str, project_id: str) -> dict:
         """Get full context for an entity including source documents."""
         global _cluster_doc_map, _cluster_keywords
@@ -560,9 +592,9 @@ class TopicTreeService:
             project_clusters = _cluster_doc_map.get(project_id, {})
             doc_ids = project_clusters.get(entity_id, [])
 
-            # If cache expired, rebuild tree to repopulate
+            # If cache expired, rebuild the clustering caches to repopulate
             if not doc_ids:
-                self.build_topic_tree(project_id)
+                self._rebuild_topic_clusters_sync(project_id)
                 project_clusters = _cluster_doc_map.get(project_id, {})
                 doc_ids = project_clusters.get(entity_id, [])
 

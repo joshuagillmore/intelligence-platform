@@ -19,7 +19,7 @@ def test_get_topic_context_not_found():
     assert "error" in data
 
 
-def test_topic_context_returns_documents(graph_store):
+async def test_topic_context_returns_documents(graph_store):
     """Selecting a topic-* cluster node should return its documents."""
     from intel_platform.models.entities import Document
     from intel_platform.services.topics import TopicTreeService
@@ -33,7 +33,7 @@ def test_topic_context_returns_documents(graph_store):
     graph_store.create_entity(doc2)
 
     svc = TopicTreeService(graph_store)
-    tree = svc.build_topic_tree(project_id)
+    tree = await svc.build_topic_tree(project_id)
 
     # Find first topic-* node in tree
     def find_topic_node(node):

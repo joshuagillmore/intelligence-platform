@@ -169,13 +169,21 @@ async def test_refine_labels_no_provider():
     }
     doc_pairs = [("doc1", "Iran nuclear sanctions text")]
 
-    # Ensure no API keys are set
-    env_patch = {
-        "COHERE_API_KEY": "",
-        "ANTHROPIC_API_KEY": "",
-        "OPENAI_API_KEY": "",
-    }
-    with patch.dict(os.environ, env_patch, clear=False):
+    # Ensure no API keys are configured. `intel_platform.config.settings` is a
+    # proxy over an `lru_cache`d Settings singleton (by design — see
+    # config.py), so patching `os.environ` here would be a no-op if anything
+    # earlier in the process already touched `settings` (e.g. in a real
+    # environment where ANTHROPIC_API_KEY etc. are set as ambient host env
+    # vars for other tooling): the cached instance would keep the real keys
+    # regardless of this test's env patch, silently making a real LLM call.
+    # Patch `settings` directly instead, matching the other tests in this
+    # file (test_refine_labels_with_mocked_provider, ..._llm_failure_...).
+    mock_settings = MagicMock()
+    mock_settings.cohere_api_key = ""
+    mock_settings.anthropic_api_key = ""
+    mock_settings.openai_api_key = ""
+
+    with patch("intel_platform.config.settings", mock_settings):
         result = await refine_labels_with_llm(tree_node, doc_pairs)
 
     # Name should be unchanged (no provider available)
