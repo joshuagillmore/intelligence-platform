@@ -68,20 +68,17 @@ const components: Components = {
   // renderer, so block vs inline code is distinguished by whether remark
   // attached a `language-*` className (only fenced/indented code blocks get
   // one; inline code spans never do).
-  code: ({ className, children, ...props }) => {
+  code: ({ className, children }) => {
     const isBlock = /(?:^|\s)language-/.test(className ?? '');
     if (isBlock) {
       return (
-        <code className={`font-mono text-xs text-gray-300 ${className ?? ''}`} {...props}>
+        <code className={`font-mono text-xs text-gray-300 ${className ?? ''}`}>
           {children}
         </code>
       );
     }
     return (
-      <code
-        className="bg-navy-800 text-accent-cyan rounded px-1 py-0.5 text-[0.85em] font-mono"
-        {...props}
-      >
+      <code className="bg-navy-800 text-accent-cyan rounded px-1 py-0.5 text-[0.85em] font-mono">
         {children}
       </code>
     );
