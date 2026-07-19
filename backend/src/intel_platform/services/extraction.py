@@ -141,6 +141,65 @@ def _merge_attributes(primary: dict, secondary: dict) -> None:
         target.setdefault(k, v)
 
 
+# Relationship types the graph accepts (mirror of GraphStore.VALID_REL_TYPES —
+# keep in sync). LLM rel_types outside this set collapse to ASSOCIATED_WITH.
+_VALID_REL_TYPES = frozenset({
+    "ASSOCIATED_WITH", "BELONGS_TO", "LOCATED_AT", "COMMUNICATES_WITH",
+    "RESOLVES_TO", "EXPLOITS", "USES", "TARGETS", "ATTRIBUTED_TO",
+    "MENTIONED_IN", "MENTIONS", "PARENT_OF", "RELATED_TO", "ASSESSES",
+    "SUPPORTED_BY", "SHARED_WITH", "OCCURRED_ON",
+    "COMMANDED_BY", "FUNDED_BY", "SUPPLIED_BY", "DEPLOYED_AT",
+})
+
+# The LLM emits fine-grained subtypes; the graph + eval gold track them at a
+# coarser canonical level. Map the umbrella subtypes down, keep analytically
+# meaningful specifics (ThreatActor, Malware, Campaign, Vulnerability, TTP...)
+# as-is.
+_LLM_TYPE_CANON = {
+    # Organization umbrella
+    "governmentagency": "Organization", "intelligenceservice": "Organization",
+    "militaryunit": "Organization", "ngo": "Organization", "bank": "Organization",
+    "company": "Organization", "corporation": "Organization", "consortium": "Organization",
+    "politicalparty": "Organization", "mediaoutlet": "Organization",
+    "university": "Organization", "researchinstitute": "Organization",
+    "criminalgroup": "Organization", "terroristgroup": "Organization",
+    # Malware umbrella
+    "backdoor": "Malware", "ransomware": "Malware", "trojan": "Malware",
+    "botnet": "Malware", "malwarefamily": "Malware", "rootkit": "Malware",
+    "c2server": "Infrastructure",
+    # Location umbrella
+    "country": "Location", "city": "Location", "region": "Location",
+    "facility": "Location", "base": "Location", "port": "Location",
+    "island": "Location", "airbase": "Location", "embassy": "Location",
+    "province": "Location", "district": "Location", "territory": "Location",
+    "border": "Location", "reef": "Location",
+    # Person umbrella
+    "analyst": "Person", "operative": "Person", "diplomat": "Person",
+    "commander": "Person", "politician": "Person", "scientist": "Person",
+    "executive": "Person", "agent": "Person", "informant": "Person",
+    # Equipment / naval
+    "ship": "Vessel", "submarine": "Vessel", "aircraft": "EquipmentType",
+    "drone": "EquipmentType", "missile": "Weapon", "radar": "EquipmentType",
+    "satellite": "EquipmentType", "artillery": "Weapon", "vehicle": "EquipmentType",
+    "hardware": "EquipmentType", "tank": "MilitaryAsset",
+    # Intelligence docs
+    "report": "Document", "assessment": "Document", "briefing": "Document",
+}
+
+
+def _normalize_llm_entity_type(raw: str) -> str:
+    """Map an LLM-emitted fine-grained type down to the canonical taxonomy."""
+    if not raw:
+        return "Person"
+    return _LLM_TYPE_CANON.get(raw.strip().lower(), raw.strip())
+
+
+def _normalize_rel_type(raw: str) -> str:
+    """Collapse an unrecognized LLM relationship type to ASSOCIATED_WITH."""
+    rt = (raw or "").strip().upper()
+    return rt if rt in _VALID_REL_TYPES else "ASSOCIATED_WITH"
+
+
 def _clean_evidence(sentence: str, name_a: str, name_b: str, pad: int = 45, max_len: int = 300) -> str:
     """Tighten a relationship's source text to the in-context span linking the pair.
 
@@ -773,7 +832,7 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
         for e in data.get("entities", []):
             entity = {
                 "name": e.get("name", ""),
-                "entity_type": e.get("entity_type", "Person"),
+                "entity_type": _normalize_llm_entity_type(e.get("entity_type", "Person")),
                 "source": doc_id,
                 "method": "llm",
                 "confidence": float(e.get("confidence", 0.85)),
@@ -792,7 +851,7 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
             relationships.append({
                 "source_name": src_name,
                 "target_name": tgt_name,
-                "rel_type": r.get("relationship_type", r.get("rel_type", "ASSOCIATED_WITH")),
+                "rel_type": _normalize_rel_type(r.get("relationship_type", r.get("rel_type", ""))),
                 "confidence": float(r.get("confidence", 0.7)),
                 "source": doc_id,
                 "method": "llm",
@@ -815,42 +874,53 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], l
     nlp_entities, nlp_rels = extract_entities_nlp(text, doc_id)
     llm_entities, llm_rels = await extract_entities_llm(text, doc_id)
 
-    # LLM entities are primary; build a name lookup for fuzzy matching
+    # ── Entities ──────────────────────────────────────────────────────────
+    # LLM entities are primary (semantic, well-typed, lean). From NLP add only
+    # the deterministic REGEX entities (IPs/domains/hashes/CVEs/TTPs/equipment
+    # designations) the LLM missed — NLP's spaCy entities over-extract and the
+    # LLM already covers the semantic ones, so unioning them back in just
+    # re-introduces the precision-killing noise the NLP-only pass fought.
     merged_entities = list(llm_entities)
     llm_name_list = [e["name"].lower() for e in llm_entities]
 
-    # Add NLP entities not found by LLM (using fuzzy matching)
+    def _match_llm(name_lower: str) -> str | None:
+        if name_lower in llm_name_list:
+            return name_lower
+        for n in llm_name_list:
+            if jellyfish.jaro_winkler_similarity(name_lower, n) >= 0.92:
+                return n
+        return None
+
     for e in nlp_entities:
         e_lower = e["name"].lower()
-        # Check exact match first
-        if e_lower in llm_name_list:
-            # Entity found by both methods — boost confidence on LLM version
+        match = _match_llm(e_lower)
+        if match is not None:
+            # Found by both — merge NLP attributes/confidence into the LLM entity.
             for llm_e in merged_entities:
-                if llm_e["name"].lower() == e_lower:
-                    llm_e["confidence"] = max(llm_e["confidence"], e["confidence"])
+                if llm_e["name"].lower() == match:
+                    llm_e["confidence"] = max(llm_e.get("confidence", 0), e.get("confidence", 0))
                     _merge_attributes(llm_e, e)
                     break
             continue
-        # Check fuzzy match
-        matched = False
-        for llm_name in llm_name_list:
-            if jellyfish.jaro_winkler_similarity(e_lower, llm_name) >= 0.90:
-                matched = True
-                for llm_e in merged_entities:
-                    if llm_e["name"].lower() == llm_name:
-                        _merge_attributes(llm_e, e)
-                        break
-                break
-        if not matched:
+        # Unmatched NLP entity: keep ONLY deterministic regex IOCs, not the
+        # spaCy over-extraction.
+        if e.get("method") == "regex":
             merged_entities.append(e)
             llm_name_list.append(e_lower)
 
-    # Merge relationships, dedup by source+target+type
+    # ── Relationships ─────────────────────────────────────────────────────
+    # LLM relations are typed + evidence-backed — primary. From NLP keep only
+    # TYPED relations (verb-derived, OCCURRED_ON, regex RESOLVES_TO) the LLM
+    # missed; drop blanket ASSOCIATED_WITH co-occurrence entirely — the LLM now
+    # supplies the real relationships, so co-occurrence is pure noise.
     seen_rels = {(r["source_name"], r["target_name"], r["rel_type"]) for r in llm_rels}
     merged_rels = list(llm_rels)
     for r in nlp_rels:
+        if r["rel_type"] == "ASSOCIATED_WITH":
+            continue
         key = (r["source_name"], r["target_name"], r["rel_type"])
         if key not in seen_rels:
+            seen_rels.add(key)
             merged_rels.append(r)
 
     # Re-resolve event_datetime over the merged set — catches cases where the

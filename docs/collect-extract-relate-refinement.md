@@ -46,5 +46,24 @@ Confirmed with the user (2026-07-19): relationships → **prune hard, keep evide
 ### Holdout corpus (overfitting guard) ✅
 4 independently-labeled intel reports in `tests/fixtures/extraction_holdout/` + `run_holdout_eval.py` (reuses the eval metric fns). Current NLP-mode holdout: **Entity P=0.614 R=0.912 F1=0.734**, Rel F1=**0.000** (only `ASSOCIATED_WITH` emitted — gold wants typed relations; confirms Track B must add typed-relation extraction, not just prune). The higher holdout precision vs train (0.61 vs 0.49) shows the Cycle-2 fixes generalize.
 
-**Next:** Track B typed-relation extraction (raise Rel F1 off 0) + Show-Evidence endpoint/UI rewire to surface the persisted evidence; then dates/generic-location precision; then Track C (crawl).
+### Cycle 4 — LLM/hybrid extraction for typed relations ✅
+**Why:** NLP-only can't produce typed relations (Rel F1 = 0); an LLM (Ollama qwen2.5:14b, local, no rate limit) emits `USES/TARGETS/ATTRIBUTED_TO/EXPLOITS/...` *with* evidence.
+**Action:** Normalize LLM output — fine-grained types (IntelligenceService, Backdoor) mapped to canonical (`_normalize_llm_entity_type`), rel_types validated against the allowlist (`_normalize_rel_type`). Rebuilt the hybrid merge to be **LLM-primary**: LLM entities + only the deterministic NLP **regex** IOCs it missed (not spaCy over-extraction); LLM typed+evidence relations + NLP typed relations, **dropping blanket NLP `ASSOCIATED_WITH`** (co-occurrence noise).
+**Verify (hybrid vs NLP baseline):**
+| | Entity P | Entity R | Entity F1 | Rel F1 | ents | rels |
+|---|---|---|---|---|---|---|
+| Train NLP | 0.493 | 0.962 | 0.629 | 0.011 | 727 | 1255 |
+| **Train hybrid** | **0.713** | 0.733 | **0.708** | **0.170** | 321 | 209 |
+| Holdout NLP | 0.614 | 0.912 | 0.734 | 0.000 | — | — |
+| **Holdout hybrid** | **0.875** | 0.800 | **0.830** | **0.301** | 62 | 40 |
+
+Precision + relationship F1 + leanness all jump dramatically; recall trades down (LLM is selective) — recall-recovery is the next tune. Full suite still 443 (NLP path untouched; LLM/hybrid falls back to NLP without a provider).
+
+### Cycle 5 — Show Evidence surfaces real per-edge evidence + UI trim ✅ (`f6b8ab13`)
+**Action:** Frontend now renders each edge's persisted `evidence` sentence directly (network list + selected-edge panel; cyber/geo lists) with a "re-run extraction" fallback — deleted the ~70-line client-side document-substring reconstruction. Compacted relationship rows (confidence chip vs full-width bar); Edge Overview hides noise-tier ASSOCIATED_WITH behind a default-collapsed disclosure. lint + build clean.
+
+### Cycle 6 — Track C: ground agentic resolution in real search ✅ (`04f7c87c`)
+**Action:** The RESOLVE phase asked the LLM to "generate real URLs" (hallucination). Now `resolve_sources` runs live DuckDuckGo search (PIR + source), the LLM SELECTS from real results, and a hard allow-list filter guarantees no invented URLs; falls back to generation only when search is empty. SSRF guard preserved. 4 mocked tests pass. Live `web_search` verified returning on-topic URLs.
+
+**Next:** finalize hybrid mode (measure refined merge; set as default if it wins) → re-extract for live Show Evidence → remaining Track C (relevance gate, close feedback loop) → reviewer-gate + merge.
 
