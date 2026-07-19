@@ -384,6 +384,26 @@ def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
     return cyber_entities
 
 
+# Intelligence-report boilerplate spaCy sometimes tags as entities (title-cased,
+# so the all-caps header filter misses them).
+REPORT_BOILERPLATE = {
+    "handling caveat", "source reliability", "executive summary", "key findings",
+    "key judgments", "key judgements", "for official use only", "distribution",
+    "classification", "prepared by", "background", "outlook", "recommendations",
+    "annex", "appendix", "table of contents", "confidence level",
+    "bottom line up front", "scope note", "this assessment",
+}
+
+# Bare nationality/regional demonyms — noise as standalone entities (spaCy tags
+# them NORP -> Organization). Multi-word orgs ("American Airlines") never match.
+DEMONYMS = {
+    "european", "american", "british", "french", "german", "russian", "chinese",
+    "iranian", "israeli", "ukrainian", "japanese", "korean", "north korean",
+    "south korean", "indian", "pakistani", "turkish", "syrian", "iraqi", "saudi",
+    "arab", "african", "asian", "western", "eastern", "afghan", "chechen",
+}
+
+
 def _postprocess_entities(entities: list[dict]) -> list[dict]:
     """Fix common spaCy misclassifications for intelligence documents."""
     # Load from YAML (with fallback to hardcoded module constants)
@@ -402,6 +422,20 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         # Preserve regex-extracted entities (cyber entities should never be filtered)
         if e.get("method") == "regex":
             corrected.append(e)
+            continue
+
+        # Strip leading determiners spaCy glues onto ORG/LOC spans ("the Russian
+        # Foreign Intelligence Service" -> "Russian Foreign Intelligence Service")
+        # — inflates false positives and breaks dedup against the canonical name.
+        stripped = re.sub(r"^(?:the|a|an)\s+", "", name, flags=re.IGNORECASE).strip()
+        if stripped and stripped != name:
+            name = stripped
+            e["name"] = name
+            name_lower = name.lower().strip()
+
+        # Drop report boilerplate and bare nationality demonyms — high-frequency
+        # false positives, not analytic entities.
+        if name_lower in REPORT_BOILERPLATE or name_lower in DEMONYMS:
             continue
 
         # Skip all-caps headers (likely document section headings), but keep known acronyms
