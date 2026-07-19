@@ -47,11 +47,11 @@ async def test_grounded_resolution_feed_url_must_be_real():
 
     with patch("intel_platform.collection.search.web_search", return_value=REAL), \
          patch.object(agentic, "_structured_generate", new=AsyncMock(side_effect=fake_gen)):
-        cfg = await agentic._resolve_via_search(None, "pir", _src("rss_feed"))
+        cfg = await agentic._resolve_via_search(None, "pir", _src("rss_feed"), max_results=7)
 
     # Hallucinated feed_url replaced by the top real result.
     assert cfg["feed_url"] == REAL[0]["url"]
-    assert cfg["max_items"] == 20
+    assert cfg["max_items"] == 7  # threaded through from max_results
 
 
 async def test_grounded_resolution_returns_none_without_search_results():

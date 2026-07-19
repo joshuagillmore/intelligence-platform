@@ -282,8 +282,11 @@ export const collectionPlansApi = {
   // PIR-driven plan creation (unified flow)
   fromPir: (data: { project_id: string; pir: string; extraction_mode?: string; created_by?: string }) =>
     api.post<CollectionPlan & { llm_plan_text?: string }>('/collection-plans/from-pir', data),
-  execute: (planId: string) =>
-    api.post<CollectionPlan & { execution_status: string; message: string }>(`/collection-plans/${planId}/execute`),
+  execute: (planId: string, maxResultsPerSource?: number) =>
+    api.post<CollectionPlan & { execution_status: string; message: string }>(
+      `/collection-plans/${planId}/execute`,
+      maxResultsPerSource != null ? { max_results_per_source: maxResultsPerSource } : undefined,
+    ),
 
   // Dashboard
   dashboard: (projectId: string) => api.get('/collection-dashboard', { params: { project_id: projectId } }),

@@ -350,7 +350,7 @@ def _validate_urls(urls: list) -> list[str]:
 # Phase 1: RESOLVE — LLM generates concrete configs for each source
 # ---------------------------------------------------------------------------
 
-async def _resolve_via_search(provider, pir: str, source) -> dict | None:
+async def _resolve_via_search(provider, pir: str, source, max_results: int = 10) -> dict | None:
     """Ground source resolution in REAL web-search results.
 
     Instead of asking the LLM to recall (hallucinate) URLs, run a live
@@ -364,7 +364,7 @@ async def _resolve_via_search(provider, pir: str, source) -> dict | None:
     from intel_platform.collection.search import web_search
 
     query = f"{source.name} {pir}".strip()[:300]
-    results = await asyncio.to_thread(web_search, query, 10)
+    results = await asyncio.to_thread(web_search, query, max(10, max_results))
     if not results:
         return None
 
@@ -377,7 +377,7 @@ async def _resolve_via_search(provider, pir: str, source) -> dict | None:
     user = (
         f"PIR: {pir}\nSource: {source.name} (type: {source.source_type})\n\n"
         f"Real search results:\n{listing}\n\n"
-        f'Select the most relevant. Return JSON with key "{key}".'
+        f'Select up to {max_results} most relevant. Return JSON with key "{key}".'
     )
     config = await _structured_generate(
         provider,
@@ -393,15 +393,15 @@ async def _resolve_via_search(provider, pir: str, source) -> dict | None:
         feed_url = config.get("feed_url", "")
         if feed_url not in allowed:
             feed_url = results[0]["url"]
-        return {"feed_url": feed_url, "max_items": 20, "fetch_full_content": True}
+        return {"feed_url": feed_url, "max_items": max_results, "fetch_full_content": True}
 
     urls = [u for u in (config.get("urls") or []) if u in allowed]
     if not urls:  # LLM picked nothing valid — fall back to the top real hits
-        urls = [r["url"] for r in results[:3]]
-    return {"urls": urls[:5]}
+        urls = [r["url"] for r in results[:max_results]]
+    return {"urls": urls[:max_results]}
 
 
-async def resolve_sources(plan, sources, db, provider):
+async def resolve_sources(plan, sources, db, provider, max_results: int = 10):
     """Resolve concrete acquisition configs for each source.
 
     Prefers grounding in live web search (`_resolve_via_search`); falls back to
@@ -427,7 +427,7 @@ async def resolve_sources(plan, sources, db, provider):
 
             # Ground resolution in real web search first; fall back to LLM URL
             # generation only when search returns nothing.
-            config = await _resolve_via_search(provider, pir, source)
+            config = await _resolve_via_search(provider, pir, source, max_results)
             grounded = config is not None
             if not config:
                 config = await _structured_generate(
@@ -475,7 +475,7 @@ async def resolve_sources(plan, sources, db, provider):
 # Phase 2: ACQUIRE — fetch content and run through ingestion pipeline
 # ---------------------------------------------------------------------------
 
-async def _acquire_urls_concurrent(connector, config, urls, *, db, plan, source, concurrency):
+async def _acquire_urls_concurrent(connector, config, urls, *, db, plan, source, concurrency, max_results=10):
     """Fetch multiple URLs through a connector with bounded concurrency.
 
     Network fetches run concurrently (Semaphore-gated); the shared AsyncSession is
@@ -519,11 +519,11 @@ async def _acquire_urls_concurrent(connector, config, urls, *, db, plan, source,
                     ))
                     await db.commit()
 
-    await asyncio.gather(*[fetch_one(u) for u in urls[:10]], return_exceptions=True)
+    await asyncio.gather(*[fetch_one(u) for u in urls[:max_results]], return_exceptions=True)
     return all_records, errors
 
 
-async def acquire_source(source, plan, db, store, extraction_mode="nlp", provider=None):
+async def acquire_source(source, plan, db, store, extraction_mode="nlp", provider=None, max_results=10):
     """Fetch content from a source and run it through the ingestion pipeline.
 
     Returns dict with record_count, entities_created, relationships_created.
@@ -540,7 +540,7 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
         concurrency = getattr(settings, "collection_crawl_concurrency", 4)
         all_records, errors = await _acquire_urls_concurrent(
             connector, config, config["urls"],
-            db=db, plan=plan, source=source, concurrency=concurrency,
+            db=db, plan=plan, source=source, concurrency=concurrency, max_results=max_results,
         )
         result = AR(
             success=len(all_records) > 0,
@@ -683,7 +683,7 @@ async def evaluate_results(source, plan, acquire_result, provider):
 # Main entry point: run_agentic_loop
 # ---------------------------------------------------------------------------
 
-async def run_agentic_loop(plan_id, db_factory, get_store, get_provider):
+async def run_agentic_loop(plan_id, db_factory, get_store, get_provider, max_results_per_source: int = 10):
     """Background task: resolve, acquire, and evaluate all sources in a plan.
 
     Args:
@@ -725,7 +725,7 @@ async def run_agentic_loop(plan_id, db_factory, get_store, get_provider):
         ))
         await db.commit()
 
-        await resolve_sources(plan, sources, db, provider)
+        await resolve_sources(plan, sources, db, provider, max_results_per_source)
 
     # Phase 2 & 3: Acquire and evaluate each source
     completed = 0
@@ -753,7 +753,7 @@ async def run_agentic_loop(plan_id, db_factory, get_store, get_provider):
             await db.commit()
 
             try:
-                acquire_result = await acquire_source(source, plan, db, store, extraction_mode, provider=provider)
+                acquire_result = await acquire_source(source, plan, db, store, extraction_mode, provider=provider, max_results=max_results_per_source)
 
                 ent_count = acquire_result.get("entities_created", 0)
                 rel_count = acquire_result.get("relationships_created", 0)
@@ -797,7 +797,7 @@ async def run_agentic_loop(plan_id, db_factory, get_store, get_provider):
                         source.config = {**source.config, "urls": new_urls, "max_pages": len(new_urls)}
                         await db.commit()
 
-                        followup_result = await acquire_source(source, plan, db, store, extraction_mode, provider=provider)
+                        followup_result = await acquire_source(source, plan, db, store, extraction_mode, provider=provider, max_results=max_results_per_source)
                         fu_ent = followup_result.get("entities_created", 0)
                         fu_rel = followup_result.get("relationships_created", 0)
 
