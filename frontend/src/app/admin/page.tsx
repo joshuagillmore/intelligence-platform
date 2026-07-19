@@ -20,9 +20,17 @@ interface AdminConfig {
 }
 
 interface ProxyConfig {
-  mode: string;
+  mode: 'direct' | 'vpn' | 'tor';
   proxy_url?: string;
   tor_port?: number;
+}
+
+interface VpnStatus {
+  running: boolean;
+  reachable: boolean;
+  public_ip?: string;
+  country?: string;
+  mode?: string;
 }
 
 interface ModelInfo {
@@ -57,6 +65,9 @@ export default function AdminPage() {
   const [proxy, setProxy] = useState<ProxyConfig>({ mode: 'direct' });
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxySaving, setProxySaving] = useState(false);
+  const [vpnStatus, setVpnStatus] = useState<VpnStatus | null>(null);
+  const [vpnStatusLoading, setVpnStatusLoading] = useState(false);
+  const [vpnActionLoading, setVpnActionLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -109,6 +120,20 @@ export default function AdminPage() {
       setProxy({ mode: 'direct' });
     } finally {
       setProxyLoading(false);
+    }
+  }, []);
+
+  const loadVpnStatus = useCallback(async () => {
+    setVpnStatusLoading(true);
+    try {
+      const res = await adminApi.getVpnStatus();
+      setVpnStatus(res.data);
+    } catch {
+      // Sidecar unreachable (e.g. not running under docker compose --profile vpn) —
+      // degrade gracefully instead of erroring the page.
+      setVpnStatus({ running: false, reachable: false });
+    } finally {
+      setVpnStatusLoading(false);
     }
   }, []);
 
@@ -193,12 +218,25 @@ export default function AdminPage() {
   async function saveProxy() {
     setProxySaving(true);
     try {
-      await adminApi.updateProxy(proxy);
-      setToast('Proxy configuration saved.');
+      await adminApi.updateProxy({ mode: proxy.mode });
+      setToast('Egress mode saved.');
     } catch {
-      setToast('Failed to save proxy configuration.');
+      setToast('Failed to save egress mode.');
     } finally {
       setProxySaving(false);
+    }
+  }
+
+  async function performVpnAction(action: 'start' | 'stop') {
+    setVpnActionLoading(true);
+    try {
+      await adminApi.setVpnStatus(action);
+      setToast(action === 'start' ? 'VPN reconnect requested.' : 'VPN stopped (kill-switch engaged).');
+    } catch {
+      setToast(action === 'start' ? 'Failed to reconnect VPN.' : 'Failed to stop VPN.');
+    } finally {
+      setVpnActionLoading(false);
+      loadVpnStatus();
     }
   }
 
@@ -217,6 +255,14 @@ export default function AdminPage() {
       return () => clearTimeout(t);
     }
   }, [toast]);
+
+  // Poll VPN status while the Collection Egress card has VPN mode selected/visible.
+  useEffect(() => {
+    if (proxy.mode !== 'vpn') return;
+    loadVpnStatus();
+    const interval = setInterval(loadVpnStatus, 10000);
+    return () => clearInterval(interval);
+  }, [proxy.mode, loadVpnStatus]);
 
   async function deleteProject(project: Project) {
     if (!confirm(`Are you sure you want to delete project "${project.name}"? This action cannot be undone.`)) return;
@@ -614,58 +660,112 @@ export default function AdminPage() {
             )}
           </div>
 
-          {/* Proxy Configuration */}
+          {/* Collection Egress */}
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-6">
-            <h3 className="text-lg font-semibold mb-4">Proxy Configuration</h3>
-            <p className="text-gray-500 text-sm mb-3">Configure network proxy for external API calls and collection tasks.</p>
+            <h3 className="text-lg font-semibold mb-1">Collection Egress</h3>
+            <p className="text-gray-500 text-sm mb-4">
+              Route web collection (crawling + search) through a VPN or Tor. LLM/cloud calls always go direct.
+            </p>
             {proxyLoading ? (
-              <p className="text-gray-500 text-sm">Loading proxy configuration...</p>
+              <p className="text-gray-500 text-sm">Loading egress configuration...</p>
             ) : (
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1">Proxy Mode</label>
+                  <label className="text-xs text-gray-400 block mb-1">Egress Mode</label>
                   <select
                     value={proxy.mode}
-                    onChange={(e) => setProxy(prev => ({ ...prev, mode: e.target.value }))}
+                    onChange={(e) => setProxy(prev => ({ ...prev, mode: e.target.value as ProxyConfig['mode'] }))}
                     className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
                   >
-                    <option value="direct">Direct (No Proxy)</option>
-                    <option value="proxy">HTTP/SOCKS Proxy</option>
-                    <option value="tor">Tor Network</option>
+                    <option value="direct">Direct (no proxy)</option>
+                    <option value="vpn">VPN (Surfshark via gluetun)</option>
+                    <option value="tor">Tor</option>
                   </select>
                 </div>
-
-                {proxy.mode === 'proxy' && (
-                  <div>
-                    <label className="text-xs text-gray-400 block mb-1">Proxy URL</label>
-                    <input
-                      value={proxy.proxy_url || ''}
-                      onChange={(e) => setProxy(prev => ({ ...prev, proxy_url: e.target.value }))}
-                      placeholder="socks5://127.0.0.1:1080 or http://proxy:8080"
-                      className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
-                    />
-                  </div>
-                )}
-
-                {proxy.mode === 'tor' && (
-                  <div>
-                    <label className="text-xs text-gray-400 block mb-1">Tor SOCKS Port</label>
-                    <input
-                      type="number"
-                      value={proxy.tor_port || 9050}
-                      onChange={(e) => setProxy(prev => ({ ...prev, tor_port: parseInt(e.target.value) || 9050 }))}
-                      className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-accent-blue"
-                    />
-                  </div>
-                )}
 
                 <button
                   onClick={saveProxy}
                   disabled={proxySaving}
                   className="bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50"
                 >
-                  {proxySaving ? 'Saving...' : 'Save Proxy Settings'}
+                  {proxySaving ? 'Saving...' : 'Save Egress Mode'}
                 </button>
+
+                {proxy.mode === 'vpn' && (
+                  <div className="bg-navy-700 rounded-lg p-4 border border-navy-600 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-300">VPN Status</span>
+                      <button
+                        onClick={loadVpnStatus}
+                        disabled={vpnStatusLoading}
+                        className="text-xs text-accent-blue hover:text-blue-400 disabled:opacity-50"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+
+                    {vpnStatusLoading && !vpnStatus ? (
+                      <p className="text-gray-500 text-sm">Checking VPN status...</p>
+                    ) : vpnStatus ? (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2.5 h-2.5 rounded-full ${
+                            vpnStatus.running ? 'bg-green-400' : vpnStatus.reachable ? 'bg-red-400' : 'bg-gray-500'
+                          }`} />
+                          <span className="text-sm font-medium">
+                            {vpnStatus.running
+                              ? 'Tunnel up'
+                              : vpnStatus.reachable
+                                ? 'Down'
+                                : 'VPN sidecar not running'}
+                          </span>
+                        </div>
+
+                        {(vpnStatus.public_ip || vpnStatus.country) && (
+                          <div className="grid grid-cols-2 gap-2">
+                            {vpnStatus.public_ip && (
+                              <div className="bg-navy-800 rounded p-2">
+                                <div className="text-[10px] text-gray-500 uppercase tracking-wider">Exit IP</div>
+                                <div className="text-sm text-gray-300 mt-0.5 font-mono truncate">{vpnStatus.public_ip}</div>
+                              </div>
+                            )}
+                            {vpnStatus.country && (
+                              <div className="bg-navy-800 rounded p-2">
+                                <div className="text-[10px] text-gray-500 uppercase tracking-wider">Country</div>
+                                <div className="text-sm text-gray-300 mt-0.5 truncate">{vpnStatus.country}</div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={() => performVpnAction('start')}
+                            disabled={vpnActionLoading}
+                            className="flex-1 text-xs bg-navy-600 hover:bg-navy-500 text-gray-300 px-3 py-1.5 rounded border border-navy-500 transition-colors disabled:opacity-50"
+                          >
+                            {vpnActionLoading ? 'Working...' : 'Reconnect'}
+                          </button>
+                          <button
+                            onClick={() => performVpnAction('stop')}
+                            disabled={vpnActionLoading}
+                            className="flex-1 text-xs bg-red-600/10 hover:bg-red-600/30 text-red-400 px-3 py-1.5 rounded border border-red-600/20 transition-colors disabled:opacity-50"
+                          >
+                            {vpnActionLoading ? 'Working...' : 'Stop (kill-switch)'}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-gray-500 text-sm">Unable to reach VPN status endpoint.</p>
+                    )}
+                  </div>
+                )}
+
+                <p className="text-[11px] text-gray-500 leading-snug">
+                  VPN credentials (Surfshark WireGuard/OpenVPN) are set in the server&apos;s .env; the VPN and
+                  Tor sidecars run only under <code className="font-mono text-gray-400">docker compose --profile vpn up</code>.
+                  This is local/self-hosted only &mdash; Railway can&apos;t run the VPN sidecar (Tor works anywhere).
+                </p>
               </div>
             )}
           </div>

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from intel_platform.collection.search import web_search
 from intel_platform.collection.crawler import crawl_urls
+from intel_platform.collection.proxy import get_active_proxy_config
 from intel_platform.config import settings
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import Document
@@ -33,6 +34,10 @@ class CollectionRunner:
         approved_items = [item for item in plan if item.get("approved", False)]
         total_items = len(approved_items)
 
+        # Resolve the active collection-egress proxy once for this run. crawl_urls
+        # reads it itself; web_search is sync, so pass the resolved URL through.
+        proxy_url = (await get_active_proxy_config()).get_proxy_url()
+
         all_urls: list[str] = []
         total_docs_crawled = 0
         total_entities = 0
@@ -45,7 +50,7 @@ class CollectionRunner:
 
             try:
                 # Stage 1: Search
-                urls = self._search_for_item(item_desc, source_type)
+                urls = self._search_for_item(item_desc, source_type, proxy_url)
                 all_urls.extend(urls)
 
                 # Stage 2: Crawl
@@ -89,9 +94,9 @@ class CollectionRunner:
             "errors": errors,
         }
 
-    def _search_for_item(self, description: str, source_type: str) -> list[str]:
+    def _search_for_item(self, description: str, source_type: str, proxy: str | None = None) -> list[str]:
         """Run a web search for a plan item and return URLs."""
-        results = web_search(description, max_results=10)
+        results = web_search(description, max_results=10, proxy=proxy)
         return [r["url"] for r in results if r.get("url")]
 
     async def _ingest_document(
