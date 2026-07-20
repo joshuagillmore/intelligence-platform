@@ -5,7 +5,7 @@ import jellyfish
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import (
     Person, Organization, Location, Event, IPAddress, Domain, Hash,
-    Vulnerability, TTP, Malware, ThreatActor, Campaign,
+    Vulnerability, TTP, Malware, ThreatActor, Campaign, URL, EmailAddress,
 )
 from intel_platform.models.relationships import Relationship
 from intel_platform.models.type_hierarchy import normalize_entity_type
@@ -15,6 +15,7 @@ ENTITY_TYPE_MAP = {
     "Event": Event, "IPAddress": IPAddress, "Domain": Domain, "Hash": Hash,
     "Vulnerability": Vulnerability, "TTP": TTP, "Malware": Malware,
     "ThreatActor": ThreatActor, "Campaign": Campaign,
+    "URL": URL, "EmailAddress": EmailAddress,
 }
 
 
@@ -31,7 +32,9 @@ def resolve_entity_name(
         return None
 
     # Cyber entity types should ONLY match exactly (no fuzzy matching)
-    EXACT_MATCH_TYPES = {"IPAddress", "Domain", "Hash", "Vulnerability", "TTP"}
+    EXACT_MATCH_TYPES = {
+        "IPAddress", "Domain", "URL", "EmailAddress", "Hash", "Vulnerability", "TTP",
+    }
     if entity_type in EXACT_MATCH_TYPES:
         name_lower = name.lower().strip()
         for existing in existing_names:

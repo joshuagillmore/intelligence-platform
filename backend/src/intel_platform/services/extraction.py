@@ -12,6 +12,7 @@ from intel_platform.data import (
     get_known_acronyms, get_noise_words, get_location_keywords,
     get_org_keywords, get_tlds,
 )
+from intel_platform.enrichment.observables import refang
 from intel_platform.models.type_hierarchy import normalize_entity_type
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,8 @@ HASH_SHA256 = re.compile(r'\b[a-fA-F0-9]{64}\b')
 CVE_PATTERN = re.compile(r'\bCVE-\d{4}-\d{4,}\b')
 MITRE_PATTERN = re.compile(r'\bT\d{4}(?:\.\d{3})?\b')
 BTC_PATTERN = re.compile(r'\b(?:bc1|[13])[a-zA-HJ-NP-Z0-9]{25,39}\b')
+URL_PATTERN = re.compile(r"""https?://[^\s<>"')\]}]+""", re.IGNORECASE)
+EMAIL_PATTERN = re.compile(r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b')
 
 # Date patterns for intelligence documents
 MONTH_NAMES = r'(?:January|February|March|April|May|June|July|August|September|October|November|December)'
@@ -339,6 +342,9 @@ def _has_hash_context(text: str, match_start: int, match_end: int) -> bool:
 
 def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
     """Extract cyber-specific entities using regex patterns."""
+    # Reverse common defang notation (evil[.]com, hxxp://, a[at]b[.]com) first so
+    # the patterns below catch IOCs that threat-intel text deliberately obfuscates.
+    text = refang(text)
     cyber_entities = []
     seen = set()
 
@@ -362,6 +368,24 @@ def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
             seen.add(domain)
             cyber_entities.append({
                 "name": domain, "entity_type": "Domain",
+                "source": doc_id, "method": "regex", "confidence": 0.9,
+            })
+
+    for match in URL_PATTERN.finditer(text):
+        url = match.group().rstrip('.,;:!?)]}\'"')
+        if url and url not in seen:
+            seen.add(url)
+            cyber_entities.append({
+                "name": url, "entity_type": "URL",
+                "source": doc_id, "method": "regex", "confidence": 0.9,
+            })
+
+    for match in EMAIL_PATTERN.finditer(text):
+        email = match.group().lower()
+        if email not in seen:
+            seen.add(email)
+            cyber_entities.append({
+                "name": email, "entity_type": "EmailAddress",
                 "source": doc_id, "method": "regex", "confidence": 0.9,
             })
 
