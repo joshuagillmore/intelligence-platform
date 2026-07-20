@@ -91,11 +91,20 @@ class ProxiedClient:
     async def _resolve_config(self) -> ProxyConfig:
         return self._config or await get_active_proxy_config()
 
-    async def get(self, url: str, timeout: float = 30, headers: dict | None = None) -> httpx.Response:
+    async def get(self, url: str, timeout: float = 30, headers: dict | None = None,
+                  params: dict | None = None) -> httpx.Response:
         cfg = await self._resolve_config()
         kwargs = cfg.get_client_kwargs()
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, **kwargs) as client:
-            return await client.get(url, headers=headers or {})
+            return await client.get(url, headers=headers or {}, params=params)
+
+    async def post(self, url: str, timeout: float = 30, headers: dict | None = None,
+                   json: dict | None = None, data: dict | None = None,
+                   params: dict | None = None) -> httpx.Response:
+        cfg = await self._resolve_config()
+        kwargs = cfg.get_client_kwargs()
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, **kwargs) as client:
+            return await client.post(url, headers=headers or {}, json=json, data=data, params=params)
 
     async def fetch_text(self, url: str, timeout: float = 30) -> str:
         response = await self.get(url, timeout=timeout)
