@@ -6,6 +6,8 @@ import GraphVisualization from '@/components/GraphVisualization';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
 import { entitiesApi, graphApi, assessApi } from '@/lib/api';
+import { TYPE_BADGE_CLASS as TYPE_BADGE_STYLES } from '@/lib/entityStyles';
+import EnrichmentPanel from '@/components/EnrichmentPanel';
 
 interface IOCEntity {
   id: string;
@@ -42,14 +44,7 @@ interface GraphEdge {
 
 const IOC_TYPES = ['IPAddress', 'Domain', 'Hash', 'TTP', 'Vulnerability'];
 
-const TYPE_BADGE_STYLES: Record<string, string> = {
-  IPAddress: 'bg-cyan-900/30 text-cyan-400',
-  Domain: 'bg-purple-900/30 text-purple-400',
-  Hash: 'bg-pink-900/30 text-pink-400',
-  TTP: 'bg-yellow-900/30 text-yellow-400',
-  Vulnerability: 'bg-rose-900/30 text-rose-400',
-  ThreatActor: 'bg-red-900/30 text-red-400',
-};
+// TYPE_BADGE_STYLES imported from '@/lib/entityStyles' (single source of truth)
 
 const FILTER_TABS = [
   { label: 'All', value: 'all' },
@@ -290,6 +285,18 @@ export default function CyberPage() {
     }
   }
 
+  // Refetch one IOC after enrichment so its expanded panel + the severity/
+  // enriched stat cards reflect the newly-written properties.
+  async function refetchIoc(id: string) {
+    try {
+      const res = await entitiesApi.get(id);
+      if (res.data.entity) {
+        setExpandedEntity(prev => ({ ...prev, [id]: res.data.entity }));
+        setIocs(prev => prev.map(x => (x.id === id ? { ...x, properties: res.data.entity.properties } : x)));
+      }
+    } catch { /* ignore */ }
+  }
+
   async function toggleActorRow(actor: IOCEntity) {
     if (expandedActorId === actor.id) {
       setExpandedActorId(null);
@@ -514,6 +521,12 @@ export default function CyberPage() {
                                       >
                                         View in Graph &rarr;
                                       </button>
+                                      <EnrichmentPanel
+                                        entityId={ioc.id}
+                                        entityType={ioc.entity_type}
+                                        properties={entity.properties}
+                                        onEnriched={() => refetchIoc(ioc.id)}
+                                      />
                                     </div>
                                   </div>
                                 </td>

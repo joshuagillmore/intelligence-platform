@@ -71,6 +71,16 @@ export const entitiesApi = {
   shortestPath: (id1: string, id2: string) => api.get(`/paths/${id1}/${id2}`),
 };
 
+// Cyber-observable enrichment (WHOIS/DNS/GeoIP/certs/KEV/CVSS) — the Investigate
+// action. Egress routes through the collection proxy (VPN/Tor), never the LLM path.
+export const enrichmentApi = {
+  investigate: (entityId: string) => api.post(`/enrichment/entities/${entityId}`),
+  getCached: (entityId: string) => api.get(`/enrichment/entities/${entityId}`),
+  refresh: (entityId: string, provider: string) =>
+    api.post(`/enrichment/entities/${entityId}/refresh`, null, { params: { provider } }),
+  providers: () => api.get('/enrichment/providers'),
+};
+
 export const graphApi = {
   full: (projectId: string) => api.get('/graph', { params: { project_id: projectId } }),
   communities: (projectId: string) => api.get('/communities', { params: { project_id: projectId } }),
