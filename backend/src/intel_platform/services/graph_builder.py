@@ -87,13 +87,17 @@ def resolve_entity_name(
 
 def build_graph_from_extractions(
     store: GraphStore, entities: list[dict], relationships: list[dict], project_id: str,
-    source_doc_id: str = "",
+    source_doc_id: str = "", auto_enrich_loop=None,
 ) -> dict:
     from intel_platform.config import settings
 
     created = 0
     merged = 0
     name_to_id: dict[str, str] = {}
+    # Newly-created entities (id/name/type/project) — fed to the selective
+    # auto-enrich hook after the build; the hook filters to cyber types and is
+    # a no-op unless the admin has turned auto-enrich on.
+    new_entities: list[dict] = []
     resolution_threshold = settings.entity_resolution_threshold
 
     # Cache for resolved names within this batch to avoid repeated lookups
@@ -179,6 +183,10 @@ def build_graph_from_extractions(
         batch_names.append(name)
         batch_name_to_id[name] = entity.id
         batch_name_to_type[name] = raw_type
+        new_entities.append({
+            "id": entity.id, "name": name,
+            "entity_type": entity.entity_type.value, "project_id": project_id,
+        })
         created += 1
 
     cooccurrence_min = settings.cooccurrence_confidence_min
@@ -207,5 +215,15 @@ def build_graph_from_extractions(
         )
         store.create_relationship(rel)
         rels_created += 1
+
+    # Selective auto-enrich of newly-created cyber nodes (fire-and-forget,
+    # default-off, gated inside the hook). Never let it affect the build.
+    # auto_enrich_loop lets callers that run this via asyncio.to_thread (which has
+    # no running loop) hand the pass back to their event loop.
+    try:
+        from intel_platform.enrichment.hook import schedule_auto_enrich
+        schedule_auto_enrich(store, new_entities, loop=auto_enrich_loop)
+    except Exception:
+        pass
 
     return {"entities_created": created, "entities_merged": merged, "relationships_created": rels_created}

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from intel_platform.api.middleware import RateLimitMiddleware, RequestLoggingMiddleware, SecurityHeadersMiddleware
 
 from intel_platform.api.deps import get_neo4j_driver
-from intel_platform.api.routes import health, projects, ingest, entities, graph, llm, collections, query, assess, topics, reports, geo, timeline, notebook, search, export, watchlist, admin_config, personas, documents, snapshots, auth, collection_plans
+from intel_platform.api.routes import health, projects, ingest, entities, graph, llm, collections, query, assess, topics, reports, geo, timeline, notebook, search, export, watchlist, admin_config, personas, documents, snapshots, auth, collection_plans, enrichment
 from intel_platform.config import settings
 from intel_platform.graph.schema import initialize_schema
 
@@ -104,6 +104,7 @@ app.include_router(personas.router, prefix="/api", tags=["personas"])
 app.include_router(documents.router, prefix="/api", tags=["documents"])
 app.include_router(snapshots.router, prefix="/api", tags=["snapshots"])
 app.include_router(collection_plans.router, prefix="/api", tags=["collection-plans"])
+app.include_router(enrichment.router, prefix="/api", tags=["enrichment"])
 
 # Reverse proxy to frontend Node.js server (Railway single-port deployment)
 from pathlib import Path  # noqa: E402

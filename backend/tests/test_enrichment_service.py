@@ -1,5 +1,6 @@
 """Tests for the enrichment provider registry (Task 2.2) and the orchestrator
 service (Task 2.3)."""
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -235,6 +236,60 @@ async def test_store_write_failure_is_isolated():
     svc = EnrichmentService(store, write_related=MagicMock(), cache=_cache_miss())
     out = await svc.enrich_entity("e1")  # must not raise
     assert out["providers"]["propprov"]["status"] == "error"
+
+
+async def test_enrich_only_filters_to_named_providers():
+    register_provider(_PropProvider)  # "propprov" on IPAddress
+
+    class _Other(EnrichmentProvider):
+        name = "otherprov"
+        supported_types = {"IPAddress"}
+
+        async def lookup(self, value, entity_type):
+            return EnrichmentResult(properties={"x": 1})
+
+    register_provider(_Other)
+    store = _store_with_entity(
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+    )
+    svc = EnrichmentService(store, write_related=MagicMock(), cache=_cache_miss())
+    out = await svc.enrich_entity("e1", only={"propprov"})
+    assert "propprov" in out["providers"]
+    assert "otherprov" not in out["providers"]
+
+
+async def test_enrich_bypass_cache_skips_cache_get():
+    register_provider(_PropProvider)
+    store = _store_with_entity(
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+    )
+    cache = MagicMock()
+    cache.get = AsyncMock(return_value={"properties": {"asn": "AS-CACHED"}})
+    cache.set = AsyncMock()
+    svc = EnrichmentService(store, write_related=MagicMock(), cache=cache)
+    out = await svc.enrich_entity("e1", bypass_cache=True)
+    cache.get.assert_not_called()  # bypass -> fresh lookup, cache not consulted
+    assert out["providers"]["propprov"]["status"] == "ok"
+
+
+async def test_investigate_bounded_by_overall_budget(monkeypatch):
+    # A provider slower than the budget yields status "timeout", not a hang.
+    class _SlowProvider(EnrichmentProvider):
+        name = "slowprov"
+        supported_types = {"IPAddress"}
+
+        async def lookup(self, value, entity_type):
+            await asyncio.sleep(5)
+            return EnrichmentResult()
+
+    register_provider(_SlowProvider)
+    monkeypatch.setattr(EnrichmentService, "OVERALL_BUDGET_S", 0.05)
+    store = _store_with_entity(
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+    )
+    svc = EnrichmentService(store, write_related=MagicMock(), cache=_cache_miss())
+    out = await svc.enrich_entity("e1")
+    assert out["providers"]["slowprov"]["status"] == "timeout"
 
 
 async def test_apply_strips_protected_identity_keys():
