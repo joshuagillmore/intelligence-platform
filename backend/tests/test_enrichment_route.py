@@ -65,3 +65,23 @@ def test_investigate_returns_service_result(client, auth_header):
         app.dependency_overrides.pop(get_graph_store, None)
     assert resp.status_code == 200
     assert resp.json()["providers"]["geoip"]["status"] == "ok"
+
+
+def test_refresh_400_on_unknown_provider(client, auth_header):
+    from intel_platform.api.app import app
+    from intel_platform.api.deps import get_graph_store
+
+    app.dependency_overrides[get_graph_store] = lambda: MagicMock()
+    fake = MagicMock()
+    # unknown provider -> service returns no providers (entity exists, no error)
+    fake.enrich_entity = AsyncMock(return_value={
+        "entity_id": "e1", "observable": "8.8.8.8", "providers": {},
+    })
+    try:
+        with patch("intel_platform.api.routes.enrichment._service", return_value=fake):
+            resp = client.post(
+                "/api/enrichment/entities/e1/refresh?provider=bogus", headers=auth_header
+            )
+    finally:
+        app.dependency_overrides.pop(get_graph_store, None)
+    assert resp.status_code == 400

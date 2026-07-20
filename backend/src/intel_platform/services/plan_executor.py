@@ -234,10 +234,12 @@ async def _execute_source(
         relationships_created = 0
         if all_entities or all_rels:
             from intel_platform.services.graph_builder import build_graph_from_extractions
+            # Capture the loop so the (default-off) auto-enrich hook can schedule
+            # onto it — build runs in a worker thread with no running loop.
             build_result = await asyncio.to_thread(
                 build_graph_from_extractions,
                 store, all_entities, all_rels, plan.project_id,
-                source_doc_id=doc.id,
+                source_doc_id=doc.id, auto_enrich_loop=asyncio.get_running_loop(),
             )
             entities_created = build_result.get("entities_created", 0)
             relationships_created = build_result.get("relationships_created", 0)

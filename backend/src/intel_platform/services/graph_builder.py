@@ -87,7 +87,7 @@ def resolve_entity_name(
 
 def build_graph_from_extractions(
     store: GraphStore, entities: list[dict], relationships: list[dict], project_id: str,
-    source_doc_id: str = "",
+    source_doc_id: str = "", auto_enrich_loop=None,
 ) -> dict:
     from intel_platform.config import settings
 
@@ -218,9 +218,11 @@ def build_graph_from_extractions(
 
     # Selective auto-enrich of newly-created cyber nodes (fire-and-forget,
     # default-off, gated inside the hook). Never let it affect the build.
+    # auto_enrich_loop lets callers that run this via asyncio.to_thread (which has
+    # no running loop) hand the pass back to their event loop.
     try:
         from intel_platform.enrichment.hook import schedule_auto_enrich
-        schedule_auto_enrich(store, new_entities)
+        schedule_auto_enrich(store, new_entities, loop=auto_enrich_loop)
     except Exception:
         pass
 

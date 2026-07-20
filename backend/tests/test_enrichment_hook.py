@@ -71,3 +71,36 @@ async def test_schedule_runs_for_cyber_targets_only(monkeypatch):
     await asyncio.sleep(0.01)
     assert captured["targets"] is not None
     assert [t["id"] for t in captured["targets"]] == ["1"]  # only the cyber node
+
+
+async def test_schedule_hands_off_to_passed_loop_when_no_running_loop(monkeypatch):
+    # Simulate the plan_executor worker-thread path: no running loop, but a loop
+    # was passed -> hand the coroutine over via run_coroutine_threadsafe.
+    def _no_loop(*a, **k):
+        raise RuntimeError("no running loop")
+
+    scheduled = []
+
+    def _threadsafe(coro, loop):
+        scheduled.append(loop)
+        coro.close()  # avoid "coroutine was never awaited"
+
+    monkeypatch.setattr(hook.asyncio, "get_running_loop", _no_loop)
+    monkeypatch.setattr(hook.asyncio, "run_coroutine_threadsafe", _threadsafe)
+
+    fake_loop = MagicMock()
+    hook.schedule_auto_enrich(MagicMock(), [{"id": "1", "entity_type": "Domain"}], loop=fake_loop)
+    assert scheduled == [fake_loop]
+
+
+async def test_schedule_no_loop_no_handoff_is_noop(monkeypatch):
+    def _no_loop(*a, **k):
+        raise RuntimeError("no running loop")
+
+    calls = []
+    monkeypatch.setattr(hook.asyncio, "get_running_loop", _no_loop)
+    monkeypatch.setattr(hook.asyncio, "run_coroutine_threadsafe",
+                        lambda *a, **k: calls.append(1))
+    # No running loop and no passed loop -> clean no-op, nothing scheduled.
+    hook.schedule_auto_enrich(MagicMock(), [{"id": "1", "entity_type": "Domain"}])
+    assert calls == []

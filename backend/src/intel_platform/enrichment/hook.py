@@ -24,6 +24,10 @@ AUTO_ENABLED_KEY = "enrichment_auto_enabled"
 # to providers actually flagged auto=True).
 _CYBER_TYPES = {"IPAddress", "Domain", "Vulnerability", "URL", "EmailAddress", "Hash"}
 
+# Strong refs to in-flight background tasks — the event loop keeps only a weak
+# reference, so without this a task could be GC'd mid-flight.
+_bg_tasks: set = set()
+
 
 async def auto_enrich_enabled() -> bool:
     """Read the auto-enrich AppSetting. Fail-safe: any error → disabled."""
@@ -46,24 +50,37 @@ async def auto_enrich_enabled() -> bool:
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
-def schedule_auto_enrich(store, entities: list[dict]) -> None:
+def schedule_auto_enrich(store, entities: list[dict], loop=None) -> None:
     """Schedule a fire-and-forget auto-enrich pass for newly-created cyber nodes.
 
-    No-ops when there are no cyber targets or no running event loop (e.g. a sync
-    test / non-async caller). The gate and all heavy imports happen inside the
-    scheduled task, so this stays cheap and side-effect-free when auto is off.
+    Runs on the current loop when called from async code. When called from a
+    worker thread (``build_graph_from_extractions`` via ``asyncio.to_thread`` in
+    plan_executor), there is no running loop, so the caller passes its ``loop``
+    and we hand the coroutine over thread-safely — otherwise auto-enrich would
+    silently never fire for collection-plan ingestion. No cyber targets / no loop
+    at all → clean no-op. The gate and heavy imports live inside the task.
     """
     targets = [e for e in entities if e.get("entity_type") in _CYBER_TYPES and e.get("id")]
     if not targets:
         return
     try:
-        loop = asyncio.get_running_loop()
+        running = asyncio.get_running_loop()
     except RuntimeError:
-        return  # not in an async context — nothing to schedule onto
-    loop.create_task(_run_auto_enrich(store, targets))
+        running = None
+    if running is not None:
+        task = running.create_task(_run_auto_enrich(store, targets))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
+    elif loop is not None:
+        # No loop in this (worker) thread — schedule onto the caller's loop.
+        asyncio.run_coroutine_threadsafe(_run_auto_enrich(store, targets), loop)
+    # else: no loop available anywhere → nothing to run (sync context)
 
 
 async def _run_auto_enrich(store, targets: list[dict]) -> None:
+    # `store` outlives the request that scheduled us because GraphStore wraps the
+    # process-global Neo4j driver (api.deps.get_neo4j_driver), not a per-request
+    # resource. If driver management ever becomes per-request, revisit this.
     try:
         if not await auto_enrich_enabled():
             return

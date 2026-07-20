@@ -77,6 +77,13 @@ async def refresh(
     )
     if result.get("error") == "not found":
         raise HTTPException(status_code=404, detail="Entity not found")
+    if not result.get("providers"):
+        # `only` matched no eligible provider for this entity — a typo, a
+        # wrong-type provider, or a keyed provider without a key.
+        raise HTTPException(
+            status_code=400,
+            detail=f"Provider '{provider}' is not available for this entity",
+        )
     return result
 
 

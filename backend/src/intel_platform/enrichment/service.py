@@ -14,6 +14,7 @@ transport-agnostic.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -94,6 +95,11 @@ class EnrichmentService:
         ]
         return await self._run(entity, providers)
 
+    # Overall wall-clock budget for one Investigate. Providers run concurrently
+    # (their awaited HTTP yields the loop), so a request finishes in about the
+    # slowest single provider, not the sum — and this bounds a hung provider.
+    OVERALL_BUDGET_S = 40.0
+
     async def _run(self, entity: dict, providers, bypass_cache: bool = False) -> dict:
         entity_id = entity.get("id")
         entity_type = entity.get("entity_type", "")
@@ -105,57 +111,77 @@ class EnrichmentService:
             logger.warning("enrichment: entity has no id; skipping (name=%r)", entity.get("name"))
             return {"entity_id": None, "observable": observable, "providers": {}}
 
-        for provider in providers:
-            # The cache spares the external CALL, not the per-node write: on a
-            # hit we still apply the cached result to THIS node, since a second
-            # node with the same observable must get the same properties/edges.
-            cached = None
-            if self.cache is not None and not bypass_cache:
-                try:
-                    cached = await self.cache.get(provider.name, observable)
-                except Exception:
-                    logger.debug("enrichment cache get failed for %s", provider.name, exc_info=True)
-            if cached is not None:
-                applied = self._safe_apply(entity, project_id, _result_from_cache(cached))
-                results[provider.name] = {"status": "cached" if applied else "error"}
-                continue
+        if not providers:
+            return {"entity_id": entity_id, "observable": observable, "providers": {}}
 
-            try:
-                if self.limiter is not None:
-                    await self.limiter.acquire(
-                        provider.name, rate=provider.rate, capacity=provider.capacity
-                    )
-                result = await provider.lookup(observable, entity_type)
-            except Exception as exc:  # per-provider isolation (lookup)
-                logger.warning(
-                    "enrichment provider %s failed for %s: %s", provider.name, observable, exc
-                )
-                results[provider.name] = {"status": "error"}
-                continue
+        # Each provider writes its own result into `results`, so partial progress
+        # survives an overall-budget timeout.
+        async def _one(provider):
+            await self._run_provider(
+                provider, entity, observable, entity_type, project_id, bypass_cache, results
+            )
 
-            # per-provider isolation (graph write) — a store failure here must
-            # not abort the remaining providers.
-            if not self._safe_apply(entity, project_id, result):
-                results[provider.name] = {"status": "error"}
-                continue
-
-            if self.cache is not None:
-                try:
-                    await self.cache.set(
-                        provider.name, observable, _result_to_cache(result),
-                        entity_type=entity_type, source_url=result.source_url,
-                        ttl=provider.cache_ttl,
-                    )
-                except Exception:
-                    logger.debug("enrichment cache set failed for %s", provider.name, exc_info=True)
-
-            results[provider.name] = {
-                "status": "ok",
-                "properties": result.properties,
-                "related": len(result.related),
-            }
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*[_one(p) for p in providers]),
+                timeout=self.OVERALL_BUDGET_S,
+            )
+        except asyncio.TimeoutError:
+            for provider in providers:
+                results.setdefault(provider.name, {"status": "timeout"})
 
         return {"entity_id": entity_id, "observable": observable, "providers": results}
+
+    async def _run_provider(self, provider, entity, observable, entity_type,
+                            project_id, bypass_cache, results) -> None:
+        # The cache spares the external CALL, not the per-node write: on a hit we
+        # still apply the cached result to THIS node, since a second node with the
+        # same observable must get the same properties/edges.
+        cached = None
+        if self.cache is not None and not bypass_cache:
+            try:
+                cached = await self.cache.get(provider.name, observable)
+            except Exception:
+                logger.debug("enrichment cache get failed for %s", provider.name, exc_info=True)
+        if cached is not None:
+            applied = self._safe_apply(entity, project_id, _result_from_cache(cached))
+            results[provider.name] = {"status": "cached" if applied else "error"}
+            return
+
+        try:
+            if self.limiter is not None:
+                await self.limiter.acquire(
+                    provider.name, rate=provider.rate, capacity=provider.capacity
+                )
+            result = await provider.lookup(observable, entity_type)
+        except Exception as exc:  # per-provider isolation (lookup)
+            logger.warning(
+                "enrichment provider %s failed for %s: %s", provider.name, observable, exc
+            )
+            results[provider.name] = {"status": "error"}
+            return
+
+        # per-provider isolation (graph write) — a store failure here must not
+        # abort the other providers.
+        if not self._safe_apply(entity, project_id, result):
+            results[provider.name] = {"status": "error"}
+            return
+
+        if self.cache is not None:
+            try:
+                await self.cache.set(
+                    provider.name, observable, _result_to_cache(result),
+                    entity_type=entity_type, source_url=result.source_url,
+                    ttl=provider.cache_ttl,
+                )
+            except Exception:
+                logger.debug("enrichment cache set failed for %s", provider.name, exc_info=True)
+
+        results[provider.name] = {
+            "status": "ok",
+            "properties": result.properties,
+            "related": len(result.related),
+        }
 
     def _safe_apply(self, entity: dict, project_id: str, result) -> bool:
         """Apply a result to the node, isolating any store/graph write failure."""
