@@ -92,10 +92,13 @@ class EmailProvider(EnrichmentProvider):
             return []
         if not isinstance(data, dict):
             return []
+        answers = data.get("Answer")
+        if not isinstance(answers, list):
+            return []
         return [
             str(a.get("data", "")).strip('"')
-            for a in (data.get("Answer") or [])
-            if a.get("data")
+            for a in answers
+            if isinstance(a, dict) and a.get("data")
         ]
 
     async def _has_gravatar(self, email: str) -> bool:

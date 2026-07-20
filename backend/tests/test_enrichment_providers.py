@@ -194,6 +194,21 @@ async def test_email_without_domain_is_empty():
     assert result.properties == {}
 
 
+async def test_email_tolerates_malformed_mx():
+    # A wrong-shaped DoH Answer (string/non-dict elements) must not raise — the
+    # domain still resolves, has_mx just comes back False.
+    async def get(url, params=None, headers=None, timeout=10):
+        if "gravatar" in url:
+            r = MagicMock()
+            r.status_code = 404
+            return r
+        return _resp({"Answer": "not-a-list"})
+
+    result = await EmailProvider(client=_client(get)).lookup("a@b.com", "EmailAddress")
+    assert result.properties["email_domain"] == "b.com"
+    assert result.properties["has_mx"] is False
+
+
 # --- malformed JSON must not raise out of lookup (clean empty result) -------
 
 async def test_providers_tolerate_malformed_json():
