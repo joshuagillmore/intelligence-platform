@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
 import { watchlistApi } from '@/lib/api';
+import { TYPE_COLOR_CLASS as TYPE_COLORS } from '@/lib/entityStyles';
 
 interface WatchedEntity {
   id: string;
@@ -12,21 +13,7 @@ interface WatchedEntity {
   relationship_count?: number;
 }
 
-const TYPE_COLORS: Record<string, string> = {
-  Person: 'bg-orange-500',
-  Organization: 'bg-blue-500',
-  Location: 'bg-green-500',
-  ThreatActor: 'bg-red-500',
-  Document: 'bg-gray-500',
-  IPAddress: 'bg-cyan-500',
-  Domain: 'bg-purple-500',
-  Event: 'bg-yellow-500',
-  Hash: 'bg-pink-500',
-  Vulnerability: 'bg-rose-500',
-  TTP: 'bg-amber-500',
-  Malware: 'bg-red-600',
-  Campaign: 'bg-indigo-500',
-};
+// TYPE_COLORS imported from '@/lib/entityStyles' (single source of truth)
 
 export default function WatchlistPage() {
   const { activeProject } = useProject();

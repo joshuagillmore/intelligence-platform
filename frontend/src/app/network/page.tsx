@@ -8,6 +8,8 @@ import { useProject } from '@/lib/ProjectContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi, reportsApi } from '@/lib/api';
+import { TYPE_COLOR_CLASS as TYPE_COLORS } from '@/lib/entityStyles';
+import EnrichmentPanel from '@/components/EnrichmentPanel';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { collapseToCommunities } from '@/lib/graphLayout';
 import { useNotifications } from '@/components/NotificationProvider';
@@ -86,18 +88,7 @@ function formatRelType(rel: string): string {
   return rel.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).replace(/\bOf\b/g, 'of').replace(/\bOn\b/g, 'on');
 }
 
-const TYPE_COLORS: Record<string, string> = {
-  Person: 'bg-orange-500',
-  Organization: 'bg-blue-500',
-  Location: 'bg-green-500',
-  ThreatActor: 'bg-red-500',
-  Document: 'bg-gray-500',
-  IPAddress: 'bg-cyan-500',
-  Domain: 'bg-purple-500',
-  Event: 'bg-yellow-500',
-  Hash: 'bg-pink-500',
-  Vulnerability: 'bg-rose-500',
-};
+// TYPE_COLORS imported from '@/lib/entityStyles' (single source of truth)
 
 interface StructuralHoleEntry {
   id: string;
@@ -2221,6 +2212,13 @@ function NetworkPageInner() {
                     </div>
                   </div>
                 )}
+
+                <EnrichmentPanel
+                  entityId={selectedEntity.id}
+                  entityType={selectedEntity.entity_type}
+                  properties={selectedEntity.properties}
+                  onEnriched={() => selectEntity(selectedEntity)}
+                />
 
                 {entityRelationships.length > 0 && (
                   <div>

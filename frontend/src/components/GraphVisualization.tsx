@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useCallback } from 'react';
 import * as d3 from 'd3';
+import { TYPE_COLOR_HEX as TYPE_COLORS } from '@/lib/entityStyles';
 
 interface GraphNode extends d3.SimulationNodeDatum {
   id: string;
@@ -42,16 +43,7 @@ interface Props {
   onPositionsUpdate?: (positions: Record<string, { x: number; y: number }>) => void;
 }
 
-const TYPE_COLORS: Record<string, string> = {
-  Person: '#f97316', Organization: '#3b82f6', Location: '#22c55e',
-  IPAddress: '#06b6d4', Domain: '#a855f7', Hash: '#ec4899',
-  ThreatActor: '#ef4444', TTP: '#eab308', Vulnerability: '#f43f5e',
-  Document: '#6b7280', Assessment: '#14b8a6', Malware: '#be123c',
-  Campaign: '#d946ef', Community: '#8b5cf6', Date: '#94a3b8', Technology: '#06b6d4',
-  Weapon: '#f43f5e', Facility: '#84cc16', Software: '#0ea5e9',
-  MilitaryUnit: '#dc2626', GovernmentAgency: '#2563eb',
-  Country: '#16a34a', City: '#65a30d', Custom: '#78716c',
-};
+// TYPE_COLORS imported from '@/lib/entityStyles' (single source of truth)
 
 const COMMUNITY_PALETTE = [
   '#f97316', '#3b82f6', '#22c55e', '#ef4444', '#a855f7',
