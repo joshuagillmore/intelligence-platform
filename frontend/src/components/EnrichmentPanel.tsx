@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { enrichmentApi } from '@/lib/api';
 import { TYPE_ICON } from '@/lib/entityStyles';
 
-const ENRICHABLE_TYPES = ['IPAddress', 'Domain', 'Vulnerability'];
+const ENRICHABLE_TYPES = ['IPAddress', 'Domain', 'Vulnerability', 'EmailAddress'];
 
 interface Props {
   entityId: string;
@@ -78,6 +78,7 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
 
   const dns = parseJson(properties.dns_records);
   const geo = parseJson(properties.geolocation);
+  const mx = parseJson(properties.mx_records);
   const kev = properties.known_exploited === true;
   const products: string[] = Array.isArray(properties.affected_products) ? properties.affected_products : [];
   const issuers: string[] = Array.isArray(properties.cert_issuers) ? properties.cert_issuers : [];
@@ -152,6 +153,21 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
       {properties.cert_san_count != null && (
         <Field label="Cert SANs" value={String(properties.cert_san_count)} />
       )}
+
+      {/* Email */}
+      {properties.disposable === true && (
+        <div className="mb-2 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-yellow-900/30 text-yellow-400 font-semibold">
+          ⚠ Disposable / throwaway domain
+        </div>
+      )}
+      {properties.email_domain ? <Field label="Email domain" value={String(properties.email_domain)} /> : null}
+      {properties.email_domain != null && (
+        <Field label="Accepts mail" value={properties.has_mx ? 'Yes (MX present)' : 'No MX record'} />
+      )}
+      {properties.email_domain != null && (
+        <Field label="Gravatar" value={properties.gravatar ? 'present' : 'none'} />
+      )}
+      {Array.isArray(mx) && mx.length > 0 && <Field label="MX" value={mx.slice(0, 4).join(', ')} />}
 
       {properties.enriched_at ? (
         <p className="text-[10px] text-gray-500 mt-2">Enriched {String(properties.enriched_at)}</p>

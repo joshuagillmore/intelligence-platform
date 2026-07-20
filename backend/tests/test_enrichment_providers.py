@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from intel_platform.enrichment.providers.certs import CertsProvider
 from intel_platform.enrichment.providers.dns import DNSProvider
+from intel_platform.enrichment.providers.email import EmailProvider
 from intel_platform.enrichment.providers.geoip import GeoIPProvider
 from intel_platform.enrichment.providers.kev import KEVProvider, _reset_catalog
 from intel_platform.enrichment.providers.nvd import NVDProvider
@@ -151,6 +152,61 @@ async def test_rdap_ip_uses_net_name_not_asn():
     result = await RDAPProvider(client=_client(get)).lookup("8.8.8.8", "IPAddress")
     assert result.properties.get("net_name") == "LVLT-GOGL-8-8-8"
     assert "asn" not in result.properties  # must not clobber geoip's asn field
+
+
+# --- Email --------------------------------------------------------------------
+
+async def test_email_mx_gravatar_and_domain_edge():
+    async def get(url, params=None, headers=None, timeout=10):
+        if "gravatar" in url:
+            r = MagicMock()
+            r.status_code = 200
+            return r
+        return _resp({"Answer": [{"data": "10 mx.evil.com."}]})  # MX
+
+    result = await EmailProvider(client=_client(get)).lookup("admin@evil.com", "EmailAddress")
+    assert result.properties["email_domain"] == "evil.com"
+    assert result.properties["has_mx"] is True
+    assert result.properties["gravatar"] is True
+    assert result.properties["disposable"] is False
+    assert any(r.entity_type == "Domain" and r.rel_type == "BELONGS_TO" for r in result.related)
+
+
+async def test_email_disposable_and_no_mx_no_gravatar():
+    async def get(url, params=None, headers=None, timeout=10):
+        if "gravatar" in url:
+            r = MagicMock()
+            r.status_code = 404
+            return r
+        return _resp({"Answer": []})  # no MX
+
+    result = await EmailProvider(client=_client(get)).lookup("throwaway@mailinator.com", "EmailAddress")
+    assert result.properties["disposable"] is True
+    assert result.properties["has_mx"] is False
+    assert result.properties["gravatar"] is False
+
+
+async def test_email_without_domain_is_empty():
+    async def get(url, **k):
+        raise AssertionError("should not be called for a domain-less value")
+
+    result = await EmailProvider(client=_client(get)).lookup("notanemail", "EmailAddress")
+    assert result.properties == {}
+
+
+async def test_email_tolerates_malformed_mx():
+    # A wrong-shaped DoH Answer (string/non-dict elements) must not raise — the
+    # domain still resolves, has_mx just comes back False.
+    async def get(url, params=None, headers=None, timeout=10):
+        if "gravatar" in url:
+            r = MagicMock()
+            r.status_code = 404
+            return r
+        return _resp({"Answer": "not-a-list"})
+
+    result = await EmailProvider(client=_client(get)).lookup("a@b.com", "EmailAddress")
+    assert result.properties["email_domain"] == "b.com"
+    assert result.properties["has_mx"] is False
 
 
 # --- malformed JSON must not raise out of lookup (clean empty result) -------

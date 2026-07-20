@@ -8,6 +8,7 @@ so the registry is populated.
 from intel_platform.enrichment.providers import (  # noqa: F401
     certs,
     dns,
+    email,
     geoip,
     kev,
     nvd,
