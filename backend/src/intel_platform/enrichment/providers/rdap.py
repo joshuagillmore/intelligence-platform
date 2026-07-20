@@ -62,12 +62,17 @@ class RDAPProvider(EnrichmentProvider):
         except Exception:
             return EnrichmentResult(source_url=url)
 
+        if not isinstance(data, dict):
+            return EnrichmentResult(source_url=url)
         entities = data.get("entities", []) or []
         events = data.get("events", []) or []
 
         if entity_type == "IPAddress":
             props = {
-                "asn": data.get("name", "") or data.get("handle", ""),
+                # NOT `asn` — geoip owns that field on the IPAddress node; use a
+                # distinct key so a full Investigate doesn't let the two clobber
+                # each other via SET n += props.
+                "net_name": data.get("name", "") or data.get("handle", ""),
                 "registrant": _entity_name(entities, "registrant")
                 or _entity_name(entities, "administrative"),
             }

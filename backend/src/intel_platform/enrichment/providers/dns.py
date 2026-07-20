@@ -48,6 +48,8 @@ class DNSProvider(EnrichmentProvider):
                 data = resp.json()
             except Exception:
                 continue
+            if not isinstance(data, dict):
+                continue
             values = [
                 str(a.get("data", "")).strip('"')
                 for a in (data.get("Answer") or [])

@@ -43,6 +43,9 @@ class CertsProvider(EnrichmentProvider):
 
         if not isinstance(rows, list):
             return EnrichmentResult(source_url=_URL)
+        # crt.sh returns tens of thousands of rows for popular domains — cap to
+        # bound memory/CPU on an Investigate.
+        rows = rows[:5000]
 
         issuers: set[str] = set()
         sans: set[str] = set()

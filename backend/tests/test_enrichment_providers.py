@@ -140,3 +140,32 @@ async def test_certs_summary_and_siblings():
     siblings = [r.name for r in result.related]
     assert "www.evil.com" in siblings and "mail.evil.com" in siblings
     assert "evil.com" not in siblings  # the queried domain isn't its own sibling
+
+
+# --- RDAP for an IP writes net_name, not asn (geoip owns asn) ---------------
+
+async def test_rdap_ip_uses_net_name_not_asn():
+    async def get(url, timeout=15):
+        return _resp({"name": "LVLT-GOGL-8-8-8", "handle": "NET-8-8-8-0-1", "entities": []})
+
+    result = await RDAPProvider(client=_client(get)).lookup("8.8.8.8", "IPAddress")
+    assert result.properties.get("net_name") == "LVLT-GOGL-8-8-8"
+    assert "asn" not in result.properties  # must not clobber geoip's asn field
+
+
+# --- malformed JSON must not raise out of lookup (clean empty result) -------
+
+async def test_providers_tolerate_malformed_json():
+    async def bad_get(url, params=None, headers=None, timeout=10):
+        return _resp(None)  # not the expected dict/list shape
+
+    for provider_cls, etype in (
+        (DNSProvider, "Domain"),
+        (GeoIPProvider, "IPAddress"),
+        (NVDProvider, "Vulnerability"),
+        (RDAPProvider, "IPAddress"),
+        (CertsProvider, "Domain"),
+    ):
+        result = await provider_cls(client=_client(bad_get)).lookup("x", etype)
+        assert result.properties == {}
+        assert result.related == []

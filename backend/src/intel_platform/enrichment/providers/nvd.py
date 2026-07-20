@@ -67,6 +67,8 @@ class NVDProvider(EnrichmentProvider):
         except Exception:
             return EnrichmentResult(source_url=_URL)
 
+        if not isinstance(data, dict):
+            return EnrichmentResult(source_url=_URL)
         vulns = data.get("vulnerabilities") or []
         if not vulns:
             return EnrichmentResult(raw=data, source_url=_URL)

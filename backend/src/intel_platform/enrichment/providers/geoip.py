@@ -40,6 +40,8 @@ class GeoIPProvider(EnrichmentProvider):
         except Exception:
             return EnrichmentResult(source_url=url)
 
+        if not isinstance(data, dict):
+            return EnrichmentResult(source_url=url)
         if data.get("status") != "success":
             return EnrichmentResult(raw=data, source_url=url)
 
