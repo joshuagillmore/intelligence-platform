@@ -9,6 +9,8 @@ instance rate-limits hard and should not be used for bulk).
 """
 from __future__ import annotations
 
+from intel_platform.config import settings
+
 # (category, Overpass tag selector) — the query unions all of these `around` the
 # point; the category is re-derived from each result's tags in _categorize().
 _SELECTORS = [
@@ -63,7 +65,10 @@ async def nearby_features(client, base_url: str, lat: float, lon: float,
     """
     query = _build_query(lat, lon, radius)
     try:
-        resp = await client.post(base_url, data={"data": query}, timeout=30)
+        resp = await client.post(
+            base_url, data={"data": query},
+            headers={"User-Agent": settings.geo_user_agent}, timeout=30,
+        )
         data = resp.json()
     except Exception:
         return []

@@ -97,8 +97,9 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
         const map = L.default.map(mapRef.current).setView([20, 40], 3);
 
         // Basemap / imagery switcher — dark default, plus streets, topo, and
-        // keyless recent satellite (EOX Sentinel-2 cloudless, non-commercial +
-        // attribution). All attributions carried per each source's terms.
+        // keyless satellite (EOX Sentinel-2 cloudless 2016, CC BY 4.0 —
+        // commercial-safe, unlike the NC-licensed recent mosaics). All
+        // attributions carried per each source's terms.
         const baseLayers = {
           Dark: L.default.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -111,8 +112,8 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
             attribution: 'Map data: &copy; OpenStreetMap, SRTM | &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)',
             maxZoom: 17,
           }),
-          Satellite: L.default.tileLayer('https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg', {
-            attribution: 'Sentinel-2 cloudless &copy; <a href="https://s2maps.eu">EOX</a> (Copernicus Sentinel data)',
+          Satellite: L.default.tileLayer('https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2016_3857/default/g/{z}/{y}/{x}.jpg', {
+            attribution: 'Sentinel-2 cloudless 2016 &copy; <a href="https://s2maps.eu">EOX</a> (CC BY 4.0, Copernicus Sentinel data)',
             maxZoom: 16,
           }),
         };
