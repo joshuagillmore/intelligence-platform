@@ -208,6 +208,7 @@ async def test_related_entity_invokes_writer():
 def test_default_writer_creates_node_and_edge():
     # The built-in graph writer upserts the related node and its typed edge.
     store = MagicMock()
+    store.find_entity_by_exact_name = MagicMock(return_value=None)
     store.search_entity_by_name = MagicMock(return_value=[])
     store.create_entity = MagicMock(return_value={"id": "n2"})
     store.create_relationship = MagicMock(return_value={})
@@ -223,6 +224,24 @@ def test_default_writer_creates_node_and_edge():
     assert rel.rel_type == "RESOLVES_TO"
     assert rel.source_id == "e1" and rel.target_id == "n2"
     assert rel.method == "enrichment"
+
+
+def test_default_writer_dedupes_by_exact_name():
+    # A high-frequency parent (e.g. a country) must reuse the existing node via
+    # the deterministic exact-name lookup, not create a duplicate.
+    store = MagicMock()
+    store.find_entity_by_exact_name = MagicMock(return_value={"id": "existing-russia"})
+    store.create_entity = MagicMock()
+    store.create_relationship = MagicMock(return_value={})
+    svc = EnrichmentService(store, cache=_cache_miss())
+    svc._default_write_related(
+        {"id": "e1"},
+        [RelatedEntity(name="Russia", entity_type="Location", rel_type="BELONGS_TO")],
+        "test-p",
+    )
+    store.create_entity.assert_not_called()
+    rel = store.create_relationship.call_args[0][0]
+    assert rel.target_id == "existing-russia" and rel.rel_type == "BELONGS_TO"
 
 
 async def test_store_write_failure_is_isolated():

@@ -113,6 +113,25 @@ class GraphStore:
             )
             return [dict(record["n"]) for record in result]
 
+    def find_entity_by_exact_name(
+        self, project_id: str, name: str, entity_type: str | None = None,
+    ) -> dict | None:
+        """Deterministic case-insensitive exact-name match within a project.
+
+        Used to dedup enrichment-created related nodes (e.g. a country parent):
+        the fulltext top-N can miss a high-frequency name like "Russia", which
+        would spawn duplicate roll-up nodes. Optional entity_type narrows it.
+        """
+        cypher = "MATCH (n) WHERE n.project_id = $project_id AND toLower(n.name) = toLower($name)"
+        params: dict = {"project_id": project_id, "name": name}
+        if entity_type:
+            cypher += " AND n.entity_type = $entity_type"
+            params["entity_type"] = entity_type
+        cypher += " RETURN n LIMIT 1"
+        with self._driver.session() as session:
+            record = session.run(cypher, **params).single()
+            return dict(record["n"]) if record else None
+
     def search_entities(
         self, project_id: str, query: str = "", entity_type: str | None = None,
         limit: int = 50, offset: int = 0,

@@ -234,6 +234,16 @@ class EnrichmentService:
         from intel_platform.models.entities import Entity, EntityType
         from intel_platform.services.graph_builder import ENTITY_TYPE_MAP
 
+        # Deterministic exact-name dedup first — the fulltext top-N can miss a
+        # high-frequency name (e.g. a country), which would spawn duplicate
+        # roll-up nodes; fall back to the fuzzy candidate scan.
+        try:
+            exact = self.store.find_entity_by_exact_name(project_id, rel.name, rel.entity_type)
+        except Exception:
+            exact = None
+        if exact and exact.get("id"):
+            return exact.get("id")
+
         try:
             candidates = self.store.search_entity_by_name(project_id, rel.name, limit=5) or []
         except Exception:

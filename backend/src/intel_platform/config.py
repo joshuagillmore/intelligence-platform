@@ -84,6 +84,15 @@ class Settings(BaseSettings):
     # Enrichment egress goes through the collection proxy, never the LLM path.
     nvd_api_key: str = ""
 
+    # Geo enrichment (Nominatim geocoding, Overpass POIs) — all keyless. Public
+    # Nominatim caps at 1 req/s and REQUIRES a descriptive User-Agent (ToS);
+    # egress goes through the collection proxy. Base URLs are config-driven so a
+    # self-hosted Nominatim/Overpass is a .env swap (no bulk on the public ones).
+    geo_user_agent: str = "intel-platform/1.0 (geo enrichment)"
+    nominatim_base_url: str = "https://nominatim.openstreetmap.org"
+    overpass_base_url: str = "https://overpass-api.de/api/interpreter"
+    geonames_username: str = ""  # optional; enables the GeoNames admin ladder
+
     # LLM providers
     anthropic_api_key: str = ""
     openai_api_key: str = ""
