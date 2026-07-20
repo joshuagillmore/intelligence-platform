@@ -18,6 +18,7 @@ interface GeoLocation {
   entity_type?: string;
   geo_source?: string;
   mgrs?: string;
+  location_type?: string;
   properties?: Record<string, unknown>;
   relationships?: Array<{target_name: string; rel_type: string}>;
 }
@@ -168,9 +169,13 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
         ? Math.max(8, Math.min(28, 8 + t * 20))
         : Math.max(6, Math.min(16, (connCount || 1) * 2));
       const isSelected = selectedLocationId === loc.id;
-      // Colour by entity type (IPs, facilities, actors now distinct from places);
-      // heatMap mode keeps the connection-tier gradient.
-      const typeColor = (loc.entity_type && TYPE_COLOR_HEX[loc.entity_type]) || '#3b82f6';
+      // Colour by entity type (IPs, facilities, actors distinct from places);
+      // report-derived coordinate points get their own amber; heatMap mode keeps
+      // the connection-tier gradient.
+      const isCoord = loc.location_type === 'coordinate';
+      const typeColor = isCoord
+        ? '#eab308'
+        : ((loc.entity_type && TYPE_COLOR_HEX[loc.entity_type]) || '#3b82f6');
 
       const marker = L.circleMarker([lat, lng], {
         radius,
@@ -185,7 +190,7 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
         : (loc.geo_source || '');
       marker.bindPopup(
         `<div style="font-size:12px"><b>${esc(loc.name)}</b>` +
-        `${loc.entity_type ? `<br><span style="opacity:.7">${esc(loc.entity_type)}</span>` : ''}` +
+        `${loc.entity_type ? `<br><span style="opacity:.7">${esc(loc.entity_type)}${loc.location_type ? ` · ${esc(loc.location_type)}` : ''}</span>` : ''}` +
         `<br>Connections: ${connCount}<br>Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}` +
         `${loc.mgrs ? `<br>MGRS: ${esc(loc.mgrs)}` : ''}` +
         `${srcLabel ? `<br><i style="opacity:.7">${esc(srcLabel)}</i>` : ''}</div>`

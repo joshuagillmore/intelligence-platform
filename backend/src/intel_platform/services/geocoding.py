@@ -263,6 +263,7 @@ def geolocate_entities(store, project_id: str) -> list[dict]:
             "longitude": lng,
             "geocoded": lat is not None and lng is not None,
             "geo_source": source,
+            "location_type": entity.get("location_type", "") or "",
             "mgrs": mgrs,
             "properties": dict(entity),
         })
