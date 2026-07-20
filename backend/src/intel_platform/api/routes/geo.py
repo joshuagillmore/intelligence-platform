@@ -2,7 +2,7 @@ from collections import defaultdict
 from fastapi import APIRouter, Depends
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
-from intel_platform.services.geocoding import geocode_all_locations
+from intel_platform.services.geocoding import geolocate_entities
 from intel_platform.services.text_utils import normalize_datetime
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
@@ -73,8 +73,8 @@ def _compute_location_edges(locations: list[dict], store: GraphStore) -> list[di
 
 @router.get("/geo/locations")
 def get_geo_locations(project_id: str, store: GraphStore = Depends(get_graph_store)):
-    """Get all locations with coordinates, relationships, and inter-location edges."""
-    locations = geocode_all_locations(store, project_id)
+    """Get all geolocatable entities (places + IP/WHOIS geo) with relationships and edges."""
+    locations = geolocate_entities(store, project_id)
 
     # Enrich with relationships
     for loc in locations:
