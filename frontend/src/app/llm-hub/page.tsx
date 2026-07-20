@@ -4,6 +4,7 @@ import Sidebar from '@/components/Sidebar';
 import { llmApi, personasApi } from '@/lib/api';
 import { humanize } from '@/lib/format';
 import Markdown from '@/components/Markdown';
+import { useNotifications } from '@/components/NotificationProvider';
 
 interface Skill {
   name: string;
@@ -24,6 +25,7 @@ interface Persona {
 }
 
 export default function LlmHubPage() {
+  const { addNotification } = useNotifications();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -57,8 +59,13 @@ export default function LlmHubPage() {
       setSkills(arr);
     } catch (e) {
       console.error('Failed to load skills', e);
+      addNotification({
+        title: 'Failed to load skills',
+        message: 'Could not load analytical skills from the backend. Please try again.',
+        type: 'error',
+      });
     }
-  }, []);
+  }, [addNotification]);
 
   const loadPersonas = useCallback(async () => {
     try {
@@ -67,8 +74,13 @@ export default function LlmHubPage() {
       setActivePersona(res.data.active_persona || '');
     } catch (e) {
       console.error('Failed to load personas', e);
+      addNotification({
+        title: 'Failed to load personas',
+        message: 'Could not load personas from the backend. Please try again.',
+        type: 'error',
+      });
     }
-  }, []);
+  }, [addNotification]);
 
   useEffect(() => {
     loadSkills();
@@ -164,7 +176,7 @@ export default function LlmHubPage() {
   return (
     <div className="flex">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8 flex gap-6 h-screen overflow-hidden">
+      <main className="md:ml-56 flex-1 p-8 flex gap-6 h-screen overflow-hidden pt-16 md:pt-8">
 
         {/* Left Column: Analytical Skills */}
         <div className="w-72 flex-shrink-0 flex flex-col overflow-hidden">

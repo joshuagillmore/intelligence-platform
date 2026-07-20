@@ -5,6 +5,7 @@ import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
 import { watchlistApi } from '@/lib/api';
 import { TYPE_COLOR_CLASS as TYPE_COLORS } from '@/lib/entityStyles';
+import { useNotifications } from '@/components/NotificationProvider';
 
 interface WatchedEntity {
   id: string;
@@ -17,6 +18,7 @@ interface WatchedEntity {
 
 export default function WatchlistPage() {
   const { activeProject } = useProject();
+  const { addNotification } = useNotifications();
   const [entities, setEntities] = useState<WatchedEntity[]>([]);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -38,10 +40,15 @@ export default function WatchlistPage() {
       }
     } catch {
       console.error('Failed to load watchlist');
+      addNotification({
+        title: 'Failed to load watchlist',
+        message: 'Could not load watched entities for this project. Please try again.',
+        type: 'error',
+      });
     } finally {
       setLoading(false);
     }
-  }, [activeProject]);
+  }, [activeProject, addNotification]);
 
   useEffect(() => {
     loadWatchlist();
@@ -54,6 +61,11 @@ export default function WatchlistPage() {
       setEntities(prev => prev.filter(e => e.id !== entityId));
     } catch {
       console.error('Failed to remove from watchlist');
+      addNotification({
+        title: 'Failed to remove entity',
+        message: 'The entity could not be removed from the watchlist. Please try again.',
+        type: 'error',
+      });
     }
   }
 
@@ -61,7 +73,7 @@ export default function WatchlistPage() {
     return (
       <div className="flex">
         <Sidebar />
-        <main className="ml-56 flex-1 p-8">
+        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
           <h2 className="text-2xl font-bold mb-4">Watchlist</h2>
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
             <p className="text-lg mb-2">No Project Selected</p>
@@ -75,7 +87,7 @@ export default function WatchlistPage() {
   return (
     <div className="flex">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8">
+      <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold">Watchlist</h2>
           <span className="text-sm text-gray-400">{entities.length} watched entities</span>

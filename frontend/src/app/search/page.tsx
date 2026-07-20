@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
 import { searchApi } from '@/lib/api';
+import { TYPE_COLOR_CLASS } from '@/lib/entityStyles';
 
 interface SearchEntry {
   id: string;
@@ -21,20 +22,12 @@ interface SearchResults {
   total: number;
 }
 
-const TYPE_COLORS: Record<string, string> = {
-  Person: 'bg-blue-600',
-  Organization: 'bg-purple-600',
-  Location: 'bg-green-600',
-  Event: 'bg-yellow-600',
-  Document: 'bg-orange-600',
-  Report: 'bg-red-600',
-  Weapon: 'bg-rose-700',
-  Vehicle: 'bg-teal-600',
-};
+// Entity/type colors come from the SSOT in '@/lib/entityStyles' so Person is
+// orange (etc.) consistently across every view.
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<div className="flex"><Sidebar /><main className="ml-56 flex-1 p-8"><p className="text-gray-400">Loading...</p></main></div>}>
+    <Suspense fallback={<div className="flex"><Sidebar /><main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8"><p className="text-gray-400">Loading...</p></main></div>}>
       <SearchPageContent />
     </Suspense>
   );
@@ -77,14 +70,14 @@ function SearchPageContent() {
   }
 
   function badgeColor(type: string) {
-    return TYPE_COLORS[type] || 'bg-gray-600';
+    return TYPE_COLOR_CLASS[type] || 'bg-gray-500';
   }
 
   if (!activeProject) {
     return (
       <div className="flex">
         <Sidebar />
-        <main className="ml-56 flex-1 p-8">
+        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
           <h2 className="text-2xl font-bold mb-4">Search</h2>
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
             <p>Select a project first to search.</p>
@@ -97,7 +90,7 @@ function SearchPageContent() {
   return (
     <div className="flex">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8">
+      <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
         <h2 className="text-2xl font-bold mb-2">Search Results</h2>
         <p className="text-sm text-gray-400 mb-6">
           {query ? (

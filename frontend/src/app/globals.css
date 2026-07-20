@@ -2,7 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Inter + JetBrains Mono are self-hosted via next/font (see app/layout.tsx),
+   wired through the --font-inter / --font-jetbrains-mono CSS variables that
+   tailwind.config.ts references. Only the Material Symbols icon font is still
+   loaded from the Google CDN via a <link> in layout.tsx. */
 
 body {
   min-height: 100vh;

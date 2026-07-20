@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { APP_NAME, APP_TAGLINE } from '@/lib/branding';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -40,8 +41,8 @@ export default function LoginPage() {
     <div className="min-h-screen bg-navy-900 flex items-center justify-center">
       <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-accent-blue">Intel Platform</h1>
-          <p className="text-sm text-gray-500 mt-1">Intelligence Analyst Workbench</p>
+          <h1 className="text-2xl font-bold text-accent-blue tracking-tight">{APP_NAME}</h1>
+          <p className="text-sm text-gray-500 mt-1">{APP_TAGLINE}</p>
         </div>
         <form onSubmit={handleLogin}>
           <div className="mb-4">
@@ -74,7 +75,6 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-        <p className="text-xs text-gray-600 text-center mt-6">Default: admin / admin</p>
       </div>
     </div>
   );

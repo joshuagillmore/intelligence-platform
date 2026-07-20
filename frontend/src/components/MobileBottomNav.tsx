@@ -69,7 +69,7 @@ export default function MobileBottomNav() {
                   href={page.href}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${
                     active
-                      ? 'bg-[#3b82f6]/10 text-[#3b82f6]'
+                      ? 'bg-accent-blue/10 text-accent-blue'
                       : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
                   }`}
                 >
@@ -92,13 +92,15 @@ export default function MobileBottomNav() {
         {/* Hamburger menu button */}
         <button
           onClick={() => setMenuOpen(!menuOpen)}
+          aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          aria-expanded={menuOpen}
           className={`flex flex-col items-center justify-center px-3 py-1.5 rounded-xl transition-all active:scale-95 duration-150 ${
             menuOpen
-              ? 'text-[#3b82f6] bg-[#3b82f6]/10'
+              ? 'text-accent-blue bg-accent-blue/10'
               : 'text-gray-500 opacity-60 hover:text-blue-300'
           }`}
         >
-          <span className="material-symbols-outlined text-[22px]">
+          <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
             {menuOpen ? 'close' : 'menu'}
           </span>
           <span className="text-[10px] font-medium tracking-wide mt-0.5">More</span>
@@ -113,7 +115,7 @@ export default function MobileBottomNav() {
               href={tab.href}
               className={`flex flex-col items-center justify-center px-3 py-1.5 rounded-xl transition-all active:scale-95 duration-150 ${
                 active
-                  ? 'text-[#3b82f6] bg-[#3b82f6]/10'
+                  ? 'text-accent-blue bg-accent-blue/10'
                   : 'text-gray-500 opacity-60 hover:text-blue-300'
               }`}
             >
