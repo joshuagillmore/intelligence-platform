@@ -69,3 +69,12 @@ async def test_geocode_tolerates_malformed_json():
 
     result = await GeocodeProvider(client=_client(get)).lookup("x", "Location")
     assert result.properties == {}
+
+
+async def test_geocode_tolerates_non_dict_hit():
+    # A JSON list whose element isn't a dict (or a string address) must not raise.
+    async def get(url, params=None, headers=None, timeout=15):
+        return _resp(["not-a-dict"])
+
+    result = await GeocodeProvider(client=_client(get)).lookup("x", "Location")
+    assert result.properties == {}

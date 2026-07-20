@@ -79,7 +79,7 @@ class GeocodeProvider(EnrichmentProvider):
         except Exception:
             return EnrichmentResult(source_url=url)
 
-        if not isinstance(data, list) or not data:
+        if not isinstance(data, list) or not data or not isinstance(data[0], dict):
             return EnrichmentResult(source_url=url)
         hit = data[0]
         try:
@@ -89,7 +89,8 @@ class GeocodeProvider(EnrichmentProvider):
         if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
             return EnrichmentResult(source_url=url, raw=hit)
 
-        admin = _admin_fields(hit.get("address", {}) or {})
+        address = hit.get("address")
+        admin = _admin_fields(address if isinstance(address, dict) else {})
         props = {
             "latitude": lat,
             "longitude": lon,
