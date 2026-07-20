@@ -39,11 +39,22 @@ interface GeoMapProps {
 }
 
 function getLat(loc: GeoLocation): number | null {
-  return (loc.latitude ?? loc.lat ?? (loc.properties?.latitude as number | undefined)) || null;
+  // `== null`, not `|| null` — a real 0 (equator) must not be dropped.
+  const v = loc.latitude ?? loc.lat ?? (loc.properties?.latitude as number | undefined);
+  return v == null ? null : v;
 }
 
 function getLng(loc: GeoLocation): number | null {
-  return (loc.longitude ?? loc.lng ?? (loc.properties?.longitude as number | undefined)) || null;
+  const v = loc.longitude ?? loc.lng ?? (loc.properties?.longitude as number | undefined);
+  return v == null ? null : v;
+}
+
+// Escape strings interpolated into leaflet popup HTML — entity names come from
+// scraped documents (attacker-influenceable), and this repo is going public.
+function esc(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string),
+  );
 }
 
 export default function GeoMap({ locations, connectionLines = [], onLocationClick, selectedLocationId, showRelationships = true, heatMap = false }: GeoMapProps) {
@@ -172,10 +183,10 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
         ? 'IP geolocation (approximate)'
         : (loc.geo_source || '');
       marker.bindPopup(
-        `<div style="font-size:12px"><b>${loc.name}</b>` +
-        `${loc.entity_type ? `<br><span style="opacity:.7">${loc.entity_type}</span>` : ''}` +
+        `<div style="font-size:12px"><b>${esc(loc.name)}</b>` +
+        `${loc.entity_type ? `<br><span style="opacity:.7">${esc(loc.entity_type)}</span>` : ''}` +
         `<br>Connections: ${connCount}<br>Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}` +
-        `${srcLabel ? `<br><i style="opacity:.7">${srcLabel}</i>` : ''}</div>`
+        `${srcLabel ? `<br><i style="opacity:.7">${esc(srcLabel)}</i>` : ''}</div>`
       );
 
       if (onLocationClick) {

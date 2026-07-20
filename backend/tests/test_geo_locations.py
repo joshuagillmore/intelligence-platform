@@ -32,7 +32,19 @@ def test_extract_coords_unplaceable(monkeypatch):
     assert _extract_coords({"name": "Nowhere-XYZ"}) == (None, None, "")
 
 
-def test_geolocate_entities_includes_ip_and_persists(monkeypatch):
+def test_extract_coords_rejects_out_of_range():
+    # A garbage blob (lat 999) must not render off-map — falls through to unplaceable.
+    blob = json.dumps({"lat": 999, "lon": 4.9})
+    assert _extract_coords({"entity_type": "IPAddress", "geolocation": blob}) == (None, None, "")
+
+
+def test_extract_coords_keeps_null_island():
+    # A real 0.0 (equator/prime meridian) is valid, not "missing".
+    lat, lng, src = _extract_coords({"latitude": 0.0, "longitude": 0.0})
+    assert (lat, lng) == (0.0, 0.0) and src == "persisted"
+
+
+def test_geolocate_entities_resolves_ip_and_places_without_writing(monkeypatch):
     monkeypatch.setattr(
         geocoding, "geocode_location",
         lambda name: (55.75, 37.62) if name == "Moscow" else None,
@@ -53,5 +65,5 @@ def test_geolocate_entities_includes_ip_and_persists(monkeypatch):
     assert out["ip1"]["geocoded"] is True and out["ip1"]["geo_source"] == "geoip"
     assert out["loc1"]["geocoded"] is True and out["loc1"]["geo_source"] == "gazetteer"
     assert out["loc2"]["geocoded"] is False
-    # Newly-resolved coords are persisted once (ip1 + loc1, not the unplaceable loc2)
-    assert store.update_entity.call_count == 2
+    # Pure read — no write-back (persisting gazetteer coords would shadow G2's geocoder)
+    store.update_entity.assert_not_called()

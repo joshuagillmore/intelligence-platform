@@ -18,7 +18,9 @@ def _compute_location_edges(locations: list[dict], store: GraphStore) -> list[di
     loc_id_to_name = {loc["id"]: loc["name"] for loc in locations if loc.get("id")}
     loc_id_to_coords = {}
     for loc in locations:
-        if loc.get("geocoded") and loc.get("latitude") and loc.get("longitude"):
+        # `is not None`, not truthiness — a real 0.0 (equator / prime meridian)
+        # must not be treated as missing.
+        if loc.get("latitude") is not None and loc.get("longitude") is not None:
             loc_id_to_coords[loc["id"]] = (loc["latitude"], loc["longitude"])
 
     # For each location, find connected non-location entities
@@ -88,8 +90,11 @@ def get_geo_locations(project_id: str, store: GraphStore = Depends(get_graph_sto
             ]
             loc["connection_count"] = len(rels)
 
-    # Compute location-to-location edges via shared entities
-    geo_edges = _compute_location_edges(locations, store)
+    # Compute location-to-location edges via shared entities. IPs are shown as
+    # markers but excluded here — edges are geographic (place↔place), not the
+    # co-occurrence noise IP↔place would add.
+    place_locations = [loc for loc in locations if loc.get("entity_type") != "IPAddress"]
+    geo_edges = _compute_location_edges(place_locations, store)
 
     return {
         "locations": locations,
