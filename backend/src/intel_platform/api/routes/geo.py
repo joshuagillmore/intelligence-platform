@@ -107,6 +107,26 @@ def get_geo_locations(project_id: str, store: GraphStore = Depends(get_graph_sto
     }
 
 
+@router.get("/geo/within")
+def get_within(
+    project_id: str, min_lat: float, min_lng: float, max_lat: float, max_lng: float,
+    store: GraphStore = Depends(get_graph_store),
+):
+    """Entities whose coordinates fall inside a bounding box — the "what's in
+    this area" (AOI) query. Reuses the same coordinate resolver as the map."""
+    inside = [
+        loc for loc in geolocate_entities(store, project_id)
+        if loc["latitude"] is not None and loc["longitude"] is not None
+        and min_lat <= loc["latitude"] <= max_lat
+        and min_lng <= loc["longitude"] <= max_lng
+    ]
+    return {
+        "entities": inside,
+        "count": len(inside),
+        "bbox": {"min_lat": min_lat, "min_lng": min_lng, "max_lat": max_lat, "max_lng": max_lng},
+    }
+
+
 @router.get("/geo/nearby/{entity_id}")
 async def get_nearby(entity_id: str, radius: int = 2000, store: GraphStore = Depends(get_graph_store)):
     """Nearby OSM features (airfields / military / ports / infrastructure /

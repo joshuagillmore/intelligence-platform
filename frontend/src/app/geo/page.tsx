@@ -90,6 +90,23 @@ export default function GeoPage() {
     }
   }
 
+  // AOI ("what's in this area") — query entities within the current map view.
+  const [bounds, setBounds] = useState<{ minLat: number; minLng: number; maxLat: number; maxLng: number } | null>(null);
+  const [areaResults, setAreaResults] = useState<GeoLocation[] | null>(null);
+  const [areaLoading, setAreaLoading] = useState(false);
+  async function queryArea() {
+    if (!bounds || !activeProject) return;
+    setAreaLoading(true);
+    try {
+      const { data } = await geoApiExtra.within(activeProject.id, bounds);
+      setAreaResults(data.entities || []);
+    } catch {
+      setAreaResults([]);
+    } finally {
+      setAreaLoading(false);
+    }
+  }
+
   // Map each geolocated node to a filterable category (IP / coordinate / place)
   // from its type + location_type, and show only the enabled categories.
   const geoCategory = (loc: GeoLocation): 'ip' | 'coordinate' | 'place' => {
@@ -338,6 +355,7 @@ export default function GeoPage() {
                 selectedLocationId={selectedLocation?.id}
                 showRelationships={layers.relationships}
                 heatMap={layers.heatMap}
+                onBoundsChange={setBounds}
               />
             )}
           </div>
@@ -382,6 +400,36 @@ export default function GeoPage() {
                 </button>
               </label>
             ))}
+
+            {/* AOI: what's in the current map view */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${C.border}` }}>
+              <button
+                onClick={queryArea}
+                disabled={areaLoading || !bounds}
+                className="w-full text-[11px] py-1.5 rounded font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+                style={{ background: C.primary, color: C.surface }}
+              >
+                {areaLoading ? 'Querying…' : 'Query visible area'}
+              </button>
+              {areaResults && (
+                <div className="mt-2">
+                  <div className="text-[10px] mb-1" style={{ color: C.textDim }}>
+                    {areaResults.length} in view
+                  </div>
+                  <div className="space-y-0.5 max-h-28 overflow-y-auto">
+                    {areaResults.slice(0, 25).map(r => (
+                      <button
+                        key={r.id}
+                        onClick={() => handleLocationClick(r)}
+                        className="block w-full text-left text-[10px] truncate text-gray-300 hover:opacity-80"
+                      >
+                        {r.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* ── Temporal Window (below layer control) ── */}
