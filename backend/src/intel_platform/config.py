@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     # workbench (the SPA fires many calls per page, and behind the local
     # frontend proxy they all share one client IP); tighten for public deploys.
     rate_limit_per_minute: int = 3000
+    # Trust X-Forwarded-For for the client IP used by rate limiting / login
+    # throttling. OFF by default: only enable behind a trusted reverse proxy
+    # (e.g. Railway), otherwise clients can spoof the header to evade limits.
+    # When on, the LEFTMOST X-Forwarded-For entry is used.
+    trust_proxy_headers: bool = False
     # Security hardening: when true, refuse to start with the built-in default
     # JWT secret / API key / admin password. Set REQUIRE_SECURE_AUTH=true on any
     # public or deployed instance.
@@ -39,9 +44,9 @@ class Settings(BaseSettings):
     extraction_mode: str = "hybrid"  # nlp | llm | hybrid
     extraction_llm_provider: str = ""  # "" = default provider; "ollama" = local
     extraction_llm_model: str = ""
-    spacy_model: str = "en_core_web_lg"
     coreference_enabled: bool = False
     entity_resolution_threshold: float = 0.92
+    spacy_model: str = "en_core_web_sm"
     extraction_confidence_min: float = 0.0
     # Storage-time floor for blanket co-occurrence relationships
     # (ASSOCIATED_WITH) specifically — these are a last-resort "these two

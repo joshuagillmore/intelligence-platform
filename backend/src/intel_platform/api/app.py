@@ -17,15 +17,45 @@ logger = logging.getLogger(__name__)
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
 
 
+def _insecure_defaults() -> list[str]:
+    """List the built-in default secrets still in effect (empty when hardened)."""
+    from intel_platform.api.auth import _DEFAULT_API_KEY, _IS_DEFAULT_SECRET
+    problems = []
+    if _IS_DEFAULT_SECRET:
+        problems.append("JWT_SECRET is the built-in default")
+    if settings.api_key == _DEFAULT_API_KEY:
+        problems.append("API_KEY is the built-in default (it will NOT authenticate)")
+    if not settings.default_admin_password:
+        problems.append("DEFAULT_ADMIN_PASSWORD is blank (a default 'admin' user may be seeded)")
+    return problems
+
+
+def _warn_insecure_defaults() -> None:
+    """Loud, always-on boot warning when any default secret is still in place.
+
+    Fires regardless of REQUIRE_SECURE_AUTH so a naive deploy is never silent.
+    Set strong secrets AND REQUIRE_SECURE_AUTH=true to fail-closed in production.
+    """
+    problems = _insecure_defaults()
+    if problems:
+        logger.warning(
+            "SECURITY: insecure default(s) in use: %s. Set strong JWT_SECRET / API_KEY / "
+            "DEFAULT_ADMIN_PASSWORD and REQUIRE_SECURE_AUTH=true before any real deployment.",
+            "; ".join(problems),
+        )
+
+
 def _enforce_secure_auth() -> None:
     """Fail-closed: refuse to start with built-in default secrets when REQUIRE_SECURE_AUTH is set."""
     if not settings.require_secure_auth:
         return
-    from intel_platform.api.auth import _IS_DEFAULT_SECRET
+    # Reuse the same detection, but the blank-admin-password case is enforced at
+    # seed time in _ensure_default_admin, so only the two hard secrets block boot here.
+    from intel_platform.api.auth import _DEFAULT_API_KEY, _IS_DEFAULT_SECRET
     problems = []
     if _IS_DEFAULT_SECRET:
         problems.append("JWT_SECRET is the built-in default")
-    if settings.api_key == "dev-api-key-change-in-production":
+    if settings.api_key == _DEFAULT_API_KEY:
         problems.append("API_KEY is the built-in default")
     if problems:
         raise RuntimeError(
@@ -37,6 +67,7 @@ def _enforce_secure_auth() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _warn_insecure_defaults()
     _enforce_secure_auth()
     driver = get_neo4j_driver()
     initialize_schema(driver)

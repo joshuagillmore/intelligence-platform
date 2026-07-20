@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
@@ -71,11 +72,17 @@ async def generate_report(
     """
     pipeline = GraphRAGPipeline(store)
 
-    entity_names: list[str] = []
-    for eid in req.entity_ids:
-        ent = store.get_entity(eid)
-        if ent:
-            entity_names.append(ent.get("name", eid))
+    # Neo4j driver is synchronous; offload the store reads so this async handler
+    # doesn't block the event loop.
+    def _resolve_entity_names() -> list[str]:
+        names: list[str] = []
+        for eid in req.entity_ids:
+            ent = store.get_entity(eid)
+            if ent:
+                names.append(ent.get("name", eid))
+        return names
+
+    entity_names: list[str] = await asyncio.to_thread(_resolve_entity_names)
 
     context = ""
     context_nodes = 0
@@ -88,7 +95,9 @@ async def generate_report(
             "target_entities": [{"id": eid} for eid in req.entity_ids],
             "intent": "report_generation",
         }
-        retrieved = pipeline.retrieve_context(understanding, req.project_id, max_hops=req.max_hops)
+        retrieved = await asyncio.to_thread(
+            pipeline.retrieve_context, understanding, req.project_id, req.max_hops
+        )
         context = pipeline.assemble_context(retrieved, token_budget=req.token_budget)
         context_nodes = retrieved.get("node_count", 0)
         context_edges = retrieved.get("edge_count", 0)

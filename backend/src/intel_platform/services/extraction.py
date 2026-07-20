@@ -848,7 +848,7 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
 
     # Use the extraction-specific provider selection (routes to local Ollama
     # when extraction_llm_provider=ollama; respects runtime overrides otherwise).
-    from intel_platform.api.routes.llm import _get_extraction_provider
+    from intel_platform.llm.providers import _get_extraction_provider
     provider = await _get_extraction_provider()
 
     if not provider:

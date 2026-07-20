@@ -237,7 +237,7 @@ async def _get_agentic_provider(get_provider):
 
     # Ollama is configured — check for cloud keys
     try:
-        from intel_platform.api.routes.llm import _resolve_api_key
+        from intel_platform.llm.providers import _resolve_api_key
         for cloud_provider in ["cohere", "anthropic", "openai"]:
             key = await _resolve_api_key(cloud_provider)
             if key:
@@ -331,8 +331,9 @@ def _validate_urls(urls: list) -> list[str]:
             hostname = (parsed.hostname or "").lower()
             # Reject internal/private/reserved. IP-literal hosts are checked
             # robustly via ipaddress (covers 10/8, 172.16/12, 192.168/16,
-            # 169.254/16, loopback, ::1, etc.); domain hosts fall through to the
-            # authoritative DNS-resolving guard in collection/scraper.py.
+            # 169.254/16, loopback, ::1, etc.). This is a fast pre-filter; the
+            # authoritative DNS-resolving guard runs inside crawl_urls (via
+            # collection/url_guard) and covers every fetch path.
             if hostname in ("localhost", "0.0.0.0"):
                 continue
             try:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import hashlib
 import time
 from collections import defaultdict
@@ -474,8 +475,9 @@ class TopicTreeService:
         """Stream an LLM-generated intelligence summary as SSE events."""
         global _summary_cache
 
-        # Get context for this node
-        context = self.get_topic_context(entity_id, project_id)
+        # Get context for this node. get_topic_context hits the synchronous Neo4j
+        # driver (and may rebuild clusters), so offload it off the event loop.
+        context = await asyncio.to_thread(self.get_topic_context, entity_id, project_id)
         excerpts = context.get("document_excerpts", [])
         keywords = context.get("keywords", [])
         entity_name = context.get("entity", {}).get("name", "Unknown")
@@ -492,7 +494,7 @@ class TopicTreeService:
             return
 
         # Build provider (centralized selection respecting runtime overrides)
-        from intel_platform.api.routes.llm import _get_provider
+        from intel_platform.llm.providers import _get_provider
         provider = await _get_provider()
 
         if not provider:

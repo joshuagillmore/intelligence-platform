@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from intel_platform.graph.store import GraphStore
 
 
@@ -283,8 +285,10 @@ class GraphRAGPipeline:
 
     async def query(self, query: str, project_id: str, max_hops: int = 2, token_budget: int = 8000) -> dict:
         """Full RAG pipeline: understand → retrieve → assemble → generate with LLM."""
-        understanding = self.understand_query(query, project_id)
-        retrieved = self.retrieve_context(understanding, project_id, max_hops=max_hops)
+        # understand_query and retrieve_context hit the synchronous Neo4j driver;
+        # offload them so this async pipeline doesn't block the event loop.
+        understanding = await asyncio.to_thread(self.understand_query, query, project_id)
+        retrieved = await asyncio.to_thread(self.retrieve_context, understanding, project_id, max_hops)
         context = self.assemble_context(retrieved, token_budget=token_budget)
 
         # Stage 4: LLM Generation — reason over the graph context
@@ -293,7 +297,7 @@ class GraphRAGPipeline:
         tokens_used = 0
 
         try:
-            from intel_platform.api.routes.llm import _get_provider
+            from intel_platform.llm.providers import _get_provider
             provider = await _get_provider()
 
             if provider:

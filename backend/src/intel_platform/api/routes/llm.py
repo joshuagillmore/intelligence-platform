@@ -3,7 +3,18 @@ import re
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from intel_platform.api.deps import verify_api_key
-from intel_platform.config import settings
+
+# Provider selection lives in intel_platform.llm.providers (single source of
+# truth). Re-exported here for backwards compatibility: existing call sites and
+# tests import these names from intel_platform.api.routes.llm, and llm_query
+# below patches through the module global _get_provider.
+from intel_platform.llm.providers import (  # noqa: F401
+    _cloud_provider_from_env,
+    _get_collection_provider,
+    _get_extraction_provider,
+    _get_provider,
+    _resolve_api_key,
+)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -21,93 +32,6 @@ class LLMQueryRequest(BaseModel):
 
 class SkillListResponse(BaseModel):
     skills: list[dict]
-
-
-async def _resolve_api_key(provider_name: str) -> str | None:
-    """Resolve an API key for a provider: check DB first, then env vars."""
-    from intel_platform.api.routes.admin_config import get_active_api_key
-    db_key = await get_active_api_key(provider_name)
-    if db_key:
-        return db_key
-    env_keys = {
-        "anthropic": settings.anthropic_api_key,
-        "openai": settings.openai_api_key,
-        "cohere": settings.cohere_api_key,
-    }
-    return env_keys.get(provider_name) or None
-
-
-async def _get_collection_provider():
-    """Provider for bulk collection work (source resolution + per-doc summaries).
-
-    Routes to a dedicated, rate-limit-free provider (local Ollama) when
-    ``collection_llm_provider`` is configured, so heavy collection runs don't
-    exhaust a rate-limited cloud key. Falls back to the default provider when
-    unset (e.g. deployments without a local Ollama).
-    """
-    prov = (getattr(settings, "collection_llm_provider", "") or "").strip()
-    if prov == "ollama":
-        from intel_platform.llm.ollama import OllamaProvider
-        model = (getattr(settings, "collection_llm_model", "") or "").strip() or "qwen2.5:14b"
-        return OllamaProvider(base_url=settings.ollama_base_url, model=model)
-    return await _get_provider()
-
-
-async def _get_extraction_provider():
-    """Provider for LLM/hybrid entity+relationship extraction.
-
-    Routes to a dedicated provider (local Ollama) when ``extraction_llm_provider``
-    is configured, so per-document extraction doesn't drain a rate-limited cloud
-    key. Falls back to the default provider when unset.
-    """
-    prov = (getattr(settings, "extraction_llm_provider", "") or "").strip()
-    if prov == "ollama":
-        from intel_platform.llm.ollama import OllamaProvider
-        model = (getattr(settings, "extraction_llm_model", "") or "").strip() or "qwen2.5:14b"
-        return OllamaProvider(base_url=settings.ollama_base_url, model=model)
-    return await _get_provider()
-
-
-async def _get_provider():
-    """Get the configured LLM provider, respecting runtime overrides and DB keys."""
-    from intel_platform.api.routes.admin_config import get_active_provider, get_active_model
-
-    provider_name = get_active_provider()
-    model = get_active_model()
-
-    if provider_name == "ollama":
-        from intel_platform.llm.ollama import OllamaProvider
-        return OllamaProvider(base_url=settings.ollama_base_url, model=model or settings.default_llm_model or "qwen3.5:9b-q4_K_M")
-
-    api_key = await _resolve_api_key(provider_name)
-    if api_key:
-        if provider_name == "cohere":
-            from intel_platform.llm.cohere_provider import CohereProvider
-            return CohereProvider(api_key=api_key, model=model or "command-a-plus-05-2026")
-        if provider_name == "anthropic":
-            from intel_platform.llm.anthropic import AnthropicProvider
-            return AnthropicProvider(api_key=api_key, model=model or "claude-sonnet-4-20250514")
-        if provider_name == "openai":
-            from intel_platform.llm.openai_provider import OpenAIProvider
-            return OpenAIProvider(api_key=api_key, model=model or "gpt-4o")
-
-    # Fallback: try any provider with a key (DB or env)
-    for fallback in ["cohere", "anthropic", "openai"]:
-        key = await _resolve_api_key(fallback)
-        if key:
-            if fallback == "cohere":
-                from intel_platform.llm.cohere_provider import CohereProvider
-                return CohereProvider(api_key=key)
-            if fallback == "anthropic":
-                from intel_platform.llm.anthropic import AnthropicProvider
-                return AnthropicProvider(api_key=key)
-            if fallback == "openai":
-                from intel_platform.llm.openai_provider import OpenAIProvider
-                return OpenAIProvider(api_key=key)
-
-    # Last resort: try Ollama
-    from intel_platform.llm.ollama import OllamaProvider
-    return OllamaProvider(base_url=settings.ollama_base_url, model=model or settings.default_llm_model or "qwen3.5:9b-q4_K_M")
 
 
 @router.post("/llm/query")

@@ -46,4 +46,11 @@ def decrypt(ciphertext: str) -> str:
     try:
         return f.decrypt(ciphertext.encode()).decode()
     except InvalidToken:
+        # Wrong/rotated ENCRYPTION_KEY, or the value predates encryption. We fall
+        # back to returning the input for plaintext-migration compatibility, but
+        # log it so a mismatched key isn't silently masking unreadable secrets.
+        _logger.warning(
+            "SECURITY: decrypt failed (InvalidToken) — returning value as-is. "
+            "If secrets were encrypted, ENCRYPTION_KEY is wrong or was rotated."
+        )
         return ciphertext
