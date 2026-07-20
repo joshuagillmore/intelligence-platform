@@ -43,6 +43,10 @@ class ApiKeyActivateRequest(BaseModel):
     provider: str
 
 
+class EnrichmentConfigRequest(BaseModel):
+    auto_enabled: bool
+
+
 # ---------------------------------------------------------------------------
 # In-memory state
 # ---------------------------------------------------------------------------
@@ -377,6 +381,38 @@ async def update_proxy_config(req: ProxyConfigRequest):
             row.value = mode
         await session.commit()
     return _proxy_state(mode)
+
+
+# ---------------------------------------------------------------------------
+# Cyber enrichment — selective auto-enrich toggle (persisted; OFF by default).
+# When on, newly-created cyber nodes get their cheap keyless lookups (DNS,
+# GeoIP, KEV) at ingest. The providers themselves are listed by
+# GET /api/enrichment/providers. On-demand Investigate is always available.
+# ---------------------------------------------------------------------------
+
+@router.get("/admin/enrichment")
+async def get_enrichment_config():
+    from intel_platform.enrichment.hook import auto_enrich_enabled
+    return {"auto_enabled": await auto_enrich_enabled()}
+
+
+@router.put("/admin/enrichment")
+async def update_enrichment_config(req: EnrichmentConfigRequest):
+    from intel_platform.enrichment.hook import AUTO_ENABLED_KEY
+
+    value = "true" if req.auto_enabled else "false"
+    factory = get_session_factory()
+    async with factory() as session:
+        result = await session.execute(
+            select(AppSetting).where(AppSetting.key == AUTO_ENABLED_KEY)
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            session.add(AppSetting(key=AUTO_ENABLED_KEY, value=value))
+        else:
+            row.value = value
+        await session.commit()
+    return {"auto_enabled": req.auto_enabled}
 
 
 # ---------------------------------------------------------------------------

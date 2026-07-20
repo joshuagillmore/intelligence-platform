@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     collection_llm_provider: str = ""
     collection_llm_model: str = ""
 
+    # Cyber enrichment (WHOIS/RDAP, DNS, GeoIP, cert transparency, CISA KEV, NVD).
+    # All providers are keyless; the NVD key is OPTIONAL and only raises NVD's
+    # rate limit. Auto-enrich of newly-seen cyber nodes is OFF by default and is
+    # toggled at runtime via AppSetting "enrichment_auto_enabled" (admin screen).
+    # Enrichment egress goes through the collection proxy, never the LLM path.
+    nvd_api_key: str = ""
+
     # LLM providers
     anthropic_api_key: str = ""
     openai_api_key: str = ""

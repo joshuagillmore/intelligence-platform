@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from intel_platform.collection.proxy import ProxiedClient
+from intel_platform.config import settings
 from intel_platform.enrichment.base import (
     EnrichmentProvider,
     EnrichmentResult,
@@ -61,8 +62,9 @@ class NVDProvider(EnrichmentProvider):
         self._client = client or ProxiedClient()
 
     async def lookup(self, value: str, entity_type: str) -> EnrichmentResult:
+        headers = {"apiKey": settings.nvd_api_key} if settings.nvd_api_key else None
         try:
-            resp = await self._client.get(_URL, params={"cveId": value}, timeout=20)
+            resp = await self._client.get(_URL, params={"cveId": value}, headers=headers, timeout=20)
             data = resp.json()
         except Exception:
             return EnrichmentResult(source_url=_URL)
