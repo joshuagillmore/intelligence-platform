@@ -1,8 +1,10 @@
 from collections import defaultdict
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.collection.proxy import ProxiedClient
+from intel_platform.config import settings
 from intel_platform.graph.store import GraphStore
-from intel_platform.services.geocoding import geolocate_entities
+from intel_platform.services.geocoding import _extract_coords, geolocate_entities
 from intel_platform.services.text_utils import normalize_datetime
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
@@ -102,6 +104,30 @@ def get_geo_locations(project_id: str, store: GraphStore = Depends(get_graph_sto
         "total": len(locations),
         "geocoded": sum(1 for loc in locations if loc.get("geocoded")),
         "edge_count": len(geo_edges),
+    }
+
+
+@router.get("/geo/nearby/{entity_id}")
+async def get_nearby(entity_id: str, radius: int = 2000, store: GraphStore = Depends(get_graph_store)):
+    """Nearby OSM features (airfields / military / ports / infrastructure /
+    government / neighbourhoods) around a geolocated entity — local GEOINT
+    context via Overpass. Best-effort: returns [] if the entity has no
+    coordinates or Overpass is unreachable."""
+    entity = store.get_entity(entity_id)
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    lat, lng, _ = _extract_coords(entity)
+    if lat is None:
+        return {"features": [], "count": 0, "center": None, "error": "entity has no coordinates"}
+    radius = max(100, min(radius, 20000))  # clamp 100m..20km
+
+    from intel_platform.services.geo.overpass import nearby_features
+    features = await nearby_features(ProxiedClient(), settings.overpass_base_url, lat, lng, radius)
+    return {
+        "features": features,
+        "count": len(features),
+        "center": {"lat": lat, "lng": lng},
+        "radius": radius,
     }
 
 

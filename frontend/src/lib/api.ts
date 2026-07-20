@@ -71,6 +71,12 @@ export const entitiesApi = {
   shortestPath: (id1: string, id2: string) => api.get(`/paths/${id1}/${id2}`),
 };
 
+// Nearby OSM features (Overpass) around a geolocated entity.
+export const geoApiExtra = {
+  nearby: (entityId: string, radius?: number) =>
+    api.get(`/geo/nearby/${encodeURIComponent(entityId)}`, { params: { radius } }),
+};
+
 // Cyber-observable enrichment (WHOIS/DNS/GeoIP/certs/KEV/CVSS) — the Investigate
 // action. Egress routes through the collection proxy (VPN/Tor), never the LLM path.
 export const enrichmentApi = {
