@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from intel_platform.services.geo.coordinates import latlng_to_mgrs
+
 # Simple geocoding lookup - hardcoded major cities/countries for offline use
 # In production, would use a geocoding API
 LOCATION_COORDS = {
@@ -241,6 +243,12 @@ def geolocate_entities(store, project_id: str) -> list[dict]:
     results = []
     for entity in entities:
         lat, lng, source = _extract_coords(entity)
+        mgrs = ""
+        if lat is not None:
+            try:
+                mgrs = latlng_to_mgrs(lat, lng)
+            except Exception:
+                mgrs = ""
         results.append({
             "id": entity.get("id"),
             "name": entity.get("name", ""),
@@ -249,6 +257,7 @@ def geolocate_entities(store, project_id: str) -> list[dict]:
             "longitude": lng,
             "geocoded": lat is not None and lng is not None,
             "geo_source": source,
+            "mgrs": mgrs,
             "properties": dict(entity),
         })
     return results

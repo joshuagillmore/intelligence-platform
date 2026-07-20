@@ -14,6 +14,7 @@ from intel_platform.data import (
 )
 from intel_platform.enrichment.observables import refang
 from intel_platform.models.type_hierarchy import normalize_entity_type
+from intel_platform.services.geo.coordinates import parse_coordinates
 
 logger = logging.getLogger(__name__)
 
@@ -474,6 +475,21 @@ def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
                     "name": date_str, "entity_type": "Date",
                     "source": doc_id, "method": "regex", "confidence": 0.95,
                 })
+
+    # Coordinates (MGRS / DMS / decimal-with-hemisphere) → placeable Location
+    # points carrying lat/lng, so a stated coordinate maps without a gazetteer.
+    for coord in parse_coordinates(text):
+        name = coord["raw"]
+        if name not in seen:
+            seen.add(name)
+            cyber_entities.append({
+                "name": name, "entity_type": "Location",
+                "source": doc_id, "method": "regex", "confidence": 0.9,
+                "attributes": {
+                    "latitude": coord["lat"], "longitude": coord["lng"],
+                    "location_type": "coordinate",
+                },
+            })
 
     return cyber_entities
 

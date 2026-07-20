@@ -65,6 +65,20 @@ def test_extract_email_observable():
     assert "admin@evil.com" in emails
 
 
+def test_extract_coordinate_becomes_placeable_location():
+    text = "Airstrike reported at 34°01'12\"N 118°15'00\"W overnight."
+    entities, _ = extract_entities_nlp(text, doc_id="doc-1")
+    coord_ents = [
+        e for e in entities
+        if e.get("attributes", {}).get("location_type") == "coordinate"
+    ]
+    assert coord_ents
+    e = coord_ents[0]
+    assert e["entity_type"] == "Location"
+    assert round(e["attributes"]["latitude"], 3) == 34.020
+    assert round(e["attributes"]["longitude"], 2) == -118.25
+
+
 def test_defanged_ioc_deduped_and_linked():
     # Refang runs before spaCy (not just inside the regex pass), so a defanged
     # domain yields one canonical node — no raw-literal junk that spaCy would

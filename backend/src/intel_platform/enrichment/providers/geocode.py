@@ -23,6 +23,7 @@ from intel_platform.enrichment.base import (
     RelatedEntity,
     register_provider,
 )
+from intel_platform.services.geo.coordinates import latlng_to_mgrs
 
 # Place-ish entity types this provider will geocode. Everything geographic is
 # currently "Location" (subtypes land in G4); the subtypes are listed so the
@@ -99,6 +100,10 @@ class GeocodeProvider(EnrichmentProvider):
             "location_type": hit.get("addresstype") or hit.get("type", ""),
             **{k: v for k, v in admin.items() if v},
         }
+        try:
+            props["mgrs"] = latlng_to_mgrs(lat, lon)
+        except Exception:
+            pass
 
         # Roll-up parents (BELONGS_TO): first-level admin + country, guarded
         # against linking a node to itself (e.g. geocoding a country).
