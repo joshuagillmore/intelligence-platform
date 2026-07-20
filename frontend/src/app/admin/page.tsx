@@ -69,6 +69,11 @@ export default function AdminPage() {
   const [vpnStatusLoading, setVpnStatusLoading] = useState(false);
   const [vpnActionLoading, setVpnActionLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [enrichAuto, setEnrichAuto] = useState(false);
+  const [enrichSaving, setEnrichSaving] = useState(false);
+  const [enrichProviders, setEnrichProviders] = useState<Array<{
+    name: string; supported_types: string[]; requires_key: boolean; has_key: boolean; auto: boolean;
+  }>>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelSwitching, setModelSwitching] = useState(false);
@@ -240,6 +245,30 @@ export default function AdminPage() {
     }
   }
 
+  const loadEnrichment = useCallback(async () => {
+    try {
+      const [cfg, provs] = await Promise.all([
+        adminApi.getEnrichmentConfig(),
+        adminApi.listEnrichmentProviders(),
+      ]);
+      setEnrichAuto(!!cfg.data?.auto_enabled);
+      setEnrichProviders(provs.data?.providers || []);
+    } catch { /* non-fatal */ }
+  }, []);
+
+  async function saveEnrichment(next: boolean) {
+    setEnrichSaving(true);
+    try {
+      await adminApi.setEnrichmentConfig(next);
+      setEnrichAuto(next);
+      setToast(`Auto-enrich ${next ? 'enabled' : 'disabled'}.`);
+    } catch {
+      setToast('Failed to update enrichment setting.');
+    } finally {
+      setEnrichSaving(false);
+    }
+  }
+
   useEffect(() => {
     loadHealth();
     loadProjects();
@@ -247,7 +276,8 @@ export default function AdminPage() {
     loadProxy();
     loadModels();
     loadKeys();
-  }, [loadHealth, loadProjects, loadConfig, loadProxy, loadModels, loadKeys]);
+    loadEnrichment();
+  }, [loadHealth, loadProjects, loadConfig, loadProxy, loadModels, loadKeys, loadEnrichment]);
 
   useEffect(() => {
     if (toast) {
@@ -658,6 +688,53 @@ export default function AdminPage() {
                 })}
               </div>
             )}
+          </div>
+
+          {/* Cyber Enrichment */}
+          <div className="bg-navy-800 border border-navy-600 rounded-lg p-6">
+            <h3 className="text-lg font-semibold mb-1">Cyber Enrichment</h3>
+            <p className="text-gray-500 text-sm mb-4">
+              Pull related cyber data (WHOIS/DNS/GeoIP/certs/CVSS/KEV) for observables. On-demand
+              Investigate is always available on an entity; auto-enrich runs the cheap keyless
+              lookups on newly-seen cyber nodes at ingest. Egress uses the collection proxy below.
+            </p>
+            <div className="space-y-4">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enrichAuto}
+                  disabled={enrichSaving}
+                  onChange={(e) => saveEnrichment(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm text-gray-300">
+                  Auto-enrich new cyber nodes at ingest{enrichSaving ? ' (saving…)' : ''}
+                </span>
+              </label>
+
+              <div>
+                <label className="text-xs text-gray-400 block mb-2">Providers</label>
+                {enrichProviders.length === 0 ? (
+                  <p className="text-gray-500 text-sm">No providers loaded.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {enrichProviders.map((p) => (
+                      <div
+                        key={p.name}
+                        className="flex items-center justify-between text-xs bg-navy-700 rounded px-3 py-1.5"
+                      >
+                        <span className="font-mono text-gray-200">{p.name}</span>
+                        <span className="text-gray-400">
+                          {p.supported_types.join(', ')}
+                          {p.auto ? ' · auto' : ''}
+                          {p.requires_key ? (p.has_key ? ' · key ✓' : ' · key needed') : ' · keyless'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Collection Egress */}

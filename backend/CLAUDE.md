@@ -26,6 +26,7 @@ just write `async def test_...`, no decorator needed).
 | `services/` | Business logic (18): extraction, enrichment, ingestion, graph_builder, graph_rag, hybrid_retrieval, vector_search, document_clustering, topics, assessment, summarization, geocoding, collection_planner, plan_executor, reports, mindmap_export, graph_cache, text_utils. |
 | `collection/` | Agentic web collection: `search` (ddgs) → `crawler`/`scraper` (crawl4ai) → `runner`/`executor` (CollectionRunner) → ingest. `tasks.py` = Celery. `agentic.py` = LLM-driven planning. |
 | `llm/` | Multi-provider layer: `anthropic`, `openai_provider`, `cohere_provider`, `ollama`, plus `embeddings`, `skills`, and the **`orchestrator`** (provider selection — the single source of truth). |
+| `enrichment/` | Cyber-observable enrichment: `observables` (refang/classify), `base` (provider ABC + registry), `cache` (Postgres cache + rate limiter), `service` (Investigate orchestrator), `hook` (auto-enrich), `providers/` (dns, geoip, kev, nvd, rdap, certs — keyless, egress via `ProxiedClient`). |
 | `graph/` | Neo4j: `schema.py` (`initialize_schema`), `store.py`. |
 | `db/` | Postgres (SQLAlchemy async): `engine.py` (`init_db`), `models.py`. |
 | `models/` | Pydantic v2 domain: `entities`, `relationships`, `type_hierarchy`, `requests`, `responses`. |

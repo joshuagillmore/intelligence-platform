@@ -402,6 +402,11 @@ export const adminApi = {
     api.put('/admin/api-keys/activate', { key_id: keyId, provider }),
   deleteApiKey: (keyId: string) =>
     api.delete(`/admin/api-keys/${keyId}`),
+  // Cyber enrichment: auto-enrich toggle + provider inventory
+  getEnrichmentConfig: () => api.get('/admin/enrichment'),
+  setEnrichmentConfig: (autoEnabled: boolean) =>
+    api.put('/admin/enrichment', { auto_enabled: autoEnabled }),
+  listEnrichmentProviders: () => api.get('/enrichment/providers'),
 };
 
 export const watchlistApi = {

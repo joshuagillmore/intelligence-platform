@@ -85,3 +85,37 @@ def test_refresh_400_on_unknown_provider(client, auth_header):
     finally:
         app.dependency_overrides.pop(get_graph_store, None)
     assert resp.status_code == 400
+
+
+def test_admin_enrichment_get(client, auth_header):
+    with patch("intel_platform.enrichment.hook.auto_enrich_enabled",
+               new=AsyncMock(return_value=True)):
+        resp = client.get("/api/admin/enrichment", headers=auth_header)
+    assert resp.status_code == 200
+    assert resp.json()["auto_enabled"] is True
+
+
+def test_admin_enrichment_put_persists(client, auth_header):
+    class _FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def execute(self, *a, **k):
+            result = MagicMock()
+            result.scalar_one_or_none = MagicMock(return_value=None)
+            return result
+
+        def add(self, obj):
+            pass
+
+        async def commit(self):
+            pass
+
+    with patch("intel_platform.api.routes.admin_config.get_session_factory",
+               return_value=lambda: _FakeSession()):
+        resp = client.put("/api/admin/enrichment", headers=auth_header, json={"auto_enabled": True})
+    assert resp.status_code == 200
+    assert resp.json()["auto_enabled"] is True

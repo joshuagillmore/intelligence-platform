@@ -91,7 +91,7 @@ async def test_kev_miss_marks_not_exploited():
 # --- NVD --------------------------------------------------------------------
 
 async def test_nvd_extracts_cvss_description_products():
-    async def get(url, params=None, timeout=20):
+    async def get(url, params=None, headers=None, timeout=20):
         return _resp({"vulnerabilities": [{"cve": {
             "id": "CVE-2021-44228",
             "descriptions": [{"lang": "en", "value": "Log4j RCE"}],
