@@ -648,6 +648,14 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
     if not text.strip():
         return [], []
 
+    # Refang defanged IOCs (evil[.]com, hxxp://, a[at]b[.]com) up front so spaCy,
+    # the cyber regex pass, and the sentence-matching that builds relationships all
+    # operate on the same canonical text. Doing this only inside
+    # _extract_cyber_entities left spaCy tagging the raw literal as a junk node and
+    # orphaned the IOC from relationships (its refanged name was not a substring of
+    # the raw sentence text). refang is idempotent, so the inner call is harmless.
+    text = refang(text)
+
     nlp = _get_nlp()
     doc = nlp(text)
 

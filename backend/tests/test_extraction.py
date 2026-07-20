@@ -63,3 +63,16 @@ def test_extract_email_observable():
     entities, _ = extract_entities_nlp(text, doc_id="doc-1")
     emails = [e["name"] for e in entities if e["entity_type"] == "EmailAddress"]
     assert "admin@evil.com" in emails
+
+
+def test_defanged_ioc_deduped_and_linked():
+    # Refang runs before spaCy (not just inside the regex pass), so a defanged
+    # domain yields one canonical node — no raw-literal junk that spaCy would
+    # otherwise tag as an Organization — and it can still participate in
+    # relationships because its canonical name is a substring of the sentence.
+    text = "Microsoft reported that the malware beaconed to evil[.]com during the intrusion."
+    entities, relationships = extract_entities_nlp(text, doc_id="doc-1")
+    names = [e["name"] for e in entities]
+    assert "evil.com" in names
+    assert "evil[.]com" not in names
+    assert any("evil.com" in (r["source_name"], r["target_name"]) for r in relationships)

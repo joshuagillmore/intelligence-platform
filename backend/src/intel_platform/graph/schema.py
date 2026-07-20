@@ -7,6 +7,8 @@ CONSTRAINTS = [
     "CREATE CONSTRAINT event_id IF NOT EXISTS FOR (n:Event) REQUIRE n.id IS UNIQUE",
     "CREATE CONSTRAINT ip_id IF NOT EXISTS FOR (n:IPAddress) REQUIRE n.id IS UNIQUE",
     "CREATE CONSTRAINT domain_id IF NOT EXISTS FOR (n:Domain) REQUIRE n.id IS UNIQUE",
+    "CREATE CONSTRAINT url_id IF NOT EXISTS FOR (n:URL) REQUIRE n.id IS UNIQUE",
+    "CREATE CONSTRAINT email_id IF NOT EXISTS FOR (n:EmailAddress) REQUIRE n.id IS UNIQUE",
     "CREATE CONSTRAINT hash_id IF NOT EXISTS FOR (n:Hash) REQUIRE n.id IS UNIQUE",
     "CREATE CONSTRAINT vuln_id IF NOT EXISTS FOR (n:Vulnerability) REQUIRE n.id IS UNIQUE",
     "CREATE CONSTRAINT ttp_id IF NOT EXISTS FOR (n:TTP) REQUIRE n.id IS UNIQUE",
@@ -25,13 +27,21 @@ INDEXES = [
     "CREATE INDEX org_project IF NOT EXISTS FOR (n:Organization) ON (n.project_id)",
     "CREATE INDEX ip_project IF NOT EXISTS FOR (n:IPAddress) ON (n.project_id)",
     "CREATE INDEX domain_project IF NOT EXISTS FOR (n:Domain) ON (n.project_id)",
+    "CREATE INDEX url_project IF NOT EXISTS FOR (n:URL) ON (n.project_id)",
+    "CREATE INDEX email_project IF NOT EXISTS FOR (n:EmailAddress) ON (n.project_id)",
     "CREATE INDEX actor_project IF NOT EXISTS FOR (n:ThreatActor) ON (n.project_id)",
     "CREATE INDEX doc_project IF NOT EXISTS FOR (n:Document) ON (n.project_id)",
 ]
 
+# NOTE: adding a label here does NOT retrofit an existing index — CREATE ... IF
+# NOT EXISTS is a no-op once entity_name_search exists. On a DB created before
+# URL/EmailAddress were added, drop and recreate the index so those labels are
+# indexed; otherwise cross-document dedup can't find URL/EmailAddress candidates
+# (search_entity_by_name short-circuits on fulltext hits before the CONTAINS
+# fallback) and duplicate nodes accumulate.
 FULLTEXT_INDEXES = [
     """CREATE FULLTEXT INDEX entity_name_search IF NOT EXISTS
-       FOR (n:Person|Organization|ThreatActor|Domain|IPAddress|Malware|Campaign|Location|Event|Hash|Vulnerability|TTP|Topic|Report|Assessment)
+       FOR (n:Person|Organization|ThreatActor|Domain|IPAddress|URL|EmailAddress|Malware|Campaign|Location|Event|Hash|Vulnerability|TTP|Topic|Report|Assessment)
        ON EACH [n.name]""",
 ]
 
