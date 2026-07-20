@@ -5,7 +5,11 @@ import { useState } from 'react';
 import { enrichmentApi } from '@/lib/api';
 import { TYPE_ICON } from '@/lib/entityStyles';
 
-const ENRICHABLE_TYPES = ['IPAddress', 'Domain', 'Vulnerability', 'EmailAddress'];
+const GEO_TYPES = [
+  'Location', 'Country', 'City', 'Region', 'Province', 'Governorate',
+  'District', 'Facility', 'Base', 'Port', 'Airbase', 'Embassy',
+];
+const ENRICHABLE_TYPES = ['IPAddress', 'Domain', 'Vulnerability', 'EmailAddress', ...GEO_TYPES];
 
 interface Props {
   entityId: string;
@@ -61,6 +65,9 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
   if (!ENRICHABLE_TYPES.includes(entityType)) return null;
 
   const enriched = properties.enriched === true;
+  const isGeo = GEO_TYPES.includes(entityType);
+  const title = isGeo ? 'Geo Enrichment' : 'Cyber Enrichment';
+  const actionVerb = isGeo ? 'Geolocate' : 'Investigate';
 
   async function run() {
     setBusy(true);
@@ -87,21 +94,23 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
     <div className="mt-4 border-t border-navy-700 pt-4">
       <div className="flex items-center justify-between mb-2">
         <h4 className="text-sm font-semibold text-gray-200 flex items-center gap-1">
-          <span>{TYPE_ICON[entityType] || '🔎'}</span> Cyber Enrichment
+          <span>{TYPE_ICON[entityType] || (isGeo ? '📍' : '🔎')}</span> {title}
         </h4>
         <button
           onClick={run}
           disabled={busy}
           className="text-xs px-2 py-1 rounded bg-cyan-600 hover:bg-cyan-500 text-white disabled:opacity-50"
         >
-          {busy ? 'Investigating…' : enriched ? 'Re-investigate' : 'Investigate'}
+          {busy ? `${actionVerb}…` : enriched ? `Re-${actionVerb.toLowerCase()}` : actionVerb}
         </button>
       </div>
 
       {error && <p className="text-xs text-red-400 mb-2">{error}</p>}
       {!enriched && !status && (
         <p className="text-xs text-gray-400">
-          No enrichment yet. Run Investigate to pull WHOIS / DNS / GeoIP / CVSS / KEV.
+          {isGeo
+            ? 'No geo data yet. Geolocate to resolve coordinates + admin hierarchy (country / province / county / city / neighbourhood / postal).'
+            : 'No enrichment yet. Run Investigate to pull WHOIS / DNS / GeoIP / CVSS / KEV.'}
         </p>
       )}
 
@@ -168,6 +177,22 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
         <Field label="Gravatar" value={properties.gravatar ? 'present' : 'none'} />
       )}
       {Array.isArray(mx) && mx.length > 0 && <Field label="MX" value={mx.slice(0, 4).join(', ')} />}
+
+      {/* Geography (Nominatim admin hierarchy) */}
+      {properties.country ? <Field label="Country" value={String(properties.country)} /> : null}
+      {properties.admin1 ? <Field label="State / Province" value={String(properties.admin1)} /> : null}
+      {properties.admin2 ? <Field label="County / District" value={String(properties.admin2)} /> : null}
+      {properties.city && properties.city !== properties.admin1 ? (
+        <Field label="City" value={String(properties.city)} />
+      ) : null}
+      {properties.neighbourhood ? <Field label="Neighbourhood" value={String(properties.neighbourhood)} /> : null}
+      {properties.postal_code ? <Field label="Postal" value={String(properties.postal_code)} /> : null}
+      {properties.geo_source === 'nominatim' && properties.latitude != null && properties.longitude != null ? (
+        <Field
+          label="Coords"
+          value={`${Number(properties.latitude).toFixed(4)}, ${Number(properties.longitude).toFixed(4)}`}
+        />
+      ) : null}
 
       {properties.enriched_at ? (
         <p className="text-[10px] text-gray-500 mt-2">Enriched {String(properties.enriched_at)}</p>

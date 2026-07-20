@@ -9,6 +9,7 @@ from intel_platform.enrichment.providers import (  # noqa: F401
     certs,
     dns,
     email,
+    geocode,
     geoip,
     kev,
     nvd,
