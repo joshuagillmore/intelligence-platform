@@ -14,7 +14,7 @@ Claude Code *online* branches alike. Read it first. `backend/CLAUDE.md` and
 ┌─────────────────────────┐        ┌──────────────────────────────┐
 │ frontend/  Next.js 14    │  HTTP  │ backend/  FastAPI (intel_    │
 │ App Router · TS · Tail-  │ ─────▶ │ platform)                    │
-│ wind · zustand · d3 +    │  axios │  • Neo4j        (graph)       │
+│ wind · d3 +              │  axios │  • Neo4j        (graph)       │
 │ leaflet                  │        │  • Postgres/pgvector (docs,   │
 └─────────────────────────┘        │    vectors, collection mgmt)  │
                                     │  • Redis + Celery (async)     │
@@ -44,7 +44,7 @@ Claude Code *online* branches alike. Read it first. `backend/CLAUDE.md` and
 | `docker-compose.yml` | Local full stack: neo4j, postgres, redis, ollama, backend, frontend |
 | `Dockerfile`, `start.sh`, `railway.*` | Production build + Railway deploy |
 | `.env.example` | Config surface — copy to `.env` (gitignored) |
-| `CODE_REVIEW_REPORT.md` | Last full review (2026-03-22); see "Known issues" |
+| `docs/code-review-2026-03-22.md` | Last full review (2026-03-22); see "Known issues" |
 
 ## Branching & integration (READ THIS)
 
@@ -107,8 +107,10 @@ docker compose up            # neo4j:7474/7687 · postgres:5432 · redis:6379
 - **Auth:** ships with default development credentials — any real deployment
   must set strong, non-default admin credentials and a real `JWT_SECRET` (never
   the `.env.example` placeholder).
-- **In-memory state** in the `watchlist` and `snapshots` routes is lost on
-  restart (not yet persisted).
+- **Watchlists and snapshots are persisted to Neo4j** (`Watchlist` / `Snapshot`
+  nodes) and survive restarts. The remaining in-memory state is the admin
+  `_llm_override` (provider/model override in `admin_config`), which resets on
+  restart — persist it if that matters.
 - **Collection scraper** validates URL scheme/host before fetching — preserve
   that validation when editing `collection/scraper.py`.
 - **Neo4j on Railway** — connection binding (IPv6) has bitten deploys before;
