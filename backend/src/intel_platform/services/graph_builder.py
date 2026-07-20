@@ -161,10 +161,13 @@ def build_graph_from_extractions(
         kwargs: dict = {"name": name, "project_id": project_id, "source_doc_id": entity_doc_id}
         attrs = ent_data.get("attributes", {})
         if attrs and cls:
-            # Only pass attributes that the Pydantic model accepts
+            # Only pass attributes that the Pydantic model accepts. `is not None`
+            # (not truthiness) so a real 0.0 latitude/longitude (equator / prime
+            # meridian) survives — setting a text field to "" just matches its
+            # default, so this is safe for non-numeric fields too.
             model_fields = set(cls.model_fields.keys())
             for k, v in attrs.items():
-                if k in model_fields and v:
+                if k in model_fields and v is not None:
                     kwargs[k] = v
 
         if cls:

@@ -187,12 +187,13 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
       ) : null}
       {properties.neighbourhood ? <Field label="Neighbourhood" value={String(properties.neighbourhood)} /> : null}
       {properties.postal_code ? <Field label="Postal" value={String(properties.postal_code)} /> : null}
-      {properties.geo_source === 'nominatim' && properties.latitude != null && properties.longitude != null ? (
+      {isGeo && properties.latitude != null && properties.longitude != null ? (
         <Field
           label="Coords"
-          value={`${Number(properties.latitude).toFixed(4)}, ${Number(properties.longitude).toFixed(4)}`}
+          value={`${Number(properties.latitude).toFixed(5)}, ${Number(properties.longitude).toFixed(5)}`}
         />
       ) : null}
+      {isGeo && properties.mgrs ? <Field label="MGRS" value={String(properties.mgrs)} /> : null}
 
       {properties.enriched_at ? (
         <p className="text-[10px] text-gray-500 mt-2">Enriched {String(properties.enriched_at)}</p>

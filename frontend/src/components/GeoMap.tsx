@@ -17,6 +17,7 @@ interface GeoLocation {
   connection_count?: number;
   entity_type?: string;
   geo_source?: string;
+  mgrs?: string;
   properties?: Record<string, unknown>;
   relationships?: Array<{target_name: string; rel_type: string}>;
 }
@@ -186,6 +187,7 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
         `<div style="font-size:12px"><b>${esc(loc.name)}</b>` +
         `${loc.entity_type ? `<br><span style="opacity:.7">${esc(loc.entity_type)}</span>` : ''}` +
         `<br>Connections: ${connCount}<br>Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}` +
+        `${loc.mgrs ? `<br>MGRS: ${esc(loc.mgrs)}` : ''}` +
         `${srcLabel ? `<br><i style="opacity:.7">${esc(srcLabel)}</i>` : ''}</div>`
       );
 

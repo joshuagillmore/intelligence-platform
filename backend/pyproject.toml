@@ -39,6 +39,7 @@ dependencies = [
     "pgvector~=0.3",
     "feedparser~=6.0",
     "cryptography>=45.0",
+    "pygeodesy>=26.7.17",
 ]
 
 [project.optional-dependencies]
