@@ -71,13 +71,20 @@ class EnrichmentService:
         # None -> use the built-in graph writer; injectable for tests.
         self._write_related_fn = write_related
 
-    async def enrich_entity(self, entity_id: str) -> dict:
-        """Run all eligible providers for an entity (the Investigate action)."""
+    async def enrich_entity(self, entity_id: str, *, only: set[str] | None = None,
+                            bypass_cache: bool = False) -> dict:
+        """Run eligible providers for an entity (the Investigate action).
+
+        ``only`` restricts to named providers (the per-source refresh button);
+        ``bypass_cache`` forces a fresh lookup.
+        """
         entity = self.store.get_entity(entity_id)
         if not entity:
             return {"entity_id": entity_id, "error": "not found", "providers": {}}
         providers = get_providers_for(entity.get("entity_type", ""), self.available_keys)
-        return await self._run(entity, providers)
+        if only is not None:
+            providers = [p for p in providers if p.name in only]
+        return await self._run(entity, providers, bypass_cache=bypass_cache)
 
     async def auto_enrich(self, entity: dict) -> dict:
         """Run only auto=True providers (the selective first-seen pass)."""
@@ -87,7 +94,7 @@ class EnrichmentService:
         ]
         return await self._run(entity, providers)
 
-    async def _run(self, entity: dict, providers) -> dict:
+    async def _run(self, entity: dict, providers, bypass_cache: bool = False) -> dict:
         entity_id = entity.get("id")
         entity_type = entity.get("entity_type", "")
         project_id = entity.get("project_id", "")
@@ -103,7 +110,7 @@ class EnrichmentService:
             # hit we still apply the cached result to THIS node, since a second
             # node with the same observable must get the same properties/edges.
             cached = None
-            if self.cache is not None:
+            if self.cache is not None and not bypass_cache:
                 try:
                     cached = await self.cache.get(provider.name, observable)
                 except Exception:
