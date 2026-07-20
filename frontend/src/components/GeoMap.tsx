@@ -146,6 +146,9 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
         leafletMapRef.current = null;
       }
     };
+    // Once-only map init; onBoundsChange is a stable useState setter from the
+    // parent, so capturing it here is intentional (no stale-closure bug).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update markers when locations change

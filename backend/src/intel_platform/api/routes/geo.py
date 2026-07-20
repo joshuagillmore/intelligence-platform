@@ -113,7 +113,11 @@ def get_within(
     store: GraphStore = Depends(get_graph_store),
 ):
     """Entities whose coordinates fall inside a bounding box — the "what's in
-    this area" (AOI) query. Reuses the same coordinate resolver as the map."""
+    this area" (AOI) query. Reuses the same coordinate resolver as the map.
+
+    Flat bbox: does not handle antimeridian crossing (a view straddling 180°
+    longitude would miss the far side) — fine for typical AOIs.
+    """
     inside = [
         loc for loc in geolocate_entities(store, project_id)
         if loc["latitude"] is not None and loc["longitude"] is not None

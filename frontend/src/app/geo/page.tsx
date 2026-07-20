@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
@@ -109,14 +109,29 @@ export default function GeoPage() {
 
   // Map each geolocated node to a filterable category (IP / coordinate / place)
   // from its type + location_type, and show only the enabled categories.
-  const geoCategory = (loc: GeoLocation): 'ip' | 'coordinate' | 'place' => {
+  const geoCategory = useCallback((loc: GeoLocation): 'ip' | 'coordinate' | 'place' => {
     if (loc.entity_type === 'IPAddress') return 'ip';
     const lt = String(loc.properties?.location_type ?? '').toLowerCase();
     return lt === 'coordinate' ? 'coordinate' : 'place';
-  };
-  const CAT_KEY = { place: 'places', coordinate: 'coordinates', ip: 'ips' } as const;
-  const visibleLocations = locations.filter(l => layers[CAT_KEY[geoCategory(l)]]);
-  const visibleIds = new Set(visibleLocations.map(l => l.id));
+  }, []);
+  // Memoized: panning fires setBounds -> page re-render; without stable prop
+  // references GeoMap would tear down and rebuild every marker each gesture.
+  const visibleLocations = useMemo(() => {
+    const key = { place: 'places', coordinate: 'coordinates', ip: 'ips' } as const;
+    return locations.filter(l => layers[key[geoCategory(l)]]);
+  }, [locations, layers, geoCategory]);
+  const visibleIds = useMemo(() => new Set(visibleLocations.map(l => l.id)), [visibleLocations]);
+  const connectionLines = useMemo(() => geoEdges
+    .filter(e => e.source_coords && e.target_coords
+      && (e.source_id ? visibleIds.has(e.source_id) : true)
+      && (e.target_id ? visibleIds.has(e.target_id) : true))
+    .map(e => ({
+      from: [e.source_coords![0], e.source_coords![1]] as [number, number],
+      to: [e.target_coords![0], e.target_coords![1]] as [number, number],
+      names: `${e.source_name} ↔ ${e.target_name}`,
+      weight: e.weight,
+      shared_entities: e.shared_entities,
+    })), [geoEdges, visibleIds]);
 
   /* ── chat overlay state ── */
   const [chatOpen, setChatOpen] = useState(false);
@@ -167,7 +182,7 @@ export default function GeoPage() {
     loadLocations();
   }, [loadLocations]);
 
-  async function handleLocationClick(loc: GeoLocation) {
+  const handleLocationClick = useCallback(async (loc: GeoLocation) => {
     if (selectedLocation?.id === loc.id) {
       setSelectedLocation(null);
       setSelectedRels([]);
@@ -186,7 +201,7 @@ export default function GeoPage() {
     } finally {
       setRelsLoading(false);
     }
-  }
+  }, [selectedLocation]);
 
   async function askGeoQuery() {
     if (!queryInput.trim() || !activeProject) return;
@@ -340,17 +355,7 @@ export default function GeoPage() {
             ) : (
               <GeoMap
                 locations={visibleLocations}
-                connectionLines={geoEdges
-                  .filter(e => e.source_coords && e.target_coords
-                    && (e.source_id ? visibleIds.has(e.source_id) : true)
-                    && (e.target_id ? visibleIds.has(e.target_id) : true))
-                  .map(e => ({
-                    from: [e.source_coords![0], e.source_coords![1]] as [number, number],
-                    to: [e.target_coords![0], e.target_coords![1]] as [number, number],
-                    names: `${e.source_name} ↔ ${e.target_name}`,
-                    weight: e.weight,
-                    shared_entities: e.shared_entities,
-                  }))}
+                connectionLines={connectionLines}
                 onLocationClick={handleLocationClick}
                 selectedLocationId={selectedLocation?.id}
                 showRelationships={layers.relationships}
