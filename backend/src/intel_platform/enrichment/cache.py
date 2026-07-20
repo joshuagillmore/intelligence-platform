@@ -30,9 +30,12 @@ class TokenBucket:
     """Classic token bucket. ``clock`` is injectable for deterministic tests."""
 
     def __init__(self, rate_per_sec: float, capacity: float, clock=time.monotonic):
-        self.rate = rate_per_sec
-        self.capacity = capacity
-        self.tokens = float(capacity)
+        # Clamp so a misconfigured provider (capacity 0, negative rate) can never
+        # make acquire() unsatisfiable. capacity must hold at least one token;
+        # rate 0 is allowed (no refill) and handled by acquire()'s inf guard.
+        self.rate = max(float(rate_per_sec), 0.0)
+        self.capacity = max(float(capacity), 1.0)
+        self.tokens = self.capacity
         self._clock = clock
         self._updated = clock()
 
@@ -77,8 +80,14 @@ class RateLimiter:
 
     async def acquire(self, key: str, *, rate: float, capacity: float, n: float = 1) -> None:
         bucket = self._bucket(key, rate, capacity)
+        n = min(n, bucket.capacity)  # never request more than the bucket can hold
         while not bucket.try_acquire(n):
-            await asyncio.sleep(bucket.time_until(n))
+            wait = bucket.time_until(n)
+            if wait == float("inf"):
+                # rate <= 0: the bucket can't refill — don't hang the coroutine,
+                # just proceed unthrottled rather than sleep forever.
+                break
+            await asyncio.sleep(wait)
 
 
 class EnrichmentCache:

@@ -7,20 +7,58 @@ related nodes/edges, and records the raw payload. ``auto_enrich`` is the
 selective, fire-and-forget pass run when a cyber node is first created — it runs
 only providers flagged ``auto``.
 
-Providers are isolated: one failing provider never fails the investigation.
-External calls happen inside the providers (through ``ProxiedClient``), so this
-orchestrator stays transport-agnostic.
+Providers are isolated: neither a provider's lookup nor the graph write it
+triggers can fail the rest of the investigation. External calls happen inside
+the providers (through ``ProxiedClient``), so this orchestrator stays
+transport-agnostic.
 """
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 from datetime import datetime, timezone
 
-from intel_platform.enrichment.base import get_providers_for
+from intel_platform.enrichment.base import (
+    EnrichmentResult,
+    RelatedEntity,
+    get_providers_for,
+)
 from intel_platform.enrichment.cache import RateLimiter
 from intel_platform.enrichment.observables import refang
 
 logger = logging.getLogger(__name__)
+
+# Node-identity keys a provider must never overwrite via SET n += $props — a
+# rogue/buggy Phase-3 provider returning these could move a node between
+# projects or change its type/name. Stripped before every merge.
+_PROTECTED_KEYS = frozenset({
+    "id", "name", "project_id", "entity_type", "entity_category",
+    "created_at", "source_doc_id",
+})
+
+
+def _result_to_cache(result: EnrichmentResult) -> dict:
+    """Serialize a full result so a cache hit can rebuild AND reapply it."""
+    return {
+        "properties": result.properties,
+        "related": [asdict(r) for r in result.related],
+        "source_url": result.source_url,
+        "raw": result.raw,
+    }
+
+
+def _result_from_cache(cached: dict) -> EnrichmentResult:
+    """Rebuild an EnrichmentResult from a cached payload (tolerant of shape)."""
+    try:
+        related = [RelatedEntity(**r) for r in (cached.get("related") or [])]
+    except Exception:
+        related = []
+    return EnrichmentResult(
+        properties=cached.get("properties") or {},
+        related=related,
+        source_url=cached.get("source_url", "") or "",
+        raw=cached.get("raw") or {},
+    )
 
 
 class EnrichmentService:
@@ -56,8 +94,14 @@ class EnrichmentService:
         observable = refang(entity.get("name", "")).strip()
         results: dict[str, dict] = {}
 
+        if not entity_id:
+            logger.warning("enrichment: entity has no id; skipping (name=%r)", entity.get("name"))
+            return {"entity_id": None, "observable": observable, "providers": {}}
+
         for provider in providers:
-            # Cache first — a re-seen IOC across documents costs nothing.
+            # The cache spares the external CALL, not the per-node write: on a
+            # hit we still apply the cached result to THIS node, since a second
+            # node with the same observable must get the same properties/edges.
             cached = None
             if self.cache is not None:
                 try:
@@ -65,7 +109,8 @@ class EnrichmentService:
                 except Exception:
                     logger.debug("enrichment cache get failed for %s", provider.name, exc_info=True)
             if cached is not None:
-                results[provider.name] = {"status": "cached"}
+                applied = self._safe_apply(entity, project_id, _result_from_cache(cached))
+                results[provider.name] = {"status": "cached" if applied else "error"}
                 continue
 
             try:
@@ -74,19 +119,23 @@ class EnrichmentService:
                         provider.name, rate=provider.rate, capacity=provider.capacity
                     )
                 result = await provider.lookup(observable, entity_type)
-            except Exception as exc:  # per-provider isolation
+            except Exception as exc:  # per-provider isolation (lookup)
                 logger.warning(
                     "enrichment provider %s failed for %s: %s", provider.name, observable, exc
                 )
-                results[provider.name] = {"status": "error", "error": str(exc)}
+                results[provider.name] = {"status": "error"}
                 continue
 
-            self._apply(entity, project_id, result)
+            # per-provider isolation (graph write) — a store failure here must
+            # not abort the remaining providers.
+            if not self._safe_apply(entity, project_id, result):
+                results[provider.name] = {"status": "error"}
+                continue
 
             if self.cache is not None:
                 try:
                     await self.cache.set(
-                        provider.name, observable, result.raw or result.properties,
+                        provider.name, observable, _result_to_cache(result),
                         entity_type=entity_type, source_url=result.source_url,
                         ttl=provider.cache_ttl,
                     )
@@ -101,9 +150,20 @@ class EnrichmentService:
 
         return {"entity_id": entity_id, "observable": observable, "providers": results}
 
+    def _safe_apply(self, entity: dict, project_id: str, result) -> bool:
+        """Apply a result to the node, isolating any store/graph write failure."""
+        try:
+            self._apply(entity, project_id, result)
+            return True
+        except Exception:
+            logger.warning(
+                "enrichment: applying result to %s failed", entity.get("id"), exc_info=True
+            )
+            return False
+
     def _apply(self, entity: dict, project_id: str, result) -> None:
         """Merge provider output onto the node + write discovered edges."""
-        props = dict(result.properties)
+        props = {k: v for k, v in result.properties.items() if k not in _PROTECTED_KEYS}
         props["enriched"] = True
         props["enriched_at"] = datetime.now(timezone.utc).isoformat()
         self.store.update_entity(entity.get("id"), props)

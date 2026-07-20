@@ -1,4 +1,5 @@
 """Tests for the enrichment cache + rate limiter (hermetic — no DB, no clock)."""
+import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -54,6 +55,14 @@ def test_rate_limiter_isolates_keys():
     assert rl.try_acquire("a", rate=1, capacity=1) is True
     assert rl.try_acquire("a", rate=1, capacity=1) is False  # a exhausted
     assert rl.try_acquire("b", rate=1, capacity=1) is True   # b independent
+
+
+async def test_rate_limiter_does_not_hang_on_zero_rate():
+    # A misconfigured provider (rate 0) must not make acquire() sleep forever:
+    # the first call drains the one token, the second must break out, not hang.
+    rl = RateLimiter()
+    await asyncio.wait_for(rl.acquire("p", rate=0, capacity=1), timeout=2)
+    await asyncio.wait_for(rl.acquire("p", rate=0, capacity=1), timeout=2)
 
 
 # --- EnrichmentCache get/set (mocked session) -------------------------------

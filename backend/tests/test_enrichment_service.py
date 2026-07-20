@@ -128,7 +128,7 @@ async def test_enrich_isolates_failing_provider():
     store.update_entity.assert_called()  # failure did not block the write
 
 
-async def test_enrich_uses_cache_and_skips_lookup():
+async def test_enrich_cache_hit_applies_without_lookup():
     class _SpyProvider(EnrichmentProvider):
         name = "spyprov"
         supported_types = {"IPAddress"}
@@ -136,19 +136,26 @@ async def test_enrich_uses_cache_and_skips_lookup():
 
         async def lookup(self, value, entity_type):
             _SpyProvider.called = True
-            return EnrichmentResult(properties={"x": 1})
+            return EnrichmentResult(properties={"asn": "AS-FRESH"})
 
     register_provider(_SpyProvider)
     store = _store_with_entity(
         {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
     )
     cache = MagicMock()
-    cache.get = AsyncMock(return_value={"cached": True})
+    cache.get = AsyncMock(return_value={
+        "properties": {"asn": "AS-CACHED"}, "related": [], "source_url": "", "raw": {},
+    })
     cache.set = AsyncMock()
     svc = EnrichmentService(store, write_related=MagicMock(), cache=cache)
     out = await svc.enrich_entity("e1")
+
     assert out["providers"]["spyprov"]["status"] == "cached"
     assert _SpyProvider.called is False  # cache hit -> no external lookup
+    # B2: the cached result is still applied to THIS node (not silently skipped)
+    _, props = store.update_entity.call_args[0]
+    assert props["asn"] == "AS-CACHED"
+    assert props["enriched"] is True
 
 
 async def test_auto_enrich_runs_only_auto_providers():
@@ -215,3 +222,40 @@ def test_default_writer_creates_node_and_edge():
     assert rel.rel_type == "RESOLVES_TO"
     assert rel.source_id == "e1" and rel.target_id == "n2"
     assert rel.method == "enrichment"
+
+
+async def test_store_write_failure_is_isolated():
+    # B1: a Neo4j write failure during apply must not abort the run or propagate
+    # out of enrich_entity — the provider is marked error, the call returns.
+    register_provider(_PropProvider)
+    store = _store_with_entity(
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+    )
+    store.update_entity = MagicMock(side_effect=RuntimeError("neo4j down"))
+    svc = EnrichmentService(store, write_related=MagicMock(), cache=_cache_miss())
+    out = await svc.enrich_entity("e1")  # must not raise
+    assert out["providers"]["propprov"]["status"] == "error"
+
+
+async def test_apply_strips_protected_identity_keys():
+    # S1: a provider returning node-identity keys must not clobber them.
+    class _EvilProvider(EnrichmentProvider):
+        name = "evilprov"
+        supported_types = {"IPAddress"}
+
+        async def lookup(self, value, entity_type):
+            return EnrichmentResult(properties={
+                "asn": "AS1", "id": "HACKED", "project_id": "other", "entity_type": "Malware",
+            })
+
+    register_provider(_EvilProvider)
+    store = _store_with_entity(
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+    )
+    svc = EnrichmentService(store, write_related=MagicMock(), cache=_cache_miss())
+    await svc.enrich_entity("e1")
+    _, props = store.update_entity.call_args[0]
+    assert props["asn"] == "AS1"
+    assert "id" not in props
+    assert "project_id" not in props
+    assert "entity_type" not in props
