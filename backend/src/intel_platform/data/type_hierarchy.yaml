@@ -50,6 +50,8 @@ Location:
 Cyber:
   - IPAddress
   - Domain
+  - URL
+  - EmailAddress
   - Hash
   - Vulnerability
   - TTP

@@ -26,9 +26,9 @@ _DEFAULT_HIERARCHY = {
         "Province", "District", "Territory",
     ],
     "Cyber": [
-        "IPAddress", "Domain", "Hash", "Vulnerability", "TTP",
-        "Malware", "Software", "Exploit", "Backdoor", "Botnet",
-        "C2Server", "Ransomware", "Trojan",
+        "IPAddress", "Domain", "URL", "EmailAddress", "Hash",
+        "Vulnerability", "TTP", "Malware", "Software", "Exploit",
+        "Backdoor", "Botnet", "C2Server", "Ransomware", "Trojan",
     ],
     "Equipment": [
         "Weapon", "Vehicle", "Hardware", "Technology", "Satellite",

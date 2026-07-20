@@ -14,6 +14,8 @@ class EntityType(str, Enum):
     EVENT = "Event"
     IP_ADDRESS = "IPAddress"
     DOMAIN = "Domain"
+    URL = "URL"
+    EMAIL_ADDRESS = "EmailAddress"
     HASH = "Hash"
     VULNERABILITY = "Vulnerability"
     TTP = "TTP"
@@ -120,6 +122,14 @@ class Domain(Entity):
     registrant: str = ""
     registration_date: str = ""
     dns_records: str = ""  # JSON string — Neo4j can't store nested dicts
+
+
+class URL(Entity):
+    entity_type: EntityType = EntityType.URL
+
+
+class EmailAddress(Entity):
+    entity_type: EntityType = EntityType.EMAIL_ADDRESS
 
 
 class Hash(Entity):
