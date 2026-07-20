@@ -57,6 +57,7 @@ export default function GeoPage() {
   const [queryResult, setQueryResult] = useState<string | null>(null);
   const [queryLoading, setQueryLoading] = useState(false);
   const [geoEdges, setGeoEdges] = useState<Array<{
+    source_id?: string; target_id?: string;
     source_coords?: number[]; target_coords?: number[];
     source_name: string; target_name: string;
     weight: number; shared_entities: string[];
@@ -77,11 +78,12 @@ export default function GeoPage() {
   // from its type + location_type, and show only the enabled categories.
   const geoCategory = (loc: GeoLocation): 'ip' | 'coordinate' | 'place' => {
     if (loc.entity_type === 'IPAddress') return 'ip';
-    const lt = String((loc.properties?.location_type ?? '') as string).toLowerCase();
+    const lt = String(loc.properties?.location_type ?? '').toLowerCase();
     return lt === 'coordinate' ? 'coordinate' : 'place';
   };
   const CAT_KEY = { place: 'places', coordinate: 'coordinates', ip: 'ips' } as const;
   const visibleLocations = locations.filter(l => layers[CAT_KEY[geoCategory(l)]]);
+  const visibleIds = new Set(visibleLocations.map(l => l.id));
 
   /* ── chat overlay state ── */
   const [chatOpen, setChatOpen] = useState(false);
@@ -304,7 +306,9 @@ export default function GeoPage() {
               <GeoMap
                 locations={visibleLocations}
                 connectionLines={geoEdges
-                  .filter(e => e.source_coords && e.target_coords)
+                  .filter(e => e.source_coords && e.target_coords
+                    && (e.source_id ? visibleIds.has(e.source_id) : true)
+                    && (e.target_id ? visibleIds.has(e.target_id) : true))
                   .map(e => ({
                     from: [e.source_coords![0], e.source_coords![1]] as [number, number],
                     to: [e.target_coords![0], e.target_coords![1]] as [number, number],

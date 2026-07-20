@@ -172,7 +172,7 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
       // Colour by entity type (IPs, facilities, actors distinct from places);
       // report-derived coordinate points get their own amber; heatMap mode keeps
       // the connection-tier gradient.
-      const isCoord = loc.location_type === 'coordinate';
+      const isCoord = (loc.location_type ?? (loc.properties?.location_type as string | undefined)) === 'coordinate';
       const typeColor = isCoord
         ? '#eab308'
         : ((loc.entity_type && TYPE_COLOR_HEX[loc.entity_type]) || '#3b82f6');
