@@ -36,5 +36,26 @@ def test_plain_number_pairs_are_not_coordinates():
     assert parse_coordinates("A ratio of 38.9 to 77 and a count of 12ab34.") == []
 
 
+def test_mgrs_requires_context():
+    # A bare MGRS-shaped token (part number / build id) with no coordinate
+    # keyword nearby must NOT be extracted (avoids junk Location nodes)...
+    assert parse_coordinates("Shipped serial 38SMB4483 today.") == []
+    # ...but an explicit parse (whole input is the value) accepts it.
+    coords = parse_coordinates("38SMB4483", require_context=False)
+    assert coords and coords[0]["format"] == "mgrs"
+
+
+def test_symbol_less_pair_needs_signal_or_context():
+    # "10N 20E" with no degree/fraction/context reads as a measurement.
+    assert parse_coordinates("The bracket takes 10N 20E of load.") == []
+    # With a coordinate keyword nearby it is accepted.
+    assert parse_coordinates("Coordinates 10N 20E were reported.")
+
+
+def test_null_island_coordinate_parses():
+    coords = parse_coordinates("Grid position 0N 10E on the line.")
+    assert any(round(c["lat"], 1) == 0.0 for c in coords)
+
+
 def test_empty():
     assert parse_coordinates("") == []

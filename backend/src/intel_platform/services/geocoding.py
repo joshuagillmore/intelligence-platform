@@ -1,8 +1,19 @@
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 
 from intel_platform.services.geo.coordinates import latlng_to_mgrs
+
+
+@lru_cache(maxsize=8192)
+def _mgrs_for(lat: float, lng: float) -> str:
+    """MGRS for a rounded lat/lng, cached across requests so a large map load
+    doesn't recompute hundreds of conversions every GET."""
+    try:
+        return latlng_to_mgrs(lat, lng)
+    except Exception:
+        return ""
 
 # Simple geocoding lookup - hardcoded major cities/countries for offline use
 # In production, would use a geocoding API
@@ -243,12 +254,7 @@ def geolocate_entities(store, project_id: str) -> list[dict]:
     results = []
     for entity in entities:
         lat, lng, source = _extract_coords(entity)
-        mgrs = ""
-        if lat is not None:
-            try:
-                mgrs = latlng_to_mgrs(lat, lng)
-            except Exception:
-                mgrs = ""
+        mgrs = _mgrs_for(round(lat, 4), round(lng, 4)) if lat is not None else ""
         results.append({
             "id": entity.get("id"),
             "name": entity.get("name", ""),
