@@ -93,6 +93,26 @@ class GraphStore:
                 graph_cache.invalidate(project_id)
         return node
 
+    def get_geolocatable_entities(self, project_id: str, limit: int = 2000) -> list[dict]:
+        """Nodes that can appear on the map: any Location-category node, an
+        IPAddress carrying a GeoIP `geolocation` blob, or any node already
+        carrying latitude/longitude. Superset of the old Location-only query so
+        IP/WHOIS geo (and future geocoded subtypes) surface on the map.
+        """
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (n) WHERE n.project_id = $project_id AND (
+                    n.entity_category = 'Location' OR n.entity_type = 'Location'
+                    OR (n.latitude IS NOT NULL AND n.longitude IS NOT NULL)
+                    OR (n.entity_type = 'IPAddress' AND n.geolocation IS NOT NULL AND n.geolocation <> '')
+                )
+                RETURN n LIMIT $limit
+                """,
+                project_id=project_id, limit=limit,
+            )
+            return [dict(record["n"]) for record in result]
+
     def search_entities(
         self, project_id: str, query: str = "", entity_type: str | None = None,
         limit: int = 50, offset: int = 0,

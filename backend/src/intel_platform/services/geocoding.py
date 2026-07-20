@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 # Simple geocoding lookup - hardcoded major cities/countries for offline use
 # In production, would use a geocoding API
 LOCATION_COORDS = {
@@ -185,4 +187,68 @@ def geocode_all_locations(store, project_id: str) -> list[dict]:
             result["longitude"] = None
             result["geocoded"] = False
         results.append(result)
+    return results
+
+
+def _valid_latlng(lat: float, lng: float) -> bool:
+    return -90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0
+
+
+def _extract_coords(entity: dict) -> tuple[float | None, float | None, str]:
+    """Resolve (lat, lng, source) for an entity, or (None, None, "") if unplaceable.
+
+    Precedence: persisted latitude/longitude on the node > a GeoIP `geolocation`
+    JSON blob (from the geoip enrichment provider) > the offline gazetteer by
+    name. Out-of-range coordinates are rejected (fall through to the next source).
+    """
+    lat, lng = entity.get("latitude"), entity.get("longitude")
+    if lat is not None and lng is not None:
+        try:
+            lat, lng = float(lat), float(lng)
+            if _valid_latlng(lat, lng):
+                return lat, lng, entity.get("geo_source") or "persisted"
+        except (TypeError, ValueError):
+            pass
+
+    blob = entity.get("geolocation")
+    if blob:
+        try:
+            geo = json.loads(blob) if isinstance(blob, str) else blob
+            glat, glng = geo.get("lat"), geo.get("lon")
+            if glat is not None and glng is not None:
+                glat, glng = float(glat), float(glng)
+                if _valid_latlng(glat, glng):
+                    return glat, glng, "geoip"
+        except (ValueError, TypeError, AttributeError):
+            pass
+
+    coords = geocode_location(entity.get("name", ""))
+    if coords and _valid_latlng(coords[0], coords[1]):
+        return coords[0], coords[1], "gazetteer"
+    return None, None, ""
+
+
+def geolocate_entities(store, project_id: str) -> list[dict]:
+    """Every entity in the project that can be placed on the map.
+
+    Unlike geocode_all_locations (Location names only), this includes IPAddress
+    nodes whose GeoIP `geolocation` blob carries lat/lon, and any node already
+    carrying coordinates. Coordinates are resolved on the fly (both the JSON
+    parse and the dict lookup are cheap) — this is a pure read with NO write-back:
+    persisting crude gazetteer coords here would shadow the real geocoder in G2.
+    """
+    entities = store.get_geolocatable_entities(project_id, limit=2000)
+    results = []
+    for entity in entities:
+        lat, lng, source = _extract_coords(entity)
+        results.append({
+            "id": entity.get("id"),
+            "name": entity.get("name", ""),
+            "entity_type": entity.get("entity_type", "Location"),
+            "latitude": lat,
+            "longitude": lng,
+            "geocoded": lat is not None and lng is not None,
+            "geo_source": source,
+            "properties": dict(entity),
+        })
     return results

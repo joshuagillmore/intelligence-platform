@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
+import { TYPE_COLOR_HEX } from '@/lib/entityStyles';
 
 // DO NOT import leaflet CSS at top level - it crashes SSR
 // import 'leaflet/dist/leaflet.css';
@@ -14,6 +15,8 @@ interface GeoLocation {
   geocoded?: boolean;
   connections?: number;
   connection_count?: number;
+  entity_type?: string;
+  geo_source?: string;
   properties?: Record<string, unknown>;
   relationships?: Array<{target_name: string; rel_type: string}>;
 }
@@ -36,11 +39,22 @@ interface GeoMapProps {
 }
 
 function getLat(loc: GeoLocation): number | null {
-  return (loc.latitude ?? loc.lat ?? (loc.properties?.latitude as number | undefined)) || null;
+  // `== null`, not `|| null` — a real 0 (equator) must not be dropped.
+  const v = loc.latitude ?? loc.lat ?? (loc.properties?.latitude as number | undefined);
+  return v == null ? null : v;
 }
 
 function getLng(loc: GeoLocation): number | null {
-  return (loc.longitude ?? loc.lng ?? (loc.properties?.longitude as number | undefined)) || null;
+  const v = loc.longitude ?? loc.lng ?? (loc.properties?.longitude as number | undefined);
+  return v == null ? null : v;
+}
+
+// Escape strings interpolated into leaflet popup HTML — entity names come from
+// scraped documents (attacker-influenceable), and this repo is going public.
+function esc(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string),
+  );
 }
 
 export default function GeoMap({ locations, connectionLines = [], onLocationClick, selectedLocationId, showRelationships = true, heatMap = false }: GeoMapProps) {
@@ -153,16 +167,27 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
         ? Math.max(8, Math.min(28, 8 + t * 20))
         : Math.max(6, Math.min(16, (connCount || 1) * 2));
       const isSelected = selectedLocationId === loc.id;
+      // Colour by entity type (IPs, facilities, actors now distinct from places);
+      // heatMap mode keeps the connection-tier gradient.
+      const typeColor = (loc.entity_type && TYPE_COLOR_HEX[loc.entity_type]) || '#3b82f6';
 
       const marker = L.circleMarker([lat, lng], {
         radius,
-        fillColor: isSelected ? '#f97316' : (heatMap ? heatFill : '#3b82f6'),
+        fillColor: isSelected ? '#f97316' : (heatMap ? heatFill : typeColor),
         fillOpacity: heatMap ? 0.55 : 0.8,
-        color: isSelected ? '#f97316' : (heatMap ? heatFill : '#60a5fa'),
+        color: isSelected ? '#f97316' : (heatMap ? heatFill : typeColor),
         weight: 2,
       }).addTo(map);
 
-      marker.bindPopup(`<div style="font-size:12px"><b>${loc.name}</b><br>Connections: ${connCount}<br>Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}</div>`);
+      const srcLabel = loc.geo_source === 'geoip'
+        ? 'IP geolocation (approximate)'
+        : (loc.geo_source || '');
+      marker.bindPopup(
+        `<div style="font-size:12px"><b>${esc(loc.name)}</b>` +
+        `${loc.entity_type ? `<br><span style="opacity:.7">${esc(loc.entity_type)}</span>` : ''}` +
+        `<br>Connections: ${connCount}<br>Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}` +
+        `${srcLabel ? `<br><i style="opacity:.7">${esc(srcLabel)}</i>` : ''}</div>`
+      );
 
       if (onLocationClick) {
         marker.on('click', () => onLocationClick(loc));
