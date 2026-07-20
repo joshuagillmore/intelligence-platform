@@ -162,3 +162,60 @@ def test_web_search_defaults_to_no_proxy():
 
     _, kwargs = MockDDGS.call_args
     assert kwargs.get("proxy") is None
+
+
+# ---------------------------------------------------------------------------
+# ProxiedClient.get/post forward params/json/headers and honor the proxy
+# (Phase 2 — enrichment providers need GET params + POST)
+# ---------------------------------------------------------------------------
+
+class _CapturingClient:
+    """Stand-in for httpx.AsyncClient that records how it was built and called."""
+    captured: dict = {}
+
+    def __init__(self, **kwargs):
+        _CapturingClient.captured["init"] = kwargs
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def get(self, url, **kwargs):
+        _CapturingClient.captured["call"] = ("get", url, kwargs)
+        return "resp"
+
+    async def post(self, url, **kwargs):
+        _CapturingClient.captured["call"] = ("post", url, kwargs)
+        return "resp"
+
+
+async def test_proxied_client_get_forwards_params_direct(monkeypatch):
+    import intel_platform.collection.proxy as proxy_mod
+    _CapturingClient.captured = {}
+    monkeypatch.setattr(proxy_mod.httpx, "AsyncClient", _CapturingClient)
+
+    client = proxy_mod.ProxiedClient(proxy_mod.ProxyConfig(mode="direct"))
+    await client.get("http://x", headers={"H": "v"}, params={"q": "1"})
+
+    method, url, kwargs = _CapturingClient.captured["call"]
+    assert method == "get" and url == "http://x"
+    assert kwargs["params"] == {"q": "1"}
+    assert kwargs["headers"] == {"H": "v"}
+    assert "proxy" not in _CapturingClient.captured["init"]  # direct -> unproxied
+
+
+async def test_proxied_client_post_forwards_json_and_honors_vpn(monkeypatch):
+    import intel_platform.collection.proxy as proxy_mod
+    _CapturingClient.captured = {}
+    monkeypatch.setattr(proxy_mod.httpx, "AsyncClient", _CapturingClient)
+
+    client = proxy_mod.ProxiedClient(proxy_mod.ProxyConfig(mode="vpn"))
+    await client.post("http://x", json={"a": 1}, headers={"H": "v"})
+
+    method, url, kwargs = _CapturingClient.captured["call"]
+    assert method == "post" and url == "http://x"
+    assert kwargs["json"] == {"a": 1}
+    # vpn mode -> the httpx client is built with the gluetun proxy
+    assert _CapturingClient.captured["init"].get("proxy") == proxy_mod.settings.vpn_http_proxy

@@ -69,6 +69,30 @@ class GraphStore:
             record = result.single()
             return dict(record["n"]) if record else None
 
+    def update_entity(self, entity_id: str, props: dict) -> dict | None:
+        """Merge `props` onto an existing node (by id). Returns the node or None.
+
+        Used by enrichment to write looked-up properties (asn, dns_records,
+        cvss_score, enriched flags) onto an already-extracted observable node.
+        """
+        if not props:
+            return self.get_entity(entity_id)
+        clean = self._serialize_props(props)
+        with self._driver.session() as session:
+            result = session.run(
+                "MATCH (n {id: $id}) SET n += $props RETURN n",
+                id=entity_id, props=clean,
+            )
+            record = result.single()
+            node = dict(record["n"]) if record else None
+
+        if node:
+            project_id = node.get("project_id")
+            if project_id:
+                from intel_platform.services.graph_cache import graph_cache
+                graph_cache.invalidate(project_id)
+        return node
+
     def search_entities(
         self, project_id: str, query: str = "", entity_type: str | None = None,
         limit: int = 50, offset: int = 0,

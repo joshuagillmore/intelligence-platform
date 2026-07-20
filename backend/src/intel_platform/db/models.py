@@ -20,6 +20,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -74,6 +75,38 @@ class AppSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc))
+
+
+# ---------------------------------------------------------------------------
+# Enrichment cache — external-lookup results for a cyber observable, keyed by
+# (provider, observable). Doubles as the cache that spares repeat external
+# calls AND the audit trail of every enrichment call made.
+# ---------------------------------------------------------------------------
+
+class EnrichmentRecord(Base):
+    __tablename__ = "enrichment_records"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False,
+        comment="Enrichment provider name, e.g. 'rdap' | 'dns' | 'geoip'")
+    observable: Mapped[str] = mapped_column(String(512), nullable=False,
+        comment="Normalized (refanged) observable value that was looked up")
+    entity_type: Mapped[str] = mapped_column(String(32), default="",
+        comment="Entity type of the observable, e.g. 'IPAddress'")
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict,
+        comment="Provider result payload — cache value + audit record")
+    source_url: Mapped[str] = mapped_column(Text, default="",
+        comment="Provider source URL, carried as relationship evidence")
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        comment="Freshness horizon; NULL = never expires")
+
+    __table_args__ = (
+        UniqueConstraint("provider", "observable", name="uq_enrichment_provider_observable"),
+        Index("ix_enrichment_provider_observable", "provider", "observable"),
+    )
 
 
 # ---------------------------------------------------------------------------
