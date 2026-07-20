@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { geoApi, queryApi, entitiesApi, llmApi, assessApi } from '@/lib/api';
+import { geoApi, queryApi, entitiesApi, llmApi, assessApi, geoApiExtra } from '@/lib/api';
 import Markdown from '@/components/Markdown';
 
 const GeoMap = dynamic(() => import('@/components/GeoMap'), { ssr: false });
@@ -74,6 +74,22 @@ export default function GeoPage() {
   const toggleLayer = (key: keyof typeof layers) =>
     setLayers(prev => ({ ...prev, [key]: !prev[key] }));
 
+  // Nearby OSM features (Overpass) around the selected geotarget.
+  const [nearbyFeatures, setNearbyFeatures] = useState<Array<{ name: string; category: string; lat: number; lon: number }>>([]);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+  async function loadNearby() {
+    if (!selectedLocation) return;
+    setNearbyLoading(true);
+    try {
+      const { data } = await geoApiExtra.nearby(selectedLocation.id, 3000);
+      setNearbyFeatures(data.features || []);
+    } catch {
+      setNearbyFeatures([]);
+    } finally {
+      setNearbyLoading(false);
+    }
+  }
+
   // Map each geolocated node to a filterable category (IP / coordinate / place)
   // from its type + location_type, and show only the enabled categories.
   const geoCategory = (loc: GeoLocation): 'ip' | 'coordinate' | 'place' => {
@@ -138,10 +154,12 @@ export default function GeoPage() {
     if (selectedLocation?.id === loc.id) {
       setSelectedLocation(null);
       setSelectedRels([]);
+      setNearbyFeatures([]);
       return;
     }
     setSelectedLocation(loc);
     setSelectedRels([]);
+    setNearbyFeatures([]);
     setRelsLoading(true);
     try {
       const res = await entitiesApi.get(loc.id);
@@ -666,6 +684,37 @@ export default function GeoPage() {
                       Hypothesis Generation
                     </button>
                   </div>
+                </div>
+
+                {/* ── Nearby Features (Overpass / OSM) ── */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: C.textDim }}>
+                      Nearby Features
+                    </h4>
+                    <button
+                      onClick={loadNearby}
+                      disabled={nearbyLoading}
+                      className="text-[10px] px-2 py-0.5 rounded border transition-opacity hover:opacity-90 disabled:opacity-50"
+                      style={{ color: C.primary, borderColor: C.primary }}
+                    >
+                      {nearbyLoading ? 'Scanning…' : 'Scan 3km'}
+                    </button>
+                  </div>
+                  {nearbyFeatures.length > 0 ? (
+                    <div className="space-y-1 max-h-40 overflow-y-auto">
+                      {nearbyFeatures.map((f, i) => (
+                        <div key={i} className="text-[10px] flex gap-2">
+                          <span className="font-mono shrink-0 uppercase" style={{ color: C.primary }}>{f.category}</span>
+                          <span className="truncate text-gray-300">{f.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[10px]" style={{ color: C.textMuted }}>
+                      Scan for airfields, military, ports, infrastructure &amp; neighbourhoods around this point (OSM / Overpass).
+                    </p>
+                  )}
                 </div>
 
                 {/* ── Activity Timeline ── */}
