@@ -65,5 +65,38 @@ def test_geolocate_entities_resolves_ip_and_places_without_writing(monkeypatch):
     assert out["ip1"]["geocoded"] is True and out["ip1"]["geo_source"] == "geoip"
     assert out["loc1"]["geocoded"] is True and out["loc1"]["geo_source"] == "gazetteer"
     assert out["loc2"]["geocoded"] is False
+    # Provenance/confidence (G6): IP geo is approximate, the gazetteer is coarse.
+    assert out["ip1"]["geo_confidence"] == "approximate"
+    assert out["loc1"]["geo_confidence"] == "coarse"
     # Pure read — no write-back (persisting gazetteer coords would shadow G2's geocoder)
     store.update_entity.assert_not_called()
+
+
+def test_geo_within_filters_by_bbox(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from intel_platform.api.app import app
+    from intel_platform.api.auth import create_access_token
+    from intel_platform.api.deps import get_graph_store
+
+    monkeypatch.setattr(geocoding, "geocode_location", lambda name: None)
+    nodes = [
+        {"id": "a", "name": "Inside", "entity_type": "Location", "latitude": 10.0, "longitude": 10.0},
+        {"id": "b", "name": "Outside", "entity_type": "Location", "latitude": 50.0, "longitude": 50.0},
+    ]
+    store = MagicMock()
+    store.get_geolocatable_entities = MagicMock(return_value=nodes)
+    app.dependency_overrides[get_graph_store] = lambda: store
+    client = TestClient(app)
+    header = {"Authorization": f"Bearer {create_access_token('admin', 'admin')}"}
+    try:
+        resp = client.get(
+            "/api/geo/within",
+            params={"project_id": "p", "min_lat": 0, "min_lng": 0, "max_lat": 20, "max_lng": 20},
+            headers=header,
+        )
+    finally:
+        app.dependency_overrides.pop(get_graph_store, None)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 1 and data["entities"][0]["id"] == "a"

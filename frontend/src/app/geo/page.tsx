@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
@@ -90,16 +90,48 @@ export default function GeoPage() {
     }
   }
 
+  // AOI ("what's in this area") — query entities within the current map view.
+  const [bounds, setBounds] = useState<{ minLat: number; minLng: number; maxLat: number; maxLng: number } | null>(null);
+  const [areaResults, setAreaResults] = useState<GeoLocation[] | null>(null);
+  const [areaLoading, setAreaLoading] = useState(false);
+  async function queryArea() {
+    if (!bounds || !activeProject) return;
+    setAreaLoading(true);
+    try {
+      const { data } = await geoApiExtra.within(activeProject.id, bounds);
+      setAreaResults(data.entities || []);
+    } catch {
+      setAreaResults([]);
+    } finally {
+      setAreaLoading(false);
+    }
+  }
+
   // Map each geolocated node to a filterable category (IP / coordinate / place)
   // from its type + location_type, and show only the enabled categories.
-  const geoCategory = (loc: GeoLocation): 'ip' | 'coordinate' | 'place' => {
+  const geoCategory = useCallback((loc: GeoLocation): 'ip' | 'coordinate' | 'place' => {
     if (loc.entity_type === 'IPAddress') return 'ip';
     const lt = String(loc.properties?.location_type ?? '').toLowerCase();
     return lt === 'coordinate' ? 'coordinate' : 'place';
-  };
-  const CAT_KEY = { place: 'places', coordinate: 'coordinates', ip: 'ips' } as const;
-  const visibleLocations = locations.filter(l => layers[CAT_KEY[geoCategory(l)]]);
-  const visibleIds = new Set(visibleLocations.map(l => l.id));
+  }, []);
+  // Memoized: panning fires setBounds -> page re-render; without stable prop
+  // references GeoMap would tear down and rebuild every marker each gesture.
+  const visibleLocations = useMemo(() => {
+    const key = { place: 'places', coordinate: 'coordinates', ip: 'ips' } as const;
+    return locations.filter(l => layers[key[geoCategory(l)]]);
+  }, [locations, layers, geoCategory]);
+  const visibleIds = useMemo(() => new Set(visibleLocations.map(l => l.id)), [visibleLocations]);
+  const connectionLines = useMemo(() => geoEdges
+    .filter(e => e.source_coords && e.target_coords
+      && (e.source_id ? visibleIds.has(e.source_id) : true)
+      && (e.target_id ? visibleIds.has(e.target_id) : true))
+    .map(e => ({
+      from: [e.source_coords![0], e.source_coords![1]] as [number, number],
+      to: [e.target_coords![0], e.target_coords![1]] as [number, number],
+      names: `${e.source_name} ↔ ${e.target_name}`,
+      weight: e.weight,
+      shared_entities: e.shared_entities,
+    })), [geoEdges, visibleIds]);
 
   /* ── chat overlay state ── */
   const [chatOpen, setChatOpen] = useState(false);
@@ -150,7 +182,7 @@ export default function GeoPage() {
     loadLocations();
   }, [loadLocations]);
 
-  async function handleLocationClick(loc: GeoLocation) {
+  const handleLocationClick = useCallback(async (loc: GeoLocation) => {
     if (selectedLocation?.id === loc.id) {
       setSelectedLocation(null);
       setSelectedRels([]);
@@ -169,7 +201,7 @@ export default function GeoPage() {
     } finally {
       setRelsLoading(false);
     }
-  }
+  }, [selectedLocation]);
 
   async function askGeoQuery() {
     if (!queryInput.trim() || !activeProject) return;
@@ -323,21 +355,12 @@ export default function GeoPage() {
             ) : (
               <GeoMap
                 locations={visibleLocations}
-                connectionLines={geoEdges
-                  .filter(e => e.source_coords && e.target_coords
-                    && (e.source_id ? visibleIds.has(e.source_id) : true)
-                    && (e.target_id ? visibleIds.has(e.target_id) : true))
-                  .map(e => ({
-                    from: [e.source_coords![0], e.source_coords![1]] as [number, number],
-                    to: [e.target_coords![0], e.target_coords![1]] as [number, number],
-                    names: `${e.source_name} ↔ ${e.target_name}`,
-                    weight: e.weight,
-                    shared_entities: e.shared_entities,
-                  }))}
+                connectionLines={connectionLines}
                 onLocationClick={handleLocationClick}
                 selectedLocationId={selectedLocation?.id}
                 showRelationships={layers.relationships}
                 heatMap={layers.heatMap}
+                onBoundsChange={setBounds}
               />
             )}
           </div>
@@ -382,6 +405,36 @@ export default function GeoPage() {
                 </button>
               </label>
             ))}
+
+            {/* AOI: what's in the current map view */}
+            <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${C.border}` }}>
+              <button
+                onClick={queryArea}
+                disabled={areaLoading || !bounds}
+                className="w-full text-[11px] py-1.5 rounded font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+                style={{ background: C.primary, color: C.surface }}
+              >
+                {areaLoading ? 'Querying…' : 'Query visible area'}
+              </button>
+              {areaResults && (
+                <div className="mt-2">
+                  <div className="text-[10px] mb-1" style={{ color: C.textDim }}>
+                    {areaResults.length} in view
+                  </div>
+                  <div className="space-y-0.5 max-h-28 overflow-y-auto">
+                    {areaResults.slice(0, 25).map(r => (
+                      <button
+                        key={r.id}
+                        onClick={() => handleLocationClick(r)}
+                        className="block w-full text-left text-[10px] truncate text-gray-300 hover:opacity-80"
+                      >
+                        {r.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* ── Temporal Window (below layer control) ── */}

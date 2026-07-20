@@ -241,6 +241,17 @@ def _extract_coords(entity: dict) -> tuple[float | None, float | None, str]:
     return None, None, ""
 
 
+# How much to trust a resolved coordinate, by source: IP geo is coarse (often a
+# datacenter, not the user), the offline gazetteer is a ~180-entry approximation,
+# a real geocode or an extracted/persisted coordinate is high.
+_GEO_CONFIDENCE = {
+    "geoip": "approximate",
+    "gazetteer": "coarse",
+    "nominatim": "high",
+    "persisted": "high",
+}
+
+
 def geolocate_entities(store, project_id: str) -> list[dict]:
     """Every entity in the project that can be placed on the map.
 
@@ -263,6 +274,7 @@ def geolocate_entities(store, project_id: str) -> list[dict]:
             "longitude": lng,
             "geocoded": lat is not None and lng is not None,
             "geo_source": source,
+            "geo_confidence": _GEO_CONFIDENCE.get(source, "high" if lat is not None else ""),
             "location_type": entity.get("location_type", "") or "",
             "mgrs": mgrs,
             "properties": dict(entity),

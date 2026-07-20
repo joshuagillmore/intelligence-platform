@@ -71,10 +71,17 @@ export const entitiesApi = {
   shortestPath: (id1: string, id2: string) => api.get(`/paths/${id1}/${id2}`),
 };
 
-// Nearby OSM features (Overpass) around a geolocated entity.
+// Local context (Overpass) + AOI spatial query around/within a geotarget.
 export const geoApiExtra = {
   nearby: (entityId: string, radius?: number) =>
     api.get(`/geo/nearby/${encodeURIComponent(entityId)}`, { params: { radius } }),
+  within: (projectId: string, bbox: { minLat: number; minLng: number; maxLat: number; maxLng: number }) =>
+    api.get('/geo/within', {
+      params: {
+        project_id: projectId,
+        min_lat: bbox.minLat, min_lng: bbox.minLng, max_lat: bbox.maxLat, max_lng: bbox.maxLng,
+      },
+    }),
 };
 
 // Cyber-observable enrichment (WHOIS/DNS/GeoIP/certs/KEV/CVSS) — the Investigate

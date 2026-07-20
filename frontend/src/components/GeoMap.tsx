@@ -17,6 +17,7 @@ interface GeoLocation {
   connection_count?: number;
   entity_type?: string;
   geo_source?: string;
+  geo_confidence?: string;
   mgrs?: string;
   location_type?: string;
   properties?: Record<string, unknown>;
@@ -38,6 +39,7 @@ interface GeoMapProps {
   selectedLocationId?: string | null;
   showRelationships?: boolean;
   heatMap?: boolean;
+  onBoundsChange?: (b: { minLat: number; minLng: number; maxLat: number; maxLng: number }) => void;
 }
 
 function getLat(loc: GeoLocation): number | null {
@@ -59,7 +61,7 @@ function esc(value: unknown): string {
   );
 }
 
-export default function GeoMap({ locations, connectionLines = [], onLocationClick, selectedLocationId, showRelationships = true, heatMap = false }: GeoMapProps) {
+export default function GeoMap({ locations, connectionLines = [], onLocationClick, selectedLocationId, showRelationships = true, heatMap = false, onBoundsChange }: GeoMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [mapReady, setMapReady] = useState(false);
   const [error, setError] = useState(false);
@@ -120,6 +122,14 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
         baseLayers.Dark.addTo(map);
         L.default.control.layers(baseLayers, {}, { position: 'topright', collapsed: true }).addTo(map);
 
+        // Report view bounds so the page can run AOI ("what's in this area") queries.
+        const emitBounds = () => {
+          const b = map.getBounds();
+          onBoundsChange?.({ minLat: b.getSouth(), minLng: b.getWest(), maxLat: b.getNorth(), maxLng: b.getEast() });
+        };
+        map.on('moveend', emitBounds);
+        emitBounds();
+
         leafletMapRef.current = map;
         leafletRef.current = L.default;
         setMapReady(true);
@@ -136,6 +146,9 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
         leafletMapRef.current = null;
       }
     };
+    // Once-only map init; onBoundsChange is a stable useState setter from the
+    // parent, so capturing it here is intentional (no stale-closure bug).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update markers when locations change
@@ -213,6 +226,7 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
         `${loc.entity_type ? `<br><span style="opacity:.7">${esc(loc.entity_type)}${loc.location_type ? ` · ${esc(loc.location_type)}` : ''}</span>` : ''}` +
         `<br>Connections: ${connCount}<br>Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}` +
         `${loc.mgrs ? `<br>MGRS: ${esc(loc.mgrs)}` : ''}` +
+        `${loc.geo_confidence && loc.geo_confidence !== 'high' ? `<br><i style="opacity:.6">confidence: ${esc(loc.geo_confidence)}</i>` : ''}` +
         `${srcLabel ? `<br><i style="opacity:.7">${esc(srcLabel)}</i>` : ''}</div>`
       );
 
