@@ -40,7 +40,7 @@ Claude Code *online* branches alike. Read it first. `backend/CLAUDE.md` and
 |------|------|
 | `backend/` | FastAPI app + all intelligence logic (`src/intel_platform/`) |
 | `frontend/` | Next.js analyst UI (`src/app/`, `src/components/`, `src/stores/`) |
-| `docs/` | Specs, plans, design records (`docs/superpowers/specs`, `/plans`) |
+| `docs/` | Specs, plans, design records (`docs/design/specs`, `/plans`) |
 | `docker-compose.yml` | Local full stack: neo4j, postgres, redis, ollama, backend, frontend |
 | `Dockerfile`, `start.sh`, `railway.*` | Production build + Railway deploy |
 | `.env.example` | Config surface — copy to `.env` (gitignored) |
