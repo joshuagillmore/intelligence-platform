@@ -7,7 +7,7 @@ architecture, branching, and the deploy story.
 ## Commands (uv only — never bare `python`/`pip`)
 
 ```bash
-uv sync                                              # install/lock deps
+uv sync --extra dev                                  # install/lock deps (+ ruff, pytest)
 uv run uvicorn intel_platform.api.app:app --reload   # run API on :8000
 uv run pytest                                         # tests (asyncio auto-mode)
 uv run pytest tests/test_x.py::test_y -v              # one test
@@ -15,8 +15,30 @@ uv run ruff check .                                   # lint (line-length 120, p
 uv run ruff format .                                  # format
 ```
 
+`ruff` and `pytest` live in the `dev` optional-dependencies extra, so use
+`uv sync --extra dev` (plain `uv sync` omits them). The Docker image installs
+the spaCy model automatically; for the individual-dev path above, install it
+once (it is not in the lock):
+
+```bash
+uv pip install "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+```
+
 Tests live in `backend/tests/` (`testpaths=["tests"]`, `asyncio_mode = "auto"` —
 just write `async def test_...`, no decorator needed).
+
+**`uv run pytest` needs a live Neo4j.** ~50 graph tests connect to
+`bolt://localhost:7687` (`neo4j`/`changeme` — see `tests/conftest.py`); they
+error, not skip, when it is down. Bring it up with `docker compose up neo4j`
+(APOC is required — `graph/store.py` uses `apoc.create.relationship`) and
+initialize the schema once against a fresh DB:
+
+```bash
+uv run python -c "from neo4j import GraphDatabase; from intel_platform.graph.schema import initialize_schema; d = GraphDatabase.driver('bolt://localhost:7687', auth=('neo4j','changeme')); initialize_schema(d); d.close()"
+```
+
+CI (`.github/workflows/ci.yml`) does exactly this — Neo4j+APOC service, schema
+init, then `pytest` — so it is the canonical reference for a green run.
 
 ## Package map (`src/intel_platform/`)
 
