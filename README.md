@@ -172,9 +172,19 @@ docker compose up
 docker compose exec ollama ollama pull qwen2.5:14b
 ```
 
-Then open **http://localhost:3000**. With `EXTRACTION_MODE=hybrid` and the
-in-stack Ollama wired up, collection, extraction, and analysis all work with **no
-cloud API keys** — add keys in `.env` only if you want a cloud model.
+Then open **http://localhost:3000** and sign in with the default development
+credentials **`admin` / `admin`** (set `DEFAULT_ADMIN_PASSWORD` before first boot
+to change this; see [Security](#configuration--security)). The backend API and
+its interactive OpenAPI docs are at **http://localhost:8000/docs**.
+
+With `EXTRACTION_MODE=hybrid` and the in-stack Ollama wired up, collection,
+extraction, and graph analysis all work with **no cloud API keys**. One feature
+is the exception: **semantic / vector search needs an `OPENAI_API_KEY`** —
+embeddings are 1536-dimensional to match the Postgres vector column, and only
+OpenAI produces that size today (see [Status](#status--limitations)). Without a
+key the app still runs; ingestion just stores documents without vectors and
+hybrid retrieval falls back to graph-only. Add other cloud keys in `.env` only
+if you want a cloud LLM.
 
 Running the halves individually (for development):
 
@@ -228,6 +238,12 @@ Honest scope, so there are no surprises:
   there.
 - **Migrations.** Postgres schema is created at startup; there's no Alembic
   migration flow yet.
+- **Embeddings are OpenAI-only for now.** The Postgres vector column is fixed at
+  1536 dimensions, so semantic/vector search requires an `OPENAI_API_KEY`. The
+  code ships Ollama (`nomic-embed-text`, 768-d) and Cohere (1024-d) embedding
+  providers, but their vectors don't fit the current column — using them needs a
+  configurable column dimension (a planned follow-up). Everything else runs fully
+  local; retrieval degrades to graph-only when no embeddings are available.
 
 For the full self-commissioned audit and the fixes it drove, see
 [`docs/code-review-2026-03-22.md`](docs/code-review-2026-03-22.md).
