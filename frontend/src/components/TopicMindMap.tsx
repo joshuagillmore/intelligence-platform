@@ -41,6 +41,15 @@ const BRANCH_COLORS: Record<string, string> = {
   'root': '#adc6ff',
 };
 
+// Escape strings interpolated into the d3 tooltip's innerHTML — topic names,
+// keywords, and LLM-generated summaries are document-derived (attacker-
+// influenceable), and this repo is going public.
+function esc(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string),
+  );
+}
+
 function getBranchColor(node: any): string {
   if (node.data?.entity_type === 'topic') return '#a855f7';
   let current = node;
@@ -315,10 +324,10 @@ export default function TopicMindMap({
           const summary = d.data.summary || '';
           const keywords = d.data.keywords || [];
 
-          let html = `<div style="font-weight:700;margin-bottom:4px">${name}</div>`;
+          let html = `<div style="font-weight:700;margin-bottom:4px">${esc(name)}</div>`;
           if (count != null) html += `<div style="color:#9ca3af">${count} document${count !== 1 ? 's' : ''}</div>`;
-          if (keywords.length > 0) html += `<div style="color:#a855f7;margin-top:3px;font-size:10px">${keywords.slice(0, 5).join(', ')}</div>`;
-          if (summary) html += `<div style="color:#9ca3af;margin-top:4px;font-size:10px;font-style:italic">${summary}</div>`;
+          if (keywords.length > 0) html += `<div style="color:#a855f7;margin-top:3px;font-size:10px">${keywords.slice(0, 5).map((k: string) => esc(k)).join(', ')}</div>`;
+          if (summary) html += `<div style="color:#9ca3af;margin-top:4px;font-size:10px;font-style:italic">${esc(summary)}</div>`;
 
           tooltip.html(html)
             .style('left', (event.pageX + 12) + 'px')

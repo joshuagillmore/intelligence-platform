@@ -179,10 +179,10 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
       }).addTo(map);
       // Tooltip showing shared entities
       const sharedText = line.shared_entities?.length
-        ? `<br><br>Shared entities:<br>${line.shared_entities.map((e: string) => `• ${e}`).join('<br>')}`
+        ? `<br><br>Shared entities:<br>${line.shared_entities.map((e: string) => `• ${esc(e)}`).join('<br>')}`
         : '';
       polyline.bindPopup(
-        `<div style="font-size:12px"><b>${line.names}</b><br>Shared entities: ${w}${sharedText}</div>`
+        `<div style="font-size:12px"><b>${esc(line.names)}</b><br>Shared entities: ${w}${sharedText}</div>`
       );
       linesRef.current.push(polyline);
     });
