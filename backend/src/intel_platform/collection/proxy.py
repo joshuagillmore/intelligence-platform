@@ -14,12 +14,27 @@ import logging
 
 import httpx
 
+from intel_platform.collection.url_guard import validate_url
 from intel_platform.config import settings
 
 logger = logging.getLogger(__name__)
 
 # AppSetting key the active collection proxy mode is stored under.
 PROXY_MODE_KEY = "collection_proxy_mode"
+
+# Cap redirect chains so a hostile server can't loop us; each hop is
+# still SSRF-validated by _ssrf_guard_hook below.
+MAX_REDIRECTS = 5
+
+
+async def _ssrf_guard_hook(request: httpx.Request) -> None:
+    """httpx request event-hook: SSRF-validate every outbound URL.
+
+    Fires for the initial request AND each redirect hop httpx follows, so a
+    3xx pointing at an internal host is rejected before we connect to it.
+    Raises ValueError (surfaced to the caller) when a URL is unsafe.
+    """
+    validate_url(str(request.url))
 
 # Selectable modes. "vpn" -> gluetun HTTP proxy, "tor" -> Tor SOCKS5,
 # "proxy" -> an explicit ad-hoc proxy_url, "direct" -> no proxy.
@@ -95,7 +110,10 @@ class ProxiedClient:
                   params: dict | None = None) -> httpx.Response:
         cfg = await self._resolve_config()
         kwargs = cfg.get_client_kwargs()
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, **kwargs) as client:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=True, max_redirects=MAX_REDIRECTS,
+            event_hooks={"request": [_ssrf_guard_hook]}, **kwargs,
+        ) as client:
             return await client.get(url, headers=headers or {}, params=params)
 
     async def post(self, url: str, timeout: float = 30, headers: dict | None = None,
@@ -103,7 +121,10 @@ class ProxiedClient:
                    params: dict | None = None) -> httpx.Response:
         cfg = await self._resolve_config()
         kwargs = cfg.get_client_kwargs()
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, **kwargs) as client:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=True, max_redirects=MAX_REDIRECTS,
+            event_hooks={"request": [_ssrf_guard_hook]}, **kwargs,
+        ) as client:
             return await client.post(url, headers=headers or {}, json=json, data=data, params=params)
 
     async def fetch_text(self, url: str, timeout: float = 30) -> str:
