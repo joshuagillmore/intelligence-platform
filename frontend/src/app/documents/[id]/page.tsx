@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import api from '@/lib/api';
+import { TYPE_COLOR_HEX } from '@/lib/entityStyles';
 
 interface Highlight {
   start: number;
@@ -66,17 +67,8 @@ const sentimentColor: Record<string, string> = {
   mixed: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
 };
 
-const typeColor: Record<string, string> = {
-  Person: '#f97316',
-  Organization: '#3b82f6',
-  Location: '#22c55e',
-  IPAddress: '#06b6d4',
-  Domain: '#a855f7',
-  Hash: '#ec4899',
-  ThreatActor: '#ef4444',
-  TTP: '#eab308',
-  Vulnerability: '#f43f5e',
-};
+// Entity hex colors come from the SSOT in '@/lib/entityStyles'.
+const typeColor = TYPE_COLOR_HEX;
 
 export default function DocumentViewer() {
   const params = useParams();
@@ -165,17 +157,17 @@ export default function DocumentViewer() {
   };
 
   if (loading) {
-    return <div className="flex"><Sidebar /><main className="ml-56 flex-1 p-8"><div className="text-gray-500">Loading document...</div></main></div>;
+    return <div className="flex"><Sidebar /><main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8"><div className="text-gray-500">Loading document...</div></main></div>;
   }
 
   if (!doc) {
-    return <div className="flex"><Sidebar /><main className="ml-56 flex-1 p-8"><div className="text-red-400">Document not found</div></main></div>;
+    return <div className="flex"><Sidebar /><main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8"><div className="text-red-400">Document not found</div></main></div>;
   }
 
   return (
     <div className="flex">
       <Sidebar />
-      <main className="ml-56 flex-1 p-6 flex gap-4" style={{ height: 'calc(100vh - 1.75rem)' }}>
+      <main className="md:ml-56 flex-1 p-6 flex gap-4 pt-16 md:pt-6" style={{ height: 'calc(100vh - 1.75rem)' }}>
         {/* Document content */}
         <div className="flex-1 flex flex-col min-w-0">
           <div className="flex items-center gap-3 mb-4">

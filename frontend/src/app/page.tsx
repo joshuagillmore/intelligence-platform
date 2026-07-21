@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { projectsApi, watchlistApi, type Project } from '@/lib/api';
 import { useProject } from '@/lib/ProjectContext';
+import { useNotifications } from '@/components/NotificationProvider';
 
 function useHydrated() {
   const [hydrated, setHydrated] = useState(false);
@@ -46,6 +47,7 @@ export default function ProjectsPage() {
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [batchDeleting, setBatchDeleting] = useState(false);
   const { activeProject, setActiveProject } = useProject();
+  const { addNotification } = useNotifications();
   const router = useRouter();
 
   const hydrated = useHydrated();
@@ -62,6 +64,8 @@ export default function ProjectsPage() {
       return;
     }
     loadProjects();
+    // Mount-only: auth gate + initial load. loadProjects/router are stable here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -94,6 +98,11 @@ export default function ProjectsPage() {
       setProjects(res.data);
     } catch (e) {
       console.error('Failed to load projects', e);
+      addNotification({
+        title: 'Failed to load projects',
+        message: 'Could not reach the backend. Check your connection and try again.',
+        type: 'error',
+      });
     }
   }
 
@@ -107,6 +116,11 @@ export default function ProjectsPage() {
       loadProjects();
     } catch (e) {
       console.error('Failed to create project', e);
+      addNotification({
+        title: 'Failed to create project',
+        message: 'The project could not be created. Please try again.',
+        type: 'error',
+      });
     }
   }
 
@@ -121,6 +135,11 @@ export default function ProjectsPage() {
       setToast(`Deleted: ${project.name}`);
     } catch (e) {
       console.error('Failed to delete project', e);
+      addNotification({
+        title: 'Failed to delete project',
+        message: `"${project.name}" could not be deleted. Please try again.`,
+        type: 'error',
+      });
     }
   }
 
@@ -303,6 +322,8 @@ export default function ProjectsPage() {
                 viewMode === 'grid' ? 'bg-accent-blue text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
               title="Grid view"
+              aria-label="Grid view"
+              aria-pressed={viewMode === 'grid'}
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
@@ -314,6 +335,8 @@ export default function ProjectsPage() {
                 viewMode === 'list' ? 'bg-accent-blue text-white' : 'text-gray-400 hover:text-gray-200'
               }`}
               title="List view"
+              aria-label="List view"
+              aria-pressed={viewMode === 'list'}
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />

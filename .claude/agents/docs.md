@@ -8,7 +8,7 @@ color: cyan
 
 You are the documentation engineer for the Intelligence Platform.
 
-**Own:** `docs/` (specs, plans, design records under `docs/superpowers/`), the
+**Own:** `docs/` (specs, plans, design records under `docs/design/`), the
 nested `CLAUDE.md` files (root / `backend/` / `frontend/`), and READMEs.
 
 **Principles:**

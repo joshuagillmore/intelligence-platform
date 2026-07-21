@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
 import { useNotifications, useNotificationCount } from '@/components/NotificationProvider';
+import { APP_NAME } from '@/lib/branding';
 
 function formatTimeAgo(date: Date): string {
   const now = new Date();
@@ -52,22 +53,24 @@ export default function MobileHeader() {
     <header className="fixed top-0 w-full z-50 bg-[#0e1321] border-b border-white/5 md:hidden">
       <div className="flex items-center justify-between px-4 h-14">
         <div className="flex items-center gap-2.5">
-          <span className="material-symbols-outlined text-[#3b82f6] text-xl">radar</span>
-          <span className="text-[#3b82f6] font-black text-base tracking-tighter">SENTINEL_INTEL</span>
+          <span className="material-symbols-outlined text-accent-blue text-xl" aria-hidden="true">radar</span>
+          <span className="text-accent-blue font-black text-base tracking-tighter">{APP_NAME}</span>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowSearch(!showSearch)}
             className="p-2 rounded-full hover:bg-white/5 transition-colors"
+            aria-label="Toggle search"
           >
-            <span className="material-symbols-outlined text-gray-500 text-xl">search</span>
+            <span className="material-symbols-outlined text-gray-500 text-xl" aria-hidden="true">search</span>
           </button>
           <div className="relative" ref={notifRef}>
             <button
               onClick={() => setShowNotifications(!showNotifications)}
               className="p-2 rounded-full hover:bg-white/5 transition-colors relative"
+              aria-label="Notifications"
             >
-              <span className="material-symbols-outlined text-gray-400 text-xl">notifications</span>
+              <span className="material-symbols-outlined text-gray-400 text-xl" aria-hidden="true">notifications</span>
               {unreadCount > 0 && (
                 <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
                   {unreadCount > 9 ? '9+' : unreadCount}
@@ -75,8 +78,8 @@ export default function MobileHeader() {
               )}
             </button>
             {showNotifications && (
-              <div className="absolute right-0 top-full mt-1 w-72 bg-[#0e1321] border border-[#1a1f2e] rounded-lg shadow-xl z-50 max-h-72 overflow-y-auto">
-                <div className="px-3 py-2 border-b border-[#1a1f2e] flex items-center justify-between">
+              <div className="absolute right-0 top-full mt-1 w-72 bg-[#0e1321] border border-navy-800 rounded-lg shadow-xl z-50 max-h-72 overflow-y-auto">
+                <div className="px-3 py-2 border-b border-navy-800 flex items-center justify-between">
                   <span className="text-xs font-semibold text-gray-300">Notifications</span>
                 </div>
                 {notifications.length === 0 ? (
@@ -86,11 +89,11 @@ export default function MobileHeader() {
                     <div
                       key={n.id}
                       onClick={() => { if (n.link && typeof window !== 'undefined') window.location.href = n.link; }}
-                      className={`px-3 py-2 border-b border-[#1a1f2e]/50 hover:bg-[#1a1f2e]/50 ${n.link ? 'cursor-pointer' : ''}`}
+                      className={`px-3 py-2 border-b border-navy-800/50 hover:bg-navy-800/50 ${n.link ? 'cursor-pointer' : ''}`}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-[11px] font-medium text-gray-200 truncate">{n.title}</span>
-                        <button onClick={(e) => { e.stopPropagation(); removeNotification(n.id); }} className="text-gray-600 text-[10px]">&times;</button>
+                        <button onClick={(e) => { e.stopPropagation(); removeNotification(n.id); }} className="text-gray-600 text-[10px]" aria-label="Dismiss notification">&times;</button>
                       </div>
                       <p className="text-[10px] text-gray-500 mt-0.5">{n.message}</p>
                       <p className="text-[9px] text-gray-600 mt-0.5" suppressHydrationWarning>{formatTimeAgo(n.timestamp)}</p>
@@ -111,7 +114,7 @@ export default function MobileHeader() {
             onChange={e => setSearchQuery(e.target.value)}
             onKeyDown={handleSearch}
             placeholder={activeProject ? `Search ${activeProject.name}...` : 'Search...'}
-            className="w-full bg-[#090e1c] border border-[#1a1f2e] rounded-lg px-4 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#3b82f6]"
+            className="w-full bg-[#090e1c] border border-navy-800 rounded-lg px-4 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-accent-blue"
           />
         </div>
       )}

@@ -4,6 +4,8 @@ import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
 import { timelineApi } from '@/lib/api';
+import { TYPE_COLOR_CLASS as TYPE_COLORS, TYPE_COLOR_HEX } from '@/lib/entityStyles';
+import { useNotifications } from '@/components/NotificationProvider';
 
 interface TimelineEvent {
   id: string;
@@ -13,20 +15,7 @@ interface TimelineEvent {
   event_type: string;
 }
 
-const TYPE_COLORS: Record<string, string> = {
-  Person: 'bg-orange-500',
-  Organization: 'bg-blue-500',
-  Location: 'bg-green-500',
-  ThreatActor: 'bg-red-500',
-  Document: 'bg-gray-500',
-  IPAddress: 'bg-cyan-500',
-  Domain: 'bg-purple-500',
-  Event: 'bg-yellow-500',
-  Hash: 'bg-pink-500',
-  Vulnerability: 'bg-rose-500',
-  Report: 'bg-indigo-500',
-  Topic: 'bg-teal-500',
-};
+// TYPE_COLORS (dot/badge classes) imported from '@/lib/entityStyles' — SSOT.
 
 const ENTITY_TYPES = ['Person', 'Organization', 'Location', 'ThreatActor', 'Document', 'IPAddress', 'Domain', 'Event', 'Hash', 'Vulnerability', 'Report', 'Topic'];
 
@@ -45,12 +34,6 @@ function TimelineChart({ events }: { events: TimelineEvent[] }) {
   const chartHeight = 120;
   const barWidth = Math.max(20, Math.min(60, 800 / dates.length));
 
-  const typeColors: Record<string, string> = {
-    Person: '#f97316', Organization: '#3b82f6', Location: '#22c55e',
-    IPAddress: '#06b6d4', Domain: '#a855f7', Hash: '#ec4899',
-    ThreatActor: '#ef4444', TTP: '#eab308', Document: '#6b7280',
-  };
-
   if (dates.length === 0) return null;
 
   return (
@@ -62,7 +45,7 @@ function TimelineChart({ events }: { events: TimelineEvent[] }) {
             const d = byDate[date];
             const height = (d.count / maxCount) * chartHeight;
             const dominantType = Object.entries(d.types).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Document';
-            const color = typeColors[dominantType] || '#6b7280';
+            const color = TYPE_COLOR_HEX[dominantType] || '#6b7280';
             return (
               <g key={date} transform={`translate(${i * (barWidth + 4) + 30}, 0)`}>
                 <rect
@@ -122,6 +105,7 @@ function groupByDate(events: TimelineEvent[]): Record<string, TimelineEvent[]> {
 
 export default function TimelinePage() {
   const { activeProject } = useProject();
+  const { addNotification } = useNotifications();
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [enabledTypes, setEnabledTypes] = useState<Set<string>>(new Set(ENTITY_TYPES));
@@ -134,10 +118,15 @@ export default function TimelinePage() {
       setEvents(res.data.events || []);
     } catch (e) {
       console.error('Failed to load timeline', e);
+      addNotification({
+        title: 'Failed to load timeline',
+        message: 'Could not load timeline events for this project. Please try again.',
+        type: 'error',
+      });
     } finally {
       setLoading(false);
     }
-  }, [activeProject]);
+  }, [activeProject, addNotification]);
 
   useEffect(() => {
     loadTimeline();
@@ -159,7 +148,7 @@ export default function TimelinePage() {
     return (
       <div className="flex">
         <Sidebar />
-        <main className="ml-56 flex-1 p-8">
+        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
           <h2 className="text-2xl font-bold mb-4">Timeline</h2>
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
             <p className="text-lg mb-2">No Project Selected</p>
@@ -173,7 +162,7 @@ export default function TimelinePage() {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
-      <div className="ml-56 flex-1 flex flex-col h-screen overflow-hidden">
+      <div className="md:ml-56 flex-1 flex flex-col h-screen overflow-hidden pt-14 md:pt-0">
         <div className="flex-none px-6 py-4 border-b border-navy-600 bg-navy-800 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold">Timeline</h2>

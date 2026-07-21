@@ -1,18 +1,35 @@
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 dist/
 .venv/
 venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / Next.js (frontend)
+node_modules/
+.next/
+next-env.d.ts
+
+# Env & secrets — never commit real values
 .env
+.env.local
+*.env.local
+.env.enc
+.sops.yaml
+
+# Local compose overrides
+docker-compose.override.yml
+
+# Data volumes & editor/OS cruft
+neo4j_data/
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-neo4j_data/
-.pytest_cache/
-.coverage
-htmlcov/
 
 # Claude Code personal layer (per-machine, not shared)
 CLAUDE.local.md

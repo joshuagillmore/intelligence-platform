@@ -50,6 +50,11 @@ export const TYPE_BADGE_CLASS: Record<string, string> = {
   TTP: 'bg-yellow-900/30 text-yellow-400',
   Vulnerability: 'bg-rose-900/30 text-rose-400',
   ThreatActor: 'bg-red-900/30 text-red-400',
+  // Core entity types (used by the project dashboard's activity badges).
+  Person: 'bg-orange-900/30 text-orange-400',
+  Organization: 'bg-blue-900/30 text-blue-400',
+  Location: 'bg-green-900/30 text-green-400',
+  Document: 'bg-gray-900/30 text-gray-400',
 };
 
 export const TYPE_ICON: Record<string, string> = {

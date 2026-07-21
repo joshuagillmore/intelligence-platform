@@ -25,7 +25,7 @@ just write `async def test_...`, no decorator needed).
 | `api/` | FastAPI app + `routes/` (24 routers: auth, documents, entities, graph, collections, collection_plans, query, assess, topics, reports, geo, timeline, search, watchlist, personas, snapshots, admin_config, llm, ingest, export, notebook, projects, health). App = `api.app:app`; middleware = rate-limit / request-logging / security-headers. |
 | `services/` | Business logic (18): extraction, enrichment, ingestion, graph_builder, graph_rag, hybrid_retrieval, vector_search, document_clustering, topics, assessment, summarization, geocoding, collection_planner, plan_executor, reports, mindmap_export, graph_cache, text_utils. |
 | `collection/` | Agentic web collection: `search` (ddgs) → `crawler`/`scraper` (crawl4ai) → `runner`/`executor` (CollectionRunner) → ingest. `tasks.py` = Celery. `agentic.py` = LLM-driven planning. |
-| `llm/` | Multi-provider layer: `anthropic`, `openai_provider`, `cohere_provider`, `ollama`, plus `embeddings`, `skills`, and the **`orchestrator`** (provider selection — the single source of truth). |
+| `llm/` | Multi-provider layer: `anthropic`, `openai_provider`, `cohere_provider`, `ollama`, plus `embeddings`, `skills`, the **`orchestrator`**, and **`providers`** (`_get_provider` / `_get_collection_provider` / `_get_extraction_provider` / `_resolve_api_key` / `_cloud_provider_from_env` — the single source of truth for provider selection; services import from here, not from `api/routes/llm.py`, which only re-exports them). |
 | `enrichment/` | Cyber-observable enrichment: `observables` (refang/classify), `base` (provider ABC + registry), `cache` (Postgres cache + rate limiter), `service` (Investigate orchestrator), `hook` (auto-enrich), `providers/` (dns, geoip, kev, nvd, rdap, certs, email — keyless, egress via `ProxiedClient`). |
 | `graph/` | Neo4j: `schema.py` (`initialize_schema`), `store.py`. |
 | `db/` | Postgres (SQLAlchemy async): `engine.py` (`init_db`), `models.py`. |
@@ -52,7 +52,7 @@ Cohere/Ollama.
 High-volume **collection** work (source resolution + per-doc summaries) can route
 to a dedicated provider so it won't drain a rate-limited cloud key — see
 `collection_llm_provider`/`collection_llm_model` (empty = default provider,
-`ollama` = offload local) and `_get_collection_provider` in `api/routes/llm.py`.
+`ollama` = offload local) and `_get_collection_provider` in `llm/providers.py`.
 
 ## Conventions
 

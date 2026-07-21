@@ -17,11 +17,8 @@
     "next": "14.2.35",
     "react": "^18",
     "react-dom": "^18",
-    "react-leaflet": "^5.0.0",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
-    "zundo": "^2.3.0",
-    "zustand": "^5.0.12"
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/node": "^20",

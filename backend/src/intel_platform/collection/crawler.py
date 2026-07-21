@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Callable
 
@@ -7,6 +8,7 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from crawl4ai import ProxyConfig as Crawl4aiProxyConfig
 
 from intel_platform.collection.proxy import get_active_proxy_config
+from intel_platform.collection.url_guard import is_safe_url
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,23 @@ async def crawl_urls(
     Returns:
         List of document dicts with url, title, content, markdown, word_count, links.
     """
+    if not urls:
+        return []
+
+    # SSRF guard: validate EVERY URL here so no fetch path can bypass it (the
+    # runner and agentic paths call crawl_urls directly, not via WebScraper).
+    # Drop unsafe URLs rather than fail the whole batch. DNS resolution is
+    # blocking, so run the filter off the event loop.
+    def _filter_safe(candidates: list[str]) -> list[str]:
+        safe: list[str] = []
+        for u in candidates:
+            if is_safe_url(u):
+                safe.append(u)
+            else:
+                logger.warning("Skipping unsafe URL (SSRF guard): %s", u)
+        return safe
+
+    urls = await asyncio.to_thread(_filter_safe, urls)
     if not urls:
         return []
 

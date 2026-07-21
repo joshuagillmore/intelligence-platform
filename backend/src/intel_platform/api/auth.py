@@ -17,6 +17,10 @@ SECRET_KEY = os.environ.get("JWT_SECRET", "intel-platform-dev-secret-change-in-p
 _IS_DEFAULT_SECRET = SECRET_KEY == "intel-platform-dev-secret-change-in-production"
 if _IS_DEFAULT_SECRET:
     _logger.warning("SECURITY: Using default JWT secret. Set JWT_SECRET env var in production.")
+
+# The built-in placeholder API key ships in .env.example, so anyone can read it.
+# It must NEVER authenticate (as admin or otherwise) — see get_current_user.
+_DEFAULT_API_KEY = "dev-api-key-change-in-production"
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
 
@@ -114,9 +118,13 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
 
     token = credentials.credentials
 
-    # Support legacy API key for backwards compatibility
+    # Support a legacy API key for programmatic / service-to-service callers.
+    # SECURITY: the built-in default key must never authenticate — otherwise
+    # anyone who reads .env.example gets admin on a naive deploy — so only a
+    # non-default key works. The browser frontend does NOT use this path; it
+    # authenticates with a JWT obtained from login.
     from intel_platform.config import settings
-    if token == settings.api_key:
+    if settings.api_key not in ("", _DEFAULT_API_KEY) and token == settings.api_key:
         return {"username": "api_key_user", "role": "admin"}
 
     # JWT token

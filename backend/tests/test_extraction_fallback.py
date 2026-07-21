@@ -17,7 +17,7 @@ class _BoomProvider:
 
 async def test_llm_extraction_falls_back_to_nlp_on_provider_error():
     with patch(
-        "intel_platform.api.routes.llm._get_extraction_provider",
+        "intel_platform.llm.providers._get_extraction_provider",
         new=AsyncMock(return_value=_BoomProvider()),
     ):
         ents, rels = await extraction.extract_entities_llm(TEXT, "doc-fallback")
@@ -30,7 +30,7 @@ async def test_llm_extraction_falls_back_to_nlp_on_provider_error():
 
 async def test_hybrid_extraction_survives_provider_error():
     with patch(
-        "intel_platform.api.routes.llm._get_extraction_provider",
+        "intel_platform.llm.providers._get_extraction_provider",
         new=AsyncMock(return_value=_BoomProvider()),
     ):
         ents, rels = await extraction.extract_entities_hybrid(TEXT, "doc-fallback-hybrid")

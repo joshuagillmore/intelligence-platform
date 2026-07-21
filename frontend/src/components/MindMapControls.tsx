@@ -82,16 +82,17 @@ export default function MindMapControls({
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             placeholder="Search topics..."
-            className="w-full bg-[#090e1c] border border-[#1a1f2e] rounded-sm px-2.5 py-1.5 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#adc6ff]/50"
+            className="w-full bg-[#090e1c] border border-navy-800 rounded-sm px-2.5 py-1.5 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#adc6ff]/50"
           />
         </div>
 
         {/* Zoom controls */}
-        <div className="flex items-center gap-0.5 bg-[#1a1f2e] rounded-sm border border-[#252a39]">
+        <div className="flex items-center gap-0.5 bg-navy-800 rounded-sm border border-[#252a39]">
           <button
             onClick={onZoomOut}
             className="px-2 py-1.5 text-[11px] text-gray-400 hover:text-white transition-colors"
             title="Zoom out"
+            aria-label="Zoom out"
           >
             &minus;
           </button>
@@ -99,6 +100,7 @@ export default function MindMapControls({
             onClick={onZoomReset}
             className="px-2 py-1.5 text-[9px] font-bold text-gray-500 hover:text-white transition-colors uppercase"
             title="Reset zoom"
+            aria-label="Reset zoom"
           >
             Fit
           </button>
@@ -106,13 +108,14 @@ export default function MindMapControls({
             onClick={onZoomIn}
             className="px-2 py-1.5 text-[11px] text-gray-400 hover:text-white transition-colors"
             title="Zoom in"
+            aria-label="Zoom in"
           >
             +
           </button>
         </div>
 
         {/* Layout toggle */}
-        <div className="flex items-center gap-0.5 bg-[#1a1f2e] rounded-sm border border-[#252a39]">
+        <div className="flex items-center gap-0.5 bg-navy-800 rounded-sm border border-[#252a39]">
           <button
             onClick={() => onLayoutChange('radial')}
             className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors rounded-l-sm ${
@@ -138,7 +141,7 @@ export default function MindMapControls({
         </div>
 
         {/* Expand/Collapse */}
-        <div className="flex items-center gap-0.5 bg-[#1a1f2e] rounded-sm border border-[#252a39]">
+        <div className="flex items-center gap-0.5 bg-navy-800 rounded-sm border border-[#252a39]">
           <button
             onClick={onExpandAll}
             className="px-2.5 py-1.5 text-[9px] font-bold text-gray-500 hover:text-white transition-colors uppercase tracking-wider"
@@ -157,7 +160,7 @@ export default function MindMapControls({
 
         {/* Clustering method toggle */}
         {onClusteringMethodChange && (
-          <div className="flex items-center gap-0.5 bg-[#1a1f2e] rounded-sm border border-[#252a39]">
+          <div className="flex items-center gap-0.5 bg-navy-800 rounded-sm border border-[#252a39]">
             <button
               onClick={() => onClusteringMethodChange('tfidf')}
               className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors rounded-l-sm ${
@@ -185,7 +188,7 @@ export default function MindMapControls({
 
         {/* Granularity control */}
         {onGranularityChange && (
-          <div className="flex items-center gap-0.5 bg-[#1a1f2e] rounded-sm border border-[#252a39]">
+          <div className="flex items-center gap-0.5 bg-navy-800 rounded-sm border border-[#252a39]">
             {(['broad', 'medium', 'detailed'] as const).map((g) => (
               <button
                 key={g}
@@ -205,7 +208,7 @@ export default function MindMapControls({
 
         {/* Export */}
         {onExport && (
-          <div className="flex items-center gap-0.5 bg-[#1a1f2e] rounded-sm border border-[#252a39]">
+          <div className="flex items-center gap-0.5 bg-navy-800 rounded-sm border border-[#252a39]">
             <button
               onClick={() => onExport('json')}
               className="px-2 py-1.5 text-[9px] font-bold text-gray-500 hover:text-white transition-colors uppercase tracking-wider"

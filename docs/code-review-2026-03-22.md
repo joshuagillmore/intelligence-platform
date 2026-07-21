@@ -1,3 +1,9 @@
+> **Note:** This is a self-commissioned full-codebase review, kept in-repo as a
+> record of the audit and the fixes it drove. It was previously at the repo root
+> as `CODE_REVIEW_REPORT.md`. Line-item statuses reflect the state at review time;
+> a few "Flagged" items have since been implemented (see the Recommendations at
+> the end and the current root `CLAUDE.md` for the live status).
+
 # Code Review Report — Intelligence Platform
 
 **Date:** 2026-03-22
@@ -43,7 +49,7 @@ The Intelligence Platform is a well-structured full-stack application with clear
 | 3 | `services/graph_rag.py` | Internal error details leaked to API client | Medium | Fixed |
 | 3 | `api/routes/assess.py` | Internal error details leaked to API client | Medium | Fixed |
 | 3 | `.env.example` | Missing LLM provider config template | Info | Fixed |
-| 3 | `api/auth.py` | Default admin/admin credentials (in-memory user store) | Medium | Flagged |
+| 3 | `api/auth.py` | Default admin credentials (in-memory user store) | Medium | Flagged |
 | 3 | `api/routes/watchlist.py` | In-memory watchlist lost on restart | Info | Flagged |
 | 3 | `api/routes/snapshots.py` | In-memory snapshots lost on restart | Info | Flagged |
 
@@ -51,7 +57,7 @@ The Intelligence Platform is a well-structured full-stack application with clear
 
 Items marked with `SECURITY`, `PERF`, or `REVIEW` comments that need human decision:
 
-1. **`api/auth.py` — Default admin/admin credentials**: The in-memory user store with default admin/admin is acceptable for a single-user workbench but should be replaced with a database-backed user store before any multi-user or production deployment. See `# Change in production!` comment.
+1. **`api/auth.py` — Default admin credentials**: The in-memory user store with a default admin account is acceptable for a single-user workbench but should be replaced with a database-backed user store before any multi-user or production deployment. See `# Change in production!` comment.
 
 2. **In-memory state stores** (`_snapshots`, `_watchlists`, `_llm_override`): These are lost on container restart. Consider persisting to Neo4j (like Collections already does) if data persistence matters.
 
@@ -85,4 +91,4 @@ Items marked with `SECURITY`, `PERF`, or `REVIEW` comments that need human decis
 
 4. **~~Add a health check for Ollama connectivity~~** — **Implemented**: `/health` now returns `ollama_connected` field. Status is `degraded` when Ollama is the default provider but unreachable.
 
-5. **~~Database-backed user management~~** — **Implemented**: Users stored as Neo4j `User` nodes. Default admin/admin created on first startup if no users exist. Registration creates new `User` nodes.
+5. **~~Database-backed user management~~** — **Implemented**: Users stored as Neo4j `User` nodes. A default admin account is created on first startup if no users exist. Registration creates new `User` nodes.

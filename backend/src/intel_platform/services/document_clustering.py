@@ -763,19 +763,12 @@ async def refine_labels_with_llm(
     refine only touches that node's own dict entries, so the per-node LLM
     calls run concurrently (Semaphore-gated) instead of one at a time.
     """
-    from intel_platform.config import settings
+    # Shared, env-based cloud-provider selection (cohere → anthropic → openai).
+    # Returns None when no cloud key is configured, in which case we keep the
+    # existing keyword labels rather than refine.
+    from intel_platform.llm.providers import _cloud_provider_from_env
 
-    provider = None
-    if settings.cohere_api_key:
-        from intel_platform.llm.cohere_provider import CohereProvider
-        provider = CohereProvider(api_key=settings.cohere_api_key)
-    elif settings.anthropic_api_key:
-        from intel_platform.llm.anthropic import AnthropicProvider
-        provider = AnthropicProvider(api_key=settings.anthropic_api_key)
-    elif settings.openai_api_key:
-        from intel_platform.llm.openai_provider import OpenAIProvider
-        provider = OpenAIProvider(api_key=settings.openai_api_key)
-
+    provider = _cloud_provider_from_env()
     if not provider:
         return tree_node
 

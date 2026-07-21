@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException
 from intel_platform.api.deps import get_graph_store, verify_api_key
@@ -137,7 +138,8 @@ async def get_nearby(entity_id: str, radius: int = 2000, store: GraphStore = Dep
     government / neighbourhoods) around a geolocated entity — local GEOINT
     context via Overpass. Best-effort: returns [] if the entity has no
     coordinates or Overpass is unreachable."""
-    entity = store.get_entity(entity_id)
+    # Neo4j driver is synchronous; offload so it doesn't block the event loop.
+    entity = await asyncio.to_thread(store.get_entity, entity_id)
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
     lat, lng, _ = _extract_coords(entity)

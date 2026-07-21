@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
 import { projectsApi, graphApi, reportsApi, timelineApi, exportApi, type Project } from '@/lib/api';
+import { TYPE_BADGE_CLASS, TYPE_COLOR_HEX } from '@/lib/entityStyles';
 
 // Design tokens
 const colors = {
@@ -91,29 +92,9 @@ export default function ProjectDashboard() {
     { label: 'Unresolved Gaps', value: unresolvedGaps, color: colors.tertiary, progress: Math.min(unresolvedGaps / 10, 1) },
   ];
 
-  const typeColor: Record<string, string> = {
-    Person: 'bg-orange-900/30 text-orange-400',
-    Organization: 'bg-blue-900/30 text-blue-400',
-    Location: 'bg-green-900/30 text-green-400',
-    IPAddress: 'bg-cyan-900/30 text-cyan-400',
-    Domain: 'bg-purple-900/30 text-purple-400',
-    Hash: 'bg-pink-900/30 text-pink-400',
-    ThreatActor: 'bg-red-900/30 text-red-400',
-    TTP: 'bg-yellow-900/30 text-yellow-400',
-    Document: 'bg-gray-900/30 text-gray-400',
-  };
-
-  const typeBadgeStyle: Record<string, { bg: string; text: string }> = {
-    Person: { bg: 'rgba(249, 115, 22, 0.15)', text: '#fb923c' },
-    Organization: { bg: 'rgba(59, 130, 246, 0.15)', text: '#60a5fa' },
-    Location: { bg: 'rgba(34, 197, 94, 0.15)', text: '#4ade80' },
-    IPAddress: { bg: 'rgba(6, 182, 212, 0.15)', text: '#22d3ee' },
-    Domain: { bg: 'rgba(168, 85, 247, 0.15)', text: '#a78bfa' },
-    Hash: { bg: 'rgba(236, 72, 153, 0.15)', text: '#f472b6' },
-    ThreatActor: { bg: 'rgba(239, 68, 68, 0.15)', text: '#f87171' },
-    TTP: { bg: 'rgba(234, 179, 8, 0.15)', text: '#facc15' },
-    Document: { bg: 'rgba(107, 114, 128, 0.15)', text: '#9ca3af' },
-  };
+  // Entity badge classes (activity list) come from the SSOT in
+  // '@/lib/entityStyles'; the Key Entities pills derive their inline colors
+  // from the SSOT hex map (TYPE_COLOR_HEX) below.
 
   // Map event entity_type to timeline border color
   const activityBorderColor = (entityType: string): string => {
@@ -132,22 +113,24 @@ export default function ProjectDashboard() {
     return map[entityType] || '#4b5563';
   };
 
-  // Simulated AI insights based on available data
+  // Heuristic flags derived from graph statistics — simple threshold checks over
+  // centrality and counts, not model output. Labeled as such so they are not
+  // mistaken for AI-generated confidence scores.
   const insights = [
     ...(topEntities.length > 2 ? [{
-      confidence: 'High' as const,
-      description: `Entity "${topEntities[0]?.name}" shows highest centrality in the network, suggesting a key node connecting multiple clusters.`,
+      tag: 'Centrality',
+      description: `Entity "${topEntities[0]?.name}" shows the highest centrality in the network, suggesting a key node connecting multiple clusters.`,
       action: 'Deep Analysis',
       actionHref: '/network',
     }] : []),
     ...(relationshipCount > 5 ? [{
-      confidence: 'Medium' as const,
-      description: `${relationshipCount} relationships detected across ${entityCount} entities. Density patterns suggest potential undiscovered connections.`,
+      tag: 'Density',
+      description: `${relationshipCount} relationships across ${entityCount} entities. Density patterns may point to undiscovered connections.`,
       action: 'Verify Connection',
       actionHref: '/network',
     }] : []),
     ...(unresolvedGaps > 1 ? [{
-      confidence: 'Medium' as const,
+      tag: 'Connectivity',
       description: `${unresolvedGaps} disconnected components identified. These gaps may indicate missing intelligence links.`,
       action: 'Deep Analysis',
       actionHref: '/network',
@@ -295,7 +278,7 @@ export default function ProjectDashboard() {
                     )}
                     <div className="text-xs text-gray-200 pr-16 leading-relaxed">{evt.name}</div>
                     <span
-                      className={`inline-block mt-1.5 text-[10px] px-1.5 py-0.5 rounded ${typeColor[evt.entity_type] || 'bg-gray-900/30 text-gray-400'}`}
+                      className={`inline-block mt-1.5 text-[10px] px-1.5 py-0.5 rounded ${TYPE_BADGE_CLASS[evt.entity_type] || 'bg-gray-900/30 text-gray-400'}`}
                     >
                       {evt.entity_type}
                     </span>
@@ -326,7 +309,7 @@ export default function ProjectDashboard() {
                 </thead>
                 <tbody>
                   {topEntities.map((e: { id?: string; name: string; entity_type: string; centrality?: number }, i: number) => {
-                    const badge = typeBadgeStyle[e.entity_type] || { bg: 'rgba(107,114,128,0.15)', text: '#9ca3af' };
+                    const badgeHex = TYPE_COLOR_HEX[e.entity_type] || '#9ca3af';
                     const centralityVal = e.centrality || 0;
                     const centralityPct = maxCentrality > 0 ? (centralityVal / maxCentrality) * 100 : 0;
                     return (
@@ -347,7 +330,7 @@ export default function ProjectDashboard() {
                         <td className="py-2.5 pr-4">
                           <span
                             className="text-[10px] px-2 py-1 rounded-full font-medium"
-                            style={{ backgroundColor: badge.bg, color: badge.text }}
+                            style={{ backgroundColor: `${badgeHex}26`, color: badgeHex }}
                           >
                             {e.entity_type}
                           </span>
@@ -389,15 +372,16 @@ export default function ProjectDashboard() {
             </div>
           </div>
 
-          {/* Right Column: AI Insights */}
+          {/* Right Column: Heuristic Flags */}
           <div className="space-y-4">
             <div
               className="rounded-lg p-4"
               style={{ backgroundColor: colors.container }}
             >
-              <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-                <span style={{ color: colors.primary }}>|</span> AI Insights
+              <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
+                <span style={{ color: colors.primary }}>|</span> Heuristic Flags
               </h3>
+              <p className="text-[10px] text-gray-500 mb-4">Rule-based signals from graph statistics</p>
               <div className="space-y-3">
                 {insights.map((insight, i) => (
                   <div
@@ -406,17 +390,13 @@ export default function ProjectDashboard() {
                     style={{ backgroundColor: colors.containerLow }}
                   >
                     <span
-                      className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full mb-2"
+                      className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full mb-2 uppercase tracking-wider"
                       style={{
-                        backgroundColor: insight.confidence === 'High'
-                          ? 'rgba(173, 198, 255, 0.15)'
-                          : 'rgba(255, 185, 95, 0.15)',
-                        color: insight.confidence === 'High'
-                          ? colors.primary
-                          : colors.secondary,
+                        backgroundColor: 'rgba(173, 198, 255, 0.12)',
+                        color: colors.primary,
                       }}
                     >
-                      {insight.confidence} Confidence
+                      {insight.tag}
                     </span>
                     <p className="text-xs text-gray-300 leading-relaxed mb-2">{insight.description}</p>
                     <button
@@ -429,7 +409,7 @@ export default function ProjectDashboard() {
                   </div>
                 ))}
                 {insights.length === 0 && (
-                  <p className="text-xs text-gray-500">Insufficient data for insights. Add more entities and relationships.</p>
+                  <p className="text-xs text-gray-500">Insufficient data for heuristics. Add more entities and relationships.</p>
                 )}
               </div>
             </div>
@@ -553,15 +533,8 @@ export default function ProjectDashboard() {
           className="mt-8 rounded-lg px-5 py-3 flex flex-col md:flex-row items-start md:items-center justify-between gap-2 md:gap-0 text-[10px]"
           style={{ backgroundColor: colors.containerLow, color: '#4b5563' }}
         >
-          <div className="flex items-center gap-2">
-            <span
-              className="w-1.5 h-1.5 rounded-full inline-block"
-              style={{ backgroundColor: colors.green }}
-            />
-            <span>Encryption: AES-256 Active</span>
-          </div>
-          <span>Scan Frequency: Continuous</span>
-          <span>Last Sync: {new Date().toLocaleString()}</span>
+          <span>Project ID: {projectId.substring(0, 8)}</span>
+          <span>Last Viewed: {new Date().toLocaleString()}</span>
         </div>
       </main>
     </div>

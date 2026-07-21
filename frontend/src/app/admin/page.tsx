@@ -312,7 +312,7 @@ export default function AdminPage() {
   return (
     <div className="flex">
       <Sidebar />
-      <main className="ml-56 flex-1 p-8">
+      <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
         <h2 className="text-2xl font-bold mb-6">Administration</h2>
 
         {/* API Statistics Summary */}

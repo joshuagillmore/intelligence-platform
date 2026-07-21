@@ -5,6 +5,7 @@ normalization. Each item gets score = 1/(k + rank), weighted by source.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -92,9 +93,12 @@ class HybridRetriever:
         - merged_ranking: RRF-merged document ranking
         - node_count, edge_count: graph stats
         """
-        # 1. Graph retrieval
-        understanding = self._graph.understand_query(query, project_id)
-        graph_context = self._graph.retrieve_context(understanding, project_id, max_hops=max_hops)
+        # 1. Graph retrieval — the Neo4j driver is synchronous, so offload these
+        # calls to a thread to keep the event loop free.
+        understanding = await asyncio.to_thread(self._graph.understand_query, query, project_id)
+        graph_context = await asyncio.to_thread(
+            self._graph.retrieve_context, understanding, project_id, max_hops
+        )
 
         # 2. Vector retrieval
         try:

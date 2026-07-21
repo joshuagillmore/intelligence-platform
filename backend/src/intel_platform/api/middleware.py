@@ -8,6 +8,25 @@ from starlette.middleware.base import BaseHTTPMiddleware
 logger = logging.getLogger("intel_platform.requests")
 
 
+def client_ip(request: Request) -> str:
+    """Best-effort client IP for rate limiting / logging.
+
+    Honors the LEFTMOST X-Forwarded-For entry ONLY when TRUST_PROXY_HEADERS is
+    set (behind a trusted reverse proxy such as Railway). Without that, the
+    header is attacker-controlled and would let anyone evade per-IP limits by
+    sharing/spoofing it, so we fall back to the socket peer address.
+    """
+    from intel_platform.config import settings
+
+    if settings.trust_proxy_headers:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            first = forwarded.split(",")[0].strip()
+            if first:
+                return first
+    return request.client.host if request.client else "unknown"
+
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Structured request logging: method, path, status, response time."""
 
@@ -16,10 +35,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         duration_ms = (time.perf_counter() - start) * 1000
 
-        client_ip = request.client.host if request.client else "-"
         logger.info(
             "%s %s %s %d %.1fms",
-            client_ip,
+            client_ip(request),
             request.method,
             request.url.path,
             response.status_code,
@@ -43,7 +61,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if path in ("/health", "/openapi.json", "/docs") or request.method == "OPTIONS":
             return await call_next(request)
 
-        client_ip = request.client.host if request.client else "unknown"
+        ip = client_ip(request)
         now = time.time()
 
         # Periodic cleanup of stale IPs (every 5 minutes)
@@ -54,16 +72,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             self._last_cleanup = now
 
         # Clean old entries for this IP
-        self._requests[client_ip] = [t for t in self._requests[client_ip] if now - t < 60]
+        self._requests[ip] = [t for t in self._requests[ip] if now - t < 60]
 
-        if len(self._requests[client_ip]) >= self.rpm:
+        if len(self._requests[ip]) >= self.rpm:
             from starlette.responses import JSONResponse
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Rate limit exceeded"},
             )
 
-        self._requests[client_ip].append(now)
+        self._requests[ip].append(now)
         response = await call_next(request)
         return response
 
