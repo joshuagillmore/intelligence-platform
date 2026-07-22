@@ -204,6 +204,15 @@ export default function CyberPage() {
     loadThreatActors();
   }, [loadIOCs, loadGraph, loadThreatActors]);
 
+  // Reload everything on demand — used by the Refresh button and after an
+  // Investigate, since enrichment can create new entities/relationships that
+  // otherwise only appear on a full remount (navigating away and back).
+  const refreshAll = useCallback(() => {
+    loadIOCs();
+    loadGraph();
+    loadThreatActors();
+  }, [loadIOCs, loadGraph, loadThreatActors]);
+
   const filteredIocs = useMemo(() => {
     if (activeFilter === 'all') return iocs;
     return iocs.filter(i => i.entity_type === activeFilter);
@@ -356,7 +365,20 @@ export default function CyberPage() {
     <div className="flex" style={{ backgroundColor: '#0e1321' }}>
       <Sidebar />
       <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
-        <h2 className="text-2xl font-bold mb-4 text-white">Cyber Intelligence</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold text-white">Cyber Intelligence</h2>
+          <button
+            onClick={refreshAll}
+            disabled={iocsLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50"
+            style={{ backgroundColor: '#1a1f2e', color: '#adc6ff', border: '1px solid #2f3444' }}
+            title="Reload IOCs, relationship graph, and threat actors"
+            aria-label="Refresh cyber intelligence data"
+          >
+            <span className={`material-symbols-outlined text-[16px] ${iocsLoading ? 'animate-spin' : ''}`}>refresh</span>
+            {iocsLoading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
 
         {/* Page-level tabs */}
         <div className="flex gap-1 mb-6 border-b border-navy-600 pb-0 overflow-x-auto">
@@ -525,7 +547,7 @@ export default function CyberPage() {
                                         entityId={ioc.id}
                                         entityType={ioc.entity_type}
                                         properties={entity.properties}
-                                        onEnriched={() => refetchIoc(ioc.id)}
+                                        onEnriched={() => { refetchIoc(ioc.id); loadIOCs(); loadGraph(); }}
                                       />
                                     </div>
                                   </div>
