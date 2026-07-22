@@ -8,6 +8,7 @@ import { useProject } from '@/lib/ProjectContext';
 import { entitiesApi, graphApi, assessApi } from '@/lib/api';
 import { TYPE_BADGE_CLASS as TYPE_BADGE_STYLES } from '@/lib/entityStyles';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
+import AttackMatrix from '@/components/AttackMatrix';
 
 interface IOCEntity {
   id: string;
@@ -53,54 +54,6 @@ const FILTER_TABS = [
   { label: 'Hashes', value: 'Hash' },
   { label: 'TTPs', value: 'TTP' },
   { label: 'CVEs', value: 'Vulnerability' },
-];
-
-const MITRE_TACTICS = [
-  { id: 'TA0001', name: 'Initial Access', techniques: [
-    { id: 'T1566', name: 'Phishing' },
-    { id: 'T1190', name: 'Exploit Public-Facing App' },
-    { id: 'T1078', name: 'Valid Accounts' },
-    { id: 'T1195', name: 'Supply Chain Compromise' },
-  ]},
-  { id: 'TA0002', name: 'Execution', techniques: [
-    { id: 'T1059', name: 'Command & Scripting' },
-    { id: 'T1203', name: 'Exploitation for Client Exec' },
-    { id: 'T1204', name: 'User Execution' },
-  ]},
-  { id: 'TA0003', name: 'Persistence', techniques: [
-    { id: 'T1547', name: 'Boot/Logon Autostart' },
-    { id: 'T1053', name: 'Scheduled Task/Job' },
-    { id: 'T1136', name: 'Create Account' },
-  ]},
-  { id: 'TA0005', name: 'Defense Evasion', techniques: [
-    { id: 'T1036', name: 'Masquerading' },
-    { id: 'T1027', name: 'Obfuscated Files' },
-    { id: 'T1070', name: 'Indicator Removal' },
-  ]},
-  { id: 'TA0006', name: 'Credential Access', techniques: [
-    { id: 'T1003', name: 'OS Credential Dumping' },
-    { id: 'T1110', name: 'Brute Force' },
-    { id: 'T1555', name: 'Credentials from Stores' },
-  ]},
-  { id: 'TA0007', name: 'Discovery', techniques: [
-    { id: 'T1082', name: 'System Information' },
-    { id: 'T1083', name: 'File and Directory' },
-    { id: 'T1046', name: 'Network Service Scan' },
-  ]},
-  { id: 'TA0011', name: 'Command & Control', techniques: [
-    { id: 'T1071', name: 'Application Layer Protocol' },
-    { id: 'T1105', name: 'Ingress Tool Transfer' },
-    { id: 'T1573', name: 'Encrypted Channel' },
-  ]},
-  { id: 'TA0010', name: 'Exfiltration', techniques: [
-    { id: 'T1567', name: 'Exfil Over Web Service' },
-    { id: 'T1048', name: 'Exfil Over Alt Protocol' },
-  ]},
-  { id: 'TA0040', name: 'Impact', techniques: [
-    { id: 'T1486', name: 'Data Encrypted for Impact' },
-    { id: 'T1489', name: 'Service Stop' },
-    { id: 'T1499', name: 'Endpoint DoS' },
-  ]},
 ];
 
 type PageTab = 'ioc' | 'attack' | 'actors';
@@ -149,7 +102,6 @@ export default function CyberPage() {
   const [actorRelationships, setActorRelationships] = useState<Record<string, Relationship[]>>({});
   const [expandedActorId, setExpandedActorId] = useState<string | null>(null);
   const [generatingProfile, setGeneratingProfile] = useState<string | null>(null);
-  const [selectedTechniqueId, setSelectedTechniqueId] = useState<string | null>(null);
 
   const loadIOCs = useCallback(async () => {
     if (!activeProject) return;
@@ -239,42 +191,6 @@ export default function CyberPage() {
     const attributedCount = iocs.filter(i => i.properties?.attributed || i.properties?.threat_actor).length;
     const attributedPct = Math.round((attributedCount / total) * 100);
     return { critical, high, medium, low, enrichedPct, attributedPct, newRecent, attributedCount };
-  }, [iocs]);
-
-  // Build a set of TTP IDs present in the project for ATT&CK matrix highlighting
-  const ttpNames = useMemo(() => {
-    const names = new Set<string>();
-    iocs.filter(i => i.entity_type === 'TTP').forEach(i => {
-      names.add(i.name.toUpperCase());
-    });
-    return names;
-  }, [iocs]);
-
-  const isTechniquePresent = useCallback((techId: string) => {
-    return ttpNames.has(techId.toUpperCase()) ||
-      Array.from(ttpNames).some(n => n.includes(techId.toUpperCase()));
-  }, [ttpNames]);
-
-  const coveredCount = useMemo(() => {
-    let count = 0;
-    MITRE_TACTICS.forEach(tactic => {
-      tactic.techniques.forEach(tech => {
-        if (isTechniquePresent(tech.id)) count++;
-      });
-    });
-    return count;
-  }, [isTechniquePresent]);
-
-  const totalTechniques = useMemo(() => {
-    return MITRE_TACTICS.reduce((sum, t) => sum + t.techniques.length, 0);
-  }, []);
-
-  // Get entities related to a technique
-  const getRelatedEntities = useCallback((techId: string) => {
-    return iocs.filter(i =>
-      i.entity_type === 'TTP' &&
-      (i.name.toUpperCase().includes(techId.toUpperCase()))
-    );
   }, [iocs]);
 
   async function toggleRow(ioc: IOCEntity) {
@@ -596,104 +512,9 @@ export default function CyberPage() {
           </>
         )}
 
-        {/* ATT&CK Matrix Tab */}
+        {/* ATT&CK Matrix Tab — data-driven from the /attack API */}
         {pageTab === 'attack' && (
-          <div>
-            <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 gap-2">
-              <div>
-                <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">MITRE ATT&CK Coverage</h3>
-                <p className="text-sm text-gray-400 mt-1">
-                  {coveredCount} of {totalTechniques} techniques detected in project TTPs
-                </p>
-              </div>
-              <div className="flex items-center gap-4 text-xs text-gray-400">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: '#adc6ff' }} /> Detected
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: '#1a1f2e' }} /> Not Detected
-                </span>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto pb-4" style={{ height: 'calc(100vh - 280px)' }}>
-              <div className="flex gap-2 min-w-max">
-                {MITRE_TACTICS.map(tactic => (
-                  <div key={tactic.id} className="flex flex-col w-40 flex-shrink-0">
-                    {/* Tactic header */}
-                    <div className="rounded-t-lg px-3 py-2 text-center" style={{ backgroundColor: '#2f3444', border: '1px solid #2f3444' }}>
-                      <div className="text-[10px] uppercase tracking-widest font-bold text-white leading-tight">{tactic.name}</div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">{tactic.id}</div>
-                    </div>
-                    {/* Technique cells */}
-                    <div className="flex flex-col gap-1 mt-1">
-                      {tactic.techniques.map(tech => {
-                        const present = isTechniquePresent(tech.id);
-                        const isSelected = selectedTechniqueId === tech.id;
-                        return (
-                          <button
-                            key={tech.id}
-                            onClick={() => setSelectedTechniqueId(isSelected ? null : tech.id)}
-                            className={`rounded px-2 py-2 text-left transition-all ${
-                              isSelected ? 'ring-1 ring-[#adc6ff]' : ''
-                            }`}
-                            style={{
-                              backgroundColor: present ? 'rgba(173,198,255,0.15)' : '#1a1f2e',
-                              border: present ? '1px solid rgba(173,198,255,0.3)' : '1px solid #2f3444',
-                            }}
-                          >
-                            <div className="text-[11px] font-medium leading-tight" style={{ color: present ? '#adc6ff' : '#9ca3af' }}>
-                              {tech.name}
-                            </div>
-                            <div className="text-[10px] text-gray-500 mt-0.5">{tech.id}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Selected technique detail panel */}
-            {selectedTechniqueId && (
-              <div className="mt-4 rounded-lg p-4" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">
-                    {selectedTechniqueId} - Related Entities
-                  </h4>
-                  <button
-                    onClick={() => setSelectedTechniqueId(null)}
-                    className="text-gray-400 hover:text-white text-xs"
-                  >
-                    Close
-                  </button>
-                </div>
-                {getRelatedEntities(selectedTechniqueId).length > 0 ? (
-                  <div className="space-y-2">
-                    {getRelatedEntities(selectedTechniqueId).map(entity => (
-                      <div key={entity.id} className="rounded p-3 flex items-center justify-between" style={{ backgroundColor: '#2f3444' }}>
-                        <div>
-                          <span className="text-sm font-mono text-white">{entity.name}</span>
-                          <span className={`text-xs px-2 py-0.5 rounded ml-2 ${getBadgeStyle(entity.entity_type)}`}>
-                            {entity.entity_type}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => router.push(`/network?select=${entity.id}`)}
-                          className="text-xs hover:underline" style={{ color: '#adc6ff' }}
-                        >
-                          View in Graph
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">No matching TTP entities found for this technique.</p>
-                )}
-              </div>
-            )}
-          </div>
+          <AttackMatrix projectId={activeProject.id} />
         )}
 
         {/* Threat Actors Tab */}

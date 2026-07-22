@@ -94,6 +94,83 @@ export const enrichmentApi = {
   providers: () => api.get('/enrichment/providers'),
 };
 
+// MITRE ATT&CK® integration — data-driven matrix, technique detail, coverage
+// resolution against a project's TTP entities, and Navigator layer export.
+export interface AttackCounts {
+  tactics: number;
+  techniques: number;
+  groups: number;
+  software: number;
+  mitigations: number;
+}
+
+export interface AttackStatus {
+  ingested: boolean;
+  version: string | null;
+  counts: AttackCounts;
+}
+
+export interface AttackSubtechnique {
+  id: string;
+  name: string;
+  observed_count: number;
+}
+
+export interface AttackTechniqueCell {
+  id: string;
+  name: string;
+  is_subtechnique: false;
+  observed_count: number;
+  subtechniques: AttackSubtechnique[];
+}
+
+export interface AttackTactic {
+  id: string;
+  name: string;
+  shortname: string;
+  techniques: AttackTechniqueCell[];
+}
+
+export interface AttackMatrixData {
+  version: string | null;
+  ingested: boolean;
+  tactics: AttackTactic[];
+}
+
+export interface AttackTechniqueDetail {
+  id: string;
+  name: string;
+  description: string;
+  is_subtechnique: boolean;
+  parent_id: string | null;
+  tactics: { id: string; name: string; shortname: string }[];
+  platforms: string[];
+  detection: string;
+  mitigations: { id: string; name: string }[];
+  groups: { id: string; name: string }[];
+  related_entities: { id: string; name: string; entity_type: string }[];
+}
+
+export const attackApi = {
+  status: () => api.get<AttackStatus>('/attack/status'),
+  // Admin action — downloads ~53MB of ATT&CK STIX server-side; can take 30-60s.
+  ingest: () => api.post<{ ingested: true; version: string; counts: AttackCounts }>('/attack/ingest'),
+  // Re-map the project's TTP entities onto ATT&CK techniques.
+  resolve: (projectId: string) =>
+    api.post<{ mapped: number }>('/attack/resolve', null, { params: { project_id: projectId } }),
+  matrix: (projectId: string) =>
+    api.get<AttackMatrixData>('/attack/matrix', { params: { project_id: projectId } }),
+  technique: (techniqueId: string, projectId: string) =>
+    api.get<AttackTechniqueDetail>(`/attack/technique/${techniqueId}`, {
+      params: { project_id: projectId },
+    }),
+  // Downloadable Navigator layer JSON. Fetched via axios so the auth header is
+  // sent (Bearer token in localStorage, not a cookie a plain <a> could carry),
+  // then turned into a blob download — matching the other exports in the app.
+  navigatorLayer: (projectId: string) =>
+    api.get('/attack/navigator-layer', { params: { project_id: projectId } }),
+};
+
 export const graphApi = {
   full: (projectId: string) => api.get('/graph', { params: { project_id: projectId } }),
   communities: (projectId: string) => api.get('/communities', { params: { project_id: projectId } }),
