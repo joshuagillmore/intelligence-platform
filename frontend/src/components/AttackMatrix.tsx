@@ -725,6 +725,36 @@ export default function AttackMatrix({
                     </div>
                   )}
 
+                  {/* Enabling CVEs — the project's Vulnerability entities whose
+                      weakness chain (CWE→CAPEC) could enable this technique. This is
+                      *potential* enablement inferred from the CVE's weaknesses, not
+                      an observed TTP; keep that framing in the caption. */}
+                  {detail.enabling_cves && detail.enabling_cves.length > 0 && (
+                    <div>
+                      <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1.5">Enabling CVEs</h4>
+                      <p className="text-[11px] text-gray-500 mb-2 leading-snug">
+                        CVEs in this project whose weaknesses (CWE→CAPEC) could enable this technique — potential
+                        enablement, distinct from an observed TTP.
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {detail.enabling_cves.map((cve) => (
+                          <button
+                            key={cve.id}
+                            onClick={() => router.push(`/network?select=${cve.id}`)}
+                            className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-1 rounded transition-colors hover:brightness-125"
+                            style={{ backgroundColor: COVERED_BG, color: ACCENT, border: `1px solid ${COVERED_BORDER}` }}
+                            aria-label={`Open ${cve.name} in the network graph`}
+                            title={`${cve.name} — could enable this technique via its weakness chain`}
+                          >
+                            <span className="material-symbols-outlined text-[13px]">bug_report</span>
+                            {cve.name}
+                            <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Related project entities — click through to the graph */}
                   <div>
                     <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1.5">Related entities in this project</h4>

@@ -86,6 +86,35 @@ def test_resolve_returns_mapped(client, analyst_header):
     assert resp.json() == {"mapped": 7}
 
 
+def test_ingest_vuln_chain_requires_admin(client, analyst_header):
+    resp = client.post("/api/attack/ingest-vuln-chain", headers=analyst_header)
+    assert resp.status_code == 403
+
+
+def test_ingest_vuln_chain_admin_returns_counts(client, admin_header):
+    with patch("intel_platform.api.routes.attack.vuln_chain.ingest_vuln_chain",
+               new=AsyncMock(return_value={"cwes": 900, "edges": 1500})):
+        resp = client.post("/api/attack/ingest-vuln-chain", headers=admin_header)
+    assert resp.status_code == 200
+    assert resp.json() == {"cwes": 900, "edges": 1500}
+
+
+def test_ingest_vuln_chain_failure_is_502_without_leaking(client, admin_header):
+    with patch("intel_platform.api.routes.attack.vuln_chain.ingest_vuln_chain",
+               new=AsyncMock(side_effect=RuntimeError("boom: secret url"))):
+        resp = client.post("/api/attack/ingest-vuln-chain", headers=admin_header)
+    assert resp.status_code == 502
+    assert "boom" not in resp.text
+
+
+def test_resolve_cve_returns_counts(client, analyst_header):
+    with patch("intel_platform.services.attack.vuln_chain.resolve_cve",
+               return_value={"vulnerabilities": 4, "techniques_linked": 11}):
+        resp = client.post("/api/attack/resolve-cve", params={"project_id": "p1"}, headers=analyst_header)
+    assert resp.status_code == 200
+    assert resp.json() == {"vulnerabilities": 4, "techniques_linked": 11}
+
+
 def test_matrix_passthrough(client, analyst_header):
     fake = {"version": "19.1", "ingested": True, "tactics": []}
     with patch("intel_platform.services.attack.graph_ops.get_matrix", return_value=fake):

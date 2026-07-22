@@ -109,6 +109,37 @@ async def test_nvd_extracts_cvss_description_products():
     assert "apache log4j" in result.properties["affected_products"]
 
 
+async def test_nvd_extracts_cwe_ids_primary_first_deduped():
+    async def get(url, params=None, headers=None, timeout=20):
+        return _resp({"vulnerabilities": [{"cve": {
+            "id": "CVE-2021-44228",
+            "descriptions": [{"lang": "en", "value": "Log4j RCE"}],
+            "weaknesses": [
+                {"type": "Secondary", "description": [{"lang": "en", "value": "CWE-400"}]},
+                {"type": "Primary", "description": [
+                    {"lang": "en", "value": "CWE-502"},
+                    {"lang": "en", "value": "CWE-502"},  # dup -> collapsed
+                ]},
+                {"type": "Secondary", "description": [{"lang": "en", "value": "NVD-CWE-noinfo"}]},
+            ],
+        }}]})
+
+    result = await NVDProvider(client=_client(get)).lookup("CVE-2021-44228", "Vulnerability")
+    # Primary ahead of Secondary; non-CWE markers dropped; deduped.
+    assert result.properties["cwe_ids"] == ["CWE-502", "CWE-400"]
+
+
+async def test_nvd_without_weaknesses_omits_cwe_ids():
+    async def get(url, params=None, headers=None, timeout=20):
+        return _resp({"vulnerabilities": [{"cve": {
+            "id": "CVE-2021-44228",
+            "descriptions": [{"lang": "en", "value": "Log4j RCE"}],
+        }}]})
+
+    result = await NVDProvider(client=_client(get)).lookup("CVE-2021-44228", "Vulnerability")
+    assert "cwe_ids" not in result.properties
+
+
 # --- RDAP -------------------------------------------------------------------
 
 async def test_rdap_domain_extracts_registrar_and_date():

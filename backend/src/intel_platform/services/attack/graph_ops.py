@@ -26,6 +26,10 @@ from .stix_parser import ParsedAttack
 # uniqueness index instead of an all-nodes scan. Values are from a fixed
 # vocabulary (never user input) so they are safe to interpolate into Cypher.
 _META_ID = "attack-meta"
+# Meta singleton id for the Phase 3a CVE→ATT&CK chain reference load (see
+# :mod:`vuln_chain`). Kept here so ``attack_status`` can read it without pulling
+# vuln_chain's fetch/parse import chain into this core read module.
+VULN_CHAIN_META_ID = "vuln-chain-meta"
 
 # Technique-id / group-id patterns for resolving free-text project entities.
 # \b-anchored so a longer digit run can't truncate to a valid-looking code
@@ -170,17 +174,28 @@ def ingest_model(driver: Driver, parsed: ParsedAttack, version: str) -> dict:
 
 
 def attack_status(driver: Driver) -> dict:
-    """Whether ATT&CK is ingested, at what version, with live node counts."""
+    """Whether ATT&CK is ingested, at what version, with live node counts.
+
+    Also reports whether the CVE→ATT&CK chain (CWE→CAPEC) has been ingested and
+    how many ``Cwe`` reference nodes it loaded (Phase 3a).
+    """
     with driver.session() as session:
         meta = session.run("MATCH (m:AttackMeta {id: $id}) RETURN m.version AS version", id=_META_ID).single()
         counts = {}
         for label, key in _COUNT_LABELS:
             rec = session.run(f"MATCH (n:{label}) RETURN count(n) AS c").single()
             counts[key] = rec["c"] if rec else 0
+        vmeta = session.run(
+            "MATCH (m:VulnChainMeta {id: $id}) RETURN m.cwes AS cwes", id=VULN_CHAIN_META_ID
+        ).single()
     return {
         "ingested": meta is not None,
         "version": meta["version"] if meta else None,
         "counts": counts,
+        "vuln_chain": {
+            "ingested": vmeta is not None,
+            "cwes": vmeta["cwes"] if vmeta else 0,
+        },
     }
 
 
@@ -291,13 +306,15 @@ def get_technique(driver: Driver, tid: str, project_id: str) -> dict | None:
             OPTIONAL MATCH (m:AttackMitigation)-[:MITIGATES]->(tech)
             OPTIONAL MATCH (g:AttackGroup)-[:USES]->(tech)
             OPTIONAL MATCH (e {project_id: $pid})-[rel:MAPS_TO]->(tech)
+            OPTIONAL MATCH (cve:Vulnerability {project_id: $pid})-[:ENABLES]->(tech)
             RETURN tech,
                    parent.attack_id AS parent_id,
                    collect(DISTINCT {id: ta.attack_id, name: ta.name, shortname: ta.shortname}) AS tactics,
                    collect(DISTINCT {id: m.attack_id, name: m.name}) AS mitigations,
                    collect(DISTINCT {id: g.attack_id, name: g.name}) AS groups,
                    collect(DISTINCT {id: e.id, name: e.name, entity_type: e.entity_type,
-                                     method: coalesce(rel.method, 'tcode'), confidence: rel.confidence}) AS related
+                                     method: coalesce(rel.method, 'tcode'), confidence: rel.confidence}) AS related,
+                   collect(DISTINCT {id: cve.id, name: cve.name}) AS enabling_cves
             """,
             tid=tid, pid=project_id,
         ).single()
@@ -322,6 +339,10 @@ def get_technique(driver: Driver, tid: str, project_id: str) -> dict | None:
         "mitigations": _clean(record["mitigations"]),
         "groups": _clean(record["groups"]),
         "related_entities": _clean(record["related"]),
+        # CVEs whose CWEs chain to this technique (CWE→CAPEC→ATT&CK). Kept
+        # SEPARATE from observed coverage — "an in-scope CVE could enable this",
+        # not "we saw this behavior". See :func:`vuln_chain.resolve_cve`.
+        "enabling_cves": _clean(record["enabling_cves"]),
     }
 
 
