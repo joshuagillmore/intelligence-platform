@@ -98,6 +98,15 @@ class Settings(BaseSettings):
     overpass_base_url: str = "https://overpass-api.de/api/interpreter"
     geonames_username: str = ""  # optional; enables the GeoNames admin ladder
 
+    # MITRE ATT&CK® integration. The Enterprise STIX 2.1 bundle is pinned to a
+    # version and fetched on demand (~50 MB, keyless, redistributable with
+    # attribution — see data/attack/ATTRIBUTION.md), cached to a gitignored path.
+    # Base URL is config-driven so a mirror is a .env swap.
+    attack_stix_version: str = "19.1"
+    attack_stix_base_url: str = (
+        "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack"
+    )
+
     # LLM providers
     anthropic_api_key: str = ""
     openai_api_key: str = ""
