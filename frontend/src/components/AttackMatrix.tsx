@@ -3,13 +3,16 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   attackApi,
+  AttackD3fendCountermeasure,
   AttackMapMethod,
   AttackMatrixData,
+  AttackReport,
   AttackTechniqueCell,
   AttackTechniqueDetail,
 } from '@/lib/api';
 import { TYPE_BADGE_CLASS } from '@/lib/entityStyles';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import Markdown from '@/components/Markdown';
 
 // Surface colors reused from the cyber page's navy/dark palette.
 const COVERED_BG = 'rgba(173,198,255,0.15)';
@@ -26,6 +29,19 @@ function techniqueExternalUrl(id: string): string {
     return `https://attack.mitre.org/techniques/${base}/${sub}/`;
   }
   return `https://attack.mitre.org/techniques/${id}/`;
+}
+
+// Strip a leading "d3f:" so we can show the bare code, then rebuild the
+// canonical D3FEND URL. Robust whether the backend sends "d3f:X" or "X".
+function d3fendBareId(id: string): string {
+  return id.replace(/^d3f:/i, '');
+}
+function d3fendExternalUrl(cm: AttackD3fendCountermeasure): string {
+  // The canonical D3FEND page uses the d3f: local name (e.g. d3f:DataInventory);
+  // the short code (D3-DI) does NOT resolve as a slug. Prefer the backend-supplied
+  // `name`, falling back to a PascalCase of the label.
+  const slug = (cm.name || '').trim() || cm.label.replace(/[^A-Za-z0-9]/g, '');
+  return `https://d3fend.mitre.org/technique/d3f:${slug}/`;
 }
 
 // A technique counts as covered if it, or any of its sub-techniques, was observed.
@@ -116,6 +132,18 @@ export default function AttackMatrix({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AttackTechniqueDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  // Lazy D3FEND countermeasures for the open technique. null = not loaded yet,
+  // [] = loaded but none found. Reset whenever the drawer target changes.
+  const [d3fend, setD3fend] = useState<AttackD3fendCountermeasure[] | null>(null);
+  const [d3fendLoading, setD3fendLoading] = useState(false);
+  const [d3fendError, setD3fendError] = useState(false);
+
+  // ATT&CK report modal
+  const [reportOpen, setReportOpen] = useState(false);
+  const [report, setReport] = useState<AttackReport | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState(false);
+  const [reportCopied, setReportCopied] = useState(false);
 
   const loadMatrix = useCallback(async () => {
     if (!projectId) return;
@@ -233,10 +261,59 @@ export default function AttackMatrix({
     }
   }
 
+  // Generate the project's ATT&CK report and open the modal. Opens immediately
+  // (with a spinner) so the analyst gets feedback while the backend aggregates.
+  async function handleGenerateReport() {
+    setReportOpen(true);
+    setReport(null);
+    setReportError(false);
+    setReportCopied(false);
+    setReportLoading(true);
+    try {
+      const res = await attackApi.report(projectId);
+      setReport(res.data);
+    } catch {
+      setReportError(true);
+    } finally {
+      setReportLoading(false);
+    }
+  }
+
+  const closeReport = useCallback(() => {
+    setReportOpen(false);
+    setReportCopied(false);
+  }, []);
+
+  async function handleCopyReport() {
+    if (!report) return;
+    try {
+      await navigator.clipboard.writeText(report.markdown);
+      setReportCopied(true);
+      setTimeout(() => setReportCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable — silently ignore */
+    }
+  }
+
+  function handleDownloadReport() {
+    if (!report) return;
+    const blob = new Blob([report.markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `attack-report-${projectId.substring(0, 8)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const openTechnique = useCallback(async (id: string) => {
     setSelectedId(id);
     setDetail(null);
     setDetailLoading(true);
+    // Reset the lazy D3FEND state for the new technique.
+    setD3fend(null);
+    setD3fendError(false);
+    setD3fendLoading(false);
     try {
       const res = await attackApi.technique(id, projectId);
       setDetail(res.data);
@@ -250,7 +327,26 @@ export default function AttackMatrix({
   const closeDrawer = useCallback(() => {
     setSelectedId(null);
     setDetail(null);
+    setD3fend(null);
+    setD3fendError(false);
+    setD3fendLoading(false);
   }, []);
+
+  // Lazily fetch D3FEND countermeasures for the open technique (a live MITRE
+  // lookup, so it can be slow or come back empty on an outage).
+  const loadD3fend = useCallback(async () => {
+    if (!selectedId) return;
+    setD3fendLoading(true);
+    setD3fendError(false);
+    try {
+      const res = await attackApi.d3fend(selectedId);
+      setD3fend(res.data.countermeasures || []);
+    } catch {
+      setD3fendError(true);
+    } finally {
+      setD3fendLoading(false);
+    }
+  }, [selectedId]);
 
   // Close the detail drawer on Escape.
   useEffect(() => {
@@ -261,6 +357,16 @@ export default function AttackMatrix({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [selectedId, closeDrawer]);
+
+  // Close the report modal on Escape.
+  useEffect(() => {
+    if (!reportOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeReport();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [reportOpen, closeReport]);
 
   // Open a technique's drawer when a parent view requests focus (e.g. clicking a
   // shared technique in the attribution panel switches to this tab and deep-links
@@ -419,6 +525,20 @@ export default function AttackMatrix({
           >
             <span className="material-symbols-outlined text-[16px]">download</span>
             {downloading ? 'Preparing…' : 'Navigator layer'}
+          </button>
+
+          <button
+            onClick={handleGenerateReport}
+            disabled={reportLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50"
+            style={{ backgroundColor: COVERED_BG, color: ACCENT, border: `1px solid ${COVERED_BORDER}` }}
+            title="Generate an ATT&CK coverage report for this project"
+            aria-label="Generate ATT&CK report"
+          >
+            <span className={`material-symbols-outlined text-[16px] ${reportLoading ? 'animate-spin' : ''}`}>
+              {reportLoading ? 'progress_activity' : 'description'}
+            </span>
+            {reportLoading ? 'Generating…' : 'Generate ATT&CK Report'}
           </button>
 
           {/* One-time admin: embed techniques into pgvector so AI mapping has
@@ -697,19 +817,78 @@ export default function AttackMatrix({
                     </div>
                   )}
 
-                  {detail.mitigations.length > 0 && (
-                    <div>
-                      <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1.5">Mitigations</h4>
-                      <div className="space-y-1">
-                        {detail.mitigations.map((m) => (
-                          <div key={m.id} className="text-xs rounded p-2 flex items-center gap-2" style={{ backgroundColor: '#1a1f2e' }}>
-                            <span className="font-mono text-[11px] flex-shrink-0" style={{ color: ACCENT }}>{m.id}</span>
-                            <span className="text-gray-300">{m.name}</span>
-                          </div>
-                        ))}
-                      </div>
+                  {/* Defenses — ATT&CK Mitigations (M-codes) plus the finer-grained
+                      D3FEND countermeasures that complement them. */}
+                  <div>
+                    <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-2">Defenses</h4>
+
+                    {/* ATT&CK Mitigations (already in the technique detail) */}
+                    <div className="mb-3">
+                      <h5 className="text-[10px] font-semibold text-gray-500 mb-1.5">ATT&CK Mitigations</h5>
+                      {detail.mitigations.length > 0 ? (
+                        <div className="space-y-1">
+                          {detail.mitigations.map((m) => (
+                            <div key={m.id} className="text-xs rounded p-2 flex items-center gap-2" style={{ backgroundColor: '#1a1f2e' }}>
+                              <span className="font-mono text-[11px] flex-shrink-0" style={{ color: ACCENT }}>{m.id}</span>
+                              <span className="text-gray-300">{m.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-500">No ATT&CK mitigations listed for this technique.</p>
+                      )}
                     </div>
-                  )}
+
+                    {/* D3FEND countermeasures — lazy live lookup; finer-grained
+                        defensive coverage complementing the M-codes above. */}
+                    <div>
+                      <h5 className="text-[10px] font-semibold text-gray-500 mb-1">D3FEND Countermeasures</h5>
+                      <p className="text-[11px] text-gray-500 mb-2 leading-snug">
+                        Finer-grained defensive techniques from MITRE D3FEND that complement the ATT&amp;CK mitigations above.
+                      </p>
+                      {d3fend === null ? (
+                        <button
+                          onClick={loadD3fend}
+                          disabled={d3fendLoading}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50"
+                          style={{ backgroundColor: COVERED_BG, color: ACCENT, border: `1px solid ${COVERED_BORDER}` }}
+                          aria-label="Load D3FEND countermeasures for this technique"
+                        >
+                          <span className={`material-symbols-outlined text-[16px] ${d3fendLoading ? 'animate-spin' : ''}`}>
+                            {d3fendLoading ? 'progress_activity' : 'shield'}
+                          </span>
+                          {d3fendLoading ? 'Loading D3FEND…' : 'Load D3FEND countermeasures'}
+                        </button>
+                      ) : d3fendError ? (
+                        <p className="text-xs text-gray-500">
+                          Couldn&apos;t load D3FEND countermeasures.{' '}
+                          <button onClick={loadD3fend} className="underline hover:brightness-125" style={{ color: ACCENT }}>
+                            Retry
+                          </button>
+                        </p>
+                      ) : d3fend.length === 0 ? (
+                        <p className="text-xs text-gray-500">No D3FEND countermeasures found for this technique.</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {d3fend.map((cm) => (
+                            <a
+                              key={cm.id}
+                              href={d3fendExternalUrl(cm)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded transition-colors hover:brightness-125"
+                              style={{ backgroundColor: COVERED_BG, color: ACCENT, border: `1px solid ${COVERED_BORDER}` }}
+                              title={`${cm.label} — open on d3fend.mitre.org`}
+                            >
+                              <span className="font-mono">{d3fendBareId(cm.id)}</span>
+                              <span className="text-gray-300 max-w-[180px] truncate">{cm.label}</span>
+                              <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
                   {detail.groups.length > 0 && (
                     <div>
@@ -795,6 +974,137 @@ export default function AttackMatrix({
                   </a>
                 </div>
               )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ATT&CK report modal */}
+      {reportOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+            onClick={closeReport}
+            aria-hidden="true"
+          />
+          <div className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:p-8 pointer-events-none">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="ATT&CK report"
+              className="w-full max-w-3xl flex flex-col rounded-lg shadow-2xl pointer-events-auto"
+              style={{ backgroundColor: '#131826', border: '1px solid #2f3444', maxHeight: 'calc(100vh - 4rem)' }}
+            >
+              {/* Header + actions */}
+              <div
+                className="flex items-start justify-between gap-3 px-5 py-4"
+                style={{ borderBottom: '1px solid #2f3444' }}
+              >
+                <div className="min-w-0">
+                  <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">MITRE ATT&CK® Report</h3>
+                  <p className="text-sm font-semibold text-white mt-0.5">Coverage &amp; candidate attribution</p>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2 flex-shrink-0">
+                  {report && !reportLoading && !reportError && (
+                    <>
+                      <button
+                        onClick={handleCopyReport}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-md font-medium transition-colors"
+                        style={{ backgroundColor: '#1a1f2e', color: ACCENT, border: '1px solid #2f3444' }}
+                        aria-label="Copy report markdown to clipboard"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">{reportCopied ? 'check' : 'content_copy'}</span>
+                        {reportCopied ? 'Copied' : 'Copy markdown'}
+                      </button>
+                      <button
+                        onClick={handleDownloadReport}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-md font-medium transition-colors"
+                        style={{ backgroundColor: '#1a1f2e', color: ACCENT, border: '1px solid #2f3444' }}
+                        aria-label="Download report as a markdown file"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">download</span>
+                        Download .md
+                      </button>
+                      <button
+                        onClick={handleDownloadLayer}
+                        disabled={downloading}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-md font-medium transition-colors disabled:opacity-50"
+                        style={{ backgroundColor: '#1a1f2e', color: ACCENT, border: '1px solid #2f3444' }}
+                        aria-label="Download ATT&CK Navigator layer"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">layers</span>
+                        {downloading ? 'Preparing…' : 'Navigator layer'}
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={closeReport}
+                    className="text-gray-400 hover:text-white flex-shrink-0"
+                    aria-label="Close report"
+                  >
+                    <span className="material-symbols-outlined">close</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="px-5 py-4 overflow-y-auto">
+                {reportLoading ? (
+                  <div className="py-8">
+                    <LoadingSpinner size="md" />
+                    <p className="text-center text-xs text-gray-500 mt-3">Aggregating ATT&amp;CK coverage…</p>
+                  </div>
+                ) : reportError ? (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-gray-400">Couldn&apos;t generate the ATT&amp;CK report.</p>
+                    <button
+                      onClick={handleGenerateReport}
+                      className="mt-3 px-3 py-1.5 text-xs rounded-md font-medium transition-colors"
+                      style={{ backgroundColor: COVERED_BG, color: ACCENT, border: `1px solid ${COVERED_BORDER}` }}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : !report ? null : !report.narrative && !report.markdown.trim() ? (
+                  // Valid response but nothing to report yet (empty project).
+                  <div className="text-center py-8">
+                    <span className="material-symbols-outlined text-[32px]" style={{ color: '#4b5563' }}>
+                      description
+                    </span>
+                    <p className="text-sm text-gray-400 mt-2">No ATT&amp;CK observations to report yet.</p>
+                    <p className="text-xs text-gray-600 mt-1 max-w-sm mx-auto">
+                      Map this project&apos;s TTPs to ATT&amp;CK (&ldquo;Map TTPs&rdquo; above), then generate the report again.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Optional LLM narrative */}
+                    {report.narrative && (
+                      <div
+                        className="rounded-md px-3 py-2.5 text-sm text-gray-200 whitespace-pre-line"
+                        style={{ backgroundColor: 'rgba(173,198,255,0.08)', border: `1px solid ${COVERED_BORDER}` }}
+                      >
+                        {report.narrative}
+                      </div>
+                    )}
+
+                    {/* Attribution framing — keep it suggestive, not confirmed. */}
+                    {report.attribution && report.attribution.length > 0 && (
+                      <p className="text-[11px] text-gray-500 flex items-start gap-1.5">
+                        <span className="material-symbols-outlined text-[14px] flex-shrink-0" style={{ color: '#9ca3af' }}>info</span>
+                        <span>
+                          Any attribution below is <span className="text-gray-400">candidate / suggestive</span> technique overlap
+                          &mdash; a lead to investigate, not confirmed attribution.
+                        </span>
+                      </p>
+                    )}
+
+                    {/* Rendered report markdown (XSS-safe: no raw HTML) */}
+                    <Markdown content={report.markdown} className="text-sm" />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </>

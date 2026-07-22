@@ -71,11 +71,15 @@ def _patch_llm(json_reply: str):
 
 
 def _run(coro):
-    # Mirror the suite's existing sync-wrapper pattern (see test_vector_search.py).
-    # NOT asyncio.run(): that closes the shared default loop and breaks sibling
-    # tests that reuse get_event_loop().run_until_complete().
+    # Own a FRESH event loop per call — deterministic regardless of what a
+    # co-selected test does to the shared default loop (get_event_loop() +
+    # asyncio_mode="auto" can otherwise hand back a closed loop and flake).
     import asyncio
-    return asyncio.get_event_loop().run_until_complete(coro)
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 def _maps_to_llm(driver) -> list[dict]:

@@ -198,6 +198,60 @@ export interface AttackAttribution {
   groups: AttackAttributionGroup[];
 }
 
+// Phase 3b: MITRE D3FEND defensive countermeasures for a technique. Lazy-loaded
+// via a live D3FEND lookup, so `countermeasures` may be [] on an outage. Each
+// `id` looks like "d3f:SomeTechnique"; `label` is the human-readable name.
+// D3FEND is finer-grained defensive coverage that complements ATT&CK's M-codes.
+export interface AttackD3fendCountermeasure {
+  id: string;          // D3FEND code, e.g. "D3-DI"
+  label: string;       // e.g. "Data Inventory"
+  name?: string;       // d3f: local name (URL slug), e.g. "DataInventory"
+}
+
+export interface AttackD3fendResponse {
+  countermeasures: AttackD3fendCountermeasure[];
+}
+
+// Phase 3c: aggregated ATT&CK report for a project. Rolls up observed techniques
+// by tactic, candidate attribution (suggestive overlap, not confirmed), key
+// mitigations, CVE-enabled techniques, an optional LLM narrative, and a rendered
+// markdown document. Fields are optional/possibly-empty so the UI degrades
+// against a pre-3c backend and against empty projects.
+export interface AttackReportObservedTactic {
+  tactic_id: string;
+  tactic_name: string;
+  techniques: { id: string; name: string; observed_count: number; methods?: AttackMapMethod[] }[];
+}
+
+export interface AttackReportAttributionEntry {
+  id: string;
+  name: string;
+  shared_count: number;
+  coverage: number;
+}
+
+export interface AttackReportMitigation {
+  id: string;
+  name: string;
+  technique_count: number;
+}
+
+export interface AttackReportCveEnabled {
+  technique_id: string;
+  technique_name: string;
+  cves: { id: string; name: string }[];
+}
+
+export interface AttackReport {
+  project_id: string;
+  observed_by_tactic: AttackReportObservedTactic[];
+  attribution: AttackReportAttributionEntry[];
+  key_mitigations: AttackReportMitigation[];
+  cve_enabled: AttackReportCveEnabled[];
+  narrative: string | null;
+  markdown: string;
+}
+
 export const attackApi = {
   status: () => api.get<AttackStatus>('/attack/status'),
   // Admin action — downloads ~53MB of ATT&CK STIX server-side; can take 30-60s.
@@ -228,6 +282,15 @@ export const attackApi = {
   // then turned into a blob download — matching the other exports in the app.
   navigatorLayer: (projectId: string) =>
     api.get('/attack/navigator-layer', { params: { project_id: projectId } }),
+  // (Phase 3b) D3FEND defensive countermeasures for a technique — a lazy, live
+  // MITRE D3FEND lookup, so `countermeasures` may be [] on an outage.
+  d3fend: (techniqueId: string) =>
+    api.get<AttackD3fendResponse>(`/attack/technique/${techniqueId}/d3fend`),
+  // (Phase 3c) Aggregated ATT&CK report for a project: observed techniques by
+  // tactic, candidate attribution, key mitigations, CVE-enabled techniques, an
+  // optional narrative, and a rendered markdown document.
+  report: (projectId: string) =>
+    api.get<AttackReport>('/attack/report', { params: { project_id: projectId } }),
 };
 
 export const graphApi = {

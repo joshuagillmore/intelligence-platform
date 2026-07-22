@@ -22,3 +22,15 @@ logos are trademarks of The MITRE Corporation.
 Both files are keyless and redistributable; like the ATT&CK bundle they are
 fetched on demand and cached locally under `data/attack/` (gitignored) — **not**
 committed to this repository.
+
+## MITRE D3FEND™ Attribution
+
+For the defensive view (Phase 3b), this platform fetches per-technique
+countermeasure mappings from MITRE D3FEND™ (`d3fend.mitre.org`), used under the
+D3FEND Terms of Use.
+
+D3FEND™; a knowledge graph developed by MITRE; NSA-funded; Approved for Public
+Release. D3FEND™ is a trademark of The MITRE Corporation.
+
+The mapping is fetched lazily per technique (keyless) and cached in Postgres — no
+D3FEND dataset is vendored into or committed to this repository.

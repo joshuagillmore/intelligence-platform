@@ -171,6 +171,43 @@ def test_map_returns_counts(client, analyst_header, _override_db):
     assert resp.json() == {"mapped": 3, "skipped": 2}
 
 
+def test_d3fend_requires_auth(client):
+    resp = client.get("/api/attack/technique/T1566/d3fend")
+    assert resp.status_code in (401, 403)
+
+
+def test_d3fend_passthrough(client, analyst_header, _override_db):
+    fake = {"countermeasures": [{"id": "d3f:FileHashing", "label": "File Hashing"}]}
+    with patch("intel_platform.api.routes.attack.attack_d3fend.get_countermeasures",
+               new=AsyncMock(return_value=fake)):
+        resp = client.get("/api/attack/technique/T1566/d3fend", headers=analyst_header)
+    assert resp.status_code == 200
+    assert resp.json() == fake
+
+
+def test_report_requires_auth(client):
+    resp = client.get("/api/attack/report", params={"project_id": "p1"})
+    assert resp.status_code in (401, 403)
+
+
+def test_report_passthrough(client, analyst_header):
+    fake = {"project_id": "p1", "observed_by_tactic": [], "attribution": [],
+            "key_mitigations": [], "cve_enabled": [], "narrative": None, "markdown": "# x\n"}
+    with patch("intel_platform.api.routes.attack.attack_report.build_report",
+               new=AsyncMock(return_value=fake)):
+        resp = client.get("/api/attack/report", params={"project_id": "p1"}, headers=analyst_header)
+    assert resp.status_code == 200
+    assert resp.json()["markdown"] == "# x\n"
+
+
+def test_report_failure_is_500_without_leaking(client, analyst_header):
+    with patch("intel_platform.api.routes.attack.attack_report.build_report",
+               new=AsyncMock(side_effect=RuntimeError("boom: secret detail"))):
+        resp = client.get("/api/attack/report", params={"project_id": "p1"}, headers=analyst_header)
+    assert resp.status_code == 500
+    assert "boom" not in resp.text
+
+
 def test_attribution_passthrough(client, analyst_header):
     fake = {"observed_total": 2, "groups": [{"id": "G0001", "name": "GroupAlpha",
             "shared_count": 2, "coverage": 1.0, "shared_techniques": []}]}
