@@ -24,6 +24,9 @@ next-env.d.ts
 # Local compose overrides
 docker-compose.override.yml
 
+# MITRE ATT&CK bundle cache (~50 MB, fetched on demand; ATTRIBUTION.md is kept)
+data/attack/*.json
+
 # Data volumes & editor/OS cruft
 neo4j_data/
 .vscode/

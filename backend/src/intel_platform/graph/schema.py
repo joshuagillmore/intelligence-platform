@@ -20,6 +20,12 @@ CONSTRAINTS = [
     "CREATE CONSTRAINT report_id IF NOT EXISTS FOR (n:Report) REQUIRE n.id IS UNIQUE",
     "CREATE CONSTRAINT assessment_id IF NOT EXISTS FOR (n:Assessment) REQUIRE n.id IS UNIQUE",
     "CREATE CONSTRAINT project_id IF NOT EXISTS FOR (n:Project) REQUIRE n.id IS UNIQUE",
+    # MITRE ATT&CK reference model — global (no project_id), keyed by attack_id.
+    "CREATE CONSTRAINT attack_tactic_id IF NOT EXISTS FOR (n:AttackTactic) REQUIRE n.attack_id IS UNIQUE",
+    "CREATE CONSTRAINT attack_technique_id IF NOT EXISTS FOR (n:AttackTechnique) REQUIRE n.attack_id IS UNIQUE",
+    "CREATE CONSTRAINT attack_group_id IF NOT EXISTS FOR (n:AttackGroup) REQUIRE n.attack_id IS UNIQUE",
+    "CREATE CONSTRAINT attack_software_id IF NOT EXISTS FOR (n:AttackSoftware) REQUIRE n.attack_id IS UNIQUE",
+    "CREATE CONSTRAINT attack_mitigation_id IF NOT EXISTS FOR (n:AttackMitigation) REQUIRE n.attack_id IS UNIQUE",
 ]
 
 INDEXES = [
