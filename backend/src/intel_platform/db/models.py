@@ -388,6 +388,26 @@ class ChunkEmbedding(Base):
 
 
 # ---------------------------------------------------------------------------
+# ATT&CK Technique Embeddings — pgvector index of the global MITRE ATT&CK®
+# technique catalog, for RAG text→technique mapping (Phase 2). Keyed by the
+# canonical technique id (global reference data, not per-project); upserted by
+# POST /attack/embed. Mirrors ChunkEmbedding's Vector(1536) dimension handling.
+# ---------------------------------------------------------------------------
+
+class AttackTechniqueEmbedding(Base):
+    __tablename__ = "attack_technique_embeddings"
+
+    technique_id: Mapped[str] = mapped_column(String(32), primary_key=True,
+        comment="Canonical ATT&CK technique id, e.g. T1566 or T1566.001")
+    text: Mapped[str] = mapped_column(Text, nullable=False,
+        comment="Embedded text: '<name>. <description>'")
+    embedding = mapped_column(Vector(1536), nullable=False) if Vector else mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc))
+
+
+# ---------------------------------------------------------------------------
 # Topic Edits — user modifications overlaid on algorithmic topic tree
 # ---------------------------------------------------------------------------
 

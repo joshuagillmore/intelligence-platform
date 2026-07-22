@@ -161,6 +161,46 @@ def test_resolve_maps_ttps_and_actors_then_counts(ingested, graph_store):
     assert "T1566" in related_names
 
 
+def test_resolve_sets_tcode_method_and_confidence(ingested, graph_store):
+    """The UNWIND-batched resolver stamps method="tcode"/confidence=1.0 on edges."""
+    driver, _ = ingested
+    graph_store.create_entity(TTP(name="T1566 Phishing", project_id=PROJECT_ID))
+    graph_store.create_entity(ThreatActor(name="APT28", project_id=PROJECT_ID))
+
+    assert graph_ops.resolve_ttps(driver, PROJECT_ID)["mapped"] == 2
+
+    with driver.session() as session:
+        rows = session.run(
+            """
+            MATCH (:TTP {project_id: $pid})-[r:MAPS_TO]->(:AttackTechnique {attack_id: 'T1566'})
+            RETURN r.method AS method, r.confidence AS confidence
+            """,
+            pid=PROJECT_ID,
+        ).data()
+        assert rows and all(r["method"] == "tcode" and r["confidence"] == 1.0 for r in rows)
+
+        actor = session.run(
+            """
+            MATCH (:ThreatActor {project_id: $pid})-[r:MAPS_TO]->(:AttackGroup {attack_id: 'G0007'})
+            RETURN r.method AS method, r.confidence AS confidence
+            """,
+            pid=PROJECT_ID,
+        ).single()
+        assert actor["method"] == "tcode" and actor["confidence"] == 1.0
+
+
+def test_matrix_carries_observed_methods(ingested, graph_store):
+    """Matrix cells expose the distinct MAPS_TO methods so the UI can flag AI maps."""
+    driver, _ = ingested
+    graph_store.create_entity(TTP(name="T1566 Phishing", project_id=PROJECT_ID))
+    graph_ops.resolve_ttps(driver, PROJECT_ID)
+
+    matrix = graph_ops.get_matrix(driver, PROJECT_ID)
+    tactic = next(t for t in matrix["tactics"] if t["id"] == "TA0001")
+    phishing = next(t for t in tactic["techniques"] if t["id"] == "T1566")
+    assert phishing["methods"] == ["tcode"]
+
+
 def test_navigator_layer_shape_and_scores(ingested, graph_store):
     driver, _ = ingested
     graph_store.create_entity(TTP(name="T1566 Phishing", project_id=PROJECT_ID))

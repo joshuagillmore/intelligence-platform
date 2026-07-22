@@ -18,14 +18,24 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from neo4j import Driver
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from intel_platform.api.deps import get_neo4j_driver, require_admin, verify_api_key
+from intel_platform.db.engine import get_db
+from intel_platform.services.attack import embeddings as attack_embeddings
 from intel_platform.services.attack import graph_ops
+from intel_platform.services.attack import mapping as attack_mapping
 from intel_platform.services.attack.ingest import fetch_and_ingest
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
+
+# Serialize each expensive idempotent bulk op against itself (concurrent admin
+# triggers shouldn't double-fetch / double-embed). Separate locks so an in-flight
+# ingest doesn't needlessly block an embed and vice-versa — they don't conflict.
+_ingest_lock = asyncio.Lock()
+_embed_lock = asyncio.Lock()
 
 
 @router.get("/attack/status")
@@ -38,12 +48,64 @@ async def get_status(driver: Driver = Depends(get_neo4j_driver)):
 async def ingest(driver: Driver = Depends(get_neo4j_driver)):
     """(Admin) Fetch + parse + load the pinned ATT&CK bundle. Idempotent."""
     try:
-        result = await fetch_and_ingest(driver)
+        async with _ingest_lock:
+            result = await fetch_and_ingest(driver)
     except Exception:
         # Never leak fetch/parse internals to the client.
         logger.exception("ATT&CK ingest failed")
         raise HTTPException(status_code=502, detail="Failed to fetch or load the ATT&CK dataset")
     return {"ingested": True, "version": result["version"], "counts": result["counts"]}
+
+
+@router.post("/attack/embed", dependencies=[Depends(require_admin)])
+async def embed(
+    driver: Driver = Depends(get_neo4j_driver),
+    db: AsyncSession = Depends(get_db),
+):
+    """(Admin) Embed the ATT&CK technique catalog into pgvector for RAG mapping.
+
+    Idempotent (upsert). Degrades to ``{"embedded": 0}`` if no embedding provider
+    is reachable rather than 500-ing.
+    """
+    try:
+        async with _embed_lock:
+            embedded = await attack_embeddings.embed_techniques(db, driver)
+            await db.commit()
+    except Exception:
+        logger.exception("ATT&CK technique embedding failed")
+        raise HTTPException(status_code=502, detail="Failed to embed the ATT&CK technique catalog")
+    return {"embedded": embedded}
+
+
+@router.post("/attack/map")
+async def map_ttps(
+    project_id: str = Query(...),
+    driver: Driver = Depends(get_neo4j_driver),
+    db: AsyncSession = Depends(get_db),
+):
+    """RAG-map this project's un-T-code-resolved TTPs to ATT&CK techniques.
+
+    Never 500s on a provider outage — degrades to skips (see
+    :func:`services.attack.mapping.map_project_ttps`).
+    """
+    try:
+        result = await attack_mapping.map_project_ttps(db, driver, project_id)
+    except Exception:
+        logger.exception("ATT&CK mapping failed")
+        raise HTTPException(status_code=500, detail="Failed to map TTPs to ATT&CK")
+    return result
+
+
+@router.get("/attack/attribution")
+async def get_attribution(
+    project_id: str = Query(...),
+    driver: Driver = Depends(get_neo4j_driver),
+):
+    """Candidate threat-actor groups ranked by observed-technique overlap.
+
+    Suggestive overlap, not confirmed attribution.
+    """
+    return await asyncio.to_thread(graph_ops.get_attribution, driver, project_id)
 
 
 @router.post("/attack/resolve")
