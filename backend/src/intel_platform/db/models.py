@@ -408,6 +408,25 @@ class AttackTechniqueEmbedding(Base):
 
 
 # ---------------------------------------------------------------------------
+# ATT&CK D3FEND cache — per-technique defensive countermeasures fetched lazily
+# from D3FEND (Phase 3b). Keyed by the canonical technique id; the parsed
+# countermeasures are cached with a fetched_at stamp and re-fetched once older
+# than attack_d3fend_ttl_days. Mirrors the enrichment cache's fetch-spare role.
+# ---------------------------------------------------------------------------
+
+class AttackD3fendCache(Base):
+    __tablename__ = "attack_d3fend_cache"
+
+    technique_id: Mapped[str] = mapped_column(String(32), primary_key=True,
+        comment="Canonical ATT&CK technique id, e.g. T1566 or T1566.001")
+    countermeasures: Mapped[list] = mapped_column(JSONB, default=list,
+        comment="Parsed D3FEND countermeasures: [{id, label}]")
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+        comment="When this technique's D3FEND mapping was last fetched (TTL basis)")
+
+
+# ---------------------------------------------------------------------------
 # Topic Edits — user modifications overlaid on algorithmic topic tree
 # ---------------------------------------------------------------------------
 

@@ -120,6 +120,14 @@ class Settings(BaseSettings):
     # config-driven so a mirror is a .env swap.
     cwe_xml_url: str = "https://cwe.mitre.org/data/xml/cwec_latest.xml.zip"
     capec_xml_url: str = "https://capec.mitre.org/data/xml/capec_latest.xml"
+    # ATT&CK Phase 3b — D3FEND defensive countermeasures. GET
+    # /attack/technique/{tid}/d3fend lazily fetches the per-technique offensive→
+    # defensive mapping from D3FEND (keyless), parses the SPARQL-style bindings to
+    # [{id, label}], and caches it in Postgres (AttackD3fendCache) for
+    # attack_d3fend_ttl_days. Degrades to [] on any outage. Base URL is
+    # config-driven so a mirror is a .env swap.
+    d3fend_api_base: str = "https://d3fend.mitre.org/api/offensive-technique/attack"
+    attack_d3fend_ttl_days: int = 30
 
     # LLM providers
     anthropic_api_key: str = ""

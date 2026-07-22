@@ -485,6 +485,65 @@ def get_attribution(driver: Driver, project_id: str) -> dict:
     return {"observed_total": total, "groups": groups[:10]}
 
 
+def get_key_mitigations(driver: Driver, project_id: str) -> list[dict]:
+    """ATT&CK Mitigations (M-codes) that address a project's observed techniques.
+
+    Ranks each ``AttackMitigation`` by the number of DISTINCT observed techniques
+    it ``MITIGATES`` (the techniques this project's TTPs ``MAPS_TO``), highest
+    first (ties broken by name). Returns the top 10 as
+    ``{"id", "name", "technique_count"}``. Empty when nothing is observed.
+    """
+    with driver.session() as session:
+        rows = session.run(
+            """
+            MATCH (t:TTP {project_id: $pid})-[:MAPS_TO]->(tech:AttackTechnique)
+            WITH DISTINCT tech
+            MATCH (m:AttackMitigation)-[:MITIGATES]->(tech)
+            RETURN m.attack_id AS id, m.name AS name, count(DISTINCT tech) AS technique_count
+            ORDER BY technique_count DESC, m.name
+            LIMIT 10
+            """,
+            pid=project_id,
+        ).data()
+    return [
+        {"id": r["id"], "name": r["name"], "technique_count": r["technique_count"]}
+        for r in rows
+    ]
+
+
+def get_cve_enabled(driver: Driver, project_id: str) -> list[dict]:
+    """Observed techniques that an in-scope project CVE could also enable.
+
+    A technique qualifies only when it is BOTH observed (a project TTP ``MAPS_TO``
+    it) AND a project ``Vulnerability`` ``ENABLES`` it (CVE→CWE→CAPEC chain, see
+    :mod:`vuln_chain`). This intersection — "we saw this behavior AND an in-scope
+    CVE could enable it" — is a candidate exposure, kept distinct from bare
+    observed coverage. Returns ``{"technique_id", "technique_name", "cves":[{id,name}]}``
+    ordered by technique id.
+    """
+    with driver.session() as session:
+        rows = session.run(
+            """
+            MATCH (t:TTP {project_id: $pid})-[:MAPS_TO]->(tech:AttackTechnique)
+            WITH DISTINCT tech
+            MATCH (cve:Vulnerability {project_id: $pid})-[:ENABLES]->(tech)
+            RETURN tech.attack_id AS technique_id, tech.name AS technique_name,
+                   collect(DISTINCT {id: cve.id, name: cve.name}) AS cves
+            ORDER BY tech.attack_id
+            """,
+            pid=project_id,
+        ).data()
+    out = []
+    for r in rows:
+        cves = [c for c in r["cves"] if c.get("id")]
+        out.append({
+            "technique_id": r["technique_id"],
+            "technique_name": r["technique_name"],
+            "cves": cves,
+        })
+    return out
+
+
 def navigator_layer(driver: Driver, project_id: str) -> dict:
     """Build a MITRE ATT&CK Navigator **layer v4.5** JSON scored by observed count.
 

@@ -22,9 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from intel_platform.api.deps import get_neo4j_driver, require_admin, verify_api_key
 from intel_platform.db.engine import get_db
+from intel_platform.services.attack import d3fend as attack_d3fend
 from intel_platform.services.attack import embeddings as attack_embeddings
 from intel_platform.services.attack import graph_ops
 from intel_platform.services.attack import mapping as attack_mapping
+from intel_platform.services.attack import report as attack_report
 from intel_platform.services.attack import vuln_chain
 from intel_platform.services.attack.ingest import fetch_and_ingest
 
@@ -179,6 +181,36 @@ async def get_technique(
     if detail is None:
         raise HTTPException(status_code=404, detail="Technique not found")
     return detail
+
+
+@router.get("/attack/technique/{tid}/d3fend")
+async def get_d3fend(
+    tid: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """D3FEND defensive countermeasures for a technique (lazy, keyless, cached).
+
+    Degrades to ``{"countermeasures": []}`` on any D3FEND outage/404 — never 500s.
+    """
+    return await attack_d3fend.get_countermeasures(db, tid)
+
+
+@router.get("/attack/report")
+async def get_report(
+    project_id: str = Query(...),
+    driver: Driver = Depends(get_neo4j_driver),
+):
+    """Assemble the ATT&CK-structured intelligence product for a project.
+
+    Structured sections (observed-by-tactic, candidate attribution, key
+    mitigations, CVE-enabled techniques) + a deterministic markdown report and a
+    short LLM narrative (``null`` if no LLM is reachable).
+    """
+    try:
+        return await attack_report.build_report(driver, project_id)
+    except Exception:
+        logger.exception("ATT&CK report assembly failed")
+        raise HTTPException(status_code=500, detail="Failed to assemble the ATT&CK report")
 
 
 @router.get("/attack/navigator-layer")
