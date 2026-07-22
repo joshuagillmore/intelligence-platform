@@ -106,3 +106,48 @@ def test_navigator_layer_is_attachment(client, analyst_header):
         resp = client.get("/api/attack/navigator-layer", params={"project_id": "abcdef12"}, headers=analyst_header)
     assert resp.status_code == 200
     assert "attachment" in resp.headers.get("content-disposition", "")
+
+
+@pytest.fixture
+def _override_db():
+    """Override the Postgres session dependency for the embed/map routes."""
+    from intel_platform.api.app import app
+    from intel_platform.db.engine import get_db
+
+    session = MagicMock()
+    session.commit = AsyncMock()
+    app.dependency_overrides[get_db] = lambda: session
+    yield
+    app.dependency_overrides.pop(get_db, None)
+
+
+def test_embed_requires_admin(client, analyst_header, _override_db):
+    resp = client.post("/api/attack/embed", headers=analyst_header)
+    assert resp.status_code == 403
+
+
+def test_embed_admin_returns_count(client, admin_header, _override_db):
+    with patch("intel_platform.api.routes.attack.attack_embeddings.embed_techniques",
+               new=AsyncMock(return_value=697)):
+        resp = client.post("/api/attack/embed", headers=admin_header)
+    assert resp.status_code == 200
+    assert resp.json() == {"embedded": 697}
+
+
+def test_map_returns_counts(client, analyst_header, _override_db):
+    with patch("intel_platform.api.routes.attack.attack_mapping.map_project_ttps",
+               new=AsyncMock(return_value={"mapped": 3, "skipped": 2})):
+        resp = client.post("/api/attack/map", params={"project_id": "p1"}, headers=analyst_header)
+    assert resp.status_code == 200
+    assert resp.json() == {"mapped": 3, "skipped": 2}
+
+
+def test_attribution_passthrough(client, analyst_header):
+    fake = {"observed_total": 2, "groups": [{"id": "G0001", "name": "GroupAlpha",
+            "shared_count": 2, "coverage": 1.0, "shared_techniques": []}]}
+    with patch("intel_platform.services.attack.graph_ops.get_attribution", return_value=fake):
+        resp = client.get("/api/attack/attribution", params={"project_id": "p1"}, headers=analyst_header)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["observed_total"] == 2
+    assert body["groups"][0]["id"] == "G0001"

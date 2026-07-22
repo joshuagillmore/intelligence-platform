@@ -184,16 +184,24 @@ def attack_status(driver: Driver) -> dict:
     }
 
 
-def _observed_counts(session, project_id: str) -> dict[str, int]:
-    """attack_id -> number of the project's TTP entities mapped directly to it."""
+def _observed_counts(session, project_id: str) -> dict[str, dict]:
+    """attack_id -> ``{"count", "methods"}`` for the project's mapped TTP entities.
+
+    ``count`` is the number of the project's TTP entities mapped directly to the
+    technique; ``methods`` is the distinct set of ``MAPS_TO`` methods on those
+    edges (``tcode`` for T-code resolution, ``llm`` for RAG mapping) so the matrix
+    can flag LLM-inferred coverage. Legacy edges written before Phase 2 carry no
+    ``method`` and default to ``tcode``.
+    """
     result = session.run(
         """
-        MATCH (t:TTP {project_id: $pid})-[:MAPS_TO]->(tech:AttackTechnique)
-        RETURN tech.attack_id AS tid, count(DISTINCT t) AS c
+        MATCH (t:TTP {project_id: $pid})-[m:MAPS_TO]->(tech:AttackTechnique)
+        RETURN tech.attack_id AS tid, count(DISTINCT t) AS c,
+               collect(DISTINCT coalesce(m.method, 'tcode')) AS methods
         """,
         pid=project_id,
     )
-    return {row["tid"]: row["c"] for row in result}
+    return {row["tid"]: {"count": row["c"], "methods": row["methods"]} for row in result}
 
 
 def get_matrix(driver: Driver, project_id: str) -> dict:
@@ -228,21 +236,30 @@ def get_matrix(driver: Driver, project_id: str) -> dict:
 
     by_tactic: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
-        direct = counts.get(row["id"], 0)
+        direct_info = counts.get(row["id"])
+        direct = direct_info["count"] if direct_info else 0
+        methods: set[str] = set(direct_info["methods"]) if direct_info else set()
         subs_out = []
         total = direct
         for sub in row["subs"]:
             if not sub.get("id"):
                 continue  # OPTIONAL MATCH placeholder when a technique has no subs
-            sub_count = counts.get(sub["id"], 0)
+            sub_info = counts.get(sub["id"])
+            sub_count = sub_info["count"] if sub_info else 0
+            sub_methods = sub_info["methods"] if sub_info else []
             total += sub_count
-            subs_out.append({"id": sub["id"], "name": sub["name"], "observed_count": sub_count})
+            methods.update(sub_methods)
+            subs_out.append({
+                "id": sub["id"], "name": sub["name"],
+                "observed_count": sub_count, "methods": sorted(sub_methods),
+            })
         subs_out.sort(key=lambda s: s["id"])
         by_tactic[row["tactic_id"]].append({
             "id": row["id"],
             "name": row["name"],
             "is_subtechnique": False,
             "observed_count": total,
+            "methods": sorted(methods),
             "subtechniques": subs_out,
         })
 
@@ -273,13 +290,14 @@ def get_technique(driver: Driver, tid: str, project_id: str) -> dict | None:
             OPTIONAL MATCH (tech)-[:SUBTECHNIQUE_OF]->(parent:AttackTechnique)
             OPTIONAL MATCH (m:AttackMitigation)-[:MITIGATES]->(tech)
             OPTIONAL MATCH (g:AttackGroup)-[:USES]->(tech)
-            OPTIONAL MATCH (e {project_id: $pid})-[:MAPS_TO]->(tech)
+            OPTIONAL MATCH (e {project_id: $pid})-[rel:MAPS_TO]->(tech)
             RETURN tech,
                    parent.attack_id AS parent_id,
                    collect(DISTINCT {id: ta.attack_id, name: ta.name, shortname: ta.shortname}) AS tactics,
                    collect(DISTINCT {id: m.attack_id, name: m.name}) AS mitigations,
                    collect(DISTINCT {id: g.attack_id, name: g.name}) AS groups,
-                   collect(DISTINCT {id: e.id, name: e.name, entity_type: e.entity_type}) AS related
+                   collect(DISTINCT {id: e.id, name: e.name, entity_type: e.entity_type,
+                                     method: coalesce(rel.method, 'tcode'), confidence: rel.confidence}) AS related
             """,
             tid=tid, pid=project_id,
         ).single()
@@ -322,21 +340,28 @@ def resolve_ttps(driver: Driver, project_id: str) -> dict:
             "MATCH (t:TTP {project_id: $pid}) RETURN t.id AS id, t.name AS name",
             pid=project_id,
         ).data()
-        for ttp in ttps:
-            match = _TECH_RE.search(ttp.get("name") or "")
-            if not match:
-                continue
+        # Single UNWIND batch (removes the Phase-1 N+1): one round trip links every
+        # TTP whose name carries a technique id to its AttackTechnique. count(DISTINCT
+        # t) tallies only TTPs that matched an existing technique node — matching the
+        # per-entity loop's semantics.
+        pairs = [
+            {"id": ttp["id"], "code": match.group(0)}
+            for ttp in ttps
+            if (match := _TECH_RE.search(ttp.get("name") or ""))
+        ]
+        if pairs:
             rec = session.run(
                 """
-                MATCH (t:TTP {id: $id})
-                MATCH (tech:AttackTechnique {attack_id: $code})
-                MERGE (t)-[:MAPS_TO]->(tech)
-                RETURN count(*) AS c
+                UNWIND $pairs AS p
+                MATCH (t:TTP {id: p.id})
+                MATCH (tech:AttackTechnique {attack_id: p.code})
+                MERGE (t)-[r:MAPS_TO]->(tech)
+                SET r.method = 'tcode', r.confidence = 1.0
+                RETURN count(DISTINCT t) AS c
                 """,
-                id=ttp["id"], code=match.group(0),
+                pairs=pairs,
             ).single()
-            if rec and rec["c"] > 0:
-                mapped += 1
+            mapped += rec["c"] if rec else 0
 
         actors = session.run(
             "MATCH (a:ThreatActor {project_id: $pid}) RETURN a.id AS id, a.name AS name",
@@ -351,7 +376,8 @@ def resolve_ttps(driver: Driver, project_id: str) -> dict:
                     """
                     MATCH (a:ThreatActor {id: $id})
                     MATCH (g:AttackGroup {attack_id: $code})
-                    MERGE (a)-[:MAPS_TO]->(g)
+                    MERGE (a)-[r:MAPS_TO]->(g)
+                    SET r.method = 'tcode', r.confidence = 1.0
                     RETURN count(*) AS c
                     """,
                     id=actor["id"], code=gmatch.group(0),
@@ -364,7 +390,8 @@ def resolve_ttps(driver: Driver, project_id: str) -> dict:
                     MATCH (g:AttackGroup)
                     WHERE toLower(g.name) = toLower($name)
                        OR any(al IN g.aliases WHERE toLower(al) = toLower($name))
-                    MERGE (a)-[:MAPS_TO]->(g)
+                    MERGE (a)-[r:MAPS_TO]->(g)
+                    SET r.method = 'tcode', r.confidence = 1.0
                     RETURN count(*) AS c
                     """,
                     id=actor["id"], name=name,
@@ -374,6 +401,67 @@ def resolve_ttps(driver: Driver, project_id: str) -> dict:
                 mapped += 1
 
     return {"mapped": mapped}
+
+
+def get_attribution(driver: Driver, project_id: str) -> dict:
+    """Rank ATT&CK Groups by technique overlap with a project's observed techniques.
+
+    **Suggestive, not definitive** (a credibility guardrail — shared TTPs are a
+    weak attribution signal, never proof). "Observed" techniques are the canonical
+    techniques the project's TTPs ``MAPS_TO``, each sub-technique collapsed to its
+    parent via ``SUBTECHNIQUE_OF`` the way :func:`get_matrix` rolls coverage up. A
+    group's ``USES`` techniques are collapsed the same way, so a group that uses a
+    *sub*-technique of an observed parent still counts (and vice-versa).
+
+    Metric: ``shared = |observed ∩ group_techniques|``,
+    ``coverage = shared / |observed|``. Returns the top 10 groups by
+    ``shared_count`` (ties broken by coverage, then name). Empty observed set →
+    empty groups.
+    """
+    with driver.session() as session:
+        observed = session.run(
+            """
+            MATCH (t:TTP {project_id: $pid})-[:MAPS_TO]->(tech:AttackTechnique)
+            OPTIONAL MATCH (tech)-[:SUBTECHNIQUE_OF]->(parent:AttackTechnique)
+            WITH DISTINCT coalesce(parent, tech) AS obs
+            RETURN obs.attack_id AS id, obs.name AS name
+            """,
+            pid=project_id,
+        ).data()
+        observed_names = {row["id"]: row["name"] for row in observed}
+        observed_ids = set(observed_names)
+        if not observed_ids:
+            return {"observed_total": 0, "groups": []}
+
+        group_rows = session.run(
+            """
+            MATCH (g:AttackGroup)-[:USES]->(gt:AttackTechnique)
+            OPTIONAL MATCH (gt)-[:SUBTECHNIQUE_OF]->(gp:AttackTechnique)
+            WITH g, collect(DISTINCT coalesce(gp.attack_id, gt.attack_id)) AS techs
+            RETURN g.attack_id AS id, g.name AS name, techs
+            """
+        ).data()
+
+    total = len(observed_ids)
+    groups = []
+    for row in group_rows:
+        shared_ids = observed_ids.intersection(row["techs"])
+        if not shared_ids:
+            continue
+        shared_techniques = sorted(
+            ({"id": tid, "name": observed_names.get(tid, "")} for tid in shared_ids),
+            key=lambda s: s["id"],
+        )
+        groups.append({
+            "id": row["id"],
+            "name": row["name"],
+            "shared_count": len(shared_ids),
+            "coverage": round(len(shared_ids) / total, 4),
+            "shared_techniques": shared_techniques,
+        })
+
+    groups.sort(key=lambda g: (-g["shared_count"], -g["coverage"], g["name"]))
+    return {"observed_total": total, "groups": groups[:10]}
 
 
 def navigator_layer(driver: Driver, project_id: str) -> dict:

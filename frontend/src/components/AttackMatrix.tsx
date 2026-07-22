@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   attackApi,
+  AttackMapMethod,
   AttackMatrixData,
   AttackTechniqueCell,
   AttackTechniqueDetail,
@@ -36,13 +37,77 @@ function badgeClass(entityType: string): string {
   return TYPE_BADGE_CLASS[entityType] || 'bg-gray-900/30 text-gray-400';
 }
 
-export default function AttackMatrix({ projectId }: { projectId: string }) {
+// A small badge distinguishing an AI (RAG+LLM) mapping from explicit T-code
+// resolution. AI mappings always show, with their confidence; T-code is the
+// implicit baseline and only labelled when `showTcode` is set (detail drawer).
+function MethodBadge({
+  method,
+  confidence,
+  showTcode = false,
+}: {
+  method?: AttackMapMethod;
+  confidence?: number | null;
+  showTcode?: boolean;
+}) {
+  if (method === 'llm') {
+    const pct = typeof confidence === 'number' ? Math.round(confidence * 100) : null;
+    return (
+      <span
+        className="inline-flex items-center gap-0.5 text-[9px] font-bold rounded px-1 py-0.5 flex-shrink-0 leading-none"
+        style={{
+          backgroundColor: 'rgba(96,165,250,0.18)',
+          color: '#93c5fd',
+          border: '1px solid rgba(96,165,250,0.35)',
+        }}
+        title={`AI-mapped (RAG + LLM)${pct !== null ? ` — ${pct}% confidence` : ''}`}
+      >
+        <span className="material-symbols-outlined text-[11px] leading-none">auto_awesome</span>
+        AI{pct !== null ? ` ${pct}%` : ''}
+      </span>
+    );
+  }
+  if (method === 'tcode' && showTcode) {
+    return (
+      <span
+        className="text-[9px] font-medium rounded px-1 py-0.5 flex-shrink-0 leading-none"
+        style={{ backgroundColor: '#2f3444', color: '#9ca3af' }}
+        title="Resolved from an explicit ATT&CK T-code"
+      >
+        T-code
+      </span>
+    );
+  }
+  return null;
+}
+
+// A technique cell counts as AI-mapped when its rolled-up methods include "llm".
+// The backend already unions a technique's own + its sub-techniques' methods into
+// the top-level cell's `methods`, so no manual sub rollup is needed here.
+function cellIsAiMapped(t: AttackTechniqueCell): boolean {
+  return (t.methods || []).includes('llm');
+}
+
+export default function AttackMatrix({
+  projectId,
+  focusTechniqueId,
+  onFocusConsumed,
+}: {
+  projectId: string;
+  focusTechniqueId?: string | null;
+  onFocusConsumed?: () => void;
+}) {
   const router = useRouter();
   const [matrix, setMatrix] = useState<AttackMatrixData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [ingesting, setIngesting] = useState(false);
   const [resolving, setResolving] = useState(false);
+  const [mapping, setMapping] = useState(false);
+  const [embedding, setEmbedding] = useState(false);
+  // Post-action feedback for the AI map / embed flow, and a flag that steers the
+  // analyst to embed techniques first when a map yields nothing.
+  const [mapNote, setMapNote] = useState<{ text: string; tone: 'ok' | 'warn' } | null>(null);
+  const [needsEmbed, setNeedsEmbed] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [showOnlyCovered, setShowOnlyCovered] = useState(false);
   const [expandedTechniques, setExpandedTechniques] = useState<Record<string, boolean>>({});
@@ -96,6 +161,60 @@ export default function AttackMatrix({ projectId }: { projectId: string }) {
     }
   }
 
+  // AI mapping: RAG+LLM map the project's TTPs that lack an explicit T-code, then
+  // reload so newly-mapped techniques light up. Slow — the button shows a spinner.
+  // A 0-mapped result with entities skipped is the signal techniques aren't
+  // embedded yet, so we surface the Embed affordance.
+  async function handleMap() {
+    setMapping(true);
+    setMapNote(null);
+    try {
+      const res = await attackApi.map(projectId);
+      const { mapped, skipped } = res.data;
+      if (mapped > 0) {
+        setNeedsEmbed(false);
+        setMapNote({
+          text: `AI mapped ${mapped} TTP${mapped === 1 ? '' : 's'} to ATT&CK${skipped ? ` · ${skipped} skipped` : ''}.`,
+          tone: 'ok',
+        });
+        await loadMatrix();
+      } else if (skipped > 0) {
+        // Nothing mapped but TTPs were considered — most likely techniques
+        // aren't embedded yet. Point the analyst at the one-time Embed step.
+        setNeedsEmbed(true);
+        setMapNote({
+          text: `No TTPs were mapped. If you haven't embedded techniques yet, run "Embed techniques" first, then map again.`,
+          tone: 'warn',
+        });
+      } else {
+        setMapNote({ text: 'No unmapped TTPs to map — everything with a match is already resolved.', tone: 'ok' });
+      }
+    } catch {
+      setMapNote({ text: 'AI mapping failed. Check the backend LLM/embedding provider and try again.', tone: 'warn' });
+    } finally {
+      setMapping(false);
+    }
+  }
+
+  // Admin one-time step: embed the 697 ATT&CK techniques into pgvector so RAG
+  // mapping has candidates to retrieve. Idempotent and slow (~30-90s).
+  async function handleEmbed() {
+    setEmbedding(true);
+    setMapNote(null);
+    try {
+      const res = await attackApi.embed();
+      setNeedsEmbed(false);
+      setMapNote({
+        text: `Embedded ${res.data.embedded} techniques. You can now map TTPs with AI.`,
+        tone: 'ok',
+      });
+    } catch {
+      setMapNote({ text: 'Embedding failed. Check the backend embedding provider and try again.', tone: 'warn' });
+    } finally {
+      setEmbedding(false);
+    }
+  }
+
   async function handleDownloadLayer() {
     setDownloading(true);
     try {
@@ -142,6 +261,15 @@ export default function AttackMatrix({ projectId }: { projectId: string }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [selectedId, closeDrawer]);
+
+  // Open a technique's drawer when a parent view requests focus (e.g. clicking a
+  // shared technique in the attribution panel switches to this tab and deep-links
+  // the drawer). Consume the request so it fires only once.
+  useEffect(() => {
+    if (!focusTechniqueId) return;
+    openTechnique(focusTechniqueId);
+    onFocusConsumed?.();
+  }, [focusTechniqueId, openTechnique, onFocusConsumed]);
 
   // Coverage headline — dedupe technique ids so techniques that appear under
   // multiple tactics aren't double-counted.
@@ -268,6 +396,20 @@ export default function AttackMatrix({ projectId }: { projectId: string }) {
           </button>
 
           <button
+            onClick={handleMap}
+            disabled={mapping}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50"
+            style={{ backgroundColor: 'rgba(96,165,250,0.15)', color: '#93c5fd', border: '1px solid rgba(96,165,250,0.35)' }}
+            title="Use RAG + LLM to map prose TTPs (no explicit T-code) onto ATT&CK techniques — can be slow"
+            aria-label="Map TTPs to ATT&CK techniques with AI"
+          >
+            <span className={`material-symbols-outlined text-[16px] ${mapping ? 'animate-spin' : ''}`}>
+              {mapping ? 'progress_activity' : 'auto_awesome'}
+            </span>
+            {mapping ? 'Mapping…' : 'Map TTPs → ATT&CK (AI)'}
+          </button>
+
+          <button
             onClick={handleDownloadLayer}
             disabled={downloading}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50"
@@ -277,6 +419,26 @@ export default function AttackMatrix({ projectId }: { projectId: string }) {
           >
             <span className="material-symbols-outlined text-[16px]">download</span>
             {downloading ? 'Preparing…' : 'Navigator layer'}
+          </button>
+
+          {/* One-time admin: embed techniques into pgvector so AI mapping has
+              candidates. Highlighted when a map came back empty (likely un-embedded). */}
+          <button
+            onClick={handleEmbed}
+            disabled={embedding}
+            className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] rounded-md transition-colors disabled:opacity-50"
+            style={
+              needsEmbed
+                ? { backgroundColor: 'rgba(96,165,250,0.15)', color: '#93c5fd', border: '1px solid rgba(96,165,250,0.45)' }
+                : { backgroundColor: 'transparent', color: '#6b7280', border: '1px solid #2f3444' }
+            }
+            title="One-time admin step: embed all ATT&CK techniques so AI mapping can retrieve candidates (~30-90s)"
+            aria-label="Embed ATT&CK techniques for AI mapping"
+          >
+            <span className={`material-symbols-outlined text-[14px] ${embedding ? 'animate-spin' : ''}`}>
+              {embedding ? 'progress_activity' : 'database'}
+            </span>
+            {embedding ? 'Embedding…' : 'Embed techniques'}
           </button>
 
           {/* Subtle re-sync affordance + current dataset version. */}
@@ -293,6 +455,31 @@ export default function AttackMatrix({ projectId }: { projectId: string }) {
           </button>
         </div>
       </div>
+
+      {/* AI map / embed feedback */}
+      {mapNote && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-md px-3 py-2 mb-3 text-xs"
+          style={
+            mapNote.tone === 'warn'
+              ? { backgroundColor: 'rgba(234,179,8,0.1)', color: '#fcd34d', border: '1px solid rgba(234,179,8,0.3)' }
+              : { backgroundColor: 'rgba(96,165,250,0.1)', color: '#93c5fd', border: '1px solid rgba(96,165,250,0.3)' }
+          }
+        >
+          <span className="material-symbols-outlined text-[16px] flex-shrink-0">
+            {mapNote.tone === 'warn' ? 'info' : 'check_circle'}
+          </span>
+          <span className="flex-1">{mapNote.text}</span>
+          <button
+            onClick={() => setMapNote(null)}
+            aria-label="Dismiss message"
+            className="flex-shrink-0 hover:brightness-125"
+          >
+            <span className="material-symbols-outlined text-[16px]">close</span>
+          </button>
+        </div>
+      )}
 
       {/* Legend */}
       <div className="flex items-center gap-4 text-xs text-gray-400 mb-3">
@@ -356,6 +543,11 @@ export default function AttackMatrix({ projectId }: { projectId: string }) {
                               )}
                             </div>
                             <div className="text-[10px] text-gray-500 mt-0.5">{tech.id}</div>
+                            {cellIsAiMapped(tech) && (
+                              <div className="mt-1">
+                                <MethodBadge method="llm" />
+                              </div>
+                            )}
                           </button>
                           {subCount > 0 && (
                             <button
@@ -401,6 +593,11 @@ export default function AttackMatrix({ projectId }: { projectId: string }) {
                                     )}
                                   </div>
                                   <div className="text-[9px] text-gray-500 mt-0.5">{sub.id}</div>
+                                  {(sub.methods || []).includes('llm') && (
+                                    <div className="mt-1">
+                                      <MethodBadge method="llm" />
+                                    </div>
+                                  )}
                                 </button>
                               );
                             })}
@@ -545,6 +742,7 @@ export default function AttackMatrix({ projectId }: { projectId: string }) {
                               <span className={`text-[10px] px-2 py-0.5 rounded flex-shrink-0 ${badgeClass(ent.entity_type)}`}>
                                 {ent.entity_type}
                               </span>
+                              <MethodBadge method={ent.method} confidence={ent.confidence} showTcode />
                             </div>
                             <span className="material-symbols-outlined text-[16px] flex-shrink-0" style={{ color: ACCENT }}>arrow_forward</span>
                           </button>

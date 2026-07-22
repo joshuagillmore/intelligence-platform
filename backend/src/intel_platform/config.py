@@ -106,6 +106,14 @@ class Settings(BaseSettings):
     attack_stix_base_url: str = (
         "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/enterprise-attack"
     )
+    # ATT&CK Phase 2 — RAG text→technique mapping. POST /attack/embed embeds the
+    # technique catalog into pgvector; POST /attack/map retrieves the top-K nearest
+    # candidate techniques per unresolved TTP and an LLM confirms which apply.
+    # Only confirmed matches at/above the confidence floor are written as
+    # (:TTP)-[:MAPS_TO {method:"llm"}]->(:AttackTechnique).
+    attack_mapping_top_k: int = 5
+    attack_mapping_confidence_min: float = 0.5
+    attack_mapping_max_ttps: int = 200  # cap per /attack/map run (cost/latency guard)
 
     # LLM providers
     anthropic_api_key: str = ""
