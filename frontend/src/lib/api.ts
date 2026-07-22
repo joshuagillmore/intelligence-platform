@@ -110,10 +110,22 @@ export interface AttackStatus {
   counts: AttackCounts;
 }
 
+// How a project entity was mapped onto an ATT&CK technique: an explicit T-code
+// in the TTP name ("tcode", confidence 1.0) or an AI RAG+LLM mapping ("llm",
+// with a model-supplied confidence). Present on observed matrix cells and on the
+// technique detail's related entities (Phase 2). Optional so the UI degrades
+// cleanly against a backend that hasn't populated it yet.
+export type AttackMapMethod = 'tcode' | 'llm';
+
 export interface AttackSubtechnique {
   id: string;
   name: string;
   observed_count: number;
+  // DISTINCT MAPS_TO methods across the entities mapped to this sub-technique
+  // ("tcode" and/or "llm"). Optional so the UI degrades against a pre-Phase-2
+  // backend that doesn't emit it. Per-entity confidence lives in the technique
+  // detail's related_entities, not here.
+  methods?: AttackMapMethod[];
 }
 
 export interface AttackTechniqueCell {
@@ -122,6 +134,9 @@ export interface AttackTechniqueCell {
   is_subtechnique: false;
   observed_count: number;
   subtechniques: AttackSubtechnique[];
+  // Union of this technique's own + all its sub-techniques' MAPS_TO methods
+  // (same rollup as observed_count). Show the "AI" marker when it includes "llm".
+  methods?: AttackMapMethod[];
 }
 
 export interface AttackTactic {
@@ -148,7 +163,31 @@ export interface AttackTechniqueDetail {
   detection: string;
   mitigations: { id: string; name: string }[];
   groups: { id: string; name: string }[];
-  related_entities: { id: string; name: string; entity_type: string }[];
+  related_entities: {
+    id: string;
+    name: string;
+    entity_type: string;
+    // Per-entity mapping provenance. tcode edges carry confidence 1.0; llm edges
+    // the model's 0..1 confidence; legacy edges default method "tcode", null conf.
+    method?: AttackMapMethod;
+    confidence?: number | null;
+  }[];
+}
+
+// Threat-actor attribution by technique overlap (Phase 2). Ranked ATT&CK Groups
+// that share observed techniques with the project — suggestive overlap only, not
+// confirmed attribution.
+export interface AttackAttributionGroup {
+  id: string;
+  name: string;
+  shared_count: number;
+  coverage: number; // shared / observed_total, 0..1
+  shared_techniques: { id: string; name: string }[];
+}
+
+export interface AttackAttribution {
+  observed_total: number;
+  groups: AttackAttributionGroup[];
 }
 
 export const attackApi = {
@@ -158,6 +197,18 @@ export const attackApi = {
   // Re-map the project's TTP entities onto ATT&CK techniques.
   resolve: (projectId: string) =>
     api.post<{ mapped: number }>('/attack/resolve', null, { params: { project_id: projectId } }),
+  // (Admin) Embed all ATT&CK techniques into pgvector for RAG mapping. One-time,
+  // idempotent, and slow (~30-90s for 697 techniques).
+  embed: () => api.post<{ embedded: number }>('/attack/embed'),
+  // RAG+LLM map the project's TTP entities that lack an explicit T-code. Slow for
+  // many TTPs. Returns how many were mapped vs. skipped.
+  map: (projectId: string) =>
+    api.post<{ mapped: number; skipped: number }>('/attack/map', null, {
+      params: { project_id: projectId },
+    }),
+  // Candidate ATT&CK Groups ranked by technique overlap with the project.
+  attribution: (projectId: string) =>
+    api.get<AttackAttribution>('/attack/attribution', { params: { project_id: projectId } }),
   matrix: (projectId: string) =>
     api.get<AttackMatrixData>('/attack/matrix', { params: { project_id: projectId } }),
   technique: (techniqueId: string, projectId: string) =>

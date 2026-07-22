@@ -9,6 +9,7 @@ import { entitiesApi, graphApi, assessApi } from '@/lib/api';
 import { TYPE_BADGE_CLASS as TYPE_BADGE_STYLES } from '@/lib/entityStyles';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
 import AttackMatrix from '@/components/AttackMatrix';
+import AttackAttribution from '@/components/AttackAttribution';
 
 interface IOCEntity {
   id: string;
@@ -102,6 +103,13 @@ export default function CyberPage() {
   const [actorRelationships, setActorRelationships] = useState<Record<string, Relationship[]>>({});
   const [expandedActorId, setExpandedActorId] = useState<string | null>(null);
   const [generatingProfile, setGeneratingProfile] = useState<string | null>(null);
+  // Deep-link a technique from the attribution panel into the ATT&CK matrix drawer.
+  const [attackFocus, setAttackFocus] = useState<string | null>(null);
+
+  const focusTechniqueInMatrix = useCallback((techniqueId: string) => {
+    setAttackFocus(techniqueId);
+    setPageTab('attack');
+  }, []);
 
   const loadIOCs = useCallback(async () => {
     if (!activeProject) return;
@@ -514,23 +522,31 @@ export default function CyberPage() {
 
         {/* ATT&CK Matrix Tab — data-driven from the /attack API */}
         {pageTab === 'attack' && (
-          <AttackMatrix projectId={activeProject.id} />
+          <AttackMatrix
+            projectId={activeProject.id}
+            focusTechniqueId={attackFocus}
+            onFocusConsumed={() => setAttackFocus(null)}
+          />
         )}
 
         {/* Threat Actors Tab */}
         {pageTab === 'actors' && (
-          <div style={{ height: 'calc(100vh - 240px)' }}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Threat Actors ({threatActors.length})</h3>
-            </div>
+          <div className="space-y-6 overflow-y-auto pr-1" style={{ height: 'calc(100vh - 240px)' }}>
+            {/* Candidate attribution by ATT&CK technique overlap */}
+            <AttackAttribution projectId={activeProject.id} onTechniqueClick={focusTechniqueInMatrix} />
 
-            {threatActors.length === 0 ? (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Threat Actors ({threatActors.length})</h3>
+              </div>
+
+              {threatActors.length === 0 ? (
               <div className="rounded-lg p-8 text-center text-gray-500" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
                 <p>No threat actors found in this project.</p>
                 <p className="text-xs mt-1 text-gray-600">Ingest threat intelligence reports to extract threat actor entities.</p>
               </div>
             ) : (
-              <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 300px)' }}>
+              <div className="space-y-2">
                 {threatActors.map(actor => {
                   const isExpanded = expandedActorId === actor.id;
                   const rels = actorRelationships[actor.id] || [];
@@ -617,7 +633,8 @@ export default function CyberPage() {
                   );
                 })}
               </div>
-            )}
+              )}
+            </div>
           </div>
         )}
       </main>
