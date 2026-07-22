@@ -6,6 +6,7 @@ the rate limiter is conservative.
 """
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 
 from intel_platform.collection.proxy import ProxiedClient
@@ -18,6 +19,28 @@ from intel_platform.enrichment.base import (
 
 _URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 _MAX_PRODUCTS = 25
+_CWE_RE = re.compile(r"^CWE-\d+$")
+
+
+def _cwe_ids(weaknesses: list) -> list[str]:
+    """CWE ids from NVD's ``cve.weaknesses[]``, Primary first, deduped.
+
+    Each weakness is ``{"type": "Primary"|"Secondary", "description":
+    [{"lang": "en", "value": "CWE-79"}, ...]}``. NVD also emits non-CWE markers
+    like ``NVD-CWE-noinfo``/``NVD-CWE-Other``; those don't match ``^CWE-\\d+$``
+    and are dropped. Primary mappings are surfaced ahead of Secondary ones.
+    """
+    primary: list[str] = []
+    secondary: list[str] = []
+    seen: set[str] = set()
+    for weakness in weaknesses or []:
+        bucket = primary if weakness.get("type") == "Primary" else secondary
+        for desc in weakness.get("description", []) or []:
+            value = desc.get("value", "")
+            if _CWE_RE.match(value) and value not in seen:
+                seen.add(value)
+                bucket.append(value)
+    return primary + secondary
 
 
 def _first_cvss(metrics: dict) -> tuple[float | None, str]:
@@ -83,6 +106,7 @@ class NVDProvider(EnrichmentProvider):
         )
         score, severity = _first_cvss(cve.get("metrics", {}) or {})
         products = _products(cve.get("configurations", []) or [])
+        cwe_ids = _cwe_ids(cve.get("weaknesses", []) or [])
 
         props: dict = {"cve_id": value, "description": description}
         if score is not None:
@@ -91,5 +115,7 @@ class NVDProvider(EnrichmentProvider):
             props["severity"] = severity.lower()
         if products:
             props["affected_products"] = products
+        if cwe_ids:
+            props["cwe_ids"] = cwe_ids
 
         return EnrichmentResult(properties=props, raw=cve, source_url=f"{_URL}?cveId={value}")

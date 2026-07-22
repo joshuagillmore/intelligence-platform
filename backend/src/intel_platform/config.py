@@ -114,6 +114,12 @@ class Settings(BaseSettings):
     attack_mapping_top_k: int = 5
     attack_mapping_confidence_min: float = 0.5
     attack_mapping_max_ttps: int = 200  # cap per /attack/map run (cost/latency guard)
+    # ATT&CK Phase 3a — CVE→ATT&CK chaining via CWE→CAPEC→ATT&CK. Both files are
+    # keyless + redistributable (MITRE Terms of Use, see data/attack/ATTRIBUTION.md),
+    # fetched on demand and cached to a gitignored path under data/attack/. URLs are
+    # config-driven so a mirror is a .env swap.
+    cwe_xml_url: str = "https://cwe.mitre.org/data/xml/cwec_latest.xml.zip"
+    capec_xml_url: str = "https://capec.mitre.org/data/xml/capec_latest.xml"
 
     # LLM providers
     anthropic_api_key: str = ""

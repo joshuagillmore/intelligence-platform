@@ -26,6 +26,9 @@ docker-compose.override.yml
 
 # MITRE ATT&CK bundle cache (~50 MB, fetched on demand; ATTRIBUTION.md is kept)
 data/attack/*.json
+# CWE/CAPEC caches for CVE->ATT&CK chaining (fetched on demand; Phase 3a)
+data/attack/*.xml
+data/attack/*.zip
 
 # Data volumes & editor/OS cruft
 neo4j_data/

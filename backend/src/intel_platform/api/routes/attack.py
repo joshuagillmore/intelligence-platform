@@ -25,6 +25,7 @@ from intel_platform.db.engine import get_db
 from intel_platform.services.attack import embeddings as attack_embeddings
 from intel_platform.services.attack import graph_ops
 from intel_platform.services.attack import mapping as attack_mapping
+from intel_platform.services.attack import vuln_chain
 from intel_platform.services.attack.ingest import fetch_and_ingest
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,10 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 # ingest doesn't needlessly block an embed and vice-versa — they don't conflict.
 _ingest_lock = asyncio.Lock()
 _embed_lock = asyncio.Lock()
+# Serialize the CWE/CAPEC fetch-and-load against itself (concurrent admin triggers
+# shouldn't double-fetch the ~40 MB of XML); separate from _ingest_lock — the two
+# datasets don't conflict.
+_vuln_lock = asyncio.Lock()
 
 
 @router.get("/attack/status")
@@ -55,6 +60,42 @@ async def ingest(driver: Driver = Depends(get_neo4j_driver)):
         logger.exception("ATT&CK ingest failed")
         raise HTTPException(status_code=502, detail="Failed to fetch or load the ATT&CK dataset")
     return {"ingested": True, "version": result["version"], "counts": result["counts"]}
+
+
+@router.post("/attack/ingest-vuln-chain", dependencies=[Depends(require_admin)])
+async def ingest_vuln_chain(driver: Driver = Depends(get_neo4j_driver)):
+    """(Admin) Fetch CWE + CAPEC, load ``(:Cwe)-[:ENABLES]->(:AttackTechnique)``.
+
+    Idempotent. Requires ATT&CK to be ingested first (edges are only created for
+    techniques that already exist). Returns ``{"cwes": int, "edges": int}``.
+    """
+    try:
+        async with _vuln_lock:
+            result = await vuln_chain.ingest_vuln_chain(driver)
+    except Exception:
+        # Never leak fetch/parse internals to the client.
+        logger.exception("CVE→ATT&CK chain ingest failed")
+        raise HTTPException(status_code=502, detail="Failed to fetch or load the CWE/CAPEC datasets")
+    return {"cwes": result["cwes"], "edges": result["edges"]}
+
+
+@router.post("/attack/resolve-cve")
+async def resolve_cve(
+    project_id: str = Query(...),
+    driver: Driver = Depends(get_neo4j_driver),
+):
+    """Chain this project's CVE ``Vulnerability`` entities to ATT&CK techniques.
+
+    MERGEs ``HAS_WEAKNESS`` to the CWE reference nodes and materializes
+    ``(:Vulnerability)-[:ENABLES {via:"cwe-capec"}]->(:AttackTechnique)`` for every
+    technique those CWEs enable. Returns
+    ``{"vulnerabilities": int, "techniques_linked": int}``.
+    """
+    try:
+        return await asyncio.to_thread(vuln_chain.resolve_cve, driver, project_id)
+    except Exception:
+        logger.exception("ATT&CK CVE resolve failed")
+        raise HTTPException(status_code=502, detail="Failed to resolve CVEs to ATT&CK")
 
 
 @router.post("/attack/embed", dependencies=[Depends(require_admin)])

@@ -26,6 +26,8 @@ CONSTRAINTS = [
     "CREATE CONSTRAINT attack_group_id IF NOT EXISTS FOR (n:AttackGroup) REQUIRE n.attack_id IS UNIQUE",
     "CREATE CONSTRAINT attack_software_id IF NOT EXISTS FOR (n:AttackSoftware) REQUIRE n.attack_id IS UNIQUE",
     "CREATE CONSTRAINT attack_mitigation_id IF NOT EXISTS FOR (n:AttackMitigation) REQUIRE n.attack_id IS UNIQUE",
+    # CWE weakness reference nodes (Phase 3a CVE->ATT&CK chain) — global, keyed by cwe_id.
+    "CREATE CONSTRAINT cwe_id IF NOT EXISTS FOR (n:Cwe) REQUIRE n.cwe_id IS UNIQUE",
 ]
 
 INDEXES = [
