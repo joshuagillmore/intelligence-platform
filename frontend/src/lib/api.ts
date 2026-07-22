@@ -108,6 +108,9 @@ export interface AttackStatus {
   ingested: boolean;
   version: string | null;
   counts: AttackCounts;
+  // Phase 3a weakness-chain (CWE→CAPEC→ATT&CK) ingest state. Optional so the UI
+  // degrades cleanly against a backend that predates the vuln-chain plumbing.
+  vuln_chain?: { ingested: boolean; cwes: number };
 }
 
 // How a project entity was mapped onto an ATT&CK technique: an explicit T-code
@@ -172,6 +175,11 @@ export interface AttackTechniqueDetail {
     method?: AttackMapMethod;
     confidence?: number | null;
   }[];
+  // Phase 3a: the project's CVE/Vulnerability entities whose weakness chain
+  // (CWE→CAPEC→ATT&CK) could enable this technique. Potential enablement inferred
+  // from the CVE's weaknesses — distinct from observed TTPs. May be empty; optional
+  // so the UI degrades against a pre-Phase-3a backend that doesn't emit it.
+  enabling_cves?: { id: string; name: string }[];
 }
 
 // Threat-actor attribution by technique overlap (Phase 2). Ranked ATT&CK Groups
