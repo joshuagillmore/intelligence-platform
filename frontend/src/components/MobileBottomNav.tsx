@@ -10,7 +10,9 @@ const bottomTabs = [
   { name: 'Network', href: '/network', icon: 'hub', iconFilled: 'hub' },
 ];
 
-const allPages = [
+type Pg = { name: string; href: string; icon: string; adminOnly?: boolean };
+
+const allPages: Pg[] = [
   { name: 'Projects', href: '/', icon: 'folder_open' },
   { name: 'Collections', href: '/collections', icon: 'database' },
   { name: 'Collection Plans', href: '/collection-plans', icon: 'checklist' },
@@ -21,14 +23,18 @@ const allPages = [
   { name: 'Products & Artefacts', href: '/products', icon: 'description' },
   { name: 'Timeline', href: '/timeline', icon: 'timeline' },
   { name: 'Watchlist', href: '/watchlist', icon: 'star' },
-  { name: 'LLM Hub', href: '/llm-hub', icon: 'smart_toy' },
-  { name: 'Admin', href: '/admin', icon: 'admin_panel_settings' },
+  { name: 'LLM Hub', href: '/llm-hub', icon: 'smart_toy', adminOnly: true },
+  { name: 'Admin', href: '/admin', icon: 'admin_panel_settings', adminOnly: true },
 ];
 
 export default function MobileBottomNav() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [role, setRole] = useState('');
+  useEffect(() => {
+    if (typeof window !== 'undefined') setRole(localStorage.getItem('auth_role') || 'analyst');
+  }, []);
 
   function isActive(href: string) {
     if (href === '/') return pathname === '/' || pathname.startsWith('/project/');
@@ -62,7 +68,7 @@ export default function MobileBottomNav() {
             <span className="text-[9px] font-bold text-gray-500 uppercase tracking-[0.2em]">All Pages</span>
           </div>
           <div className="px-2 pb-3 space-y-0.5">
-            {allPages.map(page => {
+            {allPages.filter(page => !page.adminOnly || role === 'admin').map(page => {
               const active = isActive(page.href);
               return (
                 <Link

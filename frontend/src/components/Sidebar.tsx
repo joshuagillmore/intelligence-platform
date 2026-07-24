@@ -7,7 +7,9 @@ import { collectionsApi, watchlistApi, healthApi } from '@/lib/api';
 import { useNotifications, useNotificationCount } from '@/components/NotificationProvider';
 import { APP_NAME, APP_VERSION } from '@/lib/branding';
 
-const navItems = [
+type NavItem = { name: string; href: string; icon: string; adminOnly?: boolean };
+
+const navItems: NavItem[] = [
   { name: 'Projects', href: '/', icon: 'folder_open' },
   { name: 'Collections', href: '/collections', icon: 'database' },
   { name: 'Collection Plans', href: '/collection-plans', icon: 'checklist' },
@@ -16,13 +18,13 @@ const navItems = [
   { name: 'Geo-Intelligence', href: '/geo', icon: 'public' },
   { name: 'Cyber', href: '/cyber', icon: 'security' },
   { name: 'Products & Artefacts', href: '/products', icon: 'description' },
-  { name: 'Admin', href: '/admin', icon: 'admin_panel_settings' },
+  { name: 'Admin', href: '/admin', icon: 'admin_panel_settings', adminOnly: true },
 ];
 
-const secondaryItems = [
+const secondaryItems: NavItem[] = [
   { name: 'Timeline', href: '/timeline', icon: 'timeline' },
   { name: 'Watchlist', href: '/watchlist', icon: 'star' },
-  { name: 'LLM Hub', href: '/llm-hub', icon: 'smart_toy' },
+  { name: 'LLM Hub', href: '/llm-hub', icon: 'smart_toy', adminOnly: true },
 ];
 
 function formatTimeAgo(date: Date): string {
@@ -231,7 +233,7 @@ export default function Sidebar() {
 
       {/* Primary Navigation */}
       <nav aria-label="Primary" className="flex-1 py-1 overflow-y-auto space-y-0.5">
-        {navItems.map((item) => (
+        {navItems.filter((item) => !item.adminOnly || role === 'admin').map((item) => (
           <Link
             key={item.href}
             href={item.href}
@@ -252,7 +254,7 @@ export default function Sidebar() {
         {/* Divider */}
         <div className="mx-4 my-2 border-t border-navy-800" />
 
-        {secondaryItems.map((item) => (
+        {secondaryItems.filter((item) => !item.adminOnly || role === 'admin').map((item) => (
           <Link
             key={item.href}
             href={item.href}
