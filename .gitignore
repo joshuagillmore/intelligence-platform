@@ -46,3 +46,6 @@ frontend/tests/e2e/.auth/
 frontend/tests/e2e/screenshots/
 frontend/playwright-report/
 frontend/test-results/
+
+# UI soak output (logs + failure artifacts)
+frontend/tests/e2e/soak/
