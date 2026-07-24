@@ -1,0 +1,10 @@
+# CI-only overrides layered over docker-compose.yml for the E2E job.
+# GitHub runners have no GPU, so drop ollama's nvidia device reservation (compose
+# v2 errors on an unsatisfiable GPU request). ollama still starts (empty, no model)
+# to satisfy the backend's depends_on; the UI tests need no model.
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices: !reset null
