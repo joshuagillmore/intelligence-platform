@@ -10,6 +10,7 @@ import { APP_NAME, APP_VERSION } from '@/lib/branding';
 const navItems = [
   { name: 'Projects', href: '/', icon: 'folder_open' },
   { name: 'Collections', href: '/collections', icon: 'database' },
+  { name: 'Collection Plans', href: '/collection-plans', icon: 'checklist' },
   { name: 'Data Sources', href: '/data-sources', icon: 'satellite_alt' },
   { name: 'Network Analysis', href: '/network', icon: 'hub' },
   { name: 'Geo-Intelligence', href: '/geo', icon: 'public' },
