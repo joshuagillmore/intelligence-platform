@@ -138,7 +138,7 @@ jobs:
       - name: Wait for the frontend + backend to serve
         run: |
           for i in $(seq 1 30); do curl -sf http://localhost:3000 >/dev/null && break; sleep 2; done
-          for i in $(seq 1 30); do curl -sf http://localhost:8000/api/health >/dev/null && exit 0; sleep 2; done
+          for i in $(seq 1 30); do curl -sf http://localhost:8000/health >/dev/null && exit 0; sleep 2; done
           echo "frontend/backend did not become ready" && exit 1
 
       - name: Seed deterministic demo data
