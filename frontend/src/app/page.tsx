@@ -208,7 +208,11 @@ export default function ProjectsPage() {
           return 0;
       }
     });
-    return sortDir === 'desc' ? sorted.reverse() : sorted;
+    const ordered = sortDir === 'desc' ? sorted.reverse() : sorted;
+    // Keep populated projects ahead of empty ones regardless of the sort key, so the
+    // landing always leads with real work instead of a wall of empty placeholders.
+    const hasContent = (p: Project) => p.entity_count > 0 || p.document_count > 0;
+    return [...ordered.filter(hasContent), ...ordered.filter(p => !hasContent(p))];
   }, [projects, sortBy, sortDir]);
 
   function handleColumnSort(key: SortKey) {

@@ -335,7 +335,7 @@ export default function CyberPage() {
               <SeverityStatCard label="High Severity" count={severityStats.high} color="#f97316" />
               <SeverityStatCard label="Medium" count={severityStats.medium} color="#adc6ff" />
               <SeverityStatCard label="Low Priority" count={severityStats.low} color="#6b7280" />
-              <SeverityStatCard label="New 24h" count={severityStats.newRecent} color="#60a5fa" trending="+4%" />
+              <SeverityStatCard label="New 24h" count={severityStats.newRecent} color="#60a5fa" />
               <SeverityStatCard label="Enriched" count={`${severityStats.enrichedPct}%`} color="#adc6ff" progressPercent={severityStats.enrichedPct} />
               <SeverityStatCard label="Attributed" count={`${severityStats.attributedPct}%`} color="#adc6ff" subtitle="Mapped to APTs" progressPercent={severityStats.attributedPct} />
             </div>
