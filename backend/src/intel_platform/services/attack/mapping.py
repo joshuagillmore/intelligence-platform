@@ -85,9 +85,9 @@ async def _retrieve_candidates(session: AsyncSession, query_vec: list[float], to
     stmt = sql_text(
         """
         SELECT technique_id, text,
-               1 - (embedding <=> :qvec::vector) AS similarity
+               1 - (embedding <=> CAST(:qvec AS vector)) AS similarity
         FROM attack_technique_embeddings
-        ORDER BY embedding <=> :qvec::vector
+        ORDER BY embedding <=> CAST(:qvec AS vector)
         LIMIT :k
         """
     )
