@@ -547,13 +547,45 @@ async def execute_plan_endpoint(
 
 
 @router.get("/collection-plans/{plan_id}/execution-status")
-async def get_execution_status(plan_id: str):
-    """Poll the execution progress of a running collection plan."""
-    from intel_platform.services.plan_executor import get_execution_status
-    status = get_execution_status(plan_id)
-    if not status:
+async def get_execution_status(plan_id: str, db: AsyncSession = Depends(get_db)):
+    """Poll the execution progress of a running collection plan.
+
+    The in-memory plan_executor tracker only covers the synchronous plan_executor
+    path; the agentic loop (run_agentic_loop) records progress to CollectionActivity
+    instead. Fall back to that trail so the endpoint reflects a real agentic run
+    (previously it always reported "idle" while a crawl was in flight).
+    """
+    from intel_platform.services.plan_executor import get_execution_status as _mem_status
+    pid = _parse_uuid(plan_id, "plan_id")
+
+    mem = _mem_status(plan_id)
+    if mem:
+        return {"plan_id": plan_id, **mem}
+
+    result = await db.execute(
+        select(CollectionActivity)
+        .where(CollectionActivity.plan_id == pid)
+        .order_by(CollectionActivity.created_at.asc())
+    )
+    events = result.scalars().all()
+    if not events:
         return {"plan_id": plan_id, "status": "idle", "message": "No active execution"}
-    return {"plan_id": plan_id, **status}
+
+    latest = events[-1]
+    terminal = next((e for e in reversed(events) if e.event in ("plan_completed", "plan_failed")), None)
+    if terminal:
+        state = "completed" if terminal.event == "plan_completed" else "failed"
+    else:
+        state = "running"
+    return {
+        "plan_id": plan_id,
+        "status": state,
+        "message": latest.message,
+        "last_event": latest.event,
+        "sources_succeeded": sum(1 for e in events if e.event == "source_succeeded"),
+        "sources_failed": sum(1 for e in events if e.event == "source_failed"),
+        "updated_at": latest.created_at.isoformat(),
+    }
 
 
 # ---------------------------------------------------------------------------
