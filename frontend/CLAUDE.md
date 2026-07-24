@@ -16,7 +16,10 @@ npm run build    # production build — part of "done"
 npm run start    # serve the production build
 ```
 
-There is no test runner configured yet; **`lint` + `build` are the gate.**
+Tests: **`npm run test`** (Vitest + RTL component/logic tests in `tests/unit/`) and
+**`npm run e2e`** (Playwright authenticated smoke across all views + seeded
+assertions, in `tests/e2e/`; needs the stack up + `backend/scripts/seed_demo.py`).
+`lint` + `build` remain part of the gate.
 
 ## Layout (`src/`)
 

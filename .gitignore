@@ -40,3 +40,9 @@ Thumbs.db
 # Claude Code personal layer (per-machine, not shared)
 CLAUDE.local.md
 .claude/settings.local.json
+
+# Playwright E2E (auth state holds a JWT; artifacts regenerate)
+frontend/tests/e2e/.auth/
+frontend/tests/e2e/screenshots/
+frontend/playwright-report/
+frontend/test-results/
