@@ -32,6 +32,7 @@ export default function LlmHubPage() {
   const [activePersona, setActivePersona] = useState<string>('');
   const [prompt, setPrompt] = useState('');
   const [result, setResult] = useState<string | null>(null);
+  const [resultError, setResultError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [editablePrompt, setEditablePrompt] = useState('');
   const [temperature, setTemperature] = useState(0.3);
@@ -112,6 +113,7 @@ export default function LlmHubPage() {
     if (!prompt.trim()) return;
     setLoading(true);
     setResult(null);
+    setResultError(null);
     try {
       const isCustom = !!selectedSkill && !builtInSkills.includes(selectedSkill.name);
       const overrides: { system_prompt?: string; temperature?: number; max_tokens?: number } = {
@@ -126,7 +128,7 @@ export default function LlmHubPage() {
       );
       setResult(res.data.content || res.data.response || JSON.stringify(res.data, null, 2));
     } catch {
-      setResult('Failed to query LLM.');
+      setResultError('Query failed. Check that the LLM provider is configured and reachable, then try again.');
     } finally {
       setLoading(false);
     }
@@ -284,6 +286,12 @@ export default function LlmHubPage() {
                 >
                   {loading ? 'Querying...' : 'Test Skill'}
                 </button>
+                {resultError && (
+                  <div className="mt-3 rounded border border-red-600/40 bg-red-950/30 p-3 text-xs text-red-300 flex items-start gap-2" role="alert">
+                    <span className="material-symbols-outlined text-red-400 text-sm">error</span>
+                    <span>{resultError}</span>
+                  </div>
+                )}
                 {result && (
                   <div className="mt-3 bg-navy-700 rounded p-3 max-h-48 overflow-y-auto">
                     <Markdown content={result} className="text-xs" />

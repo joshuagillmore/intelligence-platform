@@ -62,6 +62,7 @@ export default function ProductsPage() {
   const [searchResults, setSearchResults] = useState<SearchedEntity[]>([]);
   const [selectedEntities, setSelectedEntities] = useState<SearchedEntity[]>([]);
   const [generatedReport, setGeneratedReport] = useState<string | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
   const [reportMeta, setReportMeta] = useState<{ retrievalMode: string; contextNodes: number; contextEdges: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -141,6 +142,7 @@ export default function ProductsPage() {
     if (selectedEntities.length === 0 || !activeProject) return;
     setLoading(true);
     setGeneratedReport(null);
+    setGenerateError(null);
     setReportMeta(null);
     setViewingHistoryId(null);
     setViewingSavedReport(null);
@@ -189,11 +191,11 @@ export default function ProductsPage() {
         link: '/products',
       });
     } catch {
-      setGeneratedReport('Failed to generate report. Check that the LLM service is configured.');
+      setGenerateError('Report generation failed. Check that the LLM provider is configured and reachable, then try again.');
       updateNotification(notifId, {
         type: 'error',
         title: 'Report Failed',
-        message: 'Failed to generate report. Check LLM configuration.',
+        message: 'Report generation failed. Check LLM configuration.',
       });
     } finally {
       setLoading(false);
@@ -455,6 +457,14 @@ export default function ProductsPage() {
                 </button>
               </div>
             </div>
+
+            {/* Generation error — shown as a dismissible alert, never as savable report content */}
+            {generateError && (
+              <div className="rounded-lg p-4 border border-red-600/40 bg-red-950/30 text-sm text-red-300 flex items-start gap-2" role="alert">
+                <span className="material-symbols-outlined text-red-400 text-lg">error</span>
+                <span>{generateError}</span>
+              </div>
+            )}
 
             {/* Generated report */}
             {generatedReport && (
