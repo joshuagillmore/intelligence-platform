@@ -10,13 +10,12 @@ import { test, expect, type Page } from '@playwright/test';
  * (network-level) requests are collected and reported but don't hard-fail, to
  * avoid flaking on benign third-party noise; tighten per-route as needed.
  *
- * React *hydration* errors (#418/#419/#423/... — SSR/client markup mismatch, which
- * the app currently triggers via localStorage-dependent rendering) are recoverable
- * and app-wide, so they're reported as warnings rather than hard-failing the suite;
- * genuine uncaught crashes and 5xx still fail. Tighten to zero once hydration is fixed.
+ * React *hydration* errors (#418/#419/#423/... — SSR/client markup mismatch) are
+ * caught separately and now hard-fail too, since the app-wide localStorage-in-render
+ * mismatch that used to trip them was fixed (ProjectContext loads after mount).
  */
 
-// React hydration-error family (recoverable) — reported, not fatal.
+// React hydration-error family — an SSR/client markup mismatch is a real defect.
 const HYDRATION_RE = /Minified React error #(4(1[89]|2[0-5]))|hydrat|did not match|Text content does not match/i;
 
 const ROUTES: { path: string; name: string }[] = [
@@ -74,10 +73,11 @@ for (const route of ROUTES) {
     // Report the soft signals for visibility.
     if (c.consoleErrors.length) testInfo.annotations.push({ type: 'console-error', description: c.consoleErrors.slice(0, 10).join('\n') });
     if (c.failedRequests.length) testInfo.annotations.push({ type: 'request-failed', description: c.failedRequests.slice(0, 10).join('\n') });
-    if (c.hydrationWarnings.length) testInfo.annotations.push({ type: 'hydration-warning', description: `${c.hydrationWarnings.length} recoverable React hydration error(s)` });
+    if (c.hydrationWarnings.length) testInfo.annotations.push({ type: 'hydration', description: c.hydrationWarnings.slice(0, 5).join('\n') });
 
-    // Hard failures: a genuine (non-hydration) JS crash, or any 5xx from the backend.
+    // Hard failures: a JS crash, a 5xx, or an SSR/client hydration mismatch.
     expect(c.pageErrors, `uncaught JS error(s) on ${route.path}`).toEqual([]);
     expect(c.serverErrors, `5xx response(s) on ${route.path}`).toEqual([]);
+    expect(c.hydrationWarnings, `React hydration mismatch on ${route.path}`).toEqual([]);
   });
 }
