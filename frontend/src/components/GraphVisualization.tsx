@@ -369,6 +369,10 @@ export default function GraphVisualization({
         })
       );
 
+    // Full name on hover — recovers any label the on-canvas text truncates or
+    // clips at the container edge (e.g. long TTP names, a CVE near the boundary).
+    node.append('title').text(d => d.name);
+
     // Store ref for selection effect
     nodeSelRef.current = node as unknown as d3.Selection<SVGCircleElement, GraphNode, SVGGElement, unknown>;
 
@@ -377,7 +381,7 @@ export default function GraphVisualization({
       .selectAll<SVGTextElement, GraphNode>('text')
       .data(simNodes)
       .join('text')
-      .text(d => d.name.length > 25 ? d.name.slice(0, 22) + '...' : d.name)
+      .text(d => d.name.length > 32 ? d.name.slice(0, 29) + '…' : d.name)
       .attr('font-size', '9px')
       .attr('fill', d => hasHighlights && !isHighlighted(d.id) ? '#4b5563' : '#d1d5db')
       .attr('text-anchor', 'middle')
@@ -403,6 +407,15 @@ export default function GraphVisualization({
     let tickCount = 0;
     sim.on('tick', () => {
       tickCount++;
+
+      // Keep free (non-pinned) nodes inside the viewport so a drifting node's
+      // centered label doesn't clip at the container edge. Pinned layouts
+      // (radial/hierarchical set fx/fy) are deliberate and left alone.
+      const padX = 50;
+      for (const d of simNodes) {
+        if (d.fx == null && d.x != null) d.x = Math.max(padX, Math.min(width - padX, d.x));
+        if (d.fy == null && d.y != null) d.y = Math.max(radius(d) + 16, Math.min(height - radius(d) - 8, d.y));
+      }
 
       const getX = (d: GraphNode | string) => typeof d === 'string' ? 0 : (d.x || 0);
       const getY = (d: GraphNode | string) => typeof d === 'string' ? 0 : (d.y || 0);
