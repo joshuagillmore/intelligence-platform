@@ -10,6 +10,8 @@ import { TYPE_BADGE_CLASS as TYPE_BADGE_STYLES } from '@/lib/entityStyles';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
 import AttackMatrix from '@/components/AttackMatrix';
 import AttackAttribution from '@/components/AttackAttribution';
+import Markdown from '@/components/Markdown';
+import { useNotifications } from '@/components/NotificationProvider';
 
 interface IOCEntity {
   id: string;
@@ -89,6 +91,7 @@ function SeverityStatCard({ label, count, color, subtitle, trending, progressPer
 export default function CyberPage() {
   const { activeProject } = useProject();
   const router = useRouter();
+  const { addNotification } = useNotifications();
   const [iocs, setIocs] = useState<IOCEntity[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [relationships, setRelationships] = useState<Record<string, Relationship[]>>({});
@@ -103,6 +106,10 @@ export default function CyberPage() {
   const [actorRelationships, setActorRelationships] = useState<Record<string, Relationship[]>>({});
   const [expandedActorId, setExpandedActorId] = useState<string | null>(null);
   const [generatingProfile, setGeneratingProfile] = useState<string | null>(null);
+  // Generated threat-actor profiles, keyed by actor id. The assessment is saved
+  // server-side as its own node (no GET endpoint), so keep the returned text here
+  // to render it — otherwise "Generate Profile" produces nothing the analyst sees.
+  const [actorProfiles, setActorProfiles] = useState<Record<string, string>>({});
   // Deep-link a technique from the attribution panel into the ATT&CK matrix drawer.
   const [attackFocus, setAttackFocus] = useState<string | null>(null);
 
@@ -248,17 +255,35 @@ export default function CyberPage() {
     if (!activeProject) return;
     setGeneratingProfile(actor.id);
     try {
-      await assessApi.generate(actor.id, {
+      const gen = await assessApi.generate(actor.id, {
         entity_id: actor.id,
         project_id: activeProject.id,
       });
+      // The backend returns an error envelope (200) rather than throwing.
+      if (gen.data?.error) throw new Error(gen.data.error);
+
+      const text: string = gen.data?.assessment || gen.data?.judgment || '';
+      if (text) {
+        setActorProfiles(prev => ({ ...prev, [actor.id]: text }));
+        setExpandedActorId(actor.id); // reveal the profile we just generated
+      }
+
       // Refresh actor data
       const res = await entitiesApi.get(actor.id);
       if (res.data.entity) {
         setThreatActors(prev => prev.map(a => a.id === actor.id ? { ...a, ...res.data.entity } : a));
       }
-    } catch (e) {
-      console.error('Failed to generate profile', e);
+      addNotification({
+        type: 'success',
+        title: 'Profile Generated',
+        message: `Threat-actor profile ready for ${actor.name}.`,
+      });
+    } catch {
+      addNotification({
+        type: 'error',
+        title: 'Profile Failed',
+        message: `Could not generate a profile for ${actor.name}. Check that the LLM provider is configured and reachable.`,
+      });
     }
     setGeneratingProfile(null);
   }
@@ -585,6 +610,17 @@ export default function CyberPage() {
 
                       {isExpanded && (
                         <div className="px-4 py-4" style={{ borderTop: '1px solid #2f3444' }}>
+                          {/* AI-generated threat-actor profile — rendered Markdown, matching
+                              how every other LLM product in the app is presented. */}
+                          {actorProfiles[actor.id] && (
+                            <div
+                              className="mb-4 rounded-md px-3 py-2.5"
+                              style={{ backgroundColor: 'rgba(173,198,255,0.08)', border: '1px solid rgba(173,198,255,0.3)' }}
+                            >
+                              <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-2">AI Threat Assessment</h4>
+                              <Markdown content={actorProfiles[actor.id]} className="text-xs" />
+                            </div>
+                          )}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                               <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-2">Connected Entities</h4>

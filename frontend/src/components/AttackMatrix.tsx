@@ -1082,10 +1082,10 @@ export default function AttackMatrix({
                     {/* Optional LLM narrative */}
                     {report.narrative && (
                       <div
-                        className="rounded-md px-3 py-2.5 text-sm text-gray-200 whitespace-pre-line"
+                        className="rounded-md px-3 py-2.5 text-sm text-gray-200"
                         style={{ backgroundColor: 'rgba(173,198,255,0.08)', border: `1px solid ${COVERED_BORDER}` }}
                       >
-                        {report.narrative}
+                        <Markdown content={report.narrative} className="text-sm" />
                       </div>
                     )}
 
