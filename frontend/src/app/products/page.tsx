@@ -1,10 +1,17 @@
 'use client';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
 import { entitiesApi, reportsApi, exportApi } from '@/lib/api';
 import { useNotifications } from '@/components/NotificationProvider';
 import Markdown from '@/components/Markdown';
+import PrintableProduct from '@/components/PrintableProduct';
+import {
+  buildProductFilename,
+  buildProductMarkdown,
+  normalizeClassification,
+  type ProductDocument,
+} from '@/lib/reportExport';
 
 const REPORT_TYPES = [
   { value: 'threat_assessment', label: 'Threat Assessment', skill: 'threat_assessment', icon: 'warning', description: 'Evaluate threat actors, capabilities, and intent against targets' },
@@ -54,6 +61,23 @@ interface SavedReport {
   status?: string;
 }
 
+/**
+ * Dissemination metadata for whichever report is currently on screen — a fresh
+ * draft, a session-history item, or a saved report being viewed. Exports read
+ * this so they describe the *selected* product, not the last generation.
+ */
+interface ProductContext {
+  /** Identifies the report this context belongs to, so async updates can't land on a different one. */
+  sourceId: string;
+  title: string;
+  reportTypeLabel: string;
+  entities: string[];
+  generatedAt: Date;
+}
+
+/** Cap on the per-ID name lookups a saved report triggers when opened. */
+const ENTITY_RESOLVE_LIMIT = 25;
+
 export default function ProductsPage() {
   const { activeProject } = useProject();
   const { addNotification, updateNotification } = useNotifications();
@@ -62,6 +86,8 @@ export default function ProductsPage() {
   const [searchResults, setSearchResults] = useState<SearchedEntity[]>([]);
   const [selectedEntities, setSelectedEntities] = useState<SearchedEntity[]>([]);
   const [generatedReport, setGeneratedReport] = useState<string | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [productContext, setProductContext] = useState<ProductContext | null>(null);
   const [reportMeta, setReportMeta] = useState<{ retrievalMode: string; contextNodes: number; contextEdges: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -125,6 +151,32 @@ export default function ProductsPage() {
     }
   }, [toast]);
 
+  /** The project's marking, verbatim from `classification_level` (null if unset). */
+  const classificationMarking = useMemo(
+    () => normalizeClassification(activeProject?.classification_level),
+    [activeProject],
+  );
+
+  /**
+   * The finished product currently on screen — a fresh draft, a history item or
+   * a saved report — assembled with its dissemination metadata. Every export
+   * path reads this, so they always act on what the analyst is looking at.
+   * Null whenever there is no real report body (a generation failure never
+   * produces one).
+   */
+  const currentProduct = useMemo<ProductDocument | null>(() => {
+    if (!generatedReport || !activeProject || !productContext) return null;
+    return {
+      title: productContext.title,
+      reportType: productContext.reportTypeLabel,
+      classification: classificationMarking,
+      projectName: activeProject.name,
+      generatedAt: productContext.generatedAt,
+      entities: productContext.entities,
+      content: generatedReport,
+    };
+  }, [generatedReport, activeProject, productContext, classificationMarking]);
+
   function addEntity(entity: SearchedEntity) {
     if (!selectedEntities.find(e => e.id === entity.id)) {
       setSelectedEntities(prev => [...prev, entity]);
@@ -141,6 +193,8 @@ export default function ProductsPage() {
     if (selectedEntities.length === 0 || !activeProject) return;
     setLoading(true);
     setGeneratedReport(null);
+    setGenerateError(null);
+    setProductContext(null);
     setReportMeta(null);
     setViewingHistoryId(null);
     setViewingSavedReport(null);
@@ -171,13 +225,25 @@ export default function ProductsPage() {
       });
 
       // Add to history
+      const historyId = Date.now().toString();
+      const draftedAt = new Date();
       setReportHistory(prev => [{
-        id: Date.now().toString(),
+        id: historyId,
         reportType: rt?.label || reportType,
         entities: selectedEntities.map(e => e.name),
         content,
-        timestamp: new Date(),
+        timestamp: draftedAt,
       }, ...prev]);
+
+      // Dissemination metadata for the export/print paths. An untitled draft is
+      // named after its type and project until the analyst saves it under a title.
+      setProductContext({
+        sourceId: `draft:${historyId}`,
+        title: `${rt?.label || reportType} — ${activeProject.name}`,
+        reportTypeLabel: rt?.label || reportType,
+        entities: selectedEntities.map(e => e.name),
+        generatedAt: draftedAt,
+      });
 
       const grounded = res.data.retrieval_mode === 'grounded';
       updateNotification(notifId, {
@@ -189,11 +255,11 @@ export default function ProductsPage() {
         link: '/products',
       });
     } catch {
-      setGeneratedReport('Failed to generate report. Check that the LLM service is configured.');
+      setGenerateError('Report generation failed. Check that the LLM provider is configured and reachable, then try again.');
       updateNotification(notifId, {
         type: 'error',
         title: 'Report Failed',
-        message: 'Failed to generate report. Check LLM configuration.',
+        message: 'Report generation failed. Check LLM configuration.',
       });
     } finally {
       setLoading(false);
@@ -211,6 +277,9 @@ export default function ProductsPage() {
         report_type: reportType,
         entity_ids: selectedEntities.map(e => e.id),
       });
+      // The draft now has an analyst-given title — carry it into the export header.
+      const savedTitle = saveTitle;
+      setProductContext(prev => (prev ? { ...prev, title: savedTitle } : prev));
       setShowSaveForm(false);
       setSaveTitle('');
       setToast('Report saved successfully.');
@@ -230,6 +299,7 @@ export default function ProductsPage() {
       if (viewingSavedReport?.id === id) {
         setViewingSavedReport(null);
         setGeneratedReport(null);
+        setProductContext(null);
       }
       setToast('Report deleted.');
     } catch {
@@ -237,10 +307,33 @@ export default function ProductsPage() {
     }
   }
 
+  /**
+   * A saved report stores entity *ids*, not names. Resolve them so the exported
+   * product can state what it covers. All-or-nothing on purpose: a partial list
+   * would understate coverage, which is worse than stating none.
+   */
+  async function resolveEntityNames(ids: string[]): Promise<string[]> {
+    if (ids.length === 0 || ids.length > ENTITY_RESOLVE_LIMIT) return [];
+    const results = await Promise.allSettled(ids.map(id => entitiesApi.get(id)));
+    const names = results
+      .map(r => (r.status === 'fulfilled' ? (r.value.data?.entity?.name as string | undefined) : undefined))
+      .filter((n): n is string => Boolean(n));
+    return names.length === ids.length ? names : [];
+  }
+
   async function viewSavedReport(report: SavedReport) {
     setViewingSavedReport(report);
     setViewingHistoryId(null);
     setReportMeta(null);
+    setGenerateError(null);
+    const sourceId = `saved:${report.id}`;
+    setProductContext({
+      sourceId,
+      title: report.title,
+      reportTypeLabel: getReportTypeLabel(report.report_type),
+      entities: [],
+      generatedAt: report.created_at ? new Date(report.created_at) : new Date(),
+    });
     // If content is available directly, use it
     if (report.content) {
       setGeneratedReport(report.content);
@@ -251,20 +344,66 @@ export default function ProductsPage() {
         const full = res.data;
         setGeneratedReport(full.content || JSON.stringify(full));
       } catch {
-        setGeneratedReport('Failed to load report content.');
+        // Never let failure text become report content — it would be savable,
+        // copyable and exportable as if it were the product.
+        setGeneratedReport(null);
+        setProductContext(null);
+        setGenerateError('Could not load this saved report. It may have been deleted, or the backend is unreachable.');
+        addNotification({
+          type: 'error',
+          title: 'Report Unavailable',
+          message: `Failed to load "${report.title}".`,
+        });
+        return;
       }
+    }
+    const names = await resolveEntityNames(report.entity_ids || []);
+    if (names.length > 0) {
+      setProductContext(prev => (prev && prev.sourceId === sourceId ? { ...prev, entities: names } : prev));
     }
   }
 
-  function exportAsText() {
-    if (!generatedReport) return;
-    const blob = new Blob([generatedReport], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `report_${reportType}_${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  /**
+   * Export the selected product as Markdown — the format it was drafted in, so
+   * headings, tables and probability language survive intact — with a front
+   * matter/header block carrying title, type, classification, date and coverage.
+   */
+  function exportAsMarkdown() {
+    if (!currentProduct) return;
+    try {
+      const markdown = buildProductMarkdown(currentProduct);
+      const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = buildProductFilename(currentProduct, 'md');
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      addNotification({
+        type: 'error',
+        title: 'Export Failed',
+        message: 'Could not build the Markdown file for this product.',
+      });
+    }
+  }
+
+  /**
+   * Hand the product to the browser's own print-to-PDF. `PrintableProduct`
+   * renders the paginated, chrome-free layout under `@media print`, so no PDF
+   * library is involved and the output works offline.
+   */
+  function exportAsPdf() {
+    if (!currentProduct) return;
+    try {
+      window.print();
+    } catch {
+      addNotification({
+        type: 'error',
+        title: 'Print Unavailable',
+        message: 'The browser blocked the print dialog. Use the browser menu (Print) to save this product as PDF.',
+      });
+    }
   }
 
   function viewHistoryItem(item: ReportHistoryItem) {
@@ -272,6 +411,14 @@ export default function ProductsPage() {
     setViewingHistoryId(item.id);
     setViewingSavedReport(null);
     setReportMeta(null);
+    setGenerateError(null);
+    setProductContext({
+      sourceId: `history:${item.id}`,
+      title: `${item.reportType} — ${activeProject?.name ?? ''}`.trim().replace(/\s+—\s*$/, ''),
+      reportTypeLabel: item.reportType,
+      entities: item.entities,
+      generatedAt: item.timestamp,
+    });
   }
 
   function getStatusBadge(report: SavedReport) {
@@ -456,15 +603,32 @@ export default function ProductsPage() {
               </div>
             </div>
 
+            {/* Generation / load error — an alert, never savable or exportable content */}
+            {generateError && (
+              <div className="rounded-lg p-4 border border-red-600/40 bg-red-950/30 text-sm text-red-300 flex items-start gap-2" role="alert">
+                <span className="material-symbols-outlined text-red-400 text-lg">error</span>
+                <span>{generateError}</span>
+              </div>
+            )}
+
             {/* Generated report */}
             {generatedReport && (
               <div className="rounded-lg p-6 border border-navy-600" style={{ backgroundColor: '#1a1f2e' }}>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                  <h3 className="text-sm font-semibold text-gray-300 flex flex-wrap items-center gap-2">
                     <span className="material-symbols-outlined text-[#adc6ff] text-lg">article</span>
                     {viewingSavedReport ? `Saved: ${viewingSavedReport.title}` : viewingHistoryId ? 'Report (from history)' : 'Generated Report'}
+                    {/* The project's marking, carried onto every exported/printed copy. */}
+                    {classificationMarking && (
+                      <span
+                        className="text-[10px] font-semibold uppercase tracking-widest text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-0.5"
+                        title="Classification marking inherited from this project"
+                      >
+                        {classificationMarking}
+                      </span>
+                    )}
                   </h3>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {!viewingSavedReport && (
                       <button
                         onClick={() => setShowSaveForm(!showSaveForm)}
@@ -482,11 +646,22 @@ export default function ProductsPage() {
                       Copy
                     </button>
                     <button
-                      onClick={exportAsText}
-                      className="inline-flex items-center gap-1 text-xs bg-navy-700 hover:bg-navy-600 text-gray-300 border border-navy-600 px-3 py-1.5 rounded-md transition-colors"
+                      onClick={exportAsMarkdown}
+                      disabled={!currentProduct}
+                      title="Download the finished product as Markdown (headings, tables and sourcing preserved)"
+                      className="inline-flex items-center gap-1 text-xs bg-navy-700 hover:bg-navy-600 text-gray-300 border border-navy-600 px-3 py-1.5 rounded-md transition-colors disabled:opacity-40"
                     >
                       <span className="material-symbols-outlined text-sm">download</span>
-                      Export .txt
+                      Export .md
+                    </button>
+                    <button
+                      onClick={exportAsPdf}
+                      disabled={!currentProduct}
+                      title="Open the print dialog with a clean, classification-marked layout — save as PDF from there"
+                      className="inline-flex items-center gap-1 text-xs bg-[#adc6ff]/15 hover:bg-[#adc6ff]/25 text-[#adc6ff] border border-[#adc6ff]/30 px-3 py-1.5 rounded-md transition-colors disabled:opacity-40"
+                    >
+                      <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
+                      Export PDF
                     </button>
                   </div>
                 </div>
@@ -663,10 +838,15 @@ export default function ProductsPage() {
 
         {/* Export Section */}
         <div className="mt-6 rounded-lg p-6 border border-navy-600" style={{ backgroundColor: '#1a1f2e' }}>
-          <h3 className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-4 flex items-center gap-2">
+          <h3 className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-1 flex items-center gap-2">
             <span className="material-symbols-outlined text-sm">download</span>
-            Export Data
+            Export Project Data
           </h3>
+          {/* Distinct from the product exports above: these dump the whole
+              project's graph, not the drafted report. */}
+          <p className="text-[11px] text-gray-500 mb-4">
+            Machine-readable dumps of the whole project graph — not the drafted product. Use Export .md or Export PDF above for a finished report.
+          </p>
           <div className="flex flex-col sm:flex-row gap-3">
             <button
               onClick={async () => {
@@ -740,6 +920,9 @@ export default function ProductsPage() {
             {toast}
           </div>
         )}
+
+        {/* Print-only rendering of the selected product; invisible on screen. */}
+        <PrintableProduct doc={currentProduct} />
       </main>
     </div>
   );
