@@ -7,7 +7,8 @@ import TemporalSlider from '@/components/TemporalSlider';
 import { useProject } from '@/lib/ProjectContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { entitiesApi, graphApi, queryApi, llmApi, assessApi, analysisApi, notebookApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi, reportsApi } from '@/lib/api';
+import { entitiesApi, graphApi, queryApi, llmApi, assessApi, analysisApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi } from '@/lib/api';
+import { useAssistant } from '@/lib/AssistantContext';
 import { TYPE_COLOR_CLASS as TYPE_COLORS } from '@/lib/entityStyles';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
 import { getErrorMessage } from '@/lib/errorMessages';
@@ -147,10 +148,10 @@ function NetworkPageInner() {
   const [typeFilter, setTypeFilter] = useState('All');
   const [activeTypeFilters, setActiveTypeFilters] = useState<Set<string>>(new Set());
   const [typeFilterOpen, setTypeFilterOpen] = useState(false);
-  const [chatInput, setChatInput] = useState('');
-  const [chatMessages, setChatMessages] = useState<Array<{ role: string; content: string }>>([]);
-  const [chatLoading, setChatLoading] = useState(false);
-  const [bottomPanelOpen, setBottomPanelOpen] = useState(true);
+  // Chat + notebook moved to the shared, app-wide AssistantPanel (see
+  // components/AssistantPanel.tsx). This page only feeds it the current
+  // multi-selection so new notebook entries stay linked to those entities.
+  const { setLinkedEntities } = useAssistant();
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<string | null>(null);
   const [leftTab, setLeftTab] = useState<'entities' | 'statistics' | 'analysis'>('entities');
@@ -175,13 +176,6 @@ function NetworkPageInner() {
   const [islandMetric, setIslandMetric] = useState<'degree' | 'betweenness' | 'eigenvector' | 'pagerank' | 'closeness'>('degree');
   const [filteredGraphNodes, setFilteredGraphNodes] = useState<GraphNode[]>([]);
   const [filteredGraphEdges, setFilteredGraphEdges] = useState<GraphEdge[]>([]);
-  const [bottomTab, setBottomTab] = useState<'chat' | 'notebook'>('chat');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [notes, setNotes] = useState<any[]>([]);
-  const [noteTitle, setNoteTitle] = useState('');
-  const [noteContent, setNoteContent] = useState('');
-  const [noteType, setNoteType] = useState('observation');
-  const [noteFormOpen, setNoteFormOpen] = useState(false);
   const [isWatchlisted, setIsWatchlisted] = useState(false);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [typeDropdownOpen, setTypeDropdownOpen] = useState(false);
@@ -738,23 +732,6 @@ function NetworkPageInner() {
     setHighlightedEdgeKeys(new Set());
   }
 
-  async function sendChat() {
-    if (!chatInput.trim() || !activeProject) return;
-    const userMsg = chatInput.trim();
-    setChatInput('');
-    setChatMessages(prev => [...prev, { role: 'user', content: userMsg }]);
-    setChatLoading(true);
-    try {
-      const res = await queryApi.rag(activeProject.id, userMsg);
-      const answer = res.data.answer || res.data.response || JSON.stringify(res.data);
-      setChatMessages(prev => [...prev, { role: 'assistant', content: answer }]);
-    } catch {
-      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Error processing query.' }]);
-    } finally {
-      setChatLoading(false);
-    }
-  }
-
   async function generateAssessment() {
     if (!selectedEntity || !activeProject) return;
     setAiLoading(true);
@@ -770,6 +747,8 @@ function NetworkPageInner() {
         judgment: '',
         probability: 0.5,
       });
+      // The backend returns a 200 {error: ...} envelope on failure; treat it as
+      // one instead of rendering the error string as if it were the assessment.
       if (res.data.error) {
         updateNotification(notifId, {
           type: 'error',
@@ -785,6 +764,7 @@ function NetworkPageInner() {
         message: `Assessment for ${selectedEntity.name} complete.`,
       });
     } catch {
+      setAiResult('Failed to generate assessment.');
       updateNotification(notifId, {
         type: 'error',
         title: 'Assessment Failed',
@@ -878,9 +858,10 @@ function NetworkPageInner() {
     if (!selectedEntity || !activeProject) return;
     setAiLoading(true);
     try {
+      // ACH over the entity's retrieved evidence, scored by the backend.
       const res = await analysisApi.hypotheses({
         project_id: activeProject.id,
-        question: `What are the competing explanations for the role of ${selectedEntity.name} (${selectedEntity.entity_type}) in this intelligence picture?`,
+        question: `What are the competing explanations for the role of ${selectedEntity.name} in this intelligence picture?`,
         entity_ids: [selectedEntity.id],
       });
       setAiResult(res.data.analysis);
@@ -895,48 +876,12 @@ function NetworkPageInner() {
     }
   }
 
-  const loadNotes = useCallback(async () => {
-    if (!activeProject) return;
-    try {
-      const res = await notebookApi.list(activeProject.id);
-      setNotes(res.data || []);
-    } catch (e) {
-      console.error('Failed to load notes', e);
-    }
-  }, [activeProject]);
-
+  // Keep the shared assistant's Notebook tab linked to whatever is
+  // multi-selected here — preserving the entity linking the in-page notebook
+  // used to do before it moved into components/AssistantPanel.
   useEffect(() => {
-    loadNotes();
-  }, [loadNotes]);
-
-  async function createNote() {
-    if (!activeProject || !noteTitle.trim() || !noteContent.trim()) return;
-    try {
-      await notebookApi.create({
-        project_id: activeProject.id,
-        title: noteTitle,
-        content: noteContent,
-        entity_ids: multiSelected.map(e => e.id),
-        note_type: noteType,
-      });
-      setNoteTitle('');
-      setNoteContent('');
-      setNoteType('observation');
-      setNoteFormOpen(false);
-      loadNotes();
-    } catch {
-      console.error('Failed to create note');
-    }
-  }
-
-  async function deleteNote(noteId: string) {
-    try {
-      await notebookApi.delete(noteId);
-      loadNotes();
-    } catch {
-      console.error('Failed to delete note');
-    }
-  }
+    setLinkedEntities(multiSelected.map(e => ({ id: e.id, name: e.name })));
+  }, [multiSelected, setLinkedEntities]);
 
   const ENTITY_TYPE_OPTIONS = ['Person', 'Organization', 'Location', 'IPAddress', 'Domain', 'Hash', 'ThreatActor', 'TTP', 'Vulnerability', 'Malware', 'Campaign'];
 
@@ -1948,162 +1893,6 @@ function NetworkPageInner() {
                     onChange={setTemporalRange}
                   />
                 </div>
-
-                {/* ═══ Floating Chat Overlay (Geo-style) ═══ */}
-                <div
-                  className="absolute bottom-2 left-2 right-2 rounded-lg shadow-2xl flex flex-col overflow-hidden z-10"
-                  style={{
-                    background: '#252a39',
-                    border: '1px solid #313849',
-                    maxHeight: bottomPanelOpen ? '340px' : '44px',
-                    transition: 'max-height 0.25s ease',
-                  }}
-                >
-                  {/* Header bar */}
-                  <div className="flex items-center shrink-0" style={{ borderBottom: bottomPanelOpen ? '1px solid #313849' : 'none' }}>
-                    <button
-                      onClick={() => setBottomPanelOpen(!bottomPanelOpen)}
-                      className="flex items-center gap-2 px-4 py-2.5 text-left"
-                    >
-                      <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: '#adc6ff', color: '#0e1321' }}>
-                        AI
-                      </span>
-                      <span className="text-sm font-medium text-gray-200">Aegis Intelligence Assistant</span>
-                      <svg className="w-4 h-4 text-gray-400 transition-transform" style={{ transform: bottomPanelOpen ? 'rotate(180deg)' : 'rotate(0deg)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                      </svg>
-                    </button>
-                    {bottomPanelOpen && (
-                      <div className="flex ml-auto pr-2 gap-1">
-                        <button onClick={() => setBottomTab('chat')} className={`px-3 py-1 rounded text-xs font-medium ${bottomTab === 'chat' ? 'bg-navy-600 text-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}>
-                          Graph RAG Chat
-                        </button>
-                        <button onClick={() => setBottomTab('notebook')} className={`px-3 py-1 rounded text-xs font-medium ${bottomTab === 'notebook' ? 'bg-navy-600 text-accent-blue' : 'text-gray-400 hover:text-gray-200'}`}>
-                          Notebook
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {bottomPanelOpen && bottomTab === 'chat' && (
-                    <>
-                      <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0" style={{ maxHeight: '240px' }}>
-                        {chatMessages.length === 0 && (
-                          <p className="text-xs text-gray-500">Ask questions about the knowledge graph. The AI will reason over entities, relationships, and source documents.</p>
-                        )}
-                        {chatMessages.map((msg, i) => (
-                          <div key={i}>
-                            <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                              <div className={`max-w-[85%] rounded-lg px-3 py-2 text-xs ${msg.role === 'user' ? 'text-gray-900' : 'text-gray-200'}`}
-                                style={{ background: msg.role === 'user' ? '#adc6ff' : '#0e1321' }}>
-                                {msg.role === 'assistant' ? (
-                                  <Markdown content={msg.content} />
-                                ) : (
-                                  <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
-                                )}
-                              </div>
-                            </div>
-                            {msg.role === 'assistant' && msg.content && msg.content.length > 50 && (
-                              <div className="flex justify-start mt-1 ml-1">
-                                <button
-                                  onClick={async () => {
-                                    if (!activeProject) return;
-                                    try {
-                                      await reportsApi.save({
-                                        project_id: activeProject.id,
-                                        title: `RAG Response: ${chatMessages[i - 1]?.content?.slice(0, 50) || 'Query'}...`,
-                                        content: msg.content,
-                                        report_type: 'RAG Analysis',
-                                      });
-                                      addNotification({ type: 'success', title: 'Saved', message: 'Response saved as product' });
-                                    } catch {
-                                      addNotification({ type: 'error', title: 'Failed', message: 'Could not save product' });
-                                    }
-                                  }}
-                                  className="text-[10px] px-2 py-0.5 rounded hover:opacity-80"
-                                  style={{ background: '#313849', color: '#adc6ff' }}
-                                >
-                                  Save as Product
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                        {chatLoading && (
-                          <div className="flex justify-start">
-                            <div className="rounded-lg px-3 py-2 text-xs" style={{ background: '#0e1321', color: '#6b7a99' }}>Thinking...</div>
-                          </div>
-                        )}
-                      </div>
-                      <div className="px-4 py-3 flex gap-2 shrink-0" style={{ borderTop: '1px solid #313849' }}>
-                        <input
-                          value={chatInput}
-                          onChange={(e) => setChatInput(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && sendChat()}
-                          placeholder="Ask about the knowledge graph..."
-                          className="flex-1 rounded px-3 py-1.5 text-sm focus:outline-none"
-                          style={{ background: '#0e1321', border: '1px solid #313849', color: '#e5e7eb' }}
-                        />
-                        <button
-                          onClick={sendChat}
-                          disabled={chatLoading || !chatInput.trim()}
-                          className="px-4 py-1.5 rounded text-sm font-medium disabled:opacity-40"
-                          style={{ background: '#adc6ff', color: '#0e1321' }}
-                        >
-                          Send
-                        </button>
-                      </div>
-                    </>
-                  )}
-
-                  {bottomPanelOpen && bottomTab === 'notebook' && (
-                    <div className="flex flex-col" style={{ maxHeight: '290px' }}>
-                      <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid #313849' }}>
-                        <span className="text-xs text-gray-400">{notes.length} notes</span>
-                        <button onClick={() => setNoteFormOpen(!noteFormOpen)} className="text-xs px-3 py-1 rounded font-medium" style={{ background: '#adc6ff', color: '#0e1321' }}>
-                          {noteFormOpen ? 'Cancel' : 'New Note'}
-                        </button>
-                      </div>
-                      {noteFormOpen ? (
-                        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                          <input value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} placeholder="Note title..."
-                            className="w-full rounded px-3 py-1.5 text-xs focus:outline-none" style={{ background: '#0e1321', border: '1px solid #313849', color: '#e5e7eb' }} />
-                          <textarea value={noteContent} onChange={(e) => setNoteContent(e.target.value)} placeholder="Write your note..."
-                            className="w-full rounded px-3 py-1.5 text-xs h-16 focus:outline-none resize-none" style={{ background: '#0e1321', border: '1px solid #313849', color: '#e5e7eb' }} />
-                          <div className="flex items-center gap-2">
-                            <select value={noteType} onChange={(e) => setNoteType(e.target.value)}
-                              className="rounded px-2 py-1 text-xs focus:outline-none" style={{ background: '#0e1321', border: '1px solid #313849', color: '#e5e7eb' }}>
-                              <option value="observation">Observation</option>
-                              <option value="hypothesis">Hypothesis</option>
-                              <option value="question">Question</option>
-                              <option value="conclusion">Conclusion</option>
-                            </select>
-                            {multiSelected.length > 0 && <span className="text-xs text-gray-400">Linking {multiSelected.length} entities</span>}
-                            <button onClick={createNote} disabled={!noteTitle.trim() || !noteContent.trim()}
-                              className="ml-auto px-3 py-1 rounded text-xs font-medium disabled:opacity-40" style={{ background: '#34d399', color: '#0e1321' }}>Save</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                          {notes.length === 0 ? (
-                            <p className="text-xs text-gray-500 text-center py-4">No notebook entries yet.</p>
-                          ) : notes.map((note) => (
-                            <div key={note.id} className="rounded-lg p-3 text-xs" style={{ background: '#0e1321' }}>
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="font-medium text-gray-200">{note.name}</span>
-                                <div className="flex items-center gap-2">
-                                  <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: '#252a39', color: '#6b7a99' }}>{note.note_type || 'note'}</span>
-                                  <button onClick={() => deleteNote(note.id)} className="text-red-400 hover:text-red-300 text-[10px]">Delete</button>
-                                </div>
-                              </div>
-                              <p className="text-gray-400 truncate">{note.content || ''}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
               </>
             )}
           </div>
@@ -2219,8 +2008,9 @@ function NetworkPageInner() {
             </div>
           )}
 
-          {/* Right sidebar - Detail panel */}
-          <div className={`${mobileRightOpen ? 'fixed inset-x-0 bottom-0 z-40 h-2/3 rounded-t-xl border-t' : 'hidden'} md:relative md:block md:w-80 md:h-auto md:rounded-none flex-none bg-navy-800 border-l border-navy-600 overflow-y-auto`}>
+          {/* Right sidebar - Detail panel. pb-20 leaves the scroll tail clear of
+              the fixed StatusBar and the assistant launcher at bottom-right. */}
+          <div className={`${mobileRightOpen ? 'fixed inset-x-0 bottom-0 z-40 h-2/3 rounded-t-xl border-t' : 'hidden'} md:relative md:block md:w-80 md:h-auto md:rounded-none flex-none bg-navy-800 border-l border-navy-600 overflow-y-auto pb-20`}>
             {/* Mobile close button */}
             <button onClick={() => setMobileRightOpen(false)} className="md:hidden absolute top-2 right-2 z-50 text-gray-400 hover:text-white p-1">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
@@ -2425,6 +2215,7 @@ function NetworkPageInner() {
                     onClick={competingHypotheses}
                     disabled={aiLoading}
                     className="w-full bg-navy-600 hover:bg-navy-700 text-gray-200 px-3 py-2 rounded text-xs font-medium disabled:opacity-50 border border-navy-600"
+                    title="Analysis of Competing Hypotheses over this entity's retrieved evidence"
                   >
                     Competing Hypotheses (ACH)
                   </button>

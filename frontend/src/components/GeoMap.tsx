@@ -96,7 +96,14 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
           shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
         });
 
-        const map = L.default.map(mapRef.current).setView([20, 40], 3);
+        // Leaflet's own controls default to the top corners, where they sat on
+        // top of the geo page's floating panels (zoom over "Layer Control" at
+        // top-left, the basemap switcher over the stats pills at top-right —
+        // Leaflet controls are z-index 1000, so they always won). Both move to
+        // the bottom corners, which the page leaves free, so each corner has a
+        // single owner.
+        const map = L.default.map(mapRef.current, { zoomControl: false }).setView([20, 40], 3);
+        L.default.control.zoom({ position: 'bottomleft' }).addTo(map);
 
         // Basemap / imagery switcher — dark default, plus streets, topo, and
         // keyless satellite (EOX Sentinel-2 cloudless 2016, CC BY 4.0 —
@@ -120,7 +127,7 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
           }),
         };
         baseLayers.Dark.addTo(map);
-        L.default.control.layers(baseLayers, {}, { position: 'topright', collapsed: true }).addTo(map);
+        L.default.control.layers(baseLayers, {}, { position: 'bottomright', collapsed: true }).addTo(map);
 
         // Report view bounds so the page can run AOI ("what's in this area") queries.
         const emitBounds = () => {
