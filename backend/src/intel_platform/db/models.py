@@ -1,6 +1,8 @@
 """SQLAlchemy models for collection management system.
 
 Tables:
+- pirs: Priority Intelligence Requirements — the requirements spine a project's
+  collection hangs off (PIR → collection plan → graph → product)
 - collection_plans: The nerve center — tracks requirements, status, ownership
 - collection_sources: Source assignments per plan (file, web, db, api)
 - acquisition_log: Every fetch attempt with result and provenance
@@ -121,6 +123,22 @@ class PlanStatus(str):
     ARCHIVED = "ARCHIVED"
 
 
+class PirStatus(str):
+    """Lifecycle of a Priority Intelligence Requirement.
+
+    OPEN → the question is still outstanding; PARTIAL → some EEIs answered;
+    SATISFIED → the requirement has been answered; ARCHIVED → retired.
+    """
+    OPEN = "OPEN"
+    PARTIAL = "PARTIAL"
+    SATISFIED = "SATISFIED"
+    ARCHIVED = "ARCHIVED"
+
+
+PIR_STATUSES = (PirStatus.OPEN, PirStatus.PARTIAL, PirStatus.SATISFIED, PirStatus.ARCHIVED)
+PIR_PRIORITIES = ("critical", "high", "medium", "low")
+
+
 class SourceType(str):
     FILE_UPLOAD = "file_upload"
     WEB_SCRAPE = "web_scrape"
@@ -135,6 +153,51 @@ class AcquisitionResult(str):
     FAILURE = "FAILURE"
     PARTIAL = "PARTIAL"
     SKIPPED = "SKIPPED"
+
+
+# ---------------------------------------------------------------------------
+# PIR — Priority Intelligence Requirement, the requirements spine
+#
+# A PIR is what the project is trying to answer. It lives next to the collection
+# plans it drives (same store, same lifecycle language) so the chain
+# PIR → collection plan → acquisition is a single join rather than a
+# cross-datastore lookup. Projects themselves live in Neo4j; project_id is
+# carried here as a plain string exactly as CollectionPlan/ChunkEmbedding do.
+# ---------------------------------------------------------------------------
+
+class Pir(Base):
+    __tablename__ = "pirs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True,
+        comment="Neo4j Project id this requirement belongs to")
+
+    title: Mapped[str] = mapped_column(String(256), default="",
+        comment="Short analyst-facing label, e.g. 'PIR-1 — Actor infrastructure'")
+    text: Mapped[str] = mapped_column(Text, default="",
+        comment="The intelligence question as written by the analyst")
+    refined_text: Mapped[str] = mapped_column(Text, default="",
+        comment="LLM-refined restatement of the PIR (written back by /collection-plans/from-pir)")
+    eeis: Mapped[list] = mapped_column(JSONB, default=list,
+        comment="Essential Elements of Information — the sub-questions, as a list of strings")
+
+    priority: Mapped[str] = mapped_column(String(16), default="medium", nullable=False,
+        comment="critical | high | medium | low — mirrors Project.priority vocabulary")
+    status: Mapped[str] = mapped_column(
+        String(20), default=PirStatus.OPEN, nullable=False, index=True,
+        comment="OPEN | PARTIAL | SATISFIED | ARCHIVED")
+
+    created_by: Mapped[str] = mapped_column(String(128), default="analyst")
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_pir_project_status", "project_id", "status"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +218,14 @@ class CollectionPlan(Base):
     pir: Mapped[str] = mapped_column(Text, default="",
         comment="Priority Intelligence Requirement text")
     refined_pir: Mapped[str] = mapped_column(Text, default="")
+    # Link back to the first-class PIR this plan was raised against. Deliberately
+    # a bare UUID (no FK constraint): collection_plans predates the pirs table on
+    # existing deployments, where the column is added by the additive migration in
+    # db/engine.py — a constraint would only exist on freshly created databases.
+    # Unlinking on PIR delete is done explicitly in api/routes/pirs.py.
+    pir_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True,
+        comment="pirs.id this plan was generated for, if any")
 
     # Status lifecycle
     status: Mapped[str] = mapped_column(

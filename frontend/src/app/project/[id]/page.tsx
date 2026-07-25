@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import PirPanel from '@/components/PirPanel';
 import { useProject } from '@/lib/ProjectContext';
 import { projectsApi, graphApi, reportsApi, timelineApi, exportApi, type Project } from '@/lib/api';
 import { useNotifications } from '@/components/NotificationProvider';
@@ -256,6 +257,9 @@ export default function ProjectDashboard() {
             </div>
           ))}
         </div>
+
+        {/* Requirements spine — what this project is trying to answer */}
+        <PirPanel projectId={projectId} />
 
         {/* Three-column bento grid */}
         <div className="grid grid-cols-1 md:grid-cols-[25%_1fr_25%] gap-4">

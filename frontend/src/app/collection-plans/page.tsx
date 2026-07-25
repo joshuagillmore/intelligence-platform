@@ -4,7 +4,7 @@ import Sidebar from '@/components/Sidebar';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { collectionPlansApi, CollectionPlan, AcquisitionLogEntry } from '@/lib/api';
+import { collectionPlansApi, pirsApi, CollectionPlan, AcquisitionLogEntry, Pir } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { humanize } from '@/lib/format';
 
@@ -42,10 +42,12 @@ export default function CollectionPlansPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Create plan form
+  // Create plan form. `pir_id` anchors the plan on one of the project's
+  // Priority Intelligence Requirements (see /pirs) rather than a free-text copy.
   const [showCreate, setShowCreate] = useState(false);
-  const [newPlan, setNewPlan] = useState({ name: '', description: '', requirement: '', pir: '' });
+  const [newPlan, setNewPlan] = useState({ name: '', description: '', requirement: '', pir_id: '' });
   const [creating, setCreating] = useState(false);
+  const [pirs, setPirs] = useState<Pir[]>([]);
 
   // Selected plan detail
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
@@ -82,7 +84,17 @@ export default function CollectionPlansPage() {
     }
   }, [activeProject]);
 
-  useEffect(() => { loadPlans(); }, [loadPlans]);
+  const loadPirs = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      const res = await pirsApi.list(activeProject.id);
+      setPirs(res.data);
+    } catch (e) {
+      console.error('Failed to load PIRs', e);
+    }
+  }, [activeProject]);
+
+  useEffect(() => { loadPlans(); loadPirs(); }, [loadPlans, loadPirs]);
 
   const loadPlanDetail = useCallback(async (planId: string) => {
     try {
@@ -111,10 +123,12 @@ export default function CollectionPlansPage() {
         name: newPlan.name.trim(),
         description: newPlan.description,
         requirement: newPlan.requirement,
-        pir: newPlan.pir,
+        // The backend copies the PIR's text onto the plan, so the requirement
+        // is stored once and referenced — not retyped per plan.
+        pir_id: newPlan.pir_id || undefined,
       });
       setShowCreate(false);
-      setNewPlan({ name: '', description: '', requirement: '', pir: '' });
+      setNewPlan({ name: '', description: '', requirement: '', pir_id: '' });
       setSelectedPlanId(res.data.id);
       loadPlans();
     } catch (e) {
@@ -281,6 +295,21 @@ export default function CollectionPlansPage() {
                   placeholder="Plan name"
                   className="w-full bg-[#090e1c] border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-[#adc6ff] placeholder:text-gray-600"
                 />
+                {/* Anchor the plan on a tracked PIR — created and managed on the
+                    project hub, so the requirement is not retyped here. */}
+                <select
+                  value={newPlan.pir_id}
+                  onChange={e => setNewPlan(p => ({ ...p, pir_id: e.target.value }))}
+                  aria-label="Priority Intelligence Requirement"
+                  className="w-full bg-[#090e1c] border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-[#adc6ff] text-gray-300"
+                >
+                  <option value="">
+                    {pirs.length ? 'Priority Intelligence Requirement (optional)' : 'No PIRs yet — add one on the project hub'}
+                  </option>
+                  {pirs.map(p => (
+                    <option key={p.id} value={p.id}>[{p.status}] {p.title || p.text.slice(0, 60)}</option>
+                  ))}
+                </select>
                 <textarea
                   value={newPlan.requirement}
                   onChange={e => setNewPlan(p => ({ ...p, requirement: e.target.value }))}
@@ -353,6 +382,16 @@ export default function CollectionPlansPage() {
                   <div className="flex items-start justify-between">
                     <div>
                       <h3 className="text-lg font-bold text-white">{selectedPlan.name}</h3>
+                      {/* Which requirement this plan answers to — the spine, visible
+                          from the collection side of the cycle too. */}
+                      {selectedPlan.pir_id && (
+                        <p className="text-[10px] uppercase tracking-widest font-bold mt-1 text-[#adc6ff]">
+                          PIR · {pirs.find(p => p.id === selectedPlan.pir_id)?.title || 'linked requirement'}
+                          <span className="ml-2 text-gray-500 normal-case tracking-normal font-normal">
+                            {pirs.find(p => p.id === selectedPlan.pir_id)?.status || ''}
+                          </span>
+                        </p>
+                      )}
                       {selectedPlan.requirement && (
                         <p className="text-sm text-gray-300 mt-1">{selectedPlan.requirement}</p>
                       )}

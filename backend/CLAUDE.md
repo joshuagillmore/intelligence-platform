@@ -44,7 +44,7 @@ init, then `pytest` — so it is the canonical reference for a green run.
 
 | Package | Responsibility |
 |---------|----------------|
-| `api/` | FastAPI app + `routes/` (25 routers: auth, documents, entities, graph, collections, collection_plans, query, assess, topics, reports, geo, timeline, search, watchlist, personas, snapshots, admin_config, llm, ingest, export, notebook, projects, health, enrichment, attack). App = `api.app:app`; middleware = rate-limit / request-logging / security-headers. |
+| `api/` | FastAPI app + `routes/` (26 routers: auth, documents, entities, graph, collections, collection_plans, pirs, query, assess, topics, reports, geo, timeline, search, watchlist, personas, snapshots, admin_config, llm, ingest, export, notebook, projects, health, enrichment, attack). App = `api.app:app`; middleware = rate-limit / request-logging / security-headers. |
 | `services/` | Business logic (18 + `attack/`): extraction, enrichment, ingestion, graph_builder, graph_rag, hybrid_retrieval, vector_search, document_clustering, topics, assessment, summarization, geocoding, collection_planner, plan_executor, reports, mindmap_export, graph_cache, text_utils. `attack/` = MITRE ATT&CK® (`stix_parser` pure STIX→model, `graph_ops` Neo4j load + matrix/technique/resolve/navigator/attribution reads, `ingest` fetch-and-load, `embeddings` technique-catalog→pgvector, `mapping` RAG text→technique, `vuln_chain` CVE→ATT&CK chain: CWE/CAPEC XML fetch+parse → `(:Cwe)-[:ENABLES]->(:AttackTechnique)` reference edges + per-project `resolve_cve`, `d3fend` lazy keyless D3FEND countermeasure fetch + Postgres cache, `report` ATT&CK-structured intelligence product: graph sections + deterministic markdown + optional LLM narrative). |
 | `collection/` | Agentic web collection: `search` (ddgs) → `crawler`/`scraper` (crawl4ai) → `runner`/`executor` (CollectionRunner) → ingest. `tasks.py` = Celery. `agentic.py` = LLM-driven planning. |
 | `llm/` | Multi-provider layer: `anthropic`, `openai_provider`, `cohere_provider`, `ollama`, plus `embeddings`, `skills`, the **`orchestrator`**, and **`providers`** (`_get_provider` / `_get_collection_provider` / `_get_extraction_provider` / `_resolve_api_key` / `_cloud_provider_from_env` — the single source of truth for provider selection; services import from here, not from `api/routes/llm.py`, which only re-exports them). |
@@ -59,9 +59,14 @@ init, then `pytest` — so it is the canonical reference for a green run.
 - **Neo4j** — the knowledge graph (entities + relationships). Schema is created
   at app startup (`graph.schema.initialize_schema`). Local: `bolt://localhost:7687`
   (`neo4j` / `changeme`). Access via `api.deps.get_neo4j_driver`.
-- **Postgres + pgvector** — documents, embeddings, and collection-plan state.
-  Async SQLAlchemy; tables initialized at startup via `db.engine.init_db()`
-  (no Alembic migration flow yet — schema is created on boot).
+- **Postgres + pgvector** — documents, embeddings, PIRs (`pirs` — the
+  requirements spine, linked to the plans they drove via `collection_plans.pir_id`)
+  and collection-plan state. Async SQLAlchemy; tables initialized at startup via
+  `db.engine.init_db()` (no Alembic migration flow yet — schema is created on
+  boot). `create_all` never ALTERs an existing table, so a **new column on an
+  existing table** must also be added to `_ADDITIVE_COLUMNS` in `db/engine.py`
+  (idempotent `ADD COLUMN IF NOT EXISTS`) or deployments that already have the
+  table will not get it.
 
 ## LLM providers
 
