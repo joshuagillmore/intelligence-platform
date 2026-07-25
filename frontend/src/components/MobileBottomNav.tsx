@@ -17,6 +17,7 @@ const allPages = [
   { name: 'Network Analysis', href: '/network', icon: 'hub' },
   { name: 'Geo-Intelligence', href: '/geo', icon: 'public' },
   { name: 'Cyber', href: '/cyber', icon: 'security' },
+  { name: 'Analytic Techniques', href: '/analysis', icon: 'psychology' },
   { name: 'Products & Artefacts', href: '/products', icon: 'description' },
   { name: 'Timeline', href: '/timeline', icon: 'timeline' },
   { name: 'Watchlist', href: '/watchlist', icon: 'star' },

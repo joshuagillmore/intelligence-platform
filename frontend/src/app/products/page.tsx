@@ -189,7 +189,8 @@ export default function ProductsPage() {
         link: '/products',
       });
     } catch {
-      setGeneratedReport('Failed to generate report. Check that the LLM service is configured.');
+      // The failure is reported as a toast only — writing it into
+      // `generatedReport` would make an error string savable as a product.
       updateNotification(notifId, {
         type: 'error',
         title: 'Report Failed',
@@ -251,7 +252,12 @@ export default function ProductsPage() {
         const full = res.data;
         setGeneratedReport(full.content || JSON.stringify(full));
       } catch {
-        setGeneratedReport('Failed to load report content.');
+        setViewingSavedReport(null);
+        addNotification({
+          type: 'error',
+          title: 'Load Failed',
+          message: 'Could not load that report’s content.',
+        });
       }
     }
   }

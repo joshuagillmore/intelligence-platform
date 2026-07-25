@@ -2,8 +2,12 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
-import api from '@/lib/api';
+import Markdown from '@/components/Markdown';
+import api, { analysisApi } from '@/lib/api';
 import { TYPE_COLOR_HEX } from '@/lib/entityStyles';
+import { useProject } from '@/lib/ProjectContext';
+import { useNotifications } from '@/components/NotificationProvider';
+import { getErrorMessage } from '@/lib/errorMessages';
 
 interface Highlight {
   start: number;
@@ -73,18 +77,62 @@ const typeColor = TYPE_COLOR_HEX;
 export default function DocumentViewer() {
   const params = useParams();
   const docId = params.id as string;
+  const { activeProject } = useProject();
+  const { addNotification } = useNotifications();
   const [doc, setDoc] = useState<DocData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedEntity, setSelectedEntity] = useState<string | null>(null);
+
+  // Admiralty source evaluation for this one document, graded from its measured
+  // provenance (entity yield, corroboration against the project's other sources).
+  const [evaluation, setEvaluation] = useState<string | null>(null);
+  const [evaluationRating, setEvaluationRating] = useState('');
+  const [evaluating, setEvaluating] = useState(false);
 
   useEffect(() => {
     if (!docId) return;
     setLoading(true);
     api.get(`/documents/${docId}`)
       .then(res => setDoc(res.data))
-      .catch(console.error)
+      .catch((e) => addNotification({
+        type: 'error',
+        title: 'Document Failed to Load',
+        message: getErrorMessage(e),
+      }))
       .finally(() => setLoading(false));
-  }, [docId]);
+  }, [docId, addNotification]);
+
+  async function evaluateSource() {
+    if (!docId || !activeProject) return;
+    setEvaluating(true);
+    try {
+      const res = await analysisApi.sourceEvaluation({
+        project_id: activeProject.id,
+        document_ids: [docId],
+        apply_ratings: true,
+      });
+      setEvaluation(res.data.analysis);
+      const rating = res.data.evaluations?.[0]?.admiralty_rating || '';
+      setEvaluationRating(rating);
+      if (rating) {
+        setDoc(prev => (prev ? { ...prev, reliability_rating: rating } : prev));
+        addNotification({
+          type: 'success',
+          title: `Source rated ${rating}`,
+          message: 'The Admiralty rating was saved to this document.',
+        });
+      }
+    } catch (e) {
+      // Toast only — an error string must never land in the rendered evaluation.
+      addNotification({
+        type: 'error',
+        title: 'Source Evaluation Failed',
+        message: getErrorMessage(e),
+      });
+    } finally {
+      setEvaluating(false);
+    }
+  }
 
   function renderHighlightedContent() {
     if (!doc) return null;
@@ -178,7 +226,32 @@ export default function DocumentViewer() {
               </span>
             )}
             <span className="text-xs text-gray-500">{doc.entity_count} entities</span>
+            <button
+              onClick={evaluateSource}
+              disabled={evaluating || !activeProject}
+              title={activeProject
+                ? 'Grade this source on the NATO Admiralty scale and save the rating to the document'
+                : 'Select a project first'}
+              className="ml-auto flex-none inline-flex items-center gap-1 text-xs bg-navy-700 hover:bg-navy-600 text-gray-300 border border-navy-600 px-3 py-1.5 rounded-md disabled:opacity-40 transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">verified_user</span>
+              {evaluating ? 'Evaluating...' : 'Evaluate Source'}
+            </button>
           </div>
+          {evaluation && (
+            <div className="mb-4 bg-navy-800 border border-navy-600 rounded-lg p-4 max-h-72 overflow-y-auto">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="material-symbols-outlined text-[#adc6ff] text-sm">verified_user</span>
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#adc6ff]">Source Evaluation</h3>
+                {evaluationRating && (
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full ml-auto ${reliabilityColor(evaluationRating)}`}>
+                    Admiralty {evaluationRating}
+                  </span>
+                )}
+              </div>
+              <Markdown content={evaluation} className="text-xs" />
+            </div>
+          )}
           {(() => {
             const s = parseSummary(doc.summary_json);
             if (!s) return null;

@@ -7,7 +7,7 @@ import TemporalSlider from '@/components/TemporalSlider';
 import { useProject } from '@/lib/ProjectContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { entitiesApi, graphApi, queryApi, llmApi, assessApi, notebookApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi, reportsApi } from '@/lib/api';
+import { entitiesApi, graphApi, queryApi, llmApi, assessApi, analysisApi, notebookApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi, reportsApi } from '@/lib/api';
 import { TYPE_COLOR_CLASS as TYPE_COLORS } from '@/lib/entityStyles';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
 import { getErrorMessage } from '@/lib/errorMessages';
@@ -770,14 +770,21 @@ function NetworkPageInner() {
         judgment: '',
         probability: 0.5,
       });
-      setAiResult(res.data.assessment || res.data.error || JSON.stringify(res.data));
+      if (res.data.error) {
+        updateNotification(notifId, {
+          type: 'error',
+          title: 'Assessment Failed',
+          message: `Could not assess ${selectedEntity.name} — check LLM configuration.`,
+        });
+        return;
+      }
+      setAiResult(res.data.assessment);
       updateNotification(notifId, {
         type: 'success',
         title: 'Assessment Ready',
         message: `Assessment for ${selectedEntity.name} complete.`,
       });
     } catch {
-      setAiResult('Failed to generate assessment.');
       updateNotification(notifId, {
         type: 'error',
         title: 'Assessment Failed',
@@ -848,13 +855,41 @@ function NetworkPageInner() {
     if (!selectedEntity || !activeProject) return;
     setAiLoading(true);
     try {
-      const res = await llmApi.query(
-        [{ role: 'user', content: `Perform a gap analysis for entity "${selectedEntity.name}" (type: ${selectedEntity.entity_type}). Identify missing information, intelligence gaps, and recommended collection priorities.` }],
-        'gap_analysis'
-      );
-      setAiResult(res.data.response || res.data.content || JSON.stringify(res.data));
-    } catch {
-      setAiResult('Failed to perform gap analysis.');
+      // Grounded: the backend measures real coverage holes across the graph and
+      // retrieves this entity's subgraph before reasoning — not a bare prompt.
+      const res = await analysisApi.gaps({
+        project_id: activeProject.id,
+        entity_ids: [selectedEntity.id],
+      });
+      setAiResult(res.data.analysis);
+    } catch (e) {
+      // Never write the failure into aiResult — it renders as if it were analysis.
+      addNotification({
+        type: 'error',
+        title: 'Gap Analysis Failed',
+        message: getErrorMessage(e),
+      });
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  async function competingHypotheses() {
+    if (!selectedEntity || !activeProject) return;
+    setAiLoading(true);
+    try {
+      const res = await analysisApi.hypotheses({
+        project_id: activeProject.id,
+        question: `What are the competing explanations for the role of ${selectedEntity.name} (${selectedEntity.entity_type}) in this intelligence picture?`,
+        entity_ids: [selectedEntity.id],
+      });
+      setAiResult(res.data.analysis);
+    } catch (e) {
+      addNotification({
+        type: 'error',
+        title: 'Hypothesis Generation Failed',
+        message: getErrorMessage(e),
+      });
     } finally {
       setAiLoading(false);
     }
@@ -2385,6 +2420,13 @@ function NetworkPageInner() {
                     className="w-full bg-navy-600 hover:bg-navy-700 text-gray-200 px-3 py-2 rounded text-xs font-medium disabled:opacity-50 border border-navy-600"
                   >
                     Gap Analysis
+                  </button>
+                  <button
+                    onClick={competingHypotheses}
+                    disabled={aiLoading}
+                    className="w-full bg-navy-600 hover:bg-navy-700 text-gray-200 px-3 py-2 rounded text-xs font-medium disabled:opacity-50 border border-navy-600"
+                  >
+                    Competing Hypotheses (ACH)
                   </button>
                 </div>
 
