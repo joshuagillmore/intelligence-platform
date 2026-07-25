@@ -356,7 +356,9 @@ export default function CyberPage() {
         {pageTab === 'ioc' && (
           <>
             {/* Severity stat cards */}
-            <div className="grid grid-cols-2 md:flex gap-3 mb-6 md:flex-wrap">
+            {/* Fixed columns rather than flex-wrap: a wrapped flex-1 card stretches
+                to the full row width, which looked broken with 8 cards. */}
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 mb-6">
               <SeverityStatCard label="Critical IOCs" count={severityStats.critical} color="#ef4444" />
               <SeverityStatCard label="High Severity" count={severityStats.high} color="#f97316" />
               <SeverityStatCard label="Medium" count={severityStats.medium} color="#adc6ff" />
