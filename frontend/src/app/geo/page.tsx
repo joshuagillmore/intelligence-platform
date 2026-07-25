@@ -19,6 +19,10 @@ interface GeoLocation {
   lat?: number | null;
   lng?: number | null;
   geocoded?: boolean;
+  // Provenance the API already returns alongside the coordinates.
+  geo_source?: string;
+  geo_confidence?: string;
+  mgrs?: string;
   connections?: number;
   entity_type?: string;
   properties?: Record<string, unknown>;
@@ -601,13 +605,17 @@ export default function GeoPage() {
                     </p>
                   )}
                   <div className="flex items-center gap-2 mt-2">
-                    {/* ACTIVE badge */}
-                    <span
-                      className="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full border"
-                      style={{ color: C.green, borderColor: C.green }}
-                    >
-                      Active
-                    </span>
+                    {/* Source of the coordinates, when we actually know it — replaces a
+                        hardcoded "Active" badge that reflected nothing about the entity. */}
+                    {selectedLocation.geo_source && (
+                      <span
+                        className="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full border"
+                        style={{ color: C.textDim, borderColor: C.textDim }}
+                        title="How these coordinates were derived"
+                      >
+                        {String(selectedLocation.geo_source)}
+                      </span>
+                    )}
                     {/* Pivot to Network graph */}
                     <button
                       onClick={() => router.push(`/network?select=${selectedLocation.id}`)}
@@ -637,7 +645,12 @@ export default function GeoPage() {
                   </div>
                   <div className="rounded-lg p-3" style={{ background: C.elevated }}>
                     <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: C.textMuted }}>Status</div>
-                    <div className="text-sm font-medium" style={{ color: C.green }}>Geocoded</div>
+                    <div
+                      className="text-sm font-medium"
+                      style={{ color: isGeocoded(selectedLocation) ? C.green : C.textDim }}
+                    >
+                      {isGeocoded(selectedLocation) ? 'Geocoded' : 'Not geocoded'}
+                    </div>
                   </div>
                 </div>
 

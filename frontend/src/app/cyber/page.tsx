@@ -188,14 +188,16 @@ export default function CyberPage() {
 
 
   const severityStats = useMemo(() => {
-    let critical = 0, high = 0, medium = 0, low = 0, enriched = 0, newRecent = 0;
+    let critical = 0, high = 0, medium = 0, low = 0, unrated = 0, enriched = 0, newRecent = 0;
     iocs.forEach(i => {
       const sev = typeof i.properties?.severity === 'string' ? i.properties.severity.toLowerCase() : '';
       if (sev === 'critical') critical++;
       else if (sev === 'high') high++;
       else if (sev === 'medium') medium++;
       else if (sev === 'low') low++;
-      else medium++; // default bucket
+      // No severity on the entity means exactly that — counting it as Medium
+      // invented a rating no analyst assigned. Surface it as triage backlog.
+      else unrated++;
       if (i.properties?.enriched) enriched++;
       if (i.properties?.first_seen) {
         const seen = new Date(String(i.properties.first_seen));
@@ -206,7 +208,7 @@ export default function CyberPage() {
     const enrichedPct = Math.round((enriched / total) * 100);
     const attributedCount = iocs.filter(i => i.properties?.attributed || i.properties?.threat_actor).length;
     const attributedPct = Math.round((attributedCount / total) * 100);
-    return { critical, high, medium, low, enrichedPct, attributedPct, newRecent, attributedCount };
+    return { critical, high, medium, low, unrated, enrichedPct, attributedPct, newRecent, attributedCount };
   }, [iocs]);
 
   async function toggleRow(ioc: IOCEntity) {
@@ -359,6 +361,7 @@ export default function CyberPage() {
               <SeverityStatCard label="High Severity" count={severityStats.high} color="#f97316" />
               <SeverityStatCard label="Medium" count={severityStats.medium} color="#adc6ff" />
               <SeverityStatCard label="Low Priority" count={severityStats.low} color="#6b7280" />
+              <SeverityStatCard label="Unrated" count={severityStats.unrated} color="#6b7280" subtitle="Needs triage" />
               <SeverityStatCard label="New 24h" count={severityStats.newRecent} color="#60a5fa" />
               <SeverityStatCard label="Enriched" count={`${severityStats.enrichedPct}%`} color="#adc6ff" progressPercent={severityStats.enrichedPct} />
               <SeverityStatCard label="Attributed" count={`${severityStats.attributedPct}%`} color="#adc6ff" subtitle="Mapped to APTs" progressPercent={severityStats.attributedPct} />
