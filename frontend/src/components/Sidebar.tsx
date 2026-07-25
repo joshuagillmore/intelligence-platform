@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
+import { clearAllAssistantThreads } from '@/lib/AssistantContext';
 import { collectionsApi, watchlistApi, healthApi } from '@/lib/api';
 import { useNotifications, useNotificationCount } from '@/components/NotificationProvider';
 import { APP_NAME, APP_VERSION } from '@/lib/branding';
@@ -131,6 +132,11 @@ export default function Sidebar() {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
     localStorage.removeItem('auth_role');
+    // Assistant threads hold RAG answers and verbatim source-document
+    // excerpts — analyst content that must not outlive the session on a
+    // shared workstation. Drop the selected project with them.
+    clearAllAssistantThreads();
+    localStorage.removeItem('activeProject');
     window.location.href = '/login';
   }
 

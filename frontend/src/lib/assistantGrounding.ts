@@ -82,6 +82,10 @@ const MAX_RELATIONSHIPS = 60;
 const MAX_DOCUMENTS = 8;
 const MAX_PASSAGES = 12;
 const MAX_EXCERPT_CHARS = 1200;
+/** Longest context line we will run the regexes over — see the note in the loop. */
+const MAX_LINE_CHARS = 2000;
+/** Excerpt budget when a thread is persisted; the full text stays in memory. */
+const STORED_EXCERPT_CHARS = 200;
 
 type Section = 'entity' | 'relationships' | 'documents' | 'passages' | 'other';
 
@@ -152,6 +156,11 @@ export function parseRagContext(context: string): Pick<
   };
 
   for (const raw of context.split('\n')) {
+    // RELATIONSHIP_LINE's two lazy groups backtrack quadratically, and the
+    // lines are built from scraped-document entity names. A real relationship
+    // line is well under this; anything longer is malformed, so skip it rather
+    // than hand a pathological string to the regex engine.
+    if (raw.length > MAX_LINE_CHARS) continue;
     const line = raw.trimEnd();
 
     // A fenced excerpt swallows every line until its closing fence, so it must
@@ -265,9 +274,13 @@ export function parseGrounding(data: unknown): AssistantGrounding | null {
     ? parseRagContext(context)
     : { entities: [], relationships: [], documents: [], passages: [] };
 
+  // "none" is what the backend reports when no LLM provider ran — not a model
+  // worth citing. Compare the trimmed value, not the raw one.
+  const model = toText(d.model);
+
   const grounding: AssistantGrounding = {
     retrievalMode: toText(d.retrieval_mode),
-    model: toText(d.model) && d.model !== 'none' ? toText(d.model) : null,
+    model: model === 'none' ? null : model,
     tokensUsed: toCount(d.tokens_used),
     nodeCount: toCount(d.context_nodes),
     edgeCount: toCount(d.context_edges),
@@ -284,6 +297,55 @@ export function parseGrounding(data: unknown): AssistantGrounding | null {
     grounding.nodeCount !== null || grounding.edgeCount !== null || grounding.vectorCount !== null;
   if (!grounding.hasDetail && !hasCounts && !grounding.retrievalMode) return null;
   return grounding;
+}
+
+/**
+ * Coerce a value read back from localStorage into a renderable grounding.
+ *
+ * The panel is mounted in the ROOT LAYOUT and the app has no error boundary, so
+ * a single bad persisted value would throw during render and take down every
+ * route — and, being in storage, would keep doing so on reload. Anything whose
+ * shape we don't recognise degrades to an empty list rather than reaching a
+ * `.map`. This is the compatibility seam for any future change to the shape.
+ */
+export function sanitizeGrounding(value: unknown): AssistantGrounding | null {
+  if (!value || typeof value !== 'object') return null;
+  const g = value as Record<string, unknown>;
+  const list = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v.filter(x => !!x && typeof x === 'object') as T[]) : []);
+
+  const entities = list<GroundingEntity>(g.entities);
+  const relationships = list<GroundingRelationship>(g.relationships);
+  const documents = list<GroundingDocument>(g.documents);
+  const passages = list<GroundingPassage>(g.passages);
+
+  return {
+    retrievalMode: toText(g.retrievalMode),
+    model: toText(g.model),
+    tokensUsed: toCount(g.tokensUsed),
+    nodeCount: toCount(g.nodeCount),
+    edgeCount: toCount(g.edgeCount),
+    vectorCount: toCount(g.vectorCount),
+    entities,
+    relationships,
+    documents,
+    passages,
+    hasDetail: entities.length > 0 || relationships.length > 0 || documents.length > 0 || passages.length > 0,
+  };
+}
+
+/**
+ * Shrink a grounding for storage. Counts and citation identity are what an
+ * analyst needs when re-reading an old thread; the verbatim excerpts are the
+ * bulk (up to ~30KB per answer), so they are clipped. The full text stays in
+ * the in-memory thread for the session that produced it.
+ */
+export function compactGroundingForStorage(g: AssistantGrounding | null | undefined): AssistantGrounding | null {
+  if (!g) return null;
+  return {
+    ...g,
+    documents: g.documents.map(d => ({ ...d, excerpt: d.excerpt.slice(0, STORED_EXCERPT_CHARS) })),
+    passages: g.passages.map(p => ({ ...p, text: p.text.slice(0, STORED_EXCERPT_CHARS) })),
+  };
 }
 
 /** Short "Sources · 12 entities · 8 links" style summary for the disclosure. */

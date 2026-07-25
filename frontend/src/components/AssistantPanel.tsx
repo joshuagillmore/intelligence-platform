@@ -26,7 +26,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Markdown from './Markdown';
 import AssistantCitations from './AssistantCitations';
-import { useAssistant } from '@/lib/AssistantContext';
+import { useAssistant, type AssistantTab } from '@/lib/AssistantContext';
 import { useProject } from '@/lib/ProjectContext';
 import { useNotifications } from './NotificationProvider';
 import { notebookApi, reportsApi } from '@/lib/api';
@@ -57,10 +57,13 @@ function ChatTab() {
 
   const submit = useCallback(() => {
     const value = input.trim();
-    if (!value) return;
+    // `busy` matters here: the Send button is disabled while a query is in
+    // flight but the input is not, so the Enter path would otherwise clear the
+    // field and hand the text to an `ask()` that returns early — losing it.
+    if (!value || busy) return;
     setInput('');
     void ask(value);
-  }, [ask, input]);
+  }, [ask, busy, input]);
 
   const saveAsProduct = useCallback(async (content: string, question: string) => {
     if (!projectId) return;
@@ -79,7 +82,12 @@ function ChatTab() {
 
   return (
     <>
-      <div ref={listRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
+      <div
+        ref={listRef}
+        aria-live="polite"
+        aria-busy={busy}
+        className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0"
+      >
         {!projectId && (
           <p className="text-xs text-gray-500">
             No active project. Select one from the sidebar to query its knowledge graph.
@@ -130,11 +138,11 @@ function ChatTab() {
           </div>
         ))}
 
-        {busy && (
-          <div className="flex justify-start" role="status" aria-live="polite">
-            <div className="rounded-lg px-3 py-2 text-xs bg-navy-900 text-gray-500">Thinking…</div>
-          </div>
-        )}
+        {/* Always mounted: a live region that appears at the same moment its
+            text does is unreliable for screen readers. */}
+        <div className="flex justify-start" role="status">
+          {busy && <div className="rounded-lg px-3 py-2 text-xs bg-navy-900 text-gray-500">Thinking…</div>}
+        </div>
       </div>
 
       <div className="px-3 py-2.5 flex gap-2 shrink-0 border-t border-navy-600">
@@ -178,22 +186,28 @@ function ChatTab() {
 
 function NotebookTab() {
   const { projectId, linkedEntities } = useAssistant();
+  const { addNotification } = useNotifications();
   const [notes, setNotes] = useState<NotebookEntry[]>([]);
   const [formOpen, setFormOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [noteType, setNoteType] = useState(NOTE_TYPES[0]);
+  // Bumped on every project switch so a slow in-flight list response cannot
+  // overwrite a newer project's notes when it finally lands.
+  const loadSeq = useRef(0);
 
   const loadNotes = useCallback(async () => {
+    const seq = ++loadSeq.current;
     if (!projectId) {
       setNotes([]);
       return;
     }
     try {
       const res = await notebookApi.list(projectId);
+      if (seq !== loadSeq.current) return;
       setNotes(Array.isArray(res.data) ? res.data : []);
     } catch {
-      setNotes([]);
+      if (seq === loadSeq.current) setNotes([]);
     }
   }, [projectId]);
 
@@ -215,16 +229,19 @@ function NotebookTab() {
       setFormOpen(false);
       void loadNotes();
     } catch {
-      /* surfaced by the empty list not changing; keep the draft */
+      // Keep the draft so the analyst doesn't lose what they typed.
+      addNotification({ type: 'error', title: 'Note not saved', message: 'Could not save the notebook entry.' });
     }
-  }, [content, linkedEntities, loadNotes, noteType, projectId, title]);
+  }, [addNotification, content, linkedEntities, loadNotes, noteType, projectId, title]);
 
   const deleteNote = useCallback(async (id: string) => {
     try {
       await notebookApi.delete(id);
       void loadNotes();
-    } catch { /* ignore */ }
-  }, [loadNotes]);
+    } catch {
+      addNotification({ type: 'error', title: 'Delete failed', message: 'Could not delete the notebook entry.' });
+    }
+  }, [addNotification, loadNotes]);
 
   if (!projectId) {
     return (
@@ -371,7 +388,8 @@ export default function AssistantPanel() {
         type="button"
         onClick={() => toggle(true)}
         aria-expanded={false}
-        aria-controls="assistant-panel"
+        // No aria-controls: the panel is unmounted while collapsed, so the
+        // idref would dangle.
         className={`fixed right-3 bottom-20 md:bottom-9 z-40 flex items-center gap-2 rounded-full border border-navy-600 bg-navy-800 pl-2 pr-3.5 py-2 shadow-2xl hover:border-accent-blue transition-colors ${FOCUS}`}
       >
         <span className="w-6 h-6 rounded-full bg-accent-blue text-white flex items-center justify-center text-[10px] font-bold shrink-0">
@@ -417,7 +435,29 @@ export default function AssistantPanel() {
         </button>
       </div>
 
-      <div role="tablist" aria-label="Assistant sections" className="flex gap-1 px-2 py-1.5 border-b border-navy-600 shrink-0">
+      {/* Full ARIA tab pattern: only the selected tab is in the tab order, and
+          Left/Right (plus Home/End) move between them — otherwise this is a
+          tablist in name only. Both tabs point at ONE panel id, because only
+          the active panel is mounted and a dangling aria-controls is worse than
+          none. */}
+      <div
+        role="tablist"
+        aria-label="Assistant sections"
+        onKeyDown={e => {
+          const order: AssistantTab[] = ['chat', 'notebook'];
+          const i = order.indexOf(tab);
+          let next: AssistantTab | null = null;
+          if (e.key === 'ArrowRight') next = order[(i + 1) % order.length];
+          else if (e.key === 'ArrowLeft') next = order[(i - 1 + order.length) % order.length];
+          else if (e.key === 'Home') next = order[0];
+          else if (e.key === 'End') next = order[order.length - 1];
+          if (!next) return;
+          e.preventDefault();
+          setTab(next);
+          document.getElementById(`assistant-tab-${next}`)?.focus();
+        }}
+        className="flex gap-1 px-2 py-1.5 border-b border-navy-600 shrink-0"
+      >
         {([['chat', 'Graph RAG Chat'], ['notebook', 'Notebook']] as const).map(([id, label]) => (
           <button
             key={id}
@@ -425,7 +465,8 @@ export default function AssistantPanel() {
             role="tab"
             id={`assistant-tab-${id}`}
             aria-selected={tab === id}
-            aria-controls={`assistant-tabpanel-${id}`}
+            aria-controls="assistant-tabpanel"
+            tabIndex={tab === id ? 0 : -1}
             onClick={() => setTab(id)}
             className={`px-3 py-1 rounded text-xs font-medium transition-colors ${FOCUS} ${
               tab === id ? 'bg-navy-700 text-accent-blue' : 'text-gray-400 hover:text-gray-200'
@@ -438,7 +479,7 @@ export default function AssistantPanel() {
 
       <div
         role="tabpanel"
-        id={`assistant-tabpanel-${tab}`}
+        id="assistant-tabpanel"
         aria-labelledby={`assistant-tab-${tab}`}
         className="flex flex-col flex-1 min-h-0"
       >

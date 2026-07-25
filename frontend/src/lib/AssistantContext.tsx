@@ -20,12 +20,18 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { queryApi } from './api';
 import { useProject } from './ProjectContext';
-import { parseGrounding, type AssistantGrounding } from './assistantGrounding';
+import {
+  compactGroundingForStorage,
+  parseGrounding,
+  sanitizeGrounding,
+  type AssistantGrounding,
+} from './assistantGrounding';
 
 export type AssistantRole = 'user' | 'assistant';
 
@@ -106,26 +112,65 @@ function readThread(projectId: string | null): AssistantMessage[] {
     if (!stored) return [];
     const parsed = JSON.parse(stored);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (m): m is AssistantMessage =>
-        !!m && typeof m.id === 'string' && typeof m.content === 'string'
-        && (m.role === 'user' || m.role === 'assistant'),
-    );
+    return parsed
+      .filter(
+        (m): m is AssistantMessage =>
+          !!m && typeof m.id === 'string' && typeof m.content === 'string'
+          && (m.role === 'user' || m.role === 'assistant'),
+      )
+      // The panel renders in the root layout and the app has no error boundary,
+      // so a malformed `grounding` (corrupt storage, or a thread written by an
+      // older shape) would throw on `.map` and blank every route until the user
+      // cleared storage by hand. Coerce it to something renderable instead.
+      .map(m => ({ ...m, grounding: sanitizeGrounding(m.grounding) }));
   } catch {
     return []; // malformed or unavailable storage — start clean
   }
 }
 
-function writeThread(projectId: string | null, messages: AssistantMessage[]) {
+/** Remove every stored assistant thread except (optionally) one to keep. */
+function pruneThreads(keepKey?: string) {
   if (typeof window === 'undefined') return;
   try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(STORAGE_PREFIX) && key !== keepKey) localStorage.removeItem(key);
+    }
+  } catch { /* storage unavailable */ }
+}
+
+/**
+ * Drop every persisted assistant thread. Called on logout — these threads hold
+ * RAG answers and verbatim source-document excerpts, which must not outlive the
+ * session on a shared analyst workstation.
+ */
+export function clearAllAssistantThreads() {
+  pruneThreads();
+}
+
+function writeThread(projectId: string | null, messages: AssistantMessage[]) {
+  if (typeof window === 'undefined') return;
+  const key = storageKey(projectId);
+  try {
     if (messages.length === 0) {
-      localStorage.removeItem(storageKey(projectId));
+      localStorage.removeItem(key);
       return;
     }
-    localStorage.setItem(storageKey(projectId), JSON.stringify(messages.slice(-MAX_STORED_MESSAGES)));
+    const payload = JSON.stringify(
+      messages.slice(-MAX_STORED_MESSAGES).map(m => ({
+        ...m,
+        grounding: compactGroundingForStorage(m.grounding),
+      })),
+    );
+    try {
+      localStorage.setItem(key, payload);
+    } catch {
+      // Almost certainly the quota: other projects' threads are the only thing
+      // this feature owns, so reclaim them and retry once before giving up.
+      pruneThreads(key);
+      localStorage.setItem(key, payload);
+    }
   } catch {
-    /* quota exceeded / private mode — the in-memory thread still works */
+    /* quota still exceeded / private mode — the in-memory thread still works */
   }
 }
 
@@ -162,58 +207,82 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
 
   const messages = useMemo(() => thread?.messages ?? [], [thread]);
 
-  const append = useCallback((message: AssistantMessage) => {
-    setThread(prev => (prev ? { ...prev, messages: [...prev.messages, message] } : prev));
+  // Appends are addressed to the project that was active when the request was
+  // issued. A request in flight across a project switch must NOT land in the
+  // new project's thread — in a tool built on project compartmentation, an
+  // answer about project A appearing (and persisting) under project B is worse
+  // than losing it. The reply is dropped if the analyst has moved on.
+  const append = useCallback((forProject: string | null, message: AssistantMessage) => {
+    setThread(prev =>
+      prev && prev.projectId === forProject
+        ? { ...prev, messages: [...prev.messages, message] }
+        : prev,
+    );
+  }, []);
+
+  // `busy` is also mirrored in a ref so two calls dispatched within a single
+  // tick (key-repeat, a future non-discrete caller) can't both get past the
+  // guard on the same stale render value.
+  const busyRef = useRef(false);
+  const beginRequest = useCallback(() => {
+    if (busyRef.current) return false;
+    busyRef.current = true;
+    setBusy(true);
+    return true;
+  }, []);
+  const endRequest = useCallback(() => {
+    busyRef.current = false;
+    setBusy(false);
   }, []);
 
   const ask = useCallback(async (question: string) => {
     const q = question.trim();
-    if (!q || !projectId || busy) return;
+    const forProject = projectId;
+    if (!q || !forProject || !beginRequest()) return;
     setOpen(true);
     setTab('chat');
-    append({ id: nextId(), role: 'user', content: q });
-    setBusy(true);
+    append(forProject, { id: nextId(), role: 'user', content: q });
     try {
-      const res = await queryApi.rag(projectId, q);
+      const res = await queryApi.rag(forProject, q);
       const data = (res?.data ?? {}) as Record<string, unknown>;
       const content =
         (typeof data.answer === 'string' && data.answer) ||
         (typeof data.response === 'string' && data.response) ||
         (typeof data.context === 'string' && data.context) ||
         'The query returned no answer.';
-      append({ id: nextId(), role: 'assistant', content, grounding: parseGrounding(data) });
+      append(forProject, { id: nextId(), role: 'assistant', content, grounding: parseGrounding(data) });
     } catch {
-      append({
+      append(forProject, {
         id: nextId(),
         role: 'assistant',
         content: 'Query failed. Check that the backend and an LLM provider are reachable, then try again.',
         failed: true,
       });
     } finally {
-      setBusy(false);
+      endRequest();
     }
-  }, [append, busy, projectId]);
+  }, [append, beginRequest, endRequest, projectId]);
 
   const runTask = useCallback(async (task: { label: string; run: () => Promise<AssistantTaskResult> }) => {
-    if (!projectId || busy) return;
+    const forProject = projectId;
+    if (!forProject || !beginRequest()) return;
     setOpen(true);
     setTab('chat');
-    append({ id: nextId(), role: 'user', content: task.label });
-    setBusy(true);
+    append(forProject, { id: nextId(), role: 'user', content: task.label });
     try {
       const result = await task.run();
-      append({
+      append(forProject, {
         id: nextId(),
         role: 'assistant',
         content: result.content || 'No output returned.',
         grounding: result.grounding ?? null,
       });
     } catch {
-      append({ id: nextId(), role: 'assistant', content: `${task.label} failed.`, failed: true });
+      append(forProject, { id: nextId(), role: 'assistant', content: `${task.label} failed.`, failed: true });
     } finally {
-      setBusy(false);
+      endRequest();
     }
-  }, [append, busy, projectId]);
+  }, [append, beginRequest, endRequest, projectId]);
 
   const clear = useCallback(() => {
     setThread(prev => (prev ? { ...prev, messages: [] } : prev));

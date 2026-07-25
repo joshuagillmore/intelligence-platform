@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { parseGrounding, parseRagContext, groundingSummary } from '@/lib/assistantGrounding';
+import {
+  parseGrounding,
+  parseRagContext,
+  groundingSummary,
+  sanitizeGrounding,
+  compactGroundingForStorage,
+} from '@/lib/assistantGrounding';
 
 /**
  * These fixtures are the real shapes the backend emits, not invented ones:
@@ -155,6 +161,86 @@ describe('parseGrounding', () => {
     expect(parseGrounding({ answer: 'hello' })).toBeNull();
     expect(parseGrounding(null)).toBeNull();
     expect(parseGrounding('not an object')).toBeNull();
+  });
+});
+
+describe('sanitizeGrounding', () => {
+  // The panel renders in the root layout and the app has no error boundary, so
+  // a bad persisted grounding reaching a `.map` would blank every route until
+  // the user cleared localStorage by hand.
+  it.each([
+    ['missing arrays', {}],
+    ['null arrays', { entities: null, relationships: null, documents: null, passages: null }],
+    ['scalars where arrays belong', { entities: 5, relationships: 'x', documents: {}, passages: true }],
+    ['an older shape', { retrieval_mode: 'hybrid', nodes: 4 }],
+  ])('coerces %s into renderable empty lists', (_label, stored) => {
+    const g = sanitizeGrounding(stored)!;
+    expect(g.entities).toEqual([]);
+    expect(g.relationships).toEqual([]);
+    expect(g.documents).toEqual([]);
+    expect(g.passages).toEqual([]);
+    expect(g.hasDetail).toBe(false);
+    expect(() => groundingSummary(g)).not.toThrow();
+  });
+
+  it('drops non-object array members that would break rendering', () => {
+    const g = sanitizeGrounding({ entities: [null, 'nope', { name: 'Real', type: 'Person' }] })!;
+    expect(g.entities).toEqual([{ name: 'Real', type: 'Person' }]);
+  });
+
+  it('round-trips a genuine grounding', () => {
+    const original = parseGrounding(HYBRID_RESPONSE)!;
+    const restored = sanitizeGrounding(JSON.parse(JSON.stringify(original)))!;
+    expect(restored.entities).toEqual(original.entities);
+    expect(restored.nodeCount).toBe(24);
+    expect(restored.hasDetail).toBe(true);
+  });
+
+  it('returns null for values that are not groundings at all', () => {
+    expect(sanitizeGrounding(null)).toBeNull();
+    expect(sanitizeGrounding('nope')).toBeNull();
+  });
+});
+
+describe('compactGroundingForStorage', () => {
+  it('clips excerpts and passages so a thread cannot exhaust the storage quota', () => {
+    const big = parseGrounding({
+      ...HYBRID_RESPONSE,
+      context: `### Source Document Evidence (1 documents)\n\n**big.txt** [source reliability: A]:\n\`\`\`\n${'x'.repeat(1000)}\n\`\`\``,
+    })!;
+    expect(big.documents[0].excerpt.length).toBe(1000);
+
+    const compact = compactGroundingForStorage(big)!;
+    expect(compact.documents[0].excerpt.length).toBe(200);
+    // Citation identity survives — only the bulk text is clipped.
+    expect(compact.documents[0].name).toBe('big.txt');
+    expect(compact.nodeCount).toBe(24);
+    // The in-memory original is untouched.
+    expect(big.documents[0].excerpt.length).toBe(1000);
+  });
+
+  it('passes null through', () => {
+    expect(compactGroundingForStorage(null)).toBeNull();
+  });
+});
+
+describe('long-line guard', () => {
+  it('skips pathological lines instead of feeding them to a backtracking regex', () => {
+    // Two lazy groups around literal delimiters backtrack quadratically; the
+    // guard keeps a malformed 200KB line from stalling the render.
+    const evil = `### Relationships (1 unique)\n- ${'a '.repeat(100_000)}--[X]--> b`;
+    const start = Date.now();
+    const out = parseRagContext(evil);
+    expect(Date.now() - start).toBeLessThan(500);
+    expect(out.relationships).toEqual([]);
+  });
+
+  it('still parses relationship lines of a realistic length', () => {
+    const name = 'A'.repeat(300);
+    const out = parseRagContext(`### Relationships (1 unique)\n- ${name} --[LINKS_TO]--> Target`);
+    expect(out.relationships).toEqual([
+      { source: name, relType: 'LINKS_TO', target: 'Target', confidence: undefined },
+    ]);
   });
 });
 

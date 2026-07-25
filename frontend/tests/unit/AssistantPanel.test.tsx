@@ -165,6 +165,65 @@ describe('AssistantPanel', () => {
     expect(await screen.findByText(/ask about the knowledge graph/i)).toBeInTheDocument();
   });
 
+  it('does not drop a follow-up question typed while a query is in flight', async () => {
+    // The Send button is disabled while busy but the input is not, so Enter is
+    // reachable. It must not clear the field and silently discard the text.
+    let release: (v: unknown) => void = () => {};
+    mockRag.mockImplementationOnce(() => new Promise(r => { release = r; }));
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /aegis/i }));
+    const input = screen.getByLabelText(/ask the intelligence assistant/i);
+    await user.type(input, 'first{Enter}');
+    await waitFor(() => expect(mockRag).toHaveBeenCalledTimes(1));
+
+    await user.type(input, 'second{Enter}');
+    expect(input).toHaveValue('second');       // preserved, not eaten
+    expect(mockRag).toHaveBeenCalledTimes(1);  // not double-fired
+
+    release(RAG_RESPONSE);
+  });
+
+  it('never lands an answer in a different project than the one it was asked in', async () => {
+    // Project compartmentation: a reply that resolves after the analyst has
+    // switched projects must be dropped, not appended to (and persisted under)
+    // the new project's thread.
+    let release: (v: unknown) => void = () => {};
+    mockRag.mockImplementationOnce(() => new Promise(r => { release = r; }));
+    const user = userEvent.setup();
+    const { rerender } = renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /aegis/i }));
+    await user.type(screen.getByLabelText(/ask the intelligence assistant/i), 'about p1{Enter}');
+    await waitFor(() => expect(mockRag).toHaveBeenCalledWith('p1', 'about p1'));
+
+    // Analyst switches to another project while the query is in flight.
+    ctx.activeProject = { id: 'p2', name: 'Operation Daybreak' };
+    rerender(<AssistantProvider><AssistantPanel /></AssistantProvider>);
+    await screen.findByText('Operation Daybreak');
+
+    release(RAG_RESPONSE);
+
+    await waitFor(() => expect(screen.queryByText(/thinking/i)).not.toBeInTheDocument());
+    expect(screen.queryByText(/marcus kellerman operates out of rotterdam/i)).not.toBeInTheDocument();
+    expect(localStorage.getItem('assistant_thread:p2')).toBeNull();
+  });
+
+  it('recovers from a persisted thread whose grounding has a broken shape', async () => {
+    // Without sanitising on read this throws in render, and because it lives in
+    // localStorage it would keep blanking every route on reload.
+    localStorage.setItem('assistant_thread:p1', JSON.stringify([
+      { id: 'm1', role: 'user', content: 'earlier question' },
+      { id: 'm2', role: 'assistant', content: 'earlier answer', grounding: { entities: null, documents: 'x' } },
+    ]));
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /aegis/i }));
+    expect(await screen.findByText('earlier answer')).toBeInTheDocument();
+  });
+
   it('switches to the Notebook tab', async () => {
     mockNotes.mockResolvedValue({ data: [{ id: 'n1', name: 'Terminal visit', content: 'Observed twice', note_type: 'observation' }] });
     const user = userEvent.setup();
