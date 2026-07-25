@@ -303,7 +303,7 @@ export default function CyberPage() {
     return (
       <div className="flex">
         <Sidebar />
-        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
+        <main className="md:ml-56 flex-1 min-w-0 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
           <h2 className="text-2xl font-bold mb-4">Cyber Intelligence</h2>
           <SelectProjectPrompt action="review cyber indicators for" />
         </main>
@@ -314,7 +314,7 @@ export default function CyberPage() {
   return (
     <div className="flex" style={{ backgroundColor: '#0e1321' }}>
       <Sidebar />
-      <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
+      <main className="md:ml-56 flex-1 min-w-0 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-bold text-white">Cyber Intelligence</h2>
           <button
@@ -391,7 +391,9 @@ export default function CyberPage() {
 
               {/* Left: IOC table (55%) */}
               <div className="w-full md:w-[55%] overflow-hidden flex flex-col" style={{ minHeight: '300px' }}>
-                <div className="rounded-lg overflow-hidden flex-1 overflow-y-auto" style={{ backgroundColor: '#1a1f2e', borderColor: '#2f3444', borderWidth: 1 }}>
+                {/* overflow-x-auto: the IOC table's min-content width (~590px) otherwise
+                    sets a floor the page can't shrink below on a phone. */}
+                <div className="rounded-lg flex-1 overflow-y-auto overflow-x-auto" style={{ backgroundColor: '#1a1f2e', borderColor: '#2f3444', borderWidth: 1 }}>
                   {iocsLoading ? (
                     <LoadingSpinner size="lg" />
                   ) : (
