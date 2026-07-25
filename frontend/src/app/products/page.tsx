@@ -256,6 +256,8 @@ export default function ProductsPage() {
         link: '/products',
       });
     } catch {
+      // Surfaced as an alert + toast only. Writing it into `generatedReport`
+      // would make an error string savable/exportable as if it were a product.
       setGenerateError('Report generation failed. Check that the LLM provider is configured and reachable, then try again.');
       updateNotification(notifId, {
         type: 'error',
@@ -346,9 +348,12 @@ export default function ProductsPage() {
         setGeneratedReport(full.content || JSON.stringify(full));
       } catch {
         // Never let failure text become report content — it would be savable,
-        // copyable and exportable as if it were the product.
+        // copyable and exportable as if it were the product. Also drop the
+        // "viewing saved report" state, or the panel keeps its title header
+        // with no body underneath.
         setGeneratedReport(null);
         setProductContext(null);
+        setViewingSavedReport(null);
         setGenerateError('Could not load this saved report. It may have been deleted, or the backend is unreachable.');
         addNotification({
           type: 'error',

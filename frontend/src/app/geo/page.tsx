@@ -6,8 +6,10 @@ import Sidebar from '@/components/Sidebar';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { geoApi, queryApi, entitiesApi, llmApi, assessApi, geoApiExtra } from '@/lib/api';
+import { geoApi, queryApi, entitiesApi, assessApi, analysisApi, geoApiExtra } from '@/lib/api';
 import Markdown from '@/components/Markdown';
+import { useNotifications } from '@/components/NotificationProvider';
+import { getErrorMessage } from '@/lib/errorMessages';
 
 const GeoMap = dynamic(() => import('@/components/GeoMap'), { ssr: false });
 
@@ -53,6 +55,7 @@ const C = {
 export default function GeoPage() {
   const router = useRouter();
   const { activeProject } = useProject();
+  const { addNotification } = useNotifications();
   const [locations, setLocations] = useState<GeoLocation[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<GeoLocation | null>(null);
@@ -241,28 +244,37 @@ export default function GeoPage() {
 
   async function runIntelOp(kind: 'gap' | 'assess' | 'hypothesis') {
     if (!selectedLocation || !activeProject) return;
-    const label = kind === 'gap' ? 'Gap Analysis' : kind === 'assess' ? 'Generate Assessment' : 'Hypothesis Generation';
+    const label = kind === 'gap' ? 'Gap Analysis' : kind === 'assess' ? 'Generate Assessment' : 'Competing Hypotheses';
     setChatOpen(true);
     setChatMessages(prev => [...prev, { role: 'user', text: `${label} — ${selectedLocation.name}` }]);
     setChatLoading(true);
     try {
+      // All three run through grounded endpoints: the backend retrieves this
+      // location's subgraph, source documents and measured coverage before it
+      // reasons, instead of handing the model a bare prompt.
       let text: string;
       if (kind === 'assess') {
         const res = await assessApi.generate(selectedLocation.id, { entity_id: selectedLocation.id, project_id: activeProject.id });
-        const d = res.data;
-        text = d.assessment || d.judgment || d.analysis || d.content || d.error || JSON.stringify(d);
+        if (res.data.error) throw new Error('Assessment generation failed.');
+        text = res.data.assessment;
+      } else if (kind === 'gap') {
+        const res = await analysisApi.gaps({
+          project_id: activeProject.id,
+          entity_ids: [selectedLocation.id],
+        });
+        text = res.data.analysis;
       } else {
-        const skill = kind === 'gap' ? 'gap_analysis' : 'hypothesis_generation';
-        const prompt = kind === 'gap'
-          ? `Perform a gap analysis of intelligence coverage for the location "${selectedLocation.name}" and its connected entities.`
-          : `Generate competing hypotheses about the significance of the location "${selectedLocation.name}" in this intelligence picture.`;
-        const res = await llmApi.query([{ role: 'user', content: prompt }], skill);
-        const d = res.data;
-        text = d.response || d.answer || d.content || d.result || JSON.stringify(d);
+        const res = await analysisApi.hypotheses({
+          project_id: activeProject.id,
+          question: `What are the competing explanations for the significance of ${selectedLocation.name} in this intelligence picture?`,
+          entity_ids: [selectedLocation.id],
+        });
+        text = res.data.analysis;
       }
       setChatMessages(prev => [...prev, { role: 'ai', text }]);
-    } catch {
-      setChatMessages(prev => [...prev, { role: 'ai', text: `${label} failed.` }]);
+    } catch (e) {
+      // Surface the failure as a toast rather than as a fake analyst answer.
+      addNotification({ type: 'error', title: `${label} Failed`, message: getErrorMessage(e) });
     } finally {
       setChatLoading(false);
     }
@@ -746,7 +758,7 @@ export default function GeoPage() {
                       className="w-full rounded-md py-2 text-sm font-medium transition-opacity hover:opacity-90 border disabled:opacity-50"
                       style={{ background: 'transparent', color: C.primary, borderColor: C.primary }}
                     >
-                      Hypothesis Generation
+                      Competing Hypotheses (ACH)
                     </button>
                   </div>
                 </div>

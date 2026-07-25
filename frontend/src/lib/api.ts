@@ -574,6 +574,105 @@ export const assessApi = {
     api.post('/assess/generate', { ...data, entity_id: entityId }),
 };
 
+// ── Structured analytic techniques (/api/analysis/*) ──────────────────────
+// Grounded runners for the three tradecraft skills. Each retrieves real project
+// evidence (graph subgraph, source documents, measured coverage) before
+// prompting, and returns a deterministic result when no LLM is configured —
+// so the UI must always render `analysis` and check `model !== 'none'`.
+
+export interface SourceEvaluationItem {
+  document_id: string;
+  name: string;
+  current_rating: string;
+  admiralty_rating: string;
+  entity_count: number;
+  corroborating_documents: number;
+}
+
+export interface SourceEvaluationResult {
+  analysis: string;
+  model: string;
+  tokens_used: number;
+  documents_evaluated: number;
+  evaluations: SourceEvaluationItem[];
+  ratings_applied: number;
+}
+
+export interface Hypothesis {
+  id: string;
+  statement: string;
+  probability: number;
+  probability_label: string;
+}
+
+export interface HypothesesResult {
+  question: string;
+  analysis: string;
+  hypotheses: Hypothesis[];
+  model: string;
+  tokens_used: number;
+  retrieval_mode: string;
+  context_nodes: number;
+  context_edges: number;
+  vector_hits: number;
+  focus_entities: string[];
+  assessment_id?: string;
+}
+
+export interface StructuralGap {
+  kind: string;
+  title: string;
+  detail: string;
+  priority: string;
+  count: number;
+  examples: string[];
+}
+
+export interface GapAnalysisResult {
+  analysis: string;
+  model: string;
+  tokens_used: number;
+  retrieval_mode: string;
+  coverage: {
+    entities: number;
+    relationships: number;
+    documents: number;
+    isolated: number;
+    single_link: number;
+    unsourced: number;
+    unrated_documents: number;
+    locations: number;
+    ungeocoded_locations: number;
+  };
+  structural_gaps: StructuralGap[];
+  context_nodes: number;
+  context_edges: number;
+  focus_entities: string[];
+}
+
+export const analysisApi = {
+  sourceEvaluation: (data: {
+    project_id: string;
+    document_ids?: string[];
+    limit?: number;
+    apply_ratings?: boolean;
+  }) => api.post<SourceEvaluationResult>('/analysis/source-evaluation', data),
+  hypotheses: (data: {
+    project_id: string;
+    question: string;
+    entity_ids?: string[];
+    max_hops?: number;
+    use_vector?: boolean;
+    save_assessment?: boolean;
+  }) => api.post<HypothesesResult>('/analysis/hypotheses', data),
+  gaps: (data: {
+    project_id: string;
+    entity_ids?: string[];
+    focus?: string;
+    max_hops?: number;
+  }) => api.post<GapAnalysisResult>('/analysis/gaps', data),
+};
+
 export const topicsApi = {
   tree: (projectId: string, method?: string, granularity?: string) =>
     api.get('/topics', { params: { project_id: projectId, method, granularity } }),
