@@ -135,6 +135,8 @@ export default function CollectionPlansPage() {
   }
 
   async function deletePlan(planId: string) {
+    const name = plans.find(p => String(p.id) === String(planId))?.name || 'this plan';
+    if (!confirm(`Delete "${name}"? Its sources and collection history go with it. This can't be undone.`)) return;
     try {
       await collectionPlansApi.delete(planId);
       if (selectedPlanId === planId) {
@@ -165,6 +167,8 @@ export default function CollectionPlansPage() {
 
   async function deleteSource(sourceId: string) {
     if (!selectedPlanId) return;
+    const name = selectedPlan?.sources?.find(s => String(s.id) === String(sourceId))?.name || 'this source';
+    if (!confirm(`Remove source "${name}" from this plan? This can't be undone.`)) return;
     try {
       await collectionPlansApi.deleteSource(selectedPlanId, sourceId);
       loadPlanDetail(selectedPlanId);

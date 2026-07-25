@@ -156,6 +156,8 @@ export default function LlmHubPage() {
   }
 
   async function handleDeletePersona(personaId: string) {
+    const name = personas.find(p => String(p.id) === String(personaId))?.name || 'this persona';
+    if (!confirm(`Delete persona "${name}"? This can't be undone.`)) return;
     try {
       await personasApi.delete(personaId);
       await loadPersonas();
