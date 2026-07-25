@@ -168,7 +168,9 @@ export default function DocumentViewer() {
   return (
     <div className="flex">
       <Sidebar />
-      <main className="md:ml-56 flex-1 p-6 flex gap-4 pt-16 md:pt-6" style={{ height: 'calc(100vh - 1.75rem)' }}>
+      {/* Stacks on mobile: a fixed 288px entity sidebar beside the reader left no
+          usable width on a phone. Viewport-locked height only applies from md up. */}
+      <main className="md:ml-56 flex-1 p-4 md:p-6 flex flex-col md:flex-row gap-4 pt-16 md:pt-6 pb-24 md:pb-6 md:h-[calc(100vh-1.75rem)]">
         {/* Document content */}
         <div className="flex-1 flex flex-col min-w-0">
           <div className="flex items-center gap-3 mb-4">
@@ -221,7 +223,7 @@ export default function DocumentViewer() {
         </div>
 
         {/* Entity sidebar */}
-        <div className="w-72 bg-navy-800 border border-navy-600 rounded-lg p-4 overflow-y-auto">
+        <div className="w-full md:w-72 md:flex-shrink-0 bg-navy-800 border border-navy-600 rounded-lg p-4 md:overflow-y-auto">
           <h3 className="text-sm font-semibold text-gray-400 mb-3">Extracted Entities ({doc.entities.length})</h3>
           <div className="space-y-1">
             {doc.entities.map((e) => (

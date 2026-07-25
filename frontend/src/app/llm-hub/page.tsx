@@ -180,10 +180,12 @@ export default function LlmHubPage() {
   return (
     <div className="flex">
       <Sidebar />
-      <main className="md:ml-56 flex-1 p-8 flex gap-6 h-screen overflow-hidden pt-16 md:pt-8">
+      {/* Stacks on mobile: three fixed columns (288 + fluid + 288) could not fit a
+          phone viewport, so the page was unusable below md. */}
+      <main className="md:ml-56 flex-1 p-4 md:p-8 flex flex-col md:flex-row gap-6 md:h-screen md:overflow-hidden pt-16 md:pt-8 pb-24 md:pb-8">
 
         {/* Left Column: Analytical Skills */}
-        <div className="w-72 flex-shrink-0 flex flex-col overflow-hidden">
+        <div className="w-full md:w-72 md:flex-shrink-0 flex flex-col md:overflow-hidden">
           <h3 className="text-lg font-semibold mb-4">Analytical Skills</h3>
           <div className="space-y-2 overflow-y-auto flex-1 pr-1">
             {skills.map((skill) => (
@@ -214,7 +216,7 @@ export default function LlmHubPage() {
         </div>
 
         {/* Center Column: Skill Configuration */}
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <div className="flex-1 flex flex-col md:overflow-hidden min-w-0">
           <h3 className="text-lg font-semibold mb-4">Skill Configuration</h3>
           {selectedSkill ? (
             <div className="flex-1 overflow-y-auto pr-1 space-y-4">
@@ -309,7 +311,7 @@ export default function LlmHubPage() {
         </div>
 
         {/* Right Column: LLM Personas */}
-        <div className="w-72 flex-shrink-0 flex flex-col overflow-hidden">
+        <div className="w-full md:w-72 md:flex-shrink-0 flex flex-col md:overflow-hidden">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">LLM Personas</h3>
             <button
