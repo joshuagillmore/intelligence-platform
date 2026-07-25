@@ -296,14 +296,6 @@ export default function Sidebar() {
           {showUserMenu && (
             <div className="absolute bottom-full left-0 w-full mb-1 bg-[#0e1321] border border-navy-800 rounded-lg shadow-xl z-50 overflow-hidden">
               <button
-                className="w-full px-4 py-2.5 text-left text-xs text-gray-400 hover:bg-navy-800/50 transition-colors flex items-center gap-2"
-                onClick={() => { setShowUserMenu(false); }}
-              >
-                <span className="material-symbols-outlined text-sm">settings</span>
-                Profile Settings <span className="text-gray-600 text-[9px]">(coming soon)</span>
-              </button>
-              <div className="border-t border-navy-800" />
-              <button
                 onClick={handleSignOut}
                 className="w-full px-4 py-2.5 text-left text-xs text-gray-400 hover:text-red-400 hover:bg-navy-800/50 transition-colors flex items-center gap-2"
               >
