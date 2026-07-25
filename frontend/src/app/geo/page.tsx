@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
 import { geoApi, queryApi, entitiesApi, llmApi, assessApi, geoApiExtra } from '@/lib/api';
@@ -332,9 +333,7 @@ export default function GeoPage() {
         <Sidebar />
         <main className="md:ml-56 flex-1 p-8 pt-14 md:pt-8">
           <h2 className="text-2xl font-bold mb-4">Geo-Intelligence</h2>
-          <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
-            <p>Select a project first.</p>
-          </div>
+          <SelectProjectPrompt action="map" />
         </main>
       </div>
     );

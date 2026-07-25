@@ -2,6 +2,7 @@
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import { useProject } from '@/lib/ProjectContext';
 import { searchApi } from '@/lib/api';
 import { TYPE_COLOR_CLASS } from '@/lib/entityStyles';
@@ -79,9 +80,7 @@ function SearchPageContent() {
         <Sidebar />
         <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
           <h2 className="text-2xl font-bold mb-4">Search</h2>
-          <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
-            <p>Select a project first to search.</p>
-          </div>
+          <SelectProjectPrompt action="search" />
         </main>
       </div>
     );

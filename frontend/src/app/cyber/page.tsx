@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import GraphVisualization from '@/components/GraphVisualization';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
@@ -302,9 +303,7 @@ export default function CyberPage() {
         <Sidebar />
         <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
           <h2 className="text-2xl font-bold mb-4">Cyber Intelligence</h2>
-          <div className="rounded-lg p-8 text-center text-gray-500" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
-            <p>Select a project first.</p>
-          </div>
+          <SelectProjectPrompt action="review cyber indicators for" />
         </main>
       </div>
     );

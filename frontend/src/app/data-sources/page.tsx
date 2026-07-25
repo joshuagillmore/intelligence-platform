@@ -2,6 +2,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
+import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import TopicMindMap from '@/components/TopicMindMap';
 import MindMapControls from '@/components/MindMapControls';
@@ -392,9 +393,7 @@ export default function DataSourcesPage() {
         <Sidebar />
         <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
           <h2 className="text-2xl font-bold mb-4">Data Sources</h2>
-          <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
-            <p>Select a project first.</p>
-          </div>
+          <SelectProjectPrompt action="browse sources for" />
         </main>
       </div>
     );

@@ -1,6 +1,7 @@
 'use client';
 import { useState, useCallback, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
+import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import { useProject } from '@/lib/ProjectContext';
 import { entitiesApi, reportsApi, exportApi } from '@/lib/api';
 import { useNotifications } from '@/components/NotificationProvider';
@@ -300,9 +301,7 @@ export default function ProductsPage() {
         <Sidebar />
         <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8" style={{ backgroundColor: '#0e1321' }}>
           <h2 className="text-2xl font-bold mb-4">Products &amp; Artefacts</h2>
-          <div className="rounded-lg p-8 text-center text-gray-500 border border-navy-600" style={{ backgroundColor: '#1a1f2e' }}>
-            <p>Select a project first.</p>
-          </div>
+          <SelectProjectPrompt action="draft products for" />
         </main>
       </div>
     );
