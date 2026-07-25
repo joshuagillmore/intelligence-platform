@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import api from '@/lib/api';
 import { TYPE_COLOR_HEX } from '@/lib/entityStyles';
@@ -72,6 +72,7 @@ const typeColor = TYPE_COLOR_HEX;
 
 export default function DocumentViewer() {
   const params = useParams();
+  const router = useRouter();
   const docId = params.id as string;
   const [doc, setDoc] = useState<DocData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -231,16 +232,28 @@ export default function DocumentViewer() {
                   selectedEntity === e.id ? 'bg-navy-600 border border-accent-blue' : 'bg-navy-700 hover:bg-navy-600'
                 }`}
               >
-                <span className="text-gray-200">{e.name}</span>
-                <span
-                  className="ml-2 px-1 py-0 rounded text-[10px]"
-                  style={{
-                    backgroundColor: `${typeColor[e.entity_type] || '#6b7280'}20`,
-                    color: typeColor[e.entity_type] || '#9ca3af',
-                  }}
-                >
-                  {e.entity_type}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-gray-200 flex-1">{e.name}</span>
+                  <span
+                    className="px-1 py-0 rounded text-[10px]"
+                    style={{
+                      backgroundColor: `${typeColor[e.entity_type] || '#6b7280'}20`,
+                      color: typeColor[e.entity_type] || '#9ca3af',
+                    }}
+                  >
+                    {e.entity_type}
+                  </span>
+                  {/* Pivot into the graph. Clicking the row itself still just
+                      highlights the entity in the document text. */}
+                  <button
+                    onClick={(ev) => { ev.stopPropagation(); router.push(`/network?select=${e.id}`); }}
+                    title={`View ${e.name} in the graph`}
+                    aria-label={`View ${e.name} in the graph`}
+                    className="text-gray-500 hover:text-accent-blue transition-colors flex-shrink-0"
+                  >
+                    <span className="material-symbols-outlined text-[14px] align-middle">hub</span>
+                  </button>
+                </div>
               </div>
             ))}
           </div>

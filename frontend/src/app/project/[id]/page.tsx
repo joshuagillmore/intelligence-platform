@@ -273,7 +273,12 @@ export default function ProjectDashboard() {
                 return (
                   <div
                     key={evt.id || i}
-                    className="rounded-md p-3 relative"
+                    role={evt.id ? 'button' : undefined}
+                    tabIndex={evt.id ? 0 : undefined}
+                    title={evt.id ? `View ${evt.name} in the graph` : undefined}
+                    onClick={evt.id ? () => router.push(`/network?select=${evt.id}`) : undefined}
+                    onKeyDown={evt.id ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(`/network?select=${evt.id}`); } } : undefined}
+                    className={`rounded-md p-3 relative ${evt.id ? 'cursor-pointer hover:brightness-125 transition-[filter]' : ''}`}
                     style={{
                       backgroundColor: colors.containerLow,
                       borderLeft: `3px solid ${borderColor}`,
