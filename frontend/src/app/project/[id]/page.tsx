@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
 import { projectsApi, graphApi, reportsApi, timelineApi, exportApi, type Project } from '@/lib/api';
+import { useNotifications } from '@/components/NotificationProvider';
 import { TYPE_BADGE_CLASS, TYPE_COLOR_HEX } from '@/lib/entityStyles';
 
 // Design tokens
@@ -21,6 +22,7 @@ export default function ProjectDashboard() {
   const params = useParams();
   const router = useRouter();
   const { setActiveProject } = useProject();
+  const { addNotification } = useNotifications();
   const [project, setProject] = useState<Project | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [stats, setStats] = useState<any>(null);
@@ -173,8 +175,17 @@ export default function ProjectDashboard() {
                   a.download = `stix-export-${projectId.substring(0, 8)}.json`;
                   a.click();
                   URL.revokeObjectURL(url);
-                } catch (err) {
-                  console.error('Failed to export STIX report', err);
+                  addNotification({
+                    type: 'success',
+                    title: 'STIX Export Ready',
+                    message: 'The STIX 2.1 bundle has been downloaded.',
+                  });
+                } catch {
+                  addNotification({
+                    type: 'error',
+                    title: 'Export Failed',
+                    message: 'Could not build the STIX export. Check the backend and try again.',
+                  });
                 }
               }}
               className="px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"

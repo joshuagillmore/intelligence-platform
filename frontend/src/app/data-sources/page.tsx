@@ -2,6 +2,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
+import { useNotifications } from '@/components/NotificationProvider';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import TopicMindMap from '@/components/TopicMindMap';
@@ -107,6 +108,7 @@ function getStoredLayout(): LayoutMode {
 
 export default function DataSourcesPage() {
   const { activeProject } = useProject();
+  const { addNotification } = useNotifications();
   const router = useRouter();
   // Mind map tree data
   const [topicTree, setTopicTree] = useState<TreeNode>({ name: 'Knowledge Base', id: 'root', children: [] });
@@ -466,7 +468,13 @@ export default function DataSourcesPage() {
                   a.download = `mindmap.${format === 'mermaid' ? 'mmd' : format === 'markdown' ? 'md' : 'json'}`;
                   a.click();
                   URL.revokeObjectURL(url);
-                } catch (e) { console.error('Export failed', e); }
+                } catch {
+                  addNotification({
+                    type: 'error',
+                    title: 'Export Failed',
+                    message: 'Could not export the mind map. Check the backend and try again.',
+                  });
+                }
               }}
             />
           </div>

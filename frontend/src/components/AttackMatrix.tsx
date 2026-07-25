@@ -245,6 +245,7 @@ export default function AttackMatrix({
 
   async function handleDownloadLayer() {
     setDownloading(true);
+    setMapNote(null);
     try {
       const res = await attackApi.navigatorLayer(projectId);
       const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
@@ -255,7 +256,8 @@ export default function AttackMatrix({
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      /* ignore */
+      // Was a silent no-op: the button spun, nothing downloaded, nothing said.
+      setMapNote({ text: 'Could not build the Navigator layer. Check the backend and try again.', tone: 'warn' });
     } finally {
       setDownloading(false);
     }
