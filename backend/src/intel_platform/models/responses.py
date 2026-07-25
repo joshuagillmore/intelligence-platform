@@ -16,6 +16,32 @@ class ProjectResponse(BaseModel):
     updated_at: str = ""
 
 
+class PirPlanLink(BaseModel):
+    """A collection plan raised against a PIR — the next link in the cycle."""
+    id: str
+    name: str
+    status: str
+    source_count: int = 0
+    records_acquired: int = 0
+    created_at: str = ""
+
+
+class PirResponse(BaseModel):
+    id: str
+    project_id: str
+    title: str = ""
+    text: str = ""
+    refined_text: str = ""
+    eeis: list[str] = []
+    priority: str = "medium"
+    status: str = "OPEN"
+    created_by: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    plan_count: int = 0
+    plans: list[PirPlanLink] = []
+
+
 class EntityResponse(BaseModel):
     id: str
     name: str

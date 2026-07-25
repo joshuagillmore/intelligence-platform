@@ -15,6 +15,28 @@ class IngestDocumentRequest(BaseModel):
     reliability_rating: str = "C3"
 
 
+class CreatePirRequest(BaseModel):
+    """Create a Priority Intelligence Requirement for a project."""
+    project_id: str
+    text: str
+    title: str = ""
+    refined_text: str = ""
+    eeis: list[str] = []
+    priority: str = "medium"
+    status: str = "OPEN"
+    created_by: str = "analyst"
+
+
+class UpdatePirRequest(BaseModel):
+    """Partial update — only the fields supplied are written."""
+    title: str | None = None
+    text: str | None = None
+    refined_text: str | None = None
+    eeis: list[str] | None = None
+    priority: str | None = None
+    status: str | None = None
+
+
 class EntitySearchRequest(BaseModel):
     project_id: str
     query: str = ""

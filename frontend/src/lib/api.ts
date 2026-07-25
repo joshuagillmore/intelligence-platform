@@ -361,6 +361,50 @@ export const collectionsApi = {
   count: (projectId: string) => api.get(`/collections/count/${projectId}`),
 };
 
+// PIRs — Priority Intelligence Requirements, the requirements spine a project's
+// collection hangs off. Every plan raised against one carries its pir_id back.
+export type PirStatus = 'OPEN' | 'PARTIAL' | 'SATISFIED' | 'ARCHIVED';
+
+export interface PirPlanLink {
+  id: string;
+  name: string;
+  status: string;
+  source_count: number;
+  records_acquired: number;
+  created_at: string;
+}
+
+export interface Pir {
+  id: string;
+  project_id: string;
+  title: string;
+  text: string;
+  refined_text: string;
+  eeis: string[];
+  priority: string;
+  status: PirStatus;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  plan_count: number;
+  plans: PirPlanLink[];
+}
+
+export const pirsApi = {
+  list: (projectId: string, status?: PirStatus) =>
+    api.get<Pir[]>('/pirs', { params: { project_id: projectId, status } }),
+  get: (id: string) => api.get<Pir>(`/pirs/${id}`),
+  create: (data: {
+    project_id: string; text: string; title?: string; refined_text?: string;
+    eeis?: string[]; priority?: string; status?: PirStatus; created_by?: string;
+  }) => api.post<Pir>('/pirs', data),
+  update: (id: string, data: {
+    title?: string; text?: string; refined_text?: string;
+    eeis?: string[]; priority?: string; status?: PirStatus;
+  }) => api.put<Pir>(`/pirs/${id}`, data),
+  delete: (id: string) => api.delete(`/pirs/${id}`),
+};
+
 // Collection Plans — new managed pipeline
 export interface CollectionPlan {
   id: string;
@@ -369,6 +413,7 @@ export interface CollectionPlan {
   description: string;
   requirement: string;
   pir: string;
+  pir_id: string | null;
   refined_pir: string;
   status: string;
   routing_rules: Record<string, unknown>;
@@ -443,7 +488,7 @@ export interface DataCatalogEntry {
 
 export const collectionPlansApi = {
   // Plans
-  create: (data: { project_id: string; name: string; description?: string; requirement?: string; pir?: string; routing_rules?: object; created_by?: string }) =>
+  create: (data: { project_id: string; name: string; description?: string; requirement?: string; pir?: string; pir_id?: string; routing_rules?: object; created_by?: string }) =>
     api.post<CollectionPlan>('/collection-plans', data),
   list: (projectId?: string, status?: string) =>
     api.get<CollectionPlan[]>('/collection-plans', { params: { project_id: projectId, status } }),
@@ -501,8 +546,9 @@ export const collectionPlansApi = {
   activity: (planId: string, since?: string) =>
     api.get<CollectionActivityEntry[]>(`/collection-plans/${planId}/activity`, { params: { since } }),
 
-  // PIR-driven plan creation (unified flow)
-  fromPir: (data: { project_id: string; pir: string; extraction_mode?: string; created_by?: string }) =>
+  // PIR-driven plan creation (unified flow). Pass pir_id to run against an
+  // existing requirement; omit it and the backend persists/reuses one from `pir`.
+  fromPir: (data: { project_id: string; pir: string; pir_id?: string; extraction_mode?: string; created_by?: string }) =>
     api.post<CollectionPlan & { llm_plan_text?: string }>('/collection-plans/from-pir', data),
   execute: (planId: string, maxResultsPerSource?: number) =>
     api.post<CollectionPlan & { execution_status: string; message: string }>(

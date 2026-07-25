@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { collectionsApi, collectionPlansApi, ingestApi, llmApi, CollectionPlan, CollectionActivityEntry } from '@/lib/api';
+import { collectionsApi, collectionPlansApi, ingestApi, llmApi, pirsApi, CollectionPlan, CollectionActivityEntry, Pir } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 
 interface Collection {
@@ -49,8 +50,22 @@ const SOURCE_TYPE_ICONS: Record<string, string> = {
 };
 
 export default function CollectionsPage() {
+  return (
+    <Suspense fallback={<div className="flex"><Sidebar /><main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8"><p className="text-gray-400">Loading...</p></main></div>}>
+      <CollectionsWorkflow />
+    </Suspense>
+  );
+}
+
+function CollectionsWorkflow() {
   const { activeProject } = useProject();
+  const searchParams = useSearchParams();
   const [pir, setPir] = useState('');
+  // The persisted requirement this run answers to (see /pirs). Arrives via
+  // ?pir=<id> from the project hub, or is picked below; passed to from-pir so
+  // the plan links back instead of the PIR being retyped free text each run.
+  const [projectPirs, setProjectPirs] = useState<Pir[]>([]);
+  const [selectedPirId, setSelectedPirId] = useState<string>('');
   const [collections, setCollections] = useState<Collection[]>([]);
   const [collectionsLoading, setCollectionsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -124,10 +139,37 @@ export default function CollectionsPage() {
     }
   }, [activeProject]);
 
+  const loadPirs = useCallback(async () => {
+    if (!activeProject) return;
+    try {
+      const res = await pirsApi.list(activeProject.id);
+      setProjectPirs(res.data);
+    } catch (e) {
+      console.error('Failed to load PIRs', e);
+    }
+  }, [activeProject]);
+
   useEffect(() => {
     loadCollections();
     loadPlans();
-  }, [loadCollections, loadPlans]);
+    loadPirs();
+  }, [loadCollections, loadPlans, loadPirs]);
+
+  // Arriving from the project hub's "Collect" action: preload that requirement.
+  const pirParam = searchParams.get('pir');
+  useEffect(() => {
+    if (!pirParam || projectPirs.length === 0) return;
+    const match = projectPirs.find(p => p.id === pirParam);
+    if (!match) return;
+    setSelectedPirId(match.id);
+    setPir(prev => prev || match.refined_text || match.text);
+  }, [pirParam, projectPirs]);
+
+  function selectPir(pirId: string) {
+    setSelectedPirId(pirId);
+    const match = projectPirs.find(p => p.id === pirId);
+    if (match) setPir(match.refined_text || match.text);
+  }
 
   useEffect(() => {
     const activeTasks = collections.filter(c => {
@@ -181,6 +223,7 @@ export default function CollectionsPage() {
 
   function resetWorkflow() {
     setPir('');
+    setSelectedPirId('');
     setRefinedPir(null);
     setRefineAnalysis(null);
     setRefineError(null);
@@ -247,10 +290,14 @@ PIR: ${pirText}` }],
       const res = await collectionPlansApi.fromPir({
         project_id: activeProject.id,
         pir: pirText,
+        // Anchor the plan on the selected requirement; without one the backend
+        // persists (or reuses) a PIR from this text, so the spine still forms.
+        pir_id: selectedPirId || undefined,
         extraction_mode: extractionMode,
       });
       const plan = res.data;
       setActivePlan(plan);
+      loadPirs();
 
       // Convert plan sources to plan items for approval UI
       const items: PlanItem[] = (plan.sources || []).map((src, i) => ({
@@ -463,6 +510,35 @@ PIR: ${pirText}` }],
 
               {step1Open && (
                 <div className="border-t border-[#252a39] p-4 md:p-6 space-y-4 bg-[#0d1220]">
+                  {/* Existing requirement selector — keeps this run tied to the
+                      project's PIR spine instead of re-typing the question. */}
+                  {projectPirs.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Requirement</span>
+                      <select
+                        value={selectedPirId}
+                        onChange={(e) => selectPir(e.target.value)}
+                        aria-label="Existing PIR"
+                        className="bg-[#1a1f2e] border border-[#353a49] text-xs text-gray-300 rounded px-2 py-1.5 max-w-full focus:outline-none focus:ring-1 focus:ring-[#adc6ff]"
+                      >
+                        <option value="">New requirement (not yet tracked)</option>
+                        {projectPirs.map(p => (
+                          <option key={p.id} value={p.id}>
+                            [{p.status}] {p.title || p.text.slice(0, 60)}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedPirId && (
+                        <button
+                          onClick={() => setSelectedPirId('')}
+                          className="text-[10px] text-gray-500 hover:text-gray-300 uppercase tracking-wider font-bold"
+                        >
+                          Unlink
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {/* PIR Input */}
                   <div>
                     <textarea
