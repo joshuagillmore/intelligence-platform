@@ -37,16 +37,32 @@ def get_execution_status(plan_id: str) -> dict | None:
     return _running_executions.get(plan_id)
 
 
+def over_source_budget(attempted: int, source_limit: int | None) -> bool:
+    """True when the collection budget is spent and this source must be skipped.
+
+    Shared by both execution paths so the rule is defined once and the tests bind
+    to the shipped predicate rather than to a copy of it. `attempted` counts
+    sources actually collected, so pre-failed sources do not consume budget.
+    """
+    return source_limit is not None and attempted >= source_limit
+
+
 async def execute_plan(
     plan_id: str,
     db_factory: async_sessionmaker[AsyncSession],
     store: GraphStore,
     extraction_mode: str = "nlp",
+    source_limit: int | None = None,
 ) -> dict:
     """Execute all sources in a collection plan autonomously.
 
     Designed to run as asyncio.create_task() — creates its own DB session
     since the request session is closed after the response is sent.
+
+    `source_limit` caps how many sources are actually collected, so a
+    requirement can be answered *or* stop against a stated collection budget.
+    Without it the planner's proposed source count is the only bound, and a plan
+    given a budget of 3 would happily run 5.
     """
     execution_id = str(uuid.uuid4())
     _running_executions[plan_id] = {
@@ -76,9 +92,26 @@ async def execute_plan(
             status = _running_executions[plan_id]
             status["sources_total"] = len(sources)
 
+            status["source_limit"] = source_limit
+            attempted = 0
+
             for source in sources:
                 if not source.enabled:
                     status["sources_skipped"] += 1
+                    continue
+
+                # Stop against the collection budget. Recorded as an explicit
+                # event so the plan reports "stopped on budget" rather than
+                # looking as though it simply had fewer sources.
+                if over_source_budget(attempted, source_limit):
+                    status["sources_skipped"] += 1
+                    status["stopped_on_source_limit"] = True
+                    status["source_results"].append({
+                        "source_id": str(source.id),
+                        "source_name": source.name,
+                        "result": "skipped",
+                        "reason": f"source budget of {source_limit} reached",
+                    })
                     continue
 
                 # Skip file_upload sources (require manual upload)
@@ -117,6 +150,11 @@ async def execute_plan(
                         db, source, plan, "SKIPPED", error_message="Missing required config",
                     )
                     continue
+
+                # Counted here, not at the top of the loop: budget is spent by
+                # sources actually collected, so a file_upload or misconfigured
+                # source that was skipped above does not consume it.
+                attempted += 1
 
                 # Execute this source
                 result = await _execute_source(

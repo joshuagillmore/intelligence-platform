@@ -174,6 +174,7 @@ async def map_project_ttps(
     if not ttps:
         return {"mapped": 0, "skipped": 0}
 
+
     # Embedding provider — degrade whole batch to skips if unavailable/unreachable.
     if embedding_provider is None:
         try:
@@ -205,6 +206,26 @@ async def map_project_ttps(
 
     top_k = int(getattr(settings, "attack_mapping_top_k", 5) or 5)
     threshold = float(getattr(settings, "attack_mapping_confidence_min", 0.5) or 0.5)
+
+    # The technique catalogue has to be embedded before anything can match. When
+    # it is not, every TTP retrieves zero candidates and the result is
+    # {"mapped": 0, "skipped": N} — indistinguishable from "the model rejected
+    # every candidate". Checked here rather than earlier so a known-unreachable
+    # provider still short-circuits without touching the database.
+    try:
+        embedded = (
+            await session.execute(sql_text("SELECT count(*) FROM attack_technique_embeddings"))
+        ).scalar_one()
+    except Exception:
+        logger.warning("Could not count ATT&CK technique embeddings", exc_info=True)
+        embedded = None
+    if embedded == 0:
+        return {
+            "mapped": 0,
+            "skipped": len(ttps),
+            "reason": "technique_catalogue_not_embedded",
+            "detail": "Run POST /api/attack/embed to embed the ATT&CK catalogue before mapping.",
+        }
 
     mapped = 0
     skipped = 0

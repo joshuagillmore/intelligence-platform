@@ -498,6 +498,15 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
         # does not have to re-derive it on the next run.
         pir_record.refined_text = refined_pir
 
+    if pir_record and plan_description and not pir_record.eeis:
+        # The refinement already decomposes the requirement into EEIs; capturing
+        # them here is what makes satisfaction measurable later (`/pirs/{id}/assess`).
+        from intel_platform.api.routes.pirs import extract_eeis
+
+        captured = extract_eeis(plan_description)
+        if captured:
+            pir_record.eeis = captured
+
     plan = CollectionPlan(
         project_id=req.project_id,
         name=f"PIR: {pir_text[:80]}{'...' if len(pir_text) > 80 else ''}",
@@ -557,6 +566,10 @@ class ExecuteRequest(BaseModel):
     # How many results to pull per source: URLs/pages for web_scrape/database/
     # api_feed, items for rss_feed. Clamped to 1..25.
     max_results_per_source: int = 10
+    # Collection budget: stop after this many sources even if the plan proposes
+    # more. Pairs with `POST /pirs/{id}/assess`, which reports whether the
+    # requirement was answered or the budget ran out first.
+    source_limit: int | None = Field(default=None, ge=1)
 
 
 @router.post("/collection-plans/{plan_id}/execute")
@@ -595,8 +608,13 @@ async def execute_plan_endpoint(
     if not executable and not file_only:
         warnings.append("No sources are ready for autonomous execution. Add URLs to source configs or upload files manually.")
 
-    # Activate the plan
+    # Activate the plan, recording the collection budget it was given. The PIR
+    # assessor reports "stopped on the source limit", which must rest on what
+    # the run was actually allowed rather than on a number the caller re-supplies
+    # at assessment time.
     plan.status = PlanStatus.ACTIVE
+    if body and body.source_limit:
+        plan.routing_rules = {**(plan.routing_rules or {}), "source_limit": body.source_limit}
     plan.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(plan)
@@ -611,6 +629,7 @@ async def execute_plan_endpoint(
     from intel_platform.api.routes.llm import _get_collection_provider
 
     all_auto = [s for s in sources if s.enabled and s.source_type != "file_upload"]
+    source_limit = body.source_limit if body else None
     if all_auto:
         session_factory = get_session_factory()
         max_results = max(1, min(25, body.max_results_per_source if body else 10))
@@ -623,6 +642,7 @@ async def execute_plan_endpoint(
                 # Ollama when configured), keeping the cloud key for products.
                 get_provider=_get_collection_provider,
                 max_results_per_source=max_results,
+                source_limit=source_limit,
             )
         )
 
@@ -631,9 +651,11 @@ async def execute_plan_endpoint(
         "execution_status": "started" if all_auto else "no_executable_sources",
         "message": f"Agentic execution started with {len(all_auto)} source(s)." if all_auto
                    else "Plan activated but no automated sources found.",
-        "sources_queued": len(all_auto),
+        "sources_queued": min(len(all_auto), source_limit) if source_limit else len(all_auto),
         "sources_manual": len(file_only),
         "sources_missing_config": len(missing_config),
+        "source_limit": source_limit,
+        "sources_over_budget": max(0, len(all_auto) - source_limit) if source_limit else 0,
         "warnings": warnings,
     }
 

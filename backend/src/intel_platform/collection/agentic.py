@@ -23,6 +23,7 @@ from intel_platform.db.models import (
 from intel_platform.models.entities import Document
 from intel_platform.services.graph_builder import build_graph_from_extractions
 from intel_platform.services.ingestion import ingest_text
+from intel_platform.services.plan_executor import over_source_budget
 
 logger = logging.getLogger(__name__)
 
@@ -687,7 +688,10 @@ async def evaluate_results(source, plan, acquire_result, provider):
 # Main entry point: run_agentic_loop
 # ---------------------------------------------------------------------------
 
-async def run_agentic_loop(plan_id, db_factory, get_store, get_provider, max_results_per_source: int = 10):
+async def run_agentic_loop(
+    plan_id, db_factory, get_store, get_provider,
+    max_results_per_source: int = 10, source_limit: int | None = None,
+):
     """Background task: resolve, acquire, and evaluate all sources in a plan.
 
     Args:
@@ -695,6 +699,10 @@ async def run_agentic_loop(plan_id, db_factory, get_store, get_provider, max_res
         db_factory: async_sessionmaker (not request-scoped)
         get_store: callable returning GraphStore
         get_provider: async callable returning LLM provider
+        source_limit: cap on how many sources are actually collected. A
+            requirement should be answerable *or* stop against a stated
+            collection budget; without this the planner's proposed source count
+            is the only bound, so a plan given a budget of 3 ran all 5.
     """
     try:
         provider = await _get_agentic_provider(get_provider)
@@ -742,10 +750,24 @@ async def run_agentic_loop(plan_id, db_factory, get_store, get_provider, max_res
         from intel_platform.config import settings
         extraction_mode = (plan.routing_rules or {}).get("extraction_mode") or settings.extraction_mode
 
+        attempted = 0
         for source in sources:
             if source.collection_status == "failed":
                 failed += 1
                 continue
+
+            # Stop against the collection budget, and say so explicitly — the
+            # analyst needs to distinguish "the plan was this small" from "the
+            # budget ran out with sources still queued".
+            if over_source_budget(attempted, source_limit):
+                db.add(CollectionActivity(
+                    plan_id=plan.id, source_id=source.id,
+                    event="source_skipped",
+                    message=f"Source budget of {source_limit} reached — not collected",
+                ))
+                await db.commit()
+                continue
+            attempted += 1
 
             # Mark collecting
             source.collection_status = "collecting"
