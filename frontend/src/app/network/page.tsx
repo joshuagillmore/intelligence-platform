@@ -11,6 +11,7 @@ import { entitiesApi, graphApi, queryApi, llmApi, assessApi, analysisApi, watchl
 import { useAssistant } from '@/lib/AssistantContext';
 import { TYPE_COLOR_CLASS as TYPE_COLORS } from '@/lib/entityStyles';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
+import EvidenceChain from '@/components/EvidenceChain';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { collapseToCommunities } from '@/lib/graphLayout';
 import { useNotifications } from '@/components/NotificationProvider';
@@ -33,6 +34,12 @@ interface Relationship {
   source_name?: string;
   target_name?: string;
   evidence?: string;
+  // Provenance carried on the edge — see components/EvidenceChain.
+  source_doc_id?: string;
+  admiralty_rating?: string;
+  corroboration_count?: number;
+  corroboration_agreement?: string;
+  method?: string;
 }
 
 interface GraphNode {
@@ -2085,14 +2092,27 @@ function NetworkPageInner() {
                             {relEvidenceOpen[i] ? 'Hide Evidence' : 'Show Evidence'}
                           </button>
                           {relEvidenceOpen[i] && (
-                            <div className="mt-1.5">
-                              {rel.evidence ? (
-                                <div className="bg-navy-800 rounded p-1.5 text-[10px] text-gray-400 leading-relaxed italic">
-                                  &ldquo;{rel.evidence}&rdquo;
-                                </div>
-                              ) : (
-                                <p className="text-[10px] text-gray-500 italic">No captured evidence — re-run extraction to populate.</p>
-                              )}
+                            <div className="mt-2">
+                              {/* Full provenance: the claim, how sure, how corroborated,
+                                  how the source is graded, and the verbatim basis. */}
+                              <EvidenceChain
+                                relationship={rel}
+                                document={
+                                  rel.source_doc_id
+                                    ? (() => {
+                                        // evidenceDocs is already loaded for this entity —
+                                        // reuse it rather than re-fetching document names.
+                                        const d = evidenceDocs.find(x => x.id === rel.source_doc_id);
+                                        return {
+                                          id: rel.source_doc_id,
+                                          name: d?.name || 'Source document',
+                                          reliability: d?.reliability_rating || undefined,
+                                        };
+                                      })()
+                                    : null
+                                }
+                                onOpenDocument={(id) => networkRouter.push(`/documents/${id}`)}
+                              />
                             </div>
                           )}
                         </div>

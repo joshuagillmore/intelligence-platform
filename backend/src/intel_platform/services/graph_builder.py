@@ -215,6 +215,9 @@ def build_graph_from_extractions(
             # Carry the source-sentence evidence through to the edge (was dropped
             # here before, so "Show Evidence" had no real per-edge reference).
             evidence=rel_data.get("evidence", ""),
+            # ...and the document it came from, so the evidence chain can end at
+            # a real source instead of an unattributed quotation.
+            source_doc_id=rel_data.get("source_doc_id", "") or source_doc_id,
         )
         store.create_relationship(rel)
         rels_created += 1

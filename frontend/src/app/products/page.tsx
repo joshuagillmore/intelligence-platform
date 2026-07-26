@@ -8,6 +8,7 @@ import { entitiesApi, reportsApi, exportApi } from '@/lib/api';
 import { useNotifications } from '@/components/NotificationProvider';
 import Markdown from '@/components/Markdown';
 import PrintableProduct from '@/components/PrintableProduct';
+import EvidenceChain, { type EvidenceRelationship } from '@/components/EvidenceChain';
 import {
   buildProductFilename,
   buildProductMarkdown,
@@ -110,6 +111,7 @@ function ProductsPageContent() {
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [productContext, setProductContext] = useState<ProductContext | null>(null);
   const [reportMeta, setReportMeta] = useState<{ retrievalMode: string; contextNodes: number; contextEdges: number } | null>(null);
+  const [reportEvidence, setReportEvidence] = useState<EvidenceRelationship[]>([]);
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [reportHistory, setReportHistory] = useState<ReportHistoryItem[]>([]);
@@ -237,6 +239,7 @@ function ProductsPageContent() {
     setLoading(true);
     setGeneratedReport(null);
     setGenerateError(null);
+    setReportEvidence([]);
     setProductContext(null);
     setReportMeta(null);
     setViewingHistoryId(null);
@@ -266,6 +269,9 @@ function ProductsPageContent() {
         contextNodes: res.data.context_nodes || 0,
         contextEdges: res.data.context_edges || 0,
       });
+      // The relationships this product was actually drawn from, so a reader can
+      // check a claim instead of taking the narrative on trust.
+      setReportEvidence(Array.isArray(res.data.evidence) ? res.data.evidence : []);
 
       // Add to history
       const historyId = Date.now().toString();
@@ -371,6 +377,7 @@ function ProductsPageContent() {
     setViewingHistoryId(null);
     setReportMeta(null);
     setGenerateError(null);
+    setReportEvidence([]);
     const sourceId = `saved:${report.id}`;
     setProductContext({
       sourceId,
@@ -460,6 +467,7 @@ function ProductsPageContent() {
     setViewingSavedReport(null);
     setReportMeta(null);
     setGenerateError(null);
+    setReportEvidence([]);
     setProductContext({
       sourceId: `history:${item.id}`,
       title: `${item.reportType} — ${activeProject?.name ?? ''}`.trim().replace(/\s+—\s*$/, ''),
@@ -756,6 +764,25 @@ function ProductsPageContent() {
                 <div className="prose prose-invert prose-sm max-w-none">
                   <div className="text-sm rounded-lg p-4 max-h-[600px] overflow-y-auto border border-navy-600" style={{ backgroundColor: '#0e1321' }}>
                     <Markdown content={generatedReport} />
+
+                    {/* The basis. A product that asserts a probability should show
+                        what it rests on, not just how many nodes were retrieved. */}
+                    {reportEvidence.length > 0 && (
+                      <section className="mt-6 pt-5 border-t border-navy-700">
+                        <h4 className="text-[10px] uppercase tracking-[0.16em] text-gray-500 font-bold mb-1">
+                          Evidence
+                        </h4>
+                        <p className="text-[11px] text-gray-500 mb-3">
+                          {reportEvidence.length} relationship{reportEvidence.length !== 1 ? 's' : ''} this
+                          product was drawn from. Each can be traced to the sentence that asserted it.
+                        </p>
+                        <div className="space-y-2">
+                          {reportEvidence.map((ev, i) => (
+                            <EvidenceChain key={i} relationship={ev} />
+                          ))}
+                        </div>
+                      </section>
+                    )}
                   </div>
                 </div>
               </div>

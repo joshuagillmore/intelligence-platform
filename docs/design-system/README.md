@@ -82,3 +82,19 @@ the interface actually needs, then declare exactly that many.
 Also remaining: 33 `style={{ backgroundColor: '#1a1f2e' }}` inline objects,
 several behind conditionals. Converting them needs per-site JSX judgement rather
 than a find/replace.
+
+## Generated cards
+
+`components/evidence-chain.html` is **not hand-authored**. It is produced by
+`frontend/tests/e2e/generate-ds-card.spec.ts`, which renders the live
+`EvidenceChain` component against real API data and lifts the resulting markup:
+
+```bash
+CAPTURE_PROJECT_ID=<uuid> CAPTURE_ENTITY=<entity-id> \
+  npx playwright test generate-ds-card.spec.ts
+```
+
+The card therefore cannot describe a component that no longer exists, or values
+the app does not produce. Regenerate it after changing the component. Other cards
+remain hand-authored against the real tokens; this is the pattern to follow as
+more components stabilise.

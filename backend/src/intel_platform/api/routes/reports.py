@@ -17,6 +17,47 @@ from intel_platform.services.reports import ReportService
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 logger = logging.getLogger(__name__)
 
+# Cap on how many supporting relationships a product carries. Enough to make the
+# basis checkable without turning the response into a graph dump.
+_MAX_EVIDENCE = 40
+
+
+def _evidence_from_retrieval(retrieved: dict | None) -> list[dict]:
+    """The relationships a product was drawn from, with their provenance.
+
+    Edges that captured a source sentence come first — those are the ones a
+    reader can actually verify. Returns [] when nothing was retrieved, which is
+    the honest answer for an ungrounded product.
+    """
+    if not retrieved:
+        return []
+    edges = retrieved.get("edges") or []
+
+    def field(edge: dict, key: str, default=None):
+        # get_subgraph nests relationship properties under "props";
+        # get_relationships spreads them. Read either shape.
+        props = edge.get("props") or {}
+        value = edge.get(key, props.get(key, default))
+        return default if value is None else value
+
+    trimmed = [
+        {
+            "source_name": e.get("source_name", ""),
+            "target_name": e.get("target_name", ""),
+            "rel_type": e.get("rel_type", ""),
+            "confidence": field(e, "confidence"),
+            "evidence": field(e, "evidence", ""),
+            "source_doc_id": field(e, "source_doc_id", ""),
+            "admiralty_rating": field(e, "admiralty_rating", ""),
+            "corroboration_count": field(e, "corroboration_count", 1),
+            "corroboration_agreement": field(e, "corroboration_agreement", ""),
+            "method": field(e, "method", ""),
+        }
+        for e in edges
+    ]
+    trimmed.sort(key=lambda x: (not x["evidence"], -(x["confidence"] or 0)))
+    return trimmed[:_MAX_EVIDENCE]
+
 
 class SaveReportRequest(BaseModel):
     project_id: str
@@ -88,6 +129,9 @@ async def generate_report(
     context_nodes = 0
     context_edges = 0
     vector_hits = 0
+    # Stays None when nothing was retrieved (no entity_ids), which the evidence
+    # helper treats as "no supporting evidence" rather than failing.
+    retrieved: dict | None = None
 
     if req.entity_ids:
         understanding = {
@@ -203,6 +247,10 @@ async def generate_report(
         "retrieval_mode": retrieval_mode,
         "context_nodes": context_nodes,
         "context_edges": context_edges,
+        # The relationships the product was actually drawn from, with their
+        # provenance. Only counts were returned before, so a reader had no way
+        # to check a claim — the evidence existed but never left the backend.
+        "evidence": _evidence_from_retrieval(retrieved),
     }
     if req.skill_name in ("threat_assessment", "report_writing"):
         prob_match = re.search(r'PROBABILITY:\s*([01]\.\d+)', result.content)

@@ -24,6 +24,10 @@ class Relationship(BaseModel):
     # The source sentence(s) that assert this relationship — the in-context
     # reference surfaced by "Show Evidence". Empty when no span was captured.
     evidence: str = ""
+    # The document the evidence came from, so a claim can be traced back to its
+    # origin rather than stopping at a floating quotation. Empty for edges built
+    # before this was carried through, and for edges with no single source.
+    source_doc_id: str = ""
     first_seen: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_seen: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     admiralty_rating: str = ""
