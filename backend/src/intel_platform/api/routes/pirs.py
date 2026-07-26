@@ -285,6 +285,11 @@ _EEI_LINE = re.compile(
 
 _EEI_HEADING = re.compile(r"essential elements|\bEEIs?\b", re.IGNORECASE)
 
+# Crawled pages yield large numbers of URLs, bare domains and the Document nodes
+# themselves. They are legitimate graph content but carry almost no answer to a
+# requirement, and they crowd the substantive entities out of the judge's window.
+_LOW_SIGNAL_TYPES = frozenset({"URL", "Domain", "Document", "Topic", "Report", "Collection"})
+
 # Models double-label: "3. EEI 3: Specific devices…". The outer marker is
 # consumed by _EEI_LINE, so strip the inner one too or it lands in the criterion.
 _EEI_PREFIX = re.compile(r"^EEI\s*\d*\s*[:.\-]\s*", re.IGNORECASE)
@@ -419,31 +424,43 @@ async def assess_pir(
         # assessable instead of silently reporting "nothing to check".
         eeis = [pir.refined_text or pir.text]
 
-    entities = store.search_entities(pir.project_id, limit=400)
+    entities = store.search_entities(pir.project_id, limit=600)
     by_type: dict[str, int] = {}
     for ent in entities:
         key = ent.get("entity_type", "?")
         by_type[key] = by_type.get(key, 0) + 1
 
+    # `search_entities` orders by name, so a naive head-slice hands the judge an
+    # alphabetical sample dominated by crawl furniture — measured on a live run:
+    # 400 entities considered, the ThreatActors and Campaigns never shown, and
+    # the requirement wrongly reported as having no evidence at all. Rank so the
+    # substantive entities are the ones that fit in the window.
+    substantive = [e for e in entities if e.get("entity_type") not in _LOW_SIGNAL_TYPES]
+    ranked = substantive or entities
+
     facts: list[str] = []
-    for ent in entities[:60]:
-        for rel in store.get_relationships(ent.get("id", ""))[:4]:
-            line = (
-                f"{rel.get('source_name', '?')} --{rel.get('rel_type', '?')}--> "
-                f"{rel.get('target_name', '?')}"
-            )
-            if rel.get("evidence"):
-                line += f" :: {str(rel['evidence'])[:150]}"
-            facts.append(line)
-        if len(facts) >= 120:
+    seen_facts: set[str] = set()
+    for ent in ranked[:150]:
+        for rel in store.get_relationships(ent.get("id", ""))[:6]:
+            if rel.get("target_name") and rel.get("source_name"):
+                line = (
+                    f"{rel['source_name']} --{rel.get('rel_type', '?')}--> {rel['target_name']}"
+                )
+                if rel.get("evidence"):
+                    line += f" :: {str(rel['evidence'])[:200]}"
+                if line not in seen_facts:
+                    seen_facts.add(line)
+                    facts.append(line)
+        if len(facts) >= 200:
             break
 
     context = (
         f"Entity types collected: {by_type}\n\n"
-        f"Named entities ({min(len(entities), 120)} of {len(entities)}):\n"
-        + ", ".join(e.get("name", "") for e in entities[:120])
+        f"Named entities ({min(len(ranked), 200)} of {len(entities)}, "
+        "web furniture such as URLs and bare domains omitted):\n"
+        + ", ".join(e.get("name", "") for e in ranked[:200])
         + "\n\nAsserted relationships and their evidence:\n"
-        + "\n".join(facts[:120])
+        + "\n".join(facts[:200])
     )
 
     assessments: list[dict] = []
@@ -462,9 +479,11 @@ async def assess_pir(
                 "Judge each EEI ONLY against the collected intelligence above. Do not use "
                 "background knowledge: an element the collection did not answer is unmet, "
                 "however well you happen to know the subject.\n\n"
-                "End with a machine-readable block in exactly this format, one line per EEI:\n"
+                f"End with a machine-readable block: exactly {len(eeis)} lines, one per EEI, "
+                f"numbered 1 to {len(eeis)}, no line omitted even when the verdict is UNMET.\n"
                 "EEI_ASSESSMENT:\n"
-                "1 | SATISFIED | one-line justification citing the collected evidence"
+                "1 | SATISFIED | one-line justification citing the collected evidence\n"
+                "2 | UNMET | one-line statement of what is missing"
             )}],
             system=(
                 "You are an intelligence collection manager judging whether a requirement "
