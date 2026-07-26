@@ -103,6 +103,34 @@ Should we follow up on any specific leads found in this content?"""
 # Helper: Extract entities from text content
 # ---------------------------------------------------------------------------
 
+_AUTH_WALL_PATH = re.compile(
+    r"/(?:login|signin|sign-in|register|subscribe|paywall|account/login)(?:[/?#]|$)",
+    re.IGNORECASE,
+)
+
+_AUTH_WALL_PHRASES = (
+    "sign in to continue", "subscribe to read", "subscribe to continue",
+    "log in to read", "login to continue", "this content is for subscribers",
+    "create an account to read", "you have reached your article limit",
+    "please sign in to access", "members only",
+)
+
+
+def _is_auth_wall(url: str, content: str) -> bool:
+    """True for login and paywall pages, which return 200 and a body of chrome.
+
+    Extracting one produces entities that look entirely real — a live crawl of
+    an institute's login page contributed its conference calendar to the graph
+    as six intelligence "events". Judged on the URL path first, then on the
+    handful of phrases these pages actually use, checked only against the head
+    of the document so an article *about* paywalls is not discarded.
+    """
+    if url and _AUTH_WALL_PATH.search(url):
+        return True
+    head = (content or "")[:1500].lower()
+    return any(phrase in head for phrase in _AUTH_WALL_PHRASES)
+
+
 def _clean_scraped_content(text: str) -> str:
     """Remove navigation, boilerplate, and noise from scraped web content."""
     lines = text.split('\n')
@@ -566,6 +594,15 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
     for record in result.records:
         content = record.get("content", "")
         if not content or len(content) < 50:
+            continue
+
+        # A login or paywall page still returns 200 and a body full of site
+        # chrome. Measured live: a crawl of iiss.org/login/?redirectUrl=… was
+        # extracted as intelligence, and the analyst's graph gained six "events"
+        # that were the institute's conference calendar. Nothing downstream can
+        # recover from that — the entities look real.
+        if _is_auth_wall(record.get("url", ""), content):
+            logger.info("Skipping auth-wall page: %s", record.get("url", "")[:120])
             continue
 
         # Clean scraped content to remove navigation, boilerplate, ads
