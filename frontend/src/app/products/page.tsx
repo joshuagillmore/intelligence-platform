@@ -1,5 +1,6 @@
 'use client';
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { Suspense, useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import { useProject } from '@/lib/ProjectContext';
@@ -80,8 +81,27 @@ interface ProductContext {
 const ENTITY_RESOLVE_LIMIT = 25;
 
 export default function ProductsPage() {
+  // useSearchParams needs a Suspense boundary under the App Router.
+  return (
+    <Suspense fallback={
+      <div className="flex"><Sidebar />
+        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
+          <p className="text-gray-400">Loading…</p>
+        </main>
+      </div>}>
+      <ProductsPageContent />
+    </Suspense>
+  );
+}
+
+function ProductsPageContent() {
   const { activeProject } = useProject();
   const { addNotification, updateNotification } = useNotifications();
+  const searchParams = useSearchParams();
+  // Search links here as /products?report=<id>; open that one rather than
+  // dropping the analyst on an undifferentiated list.
+  const requestedReportId = searchParams.get('report');
+  const openedFromUrl = useRef<string | null>(null);
   const [reportType, setReportType] = useState('threat_assessment');
   const [entitySearch, setEntitySearch] = useState('');
   const [searchResults, setSearchResults] = useState<SearchedEntity[]>([]);
@@ -153,6 +173,19 @@ export default function ProductsPage() {
   useEffect(() => {
     loadSavedReports();
   }, [loadSavedReports]);
+
+  // Open the report named in ?report=<id> once its row has loaded. Guarded so
+  // it fires only once per id — the analyst can navigate away afterwards.
+  useEffect(() => {
+    if (!requestedReportId || openedFromUrl.current === requestedReportId) return;
+    const match = savedReports.find(r => String(r.id) === requestedReportId);
+    if (!match) return;
+    openedFromUrl.current = requestedReportId;
+    viewSavedReport(match);
+    // viewSavedReport is a stable component-scope function; savedReports is the
+    // real trigger here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedReportId, savedReports]);
 
   useEffect(() => {
     if (toast) {

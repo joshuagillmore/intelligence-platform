@@ -731,6 +731,13 @@ export const geoApi = {
 export const searchApi = {
   search: (projectId: string, query: string) =>
     api.get('/search', { params: { project_id: projectId, q: query } }),
+  /**
+   * Meaning-based retrieval over document chunks (pgvector). Returns passages
+   * with a similarity score rather than name matches, so it finds material
+   * that never uses the query's words.
+   */
+  semantic: (projectId: string, query: string) =>
+    api.post('/search/semantic', { project_id: projectId, query }),
 };
 
 export const exportApi = {
