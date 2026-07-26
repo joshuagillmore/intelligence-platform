@@ -24,64 +24,61 @@ card that broke a flex row. There was no canonical reference. This is it.
 ## Sync
 
 ```bash
-# one component at a time — never a wholesale replace
 claude mcp list                       # claude-design should be ✓ Connected
 ```
-Then ask Claude Code to sync; it uses `DesignSync` (`finalize_plan` → `write_files`).
+
+Then ask Claude Code to sync; it uses `DesignSync` (`finalize_plan` →
+`write_files`), one component at a time rather than a wholesale replace.
 Remote project: **SENTINEL Design System**.
 
-## Contents
+## Contents — 14 cards
 
 | Group | Card | Covers |
 |-------|------|--------|
 | Foundations | `colors` | navy surfaces, accent, threat severity scale |
 | Foundations | `typography` | Inter / JetBrains Mono, the real type scale |
 | Foundations | `entity-colours` | per-type colour SSOT shared by graph, map, badges |
+| Foundations | `token-adherence` | the rule, the consolidation, the open decision |
+| Workflow | `pir-panel` | requirements spine, OPEN→SATISFIED lifecycle |
+| Workflow | `collection-plan` | plan lifecycle + per-source health |
+| Workflow | `attack-coverage` | ATT&CK cell states, sub-technique nesting |
 | Components | `severity-stat-card` | triage strip, count / percent / progress variants |
 | Components | `badges-and-confidence` | type badges, relationship evidence, probability + admiralty |
 | Components | `empty-and-error-states` | no-project CTA, failure alert |
 | Components | `intelligence-product` | rendered INTSUM with classification + export |
 | Components | `enrichment-panel` | provider results with provenance and cache status |
-
-## Added in the second pass
-
-| Group | Card | Covers |
-|-------|------|--------|
-| Foundations | `token-adherence` | the rule, plus measured drift (see below) |
-| Workflow | `pir-panel` | requirements spine, OPEN→SATISFIED lifecycle |
-| Workflow | `collection-plan` | plan lifecycle + per-source health |
-| Workflow | `attack-coverage` | ATT&CK cell states, sub-technique nesting |
 | Components | `assistant-panel` | Aegis with derived citations |
 | Components | `feedback` | the four toast states, and the anti-pattern |
 
 ## Token consolidation — done 2026-07-26
 
-240 sites converted, verified visually neutral (14 smoke + 5 mobile + 4 seeded E2E green):
+240 sites converted, verified visually neutral (lint, build, 96 vitest,
+14 smoke + 5 mobile + 4 seeded E2E, and pixel-equivalent rendered views):
 
 | Was | Sites | Now |
 |-----|-------|-----|
-|  — undeclared twin of  | 43 |  |
-|  /  arbitrary values | 51 |  |
-|  — the most-used colour, not a token | 146 |  (new token) |
+| `#2f3444` — undeclared twin of `navy-600` | 43 | `navy-600` |
+| `bg-[#1a1f2e]` / `border-[#1a1f2e]` arbitrary values | 51 | `bg-navy-800` / `border-navy-800` |
+| `[#adc6ff]` — the most-used colour, not a token | 146 | `accent-periwinkle` |
 
- was added to . Opacity modifiers
-(, , ) survive the conversion because Tailwind handles alpha on
-config colours — 42 of them were in play.
+`accent.periwinkle` was added to `tailwind.config.ts`. Opacity modifiers
+(`/15`, `/20`, `/30`) survive the conversion because Tailwind applies alpha to
+config colours — 42 were in play.
 
-## Still undeclared — deliberate decision needed
+## Still undeclared — a decision, not a sweep
 
 | Value | Role | Sites |
 |-------|------|-------|
-|  | sidebar / nav ground | 21 |
-|  | deep panel ground | 14 |
-|  | third near-black | 8 |
-|  | twin of  | 29 |
+| `#0e1321` | sidebar / nav ground | 21 |
+| `#090e1c` | deep panel ground | 14 |
+| `#0d1220` | third near-black | 8 |
+| `#252a39` | twin of `navy-700` | 29 |
 
-Four near-blacks against one declared . Unlike the twins above these
-may be intentional depth layering, so they are **not** swept — flattening them
-would collapse real hierarchy. Decide how many ground levels the interface needs,
-then declare exactly that many.
+Four near-blacks against one declared `navy-900`. Unlike the twins above, these
+may be intentional depth layering — flattening them would collapse real visual
+hierarchy, so they are reported rather than swept. Decide how many ground levels
+the interface actually needs, then declare exactly that many.
 
-Remaining: 33  inline objects, several
-behind conditionals. Converting them needs per-site JSX judgement rather than a
-find/replace.
+Also remaining: 33 `style={{ backgroundColor: '#1a1f2e' }}` inline objects,
+several behind conditionals. Converting them needs per-site JSX judgement rather
+than a find/replace.
