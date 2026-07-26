@@ -200,16 +200,64 @@ class GraphStore:
             raise ValueError(f"Invalid relationship type: {rel.rel_type}")
         props = self._serialize_props(rel.model_dump(exclude={"source_id", "target_id", "rel_type"}))
         with self._driver.session() as session:
-            result = session.run(
+            # Corroboration: the same claim asserted by a second document is not a
+            # second edge, it is the same edge with more support. Previously every
+            # assertion created a duplicate, so corroboration_count sat at 1
+            # forever and the graph accumulated near-identical edges.
+            existing = session.run(
                 """
-                MATCH (a {id: $source_id})
-                MATCH (b {id: $target_id})
-                CALL apoc.create.relationship(a, $rel_type, $props, b) YIELD rel
-                RETURN type(rel) as rel_type, rel
+                MATCH (a {id: $source_id})-[r]->(b {id: $target_id})
+                WHERE type(r) = $rel_type
+                RETURN r LIMIT 1
                 """,
-                source_id=rel.source_id, target_id=rel.target_id,
-                rel_type=rel.rel_type, props=props,
-            )
+                source_id=rel.source_id, target_id=rel.target_id, rel_type=rel.rel_type,
+            ).single()
+
+            if existing:
+                current = dict(existing["r"])
+                new_doc = props.get("source_doc_id") or ""
+                sources = list(current.get("corroboration_sources") or [])
+                if current.get("source_doc_id") and current["source_doc_id"] not in sources:
+                    sources.append(current["source_doc_id"])
+
+                # Only a *different* source corroborates. Two mentions inside one
+                # document are one source, not two — that distinction is the whole
+                # point of a corroboration count.
+                corroborated = bool(new_doc) and new_doc not in sources
+                if corroborated:
+                    sources.append(new_doc)
+
+                update = {
+                    "corroboration_count": max(len(sources), 1) if sources else int(current.get("corroboration_count") or 1),
+                    "corroboration_sources": sources,
+                    # Keep the strongest assessed confidence.
+                    "confidence": max(float(current.get("confidence") or 0), float(props.get("confidence") or 0)),
+                    # Keep the first captured sentence; it is the primary reference.
+                    "evidence": current.get("evidence") or props.get("evidence", ""),
+                    "source_doc_id": current.get("source_doc_id") or new_doc,
+                    "last_seen": props.get("last_seen") or current.get("last_seen"),
+                }
+                result = session.run(
+                    """
+                    MATCH (a {id: $source_id})-[r]->(b {id: $target_id})
+                    WHERE type(r) = $rel_type
+                    SET r += $update
+                    RETURN type(r) as rel_type, r as rel
+                    """,
+                    source_id=rel.source_id, target_id=rel.target_id,
+                    rel_type=rel.rel_type, update=self._serialize_props(update),
+                )
+            else:
+                result = session.run(
+                    """
+                    MATCH (a {id: $source_id})
+                    MATCH (b {id: $target_id})
+                    CALL apoc.create.relationship(a, $rel_type, $props, b) YIELD rel
+                    RETURN type(rel) as rel_type, rel
+                    """,
+                    source_id=rel.source_id, target_id=rel.target_id,
+                    rel_type=rel.rel_type, props=props,
+                )
             record = result.single()
             rel_data = dict(record["rel"]) if record else {}
 
