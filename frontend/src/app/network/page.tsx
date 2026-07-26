@@ -4,10 +4,11 @@ import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'rea
 import Sidebar from '@/components/Sidebar';
 import GraphVisualization, { LayoutMode, ColorMode } from '@/components/GraphVisualization';
 import TemporalSlider from '@/components/TemporalSlider';
+import TemporalHistogram, { HistogramData } from '@/components/TemporalHistogram';
 import { useProject } from '@/lib/ProjectContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { entitiesApi, graphApi, queryApi, llmApi, assessApi, analysisApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi, entityFields } from '@/lib/api';
+import { entitiesApi, graphApi, queryApi, llmApi, assessApi, analysisApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi, timelineApi, entityFields } from '@/lib/api';
 import { useAssistant } from '@/lib/AssistantContext';
 import { TYPE_COLOR_CLASS as TYPE_COLORS } from '@/lib/entityStyles';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
@@ -46,6 +47,10 @@ interface GraphNode {
   id: string;
   name: string;
   entity_type: string;
+  /** When the thing happened, resolved from the source text. Never ingestion time. */
+  event_datetime?: string;
+  date_precision?: string;
+  date_text?: string;
 }
 
 interface GraphEdge {
@@ -229,6 +234,14 @@ function NetworkPageInner() {
   const [influenceThreshold, setInfluenceThreshold] = useState(0.3);
   // Temporal range filter for graph edges (P0.5)
   const [temporalRange, setTemporalRange] = useState<[string | null, string | null]>([null, null]);
+  // Event-date filter, driven by the histogram brush below the canvas. Keys are
+  // histogram bin keys ("2026-03"), compared as ISO prefixes — ISO dates sort
+  // lexicographically, so no date parsing is needed to test membership.
+  const [eventRange, setEventRange] = useState<[string | null, string | null]>([null, null]);
+  const [hideUndated, setHideUndated] = useState(false);
+  const [histogramBucket, setHistogramBucket] = useState<'day' | 'month' | 'year'>('month');
+  const [histogram, setHistogram] = useState<HistogramData | null>(null);
+  const [histogramLoading, setHistogramLoading] = useState(false);
   // Selected edge for detail panel
   const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
   // Undo/redo history stack
@@ -270,6 +283,27 @@ function NetworkPageInner() {
       console.error('Failed to load entities', e);
     }
   }, [activeProject, searchQuery, typeFilter]);
+
+  // Event-date distribution for the chronology brush. Re-fetched when the
+  // bucket changes; the selection is cleared because bin keys differ between
+  // buckets ("2026-03" is not a valid key once bucketing by year).
+  useEffect(() => {
+    if (!activeProject) {
+      setHistogram(null);
+      return;
+    }
+    let cancelled = false;
+    setHistogramLoading(true);
+    timelineApi.histogram(activeProject.id, histogramBucket)
+      .then(res => { if (!cancelled) setHistogram(res.data as HistogramData); })
+      .catch(() => { if (!cancelled) setHistogram(null); })
+      .finally(() => { if (!cancelled) setHistogramLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeProject, histogramBucket]);
+
+  useEffect(() => {
+    setEventRange([null, null]);
+  }, [histogramBucket]);
 
   const loadStatistics = useCallback(async () => {
     if (!activeProject) return;
@@ -510,6 +544,20 @@ function NetworkPageInner() {
     if (activeTypeFilters.size > 0) {
       nodes = graphNodes.filter(n => activeTypeFilters.has(n.entity_type));
     }
+
+    // Event-date brush. Undated entities stay visible unless explicitly hidden:
+    // most of a graph carries no date, so removing them on every selection would
+    // empty the view and make the filter look broken.
+    const [evStart, evEnd] = eventRange;
+    if (evStart && evEnd) {
+      nodes = nodes.filter(n => {
+        const dt = n.event_datetime;
+        if (!dt) return !hideUndated;
+        const key = dt.slice(0, evStart.length);
+        return key >= evStart && key <= evEnd;
+      });
+    }
+
     const visibleNodeIds = new Set(nodes.map(n => n.id));
 
     // Filter edges by relationship type, confidence, temporal range, and visible nodes
@@ -579,7 +627,7 @@ function NetworkPageInner() {
       }
     }
     setFilteredGraphEdges(edges);
-  }, [graphNodes, graphEdges, islandThreshold, islandMetric, hiddenRelTypes, confidenceThreshold, temporalRange, stats, activeTypeFilters]);
+  }, [graphNodes, graphEdges, islandThreshold, islandMetric, hiddenRelTypes, confidenceThreshold, temporalRange, eventRange, hideUndated, stats, activeTypeFilters]);
 
   // Community collapse: reduce many nodes into community super-nodes
   const displayData = useMemo(() => {
@@ -1893,7 +1941,20 @@ function NetworkPageInner() {
                       <p>No graph data. Ingest documents to populate the knowledge graph.</p>
                     </div>
                   )}
-                  {/* Temporal Slider (P0.5) */}
+                  {/* Chronology brush — filters the graph by when events
+                      happened. The slider beside it filters on first_seen /
+                      last_seen, which are ingestion timestamps, so it answers
+                      "when did we learn this" rather than "when did it happen";
+                      the two are kept distinct on purpose. */}
+                  <TemporalHistogram
+                    data={histogram}
+                    loading={histogramLoading}
+                    value={eventRange}
+                    onChange={setEventRange}
+                    hideUndated={hideUndated}
+                    onHideUndatedChange={setHideUndated}
+                    onBucketChange={setHistogramBucket}
+                  />
                   <TemporalSlider
                     edges={graphEdges}
                     value={temporalRange}

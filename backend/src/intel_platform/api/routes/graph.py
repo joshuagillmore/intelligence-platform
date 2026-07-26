@@ -60,6 +60,12 @@ def get_full_graph(project_id: str, limit: int = 500, min_centrality: float = 0,
             "community_id": partition.get(nid, -1),
             "pagerank": round(pr.get(nid, 0), 6),
             "degree": degree.get(nid, 0),
+            # When the thing happened, so the network view can be filtered on
+            # real chronology. Deliberately not created_at: filtering a graph by
+            # ingestion time draws a picture of when the crawler ran.
+            "event_datetime": node.get("event_datetime") or "",
+            "date_precision": node.get("date_precision", ""),
+            "date_text": node.get("date_text", ""),
         }
 
         # Filter by min centrality if specified

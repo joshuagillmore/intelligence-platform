@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import spacy
 
@@ -83,6 +83,52 @@ DATE_PATTERNS = [
 _EVENT_DATE_PARSE_DEFAULT = datetime(2000, 1, 1)
 
 
+def _date_precision(date_str: str) -> str:
+    """How precise the source actually was: day, month or year.
+
+    Parsed with two different defaults — a field the source did not state takes
+    whichever default was supplied, so a field that moves between the two runs
+    is one the text never specified.
+    """
+    from dateutil import parser as date_parser
+
+    probe_a = datetime(1999, 1, 1, tzinfo=timezone.utc)
+    probe_b = datetime(2011, 6, 15, tzinfo=timezone.utc)
+    try:
+        a = date_parser.parse(date_str.strip(), default=probe_a)
+        b = date_parser.parse(date_str.strip(), default=probe_b)
+    except (ValueError, OverflowError, TypeError):
+        return ""
+    if a.year != b.year:
+        return ""  # no year stated at all — not a usable date
+    if a.month != b.month:
+        return "year"
+    if a.day != b.day:
+        return "month"
+    return "day"
+
+
+def _date_bounds(dt: datetime, precision: str) -> tuple[str, str]:
+    """The interval a date of the given precision actually covers.
+
+    "March 2026" is the whole of March, not midnight on the 1st. Collapsing it
+    to a point is what puts a false spike on the 1st of every month in any
+    histogram built from these values.
+    """
+    if precision == "year":
+        start = dt.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        end = start.replace(year=start.year + 1) - timedelta(microseconds=1)
+    elif precision == "month":
+        start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        nxt = start.replace(year=start.year + 1, month=1) if start.month == 12 \
+            else start.replace(month=start.month + 1)
+        end = nxt - timedelta(microseconds=1)
+    else:
+        start = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1) - timedelta(microseconds=1)
+    return start.isoformat(), end.isoformat()
+
+
 def _parse_event_date(date_str: str) -> str | None:
     """Best-effort parse of an extracted date string into an ISO datetime.
 
@@ -97,6 +143,32 @@ def _parse_event_date(date_str: str) -> str | None:
     except (ValueError, OverflowError, TypeError):
         return None
     return dt.isoformat()
+
+
+def resolve_date_text(date_str: str) -> dict | None:
+    """Resolve a date as written into an interval plus its stated precision.
+
+    Returns ``None`` when the text carries no usable year, which is the honest
+    answer for "last Tuesday" or "Q1" with no year in sight — better than
+    silently anchoring it to today.
+    """
+    precision = _date_precision(date_str)
+    if not precision:
+        return None
+    iso = _parse_event_date(date_str)
+    if not iso:
+        return None
+    dt = datetime.fromisoformat(iso)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    t_start, t_end = _date_bounds(dt, precision)
+    return {
+        "event_datetime": t_start,
+        "t_start": t_start,
+        "t_end": t_end,
+        "date_precision": precision,
+        "date_text": date_str.strip()[:120],
+    }
 
 
 def _link_event_dates(entities: list[dict], relationships: list[dict]) -> None:
@@ -158,9 +230,15 @@ def _link_event_dates(entities: list[dict], relationships: list[dict]) -> None:
             continue
         if source.get("attributes", {}).get("event_datetime"):
             continue  # already resolved (e.g. by an earlier relationship)
-        parsed = _parse_event_date(target["name"])
-        if parsed:
-            source.setdefault("attributes", {})["event_datetime"] = parsed
+        resolved = resolve_date_text(target["name"])
+        if resolved:
+            source.setdefault("attributes", {}).update(resolved)
+            # The Date has now been absorbed into the entity it dates. Mark it
+            # so the graph builder can drop the node: a date has no agency —
+            # it cannot act, be targeted or be attributed — so as a node it
+            # only ever dilutes centrality and returns useless Graph-RAG
+            # context, while as a property it is directly filterable.
+            target.setdefault("attributes", {})["_absorbed"] = True
 
 
 def _merge_attributes(primary: dict, secondary: dict) -> None:

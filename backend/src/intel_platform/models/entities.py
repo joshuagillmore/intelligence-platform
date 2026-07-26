@@ -88,6 +88,9 @@ def probability_to_label(p: float) -> str:
     return "Unknown"
 
 
+DATE_PRECISIONS = ("day", "month", "year")
+
+
 class Entity(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
@@ -95,6 +98,22 @@ class Entity(BaseModel):
     project_id: str
     source_doc_id: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # When the thing this entity describes actually happened, as opposed to when
+    # it was ingested. Lives on the base class because dates attach to more than
+    # Events — a vulnerability has a disclosure date, a campaign a timeframe.
+    #
+    # Stored as an interval because reporting rarely gives an instant: "since
+    # 2024" and "in March" are intervals, and collapsing them to a point puts
+    # every month-only date on the 1st, which shows up as a false spike on any
+    # histogram. `t_start`/`t_end` bound the period the source actually
+    # supports; `date_precision` records how precise the source was so a reader
+    # can render "March 2026" rather than "1 March 2026".
+    event_datetime: datetime | None = None
+    t_start: datetime | None = None
+    t_end: datetime | None = None
+    date_precision: str = ""  # one of DATE_PRECISIONS, or "" when undated
+    date_text: str = ""  # the source's own wording, e.g. "early March 2026"
 
 
 class Person(Entity):
@@ -117,6 +136,7 @@ class Location(Entity):
 
 
 class Event(Entity):
+    # `event_datetime` now lives on Entity; Event keeps it only for readability.
     entity_type: EntityType = EntityType.EVENT
     description: str = ""
     event_datetime: datetime | None = None
