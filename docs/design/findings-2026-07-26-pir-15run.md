@@ -141,7 +141,45 @@ graph existed, reporting 0 entities when 245 landed shortly after.
 so a plan with no event for N minutes and no owning task reports `stalled`
 rather than `running`. This is the single highest-value fix found.
 
-### 3.2 EEIs are demanding in a way collection cannot meet
+### 3.2 Three in five sources fail, and most of them never could have worked
+
+**Severity: high — this is the largest single constraint on answer quality.**
+Measured across the campaign: **41 source failures against 27 successes.**
+
+| Failure class | n | What it means |
+|---|--:|---|
+| Endpoint does not exist (404) | 10 | planner invented the URL |
+| RSS feed returns non-XML | 8 | planner invented a feed URL; the page is HTML |
+| Auth required / bot-blocked (401, 403) | 8 | Shodan, AlienVault OTX, MarineTraffic — real sources, no credentials |
+| Other | 9 | |
+| Fetched but yielded nothing | 4 | |
+| Upstream unavailable (503) | 2 | genuinely transient |
+
+Roughly **two thirds of failures are sources that could never have succeeded**:
+a hallucinated URL, or a real service the platform has no key for. Only the 503s
+are bad luck. The planner is asked to name sources and does so plausibly, with
+nothing checking that the thing it named exists or is reachable.
+
+This compounds with §3.1: a run that loses 2 of 3 sources still ends `completed`
+and the analyst is not told the collection was substantially degraded — they
+just see fewer answered EEIs.
+
+**Proposal, in order of value:**
+
+1. **Validate at plan time.** A cheap HEAD/GET on each generated source before
+   the plan is committed, with content-type checking for feeds. A dead source
+   should be visible while the plan is still a draft an analyst can edit, not
+   discovered at execution.
+2. **Only propose what is reachable.** Give the planner a registry of connectors
+   that are actually configured with credentials, and let it mark a source as
+   *desirable but unavailable* rather than emitting a config that will 401. The
+   previous document's finding 2.6 predicted exactly this; it is now quantified.
+3. **Fail feeds honestly.** An HTML page fed to the RSS parser should report
+   "not a feed" rather than `not well-formed (invalid token)` at line 13.
+4. **Surface degradation.** A plan that completed with a majority of sources
+   failed should say so in its terminal state, not just in per-source rows.
+
+### 3.3 EEIs are demanding in a way collection cannot meet
 
 The refinement produces genuinely rigorous elements — *"identified by IMO
 numbers"*, *"call signs or hull numbers"*, *"frequency and duration of each
@@ -155,14 +193,14 @@ report "not answerable from the sources planned" separately from "not collected"
 An element no available connector can satisfy is a *collection gap*, not an
 analytic failure, and conflating them makes the system look worse than it is.
 
-### 3.3 Entity hygiene, again and at scale
+### 3.4 Entity hygiene, again and at scale
 
 Confirmed across every run, not just cyber: `URL` and `Domain` nodes dominate
 crawled graphs (69 of 168 entities on run 2). §2.3 works around this for the
 assessor only — the graph view, Graph-RAG retrieval, and products all still see
 it. This re-raises finding 2.3 of the previous document with quantified impact.
 
-### 3.4 `ollama_connected` reports false while Ollama is in active use
+### 3.5 `ollama_connected` reports false while Ollama is in active use
 
 `/health` only probes Ollama when it is the *default* provider. This deployment
 routes **collection** to Ollama and generation to Cohere, so the field reads
