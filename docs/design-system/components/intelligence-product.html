@@ -1,0 +1,53 @@
+<!-- @dsCard group="Components" -->
+<style>
+  .ds { background:#0f1219; color:#e6ecf7; font-family:Inter,"SF Pro Display",system-ui,sans-serif;
+        padding:28px; margin:0; }
+  .ds h1 { font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:#adc6ff;
+           margin:0 0 4px; font-weight:800; }
+  .ds .sub { font-size:12.5px; color:#8a95ab; margin:0 0 22px; max-width:64ch; }
+  .wrap { background:#1a1f2e; border:1px solid #313849; border-radius:9px; overflow:hidden; }
+  .bar { display:flex; align-items:center; gap:10px; padding:13px 16px; border-bottom:1px solid #252b3d; }
+  .ttl { font-size:13px; font-weight:650; flex:1; }
+  .cls { font-size:10px; font-weight:800; letter-spacing:.1em; text-transform:uppercase;
+         color:#facc15; border:1px solid #a16207; background:rgba(161,98,7,.18);
+         padding:2px 8px; border-radius:5px; }
+  .btn { font-size:11.5px; color:#d1d5db; border:1px solid #313849; background:#252b3d;
+         padding:6px 11px; border-radius:6px; }
+  .body { padding:20px 22px; font-size:13px; line-height:1.65; color:#d1d5db; }
+  .body h3 { font-size:13px; color:#fff; margin:0 0 10px; }
+  .body ul { margin:0; padding-left:18px; }
+  .body li { margin-bottom:7px; }
+  .body strong { color:#fff; }
+  .mono { font-family:"JetBrains Mono","Fira Code",monospace; }
+  .note { font-size:11.5px; color:#67748f; margin-top:18px; font-style:italic; max-width:64ch; }
+</style>
+<div class="ds">
+  <h1>Intelligence product</h1>
+  <p class="sub">The finished artefact. Generated output is always rendered as Markdown — never as a
+    raw dump — and always carries its classification, its export path and the evidence it was drawn
+    from.</p>
+
+  <div class="wrap">
+    <div class="bar">
+      <span class="ttl">Saved: INTSUM — APT-Nebula infrastructure against European energy operators</span>
+      <span class="cls">Medium</span>
+      <span class="btn">Export .md</span><span class="btn">Export PDF</span>
+    </div>
+    <div class="body">
+      <h3>1. Bottom Line</h3>
+      <ul>
+        <li><strong>APT-Nebula is assessed to be using <span class="mono">45.83.12.7</span> as a
+          command-and-control server</strong> with a <strong>Likely</strong> probability (≈70%
+          confidence), based on a direct graph relationship and corroborating document evidence.</li>
+        <li>The IP resolves to Tehran, Iran, indicating the group <strong>likely has access to or
+          operates from Iranian infrastructure</strong>.</li>
+        <li><strong>Information gaps</strong> remain on broader attribution and definitive
+          operational control of the Tehran node.</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="note">Probability language follows a fixed vocabulary and is always paired with a numeric
+    confidence, so “likely” means the same thing in every product. Gaps are stated in the Bottom Line
+    rather than buried — an assessment that hides what it does not know is not finished.</p>
+</div>

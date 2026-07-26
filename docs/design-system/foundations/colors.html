@@ -1,0 +1,59 @@
+<!-- @dsCard group="Foundations" -->
+<style>
+  .ds { background:#0f1219; color:#e6ecf7; font-family:Inter,"SF Pro Display",system-ui,sans-serif;
+        padding:28px; margin:0; }
+  .ds h1 { font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:#adc6ff;
+           margin:0 0 4px; font-weight:800; }
+  .ds .sub { font-size:12.5px; color:#8a95ab; margin:0 0 24px; max-width:60ch; }
+  .ds h2 { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:#8a95ab;
+           margin:26px 0 10px; font-weight:700; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; }
+  .sw { border:1px solid #313849; border-radius:8px; overflow:hidden; width:150px; background:#1a1f2e; }
+  .chip { height:56px; }
+  .meta { padding:8px 10px; }
+  .name { font-size:11.5px; font-weight:650; }
+  .val { font-family:"JetBrains Mono","Fira Code",monospace; font-size:10.5px; color:#8a95ab; margin-top:2px; }
+  .note { font-size:11.5px; color:#67748f; margin-top:8px; font-style:italic; }
+</style>
+<div class="ds">
+  <h1>Colour</h1>
+  <p class="sub">Tokens as defined in <code>frontend/tailwind.config.ts</code>. Surfaces are a cool
+    near-black ramp; the accent is reserved for interactive affordances; severity is a separate
+    semantic scale and is never used decoratively.</p>
+
+  <h2>Surfaces — navy</h2>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:#0f1219"></div>
+      <div class="meta"><div class="name">navy-900</div><div class="val">#0f1219 · app ground</div></div></div>
+    <div class="sw"><div class="chip" style="background:#1a1f2e"></div>
+      <div class="meta"><div class="name">navy-800</div><div class="val">#1a1f2e · panel</div></div></div>
+    <div class="sw"><div class="chip" style="background:#252b3d"></div>
+      <div class="meta"><div class="name">navy-700</div><div class="val">#252b3d · raised</div></div></div>
+    <div class="sw"><div class="chip" style="background:#313849"></div>
+      <div class="meta"><div class="name">navy-600</div><div class="val">#313849 · border</div></div></div>
+  </div>
+
+  <h2>Accent</h2>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:#3b82f6"></div>
+      <div class="meta"><div class="name">accent-blue</div><div class="val">#3b82f6 · primary action</div></div></div>
+    <div class="sw"><div class="chip" style="background:#06b6d4"></div>
+      <div class="meta"><div class="name">accent-cyan</div><div class="val">#06b6d4 · enrichment</div></div></div>
+    <div class="sw"><div class="chip" style="background:#adc6ff"></div>
+      <div class="meta"><div class="name">periwinkle</div><div class="val">#adc6ff · headings, links</div></div></div>
+  </div>
+
+  <h2>Severity — semantic, not decorative</h2>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:#ef4444"></div>
+      <div class="meta"><div class="name">threat-critical</div><div class="val">#ef4444</div></div></div>
+    <div class="sw"><div class="chip" style="background:#f97316"></div>
+      <div class="meta"><div class="name">threat-high</div><div class="val">#f97316</div></div></div>
+    <div class="sw"><div class="chip" style="background:#eab308"></div>
+      <div class="meta"><div class="name">threat-medium</div><div class="val">#eab308</div></div></div>
+    <div class="sw"><div class="chip" style="background:#6b7280"></div>
+      <div class="meta"><div class="name">threat-low</div><div class="val">#6b7280</div></div></div>
+  </div>
+  <p class="note">An indicator with no analyst-assigned severity renders as “Unrated”, never
+    silently bucketed into medium — an invented rating is worse than an absent one.</p>
+</div>

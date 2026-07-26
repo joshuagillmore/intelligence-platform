@@ -1,0 +1,57 @@
+<!-- @dsCard group="Components" -->
+<style>
+  .ds { background:#0f1219; color:#e6ecf7; font-family:Inter,"SF Pro Display",system-ui,sans-serif;
+        padding:28px; margin:0; }
+  .ds h1 { font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:#adc6ff;
+           margin:0 0 4px; font-weight:800; }
+  .ds .sub { font-size:12.5px; color:#8a95ab; margin:0 0 22px; max-width:64ch; }
+  h2 { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:#8a95ab;
+       margin:24px 0 10px; font-weight:700; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .badge { font-size:11px; padding:2px 9px; border-radius:5px; font-weight:600; }
+  .rel { background:#252b3d; border-radius:7px; padding:9px 11px; max-width:430px; }
+  .rt { font-size:11.5px; font-weight:700; color:#adc6ff; letter-spacing:.04em; }
+  .conf { font-size:11px; color:#8a95ab; }
+  .pair { font-family:"JetBrains Mono","Fira Code",monospace; font-size:11px; color:#d1d5db; margin-top:3px; }
+  .ev { font-size:11px; color:#67748f; font-style:italic; margin-top:5px; }
+  .pill { font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+          padding:2px 8px; border-radius:99px; border:1px solid; }
+  .note { font-size:11.5px; color:#67748f; margin-top:18px; font-style:italic; max-width:64ch; }
+</style>
+<div class="ds">
+  <h1>Badges &amp; confidence</h1>
+  <p class="sub">How the interface states what kind of thing something is, and how sure it is.
+    Type badges are tinted 30%-alpha fills of the entity colour; confidence is always shown as a
+    number, never as a colour alone.</p>
+
+  <h2>Entity type badges</h2>
+  <div class="row">
+    <span class="badge" style="background:rgba(6,182,212,.3);color:#22d3ee">IPAddress</span>
+    <span class="badge" style="background:rgba(168,85,247,.3);color:#c084fc">Domain</span>
+    <span class="badge" style="background:rgba(234,179,8,.3);color:#facc15">TTP</span>
+    <span class="badge" style="background:rgba(244,63,94,.3);color:#fb7185">Vulnerability</span>
+    <span class="badge" style="background:rgba(239,68,68,.3);color:#f87171">ThreatActor</span>
+    <span class="badge" style="background:rgba(236,72,153,.3);color:#f472b6">Hash</span>
+    <span class="badge" style="background:rgba(59,130,246,.3);color:#60a5fa">Organization</span>
+    <span class="badge" style="background:rgba(34,197,94,.3);color:#4ade80">Location</span>
+  </div>
+
+  <h2>Relationship with evidence</h2>
+  <div class="rel">
+    <div><span class="rt">USES</span> <span class="conf">(90%)</span></div>
+    <div class="pair">APT-Demo → T1566.001 Spearphishing Attachment</div>
+    <div class="ev">“delivered a loader that established persistence via scheduled tasks”</div>
+  </div>
+
+  <h2>Analytic confidence</h2>
+  <div class="row">
+    <span class="pill" style="color:#4ade80;border-color:#4ade80">Likely ≈70%</span>
+    <span class="pill" style="color:#facc15;border-color:#facc15">Moderate confidence</span>
+    <span class="pill" style="color:#8a95ab;border-color:#8a95ab">B2 · admiralty</span>
+    <span class="pill" style="color:#8a95ab;border-color:#8a95ab">geoip: cached</span>
+  </div>
+
+  <p class="note">Every generated judgement carries a probability and its basis. Source grading uses
+    the admiralty scale (reliability letter + credibility digit) so a claim from an uncorroborated
+    scrape can never look like one from a rated source.</p>
+</div>
