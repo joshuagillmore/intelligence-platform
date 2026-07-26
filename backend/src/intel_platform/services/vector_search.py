@@ -101,10 +101,10 @@ async def vector_search(
     # similarity = 1 - distance
     stmt = text("""
         SELECT id, document_id, chunk_index, chunk_text, metadata,
-               1 - (embedding <=> :query_vec::vector) AS similarity
+               1 - (embedding <=> CAST(:query_vec AS vector)) AS similarity
         FROM chunk_embeddings
         WHERE project_id = :project_id
-        ORDER BY embedding <=> :query_vec::vector
+        ORDER BY embedding <=> CAST(:query_vec AS vector)
         LIMIT :limit
     """)
 

@@ -3,11 +3,13 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { APP_TITLE, APP_TAGLINE } from '@/lib/branding';
 import { ProjectProvider } from '@/lib/ProjectContext';
+import { AssistantProvider } from '@/lib/AssistantContext';
 import { NotificationProvider } from '@/components/NotificationProvider';
 import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 import StatusBar from '@/components/StatusBar';
 import MobileHeader from '@/components/MobileHeader';
 import MobileBottomNav from '@/components/MobileBottomNav';
+import AssistantPanel from '@/components/AssistantPanel';
 
 // Self-hosted via next/font (no render-blocking Google CDN request). The
 // Material Symbols icon font is still loaded via <link> below — see globals.css.
@@ -41,11 +43,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="bg-navy-900 text-gray-100 font-sans antialiased">
         <ProjectProvider>
           <NotificationProvider>
-            <KeyboardShortcuts />
-            <MobileHeader />
-            {children}
-            <StatusBar />
-            <MobileBottomNav />
+            {/* AssistantProvider is inside NotificationProvider because the
+                assistant's "Save as Product" raises notifications, and inside
+                ProjectProvider because the thread is project-scoped. */}
+            <AssistantProvider>
+              <KeyboardShortcuts />
+              <MobileHeader />
+              {children}
+              <StatusBar />
+              <MobileBottomNav />
+              {/* One assistant for all 13 views — see components/AssistantPanel. */}
+              <AssistantPanel />
+            </AssistantProvider>
           </NotificationProvider>
         </ProjectProvider>
       </body>

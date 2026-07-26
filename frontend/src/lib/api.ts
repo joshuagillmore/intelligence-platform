@@ -361,6 +361,50 @@ export const collectionsApi = {
   count: (projectId: string) => api.get(`/collections/count/${projectId}`),
 };
 
+// PIRs — Priority Intelligence Requirements, the requirements spine a project's
+// collection hangs off. Every plan raised against one carries its pir_id back.
+export type PirStatus = 'OPEN' | 'PARTIAL' | 'SATISFIED' | 'ARCHIVED';
+
+export interface PirPlanLink {
+  id: string;
+  name: string;
+  status: string;
+  source_count: number;
+  records_acquired: number;
+  created_at: string;
+}
+
+export interface Pir {
+  id: string;
+  project_id: string;
+  title: string;
+  text: string;
+  refined_text: string;
+  eeis: string[];
+  priority: string;
+  status: PirStatus;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  plan_count: number;
+  plans: PirPlanLink[];
+}
+
+export const pirsApi = {
+  list: (projectId: string, status?: PirStatus) =>
+    api.get<Pir[]>('/pirs', { params: { project_id: projectId, status } }),
+  get: (id: string) => api.get<Pir>(`/pirs/${id}`),
+  create: (data: {
+    project_id: string; text: string; title?: string; refined_text?: string;
+    eeis?: string[]; priority?: string; status?: PirStatus; created_by?: string;
+  }) => api.post<Pir>('/pirs', data),
+  update: (id: string, data: {
+    title?: string; text?: string; refined_text?: string;
+    eeis?: string[]; priority?: string; status?: PirStatus;
+  }) => api.put<Pir>(`/pirs/${id}`, data),
+  delete: (id: string) => api.delete(`/pirs/${id}`),
+};
+
 // Collection Plans — new managed pipeline
 export interface CollectionPlan {
   id: string;
@@ -369,6 +413,7 @@ export interface CollectionPlan {
   description: string;
   requirement: string;
   pir: string;
+  pir_id: string | null;
   refined_pir: string;
   status: string;
   routing_rules: Record<string, unknown>;
@@ -443,7 +488,7 @@ export interface DataCatalogEntry {
 
 export const collectionPlansApi = {
   // Plans
-  create: (data: { project_id: string; name: string; description?: string; requirement?: string; pir?: string; routing_rules?: object; created_by?: string }) =>
+  create: (data: { project_id: string; name: string; description?: string; requirement?: string; pir?: string; pir_id?: string; routing_rules?: object; created_by?: string }) =>
     api.post<CollectionPlan>('/collection-plans', data),
   list: (projectId?: string, status?: string) =>
     api.get<CollectionPlan[]>('/collection-plans', { params: { project_id: projectId, status } }),
@@ -501,8 +546,9 @@ export const collectionPlansApi = {
   activity: (planId: string, since?: string) =>
     api.get<CollectionActivityEntry[]>(`/collection-plans/${planId}/activity`, { params: { since } }),
 
-  // PIR-driven plan creation (unified flow)
-  fromPir: (data: { project_id: string; pir: string; extraction_mode?: string; created_by?: string }) =>
+  // PIR-driven plan creation (unified flow). Pass pir_id to run against an
+  // existing requirement; omit it and the backend persists/reuses one from `pir`.
+  fromPir: (data: { project_id: string; pir: string; pir_id?: string; extraction_mode?: string; created_by?: string }) =>
     api.post<CollectionPlan & { llm_plan_text?: string }>('/collection-plans/from-pir', data),
   execute: (planId: string, maxResultsPerSource?: number) =>
     api.post<CollectionPlan & { execution_status: string; message: string }>(
@@ -526,6 +572,105 @@ export const assessApi = {
     api.post('/assess/multi', data),
   generate: (entityId: string, data: { entity_id: string; project_id: string; judgment?: string; probability?: number }) =>
     api.post('/assess/generate', { ...data, entity_id: entityId }),
+};
+
+// ── Structured analytic techniques (/api/analysis/*) ──────────────────────
+// Grounded runners for the three tradecraft skills. Each retrieves real project
+// evidence (graph subgraph, source documents, measured coverage) before
+// prompting, and returns a deterministic result when no LLM is configured —
+// so the UI must always render `analysis` and check `model !== 'none'`.
+
+export interface SourceEvaluationItem {
+  document_id: string;
+  name: string;
+  current_rating: string;
+  admiralty_rating: string;
+  entity_count: number;
+  corroborating_documents: number;
+}
+
+export interface SourceEvaluationResult {
+  analysis: string;
+  model: string;
+  tokens_used: number;
+  documents_evaluated: number;
+  evaluations: SourceEvaluationItem[];
+  ratings_applied: number;
+}
+
+export interface Hypothesis {
+  id: string;
+  statement: string;
+  probability: number;
+  probability_label: string;
+}
+
+export interface HypothesesResult {
+  question: string;
+  analysis: string;
+  hypotheses: Hypothesis[];
+  model: string;
+  tokens_used: number;
+  retrieval_mode: string;
+  context_nodes: number;
+  context_edges: number;
+  vector_hits: number;
+  focus_entities: string[];
+  assessment_id?: string;
+}
+
+export interface StructuralGap {
+  kind: string;
+  title: string;
+  detail: string;
+  priority: string;
+  count: number;
+  examples: string[];
+}
+
+export interface GapAnalysisResult {
+  analysis: string;
+  model: string;
+  tokens_used: number;
+  retrieval_mode: string;
+  coverage: {
+    entities: number;
+    relationships: number;
+    documents: number;
+    isolated: number;
+    single_link: number;
+    unsourced: number;
+    unrated_documents: number;
+    locations: number;
+    ungeocoded_locations: number;
+  };
+  structural_gaps: StructuralGap[];
+  context_nodes: number;
+  context_edges: number;
+  focus_entities: string[];
+}
+
+export const analysisApi = {
+  sourceEvaluation: (data: {
+    project_id: string;
+    document_ids?: string[];
+    limit?: number;
+    apply_ratings?: boolean;
+  }) => api.post<SourceEvaluationResult>('/analysis/source-evaluation', data),
+  hypotheses: (data: {
+    project_id: string;
+    question: string;
+    entity_ids?: string[];
+    max_hops?: number;
+    use_vector?: boolean;
+    save_assessment?: boolean;
+  }) => api.post<HypothesesResult>('/analysis/hypotheses', data),
+  gaps: (data: {
+    project_id: string;
+    entity_ids?: string[];
+    focus?: string;
+    max_hops?: number;
+  }) => api.post<GapAnalysisResult>('/analysis/gaps', data),
 };
 
 export const topicsApi = {

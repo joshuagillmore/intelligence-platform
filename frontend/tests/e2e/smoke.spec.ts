@@ -30,6 +30,7 @@ const ROUTES: { path: string; name: string }[] = [
   { path: '/watchlist', name: 'watchlist' },
   { path: '/products', name: 'products' },
   { path: '/cyber', name: 'cyber' },
+  { path: '/analysis', name: 'analysis' },
   { path: '/llm-hub', name: 'llm-hub' },
   { path: '/admin', name: 'admin' },
 ];

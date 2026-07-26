@@ -1,0 +1,245 @@
+/*
+ * Print stylesheet for the finished intelligence product (Products view).
+ *
+ * There is no PDF library: the analyst hits "Export PDF", the app calls
+ * window.print(), and the browser's own print-to-PDF renders THIS layout. That
+ * keeps the export dependency-free, offline, and identical to the Markdown the
+ * screen view renders — while dropping every bit of app chrome.
+ *
+ * The printable document is a portal mounted directly on <body> with the id
+ * below, so the "hide everything else" rule can be structural rather than a
+ * list of chrome selectors that would rot as the shell changes.
+ */
+
+/* On screen the print document never renders — it exists only to give the
+   browser a clean, chrome-free DOM to paginate. */
+.print-document {
+  display: none;
+}
+
+@media print {
+  /* Only the product prints: no sidebar, status bar, toasts, or buttons.
+     Gated on `:has()` so the rule is inert unless a product is actually
+     mounted — this stylesheet stays in the document after a client-side
+     navigation away from Products, and must never blank another page's
+     printout. Browsers without :has() drop the rule and print the page
+     normally: degraded, never blank. */
+  body:has(#sentinel-print-root) > *:not(#sentinel-print-root) {
+    display: none !important;
+  }
+
+  @page {
+    size: A4;
+    /* Generous top/bottom margins leave room for the fixed classification
+       markings, which sit inside the margin box on every page. */
+    margin: 20mm 18mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  #sentinel-print-root.print-document {
+    display: block !important;
+    color: #111;
+    font-family: 'Iowan Old Style', Georgia, 'Times New Roman', serif;
+    font-size: 10.5pt;
+    line-height: 1.5;
+  }
+
+  /* The body renders through the same <Markdown> component as the dark screen
+     view, so neutralise the dark-theme utility classes rather than forking the
+     renderer. Releasing max-height/overflow matters: the on-screen table and
+     code wrappers scroll, which would clip content on paper. */
+  .print-document *,
+  .print-document *::before,
+  .print-document *::after {
+    color: #111 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* --- Classification markings -------------------------------------------
+     Fixed-position blocks are painted on every printed page by Chrome and
+     Firefox, and negative offsets place them in the @page margin so they never
+     collide with the body text. The marking is also stated in the cover block,
+     so a browser that skips fixed repeats still produces a marked product. */
+  .print-marking {
+    position: fixed;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-family: var(--font-inter), Inter, system-ui, sans-serif;
+    font-size: 8.5pt;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .print-marking-top {
+    top: -11mm;
+    padding-bottom: 1.5mm;
+    border-bottom: 0.5pt solid #111 !important;
+  }
+  .print-marking-bottom {
+    bottom: -11mm;
+    padding-top: 1.5mm;
+    border-top: 0.5pt solid #111 !important;
+  }
+
+  /* --- Cover block -------------------------------------------------------- */
+  .print-header {
+    border-bottom: 1.5pt solid #111 !important;
+    padding-bottom: 4mm;
+    margin-bottom: 6mm;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  .print-org {
+    font-family: var(--font-inter), Inter, system-ui, sans-serif;
+    font-size: 7.5pt;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .print-title {
+    font-family: var(--font-inter), Inter, system-ui, sans-serif;
+    font-size: 19pt;
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 2mm 0 4mm;
+  }
+  .print-meta {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 6mm;
+    row-gap: 1.2mm;
+    margin: 0;
+    font-size: 9pt;
+  }
+  .print-meta dt {
+    font-family: var(--font-inter), Inter, system-ui, sans-serif;
+    font-size: 7.5pt;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding-top: 0.6mm;
+  }
+  .print-meta dd {
+    margin: 0;
+  }
+
+  /* --- Analytic body ------------------------------------------------------ */
+  .print-body h1,
+  .print-body h2,
+  .print-body h3,
+  .print-body h4,
+  .print-body h5,
+  .print-body h6 {
+    font-family: var(--font-inter), Inter, system-ui, sans-serif;
+    font-weight: 700;
+    margin: 6mm 0 2mm;
+    /* Never leave a heading stranded at the foot of a page. */
+    break-after: avoid;
+    page-break-after: avoid;
+    break-inside: avoid;
+  }
+  .print-body h1 { font-size: 14pt; }
+  .print-body h2 { font-size: 12.5pt; }
+  .print-body h3 { font-size: 11pt; }
+  .print-body h4,
+  .print-body h5,
+  .print-body h6 { font-size: 10.5pt; }
+
+  .print-body p,
+  .print-body li {
+    /* Keep at least three lines of a paragraph together across a page break. */
+    orphans: 3;
+    widows: 3;
+  }
+  .print-body p { margin: 0 0 3mm; }
+  .print-body ul,
+  .print-body ol { margin: 0 0 3mm; padding-left: 7mm; }
+  .print-body li { margin-bottom: 1mm; }
+
+  .print-body table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+    margin: 3mm 0;
+    /* A long table may split, but a row never does, and the header repeats. */
+    break-inside: auto;
+  }
+  .print-body thead { display: table-header-group; }
+  .print-body tr,
+  .print-body pre,
+  .print-body blockquote,
+  .print-body figure,
+  .print-body img {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .print-body th,
+  .print-body td {
+    border: 0.5pt solid #777 !important;
+    padding: 1.4mm 2mm;
+    text-align: left;
+    vertical-align: top;
+  }
+  .print-body th {
+    font-family: var(--font-inter), Inter, system-ui, sans-serif;
+    font-weight: 700;
+    border-bottom-width: 1pt !important;
+  }
+
+  .print-body pre {
+    border: 0.5pt solid #bbb !important;
+    padding: 2mm;
+    font-size: 8.5pt;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .print-body code {
+    font-family: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+    font-size: 0.9em;
+  }
+  .print-body blockquote {
+    border-left: 1.5pt solid #999 !important;
+    padding-left: 4mm;
+    margin: 0 0 3mm;
+    font-style: italic;
+  }
+  .print-body hr {
+    border: 0 !important;
+    border-top: 0.5pt solid #999 !important;
+    margin: 4mm 0;
+  }
+  .print-body a {
+    text-decoration: underline;
+  }
+  /* Sourcing survives the paper: print the target of every external link. */
+  .print-body a[href^='http']::after {
+    content: ' (' attr(href) ')';
+    font-size: 8pt;
+    word-break: break-all;
+  }
+  .print-body img {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  /* --- Provenance footer -------------------------------------------------- */
+  .print-footer {
+    margin-top: 8mm;
+    padding-top: 2.5mm;
+    border-top: 0.5pt solid #999 !important;
+    font-family: var(--font-inter), Inter, system-ui, sans-serif;
+    font-size: 8pt;
+    break-inside: avoid;
+  }
+}

@@ -3,25 +3,30 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
+import { clearAllAssistantThreads } from '@/lib/AssistantContext';
 import { collectionsApi, watchlistApi, healthApi } from '@/lib/api';
 import { useNotifications, useNotificationCount } from '@/components/NotificationProvider';
 import { APP_NAME, APP_VERSION } from '@/lib/branding';
 
-const navItems = [
+type NavItem = { name: string; href: string; icon: string; adminOnly?: boolean };
+
+const navItems: NavItem[] = [
   { name: 'Projects', href: '/', icon: 'folder_open' },
   { name: 'Collections', href: '/collections', icon: 'database' },
+  { name: 'Collection Plans', href: '/collection-plans', icon: 'checklist' },
   { name: 'Data Sources', href: '/data-sources', icon: 'satellite_alt' },
   { name: 'Network Analysis', href: '/network', icon: 'hub' },
   { name: 'Geo-Intelligence', href: '/geo', icon: 'public' },
   { name: 'Cyber', href: '/cyber', icon: 'security' },
+  { name: 'Analytic Techniques', href: '/analysis', icon: 'psychology' },
   { name: 'Products & Artefacts', href: '/products', icon: 'description' },
-  { name: 'Admin', href: '/admin', icon: 'admin_panel_settings' },
+  { name: 'Admin', href: '/admin', icon: 'admin_panel_settings', adminOnly: true },
 ];
 
-const secondaryItems = [
+const secondaryItems: NavItem[] = [
   { name: 'Timeline', href: '/timeline', icon: 'timeline' },
   { name: 'Watchlist', href: '/watchlist', icon: 'star' },
-  { name: 'LLM Hub', href: '/llm-hub', icon: 'smart_toy' },
+  { name: 'LLM Hub', href: '/llm-hub', icon: 'smart_toy', adminOnly: true },
 ];
 
 function formatTimeAgo(date: Date): string {
@@ -131,6 +136,11 @@ export default function Sidebar() {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
     localStorage.removeItem('auth_role');
+    // Assistant threads hold RAG answers and verbatim source-document
+    // excerpts — analyst content that must not outlive the session on a
+    // shared workstation. Drop the selected project with them.
+    clearAllAssistantThreads();
+    localStorage.removeItem('activeProject');
     window.location.href = '/login';
   }
 
@@ -230,7 +240,7 @@ export default function Sidebar() {
 
       {/* Primary Navigation */}
       <nav aria-label="Primary" className="flex-1 py-1 overflow-y-auto space-y-0.5">
-        {navItems.map((item) => (
+        {navItems.filter((item) => !item.adminOnly || role === 'admin').map((item) => (
           <Link
             key={item.href}
             href={item.href}
@@ -251,7 +261,7 @@ export default function Sidebar() {
         {/* Divider */}
         <div className="mx-4 my-2 border-t border-navy-800" />
 
-        {secondaryItems.map((item) => (
+        {secondaryItems.filter((item) => !item.adminOnly || role === 'admin').map((item) => (
           <Link
             key={item.href}
             href={item.href}
@@ -292,14 +302,6 @@ export default function Sidebar() {
           {/* User Dropdown Menu */}
           {showUserMenu && (
             <div className="absolute bottom-full left-0 w-full mb-1 bg-[#0e1321] border border-navy-800 rounded-lg shadow-xl z-50 overflow-hidden">
-              <button
-                className="w-full px-4 py-2.5 text-left text-xs text-gray-400 hover:bg-navy-800/50 transition-colors flex items-center gap-2"
-                onClick={() => { setShowUserMenu(false); }}
-              >
-                <span className="material-symbols-outlined text-sm">settings</span>
-                Profile Settings <span className="text-gray-600 text-[9px]">(coming soon)</span>
-              </button>
-              <div className="border-t border-navy-800" />
               <button
                 onClick={handleSignOut}
                 className="w-full px-4 py-2.5 text-left text-xs text-gray-400 hover:text-red-400 hover:bg-navy-800/50 transition-colors flex items-center gap-2"

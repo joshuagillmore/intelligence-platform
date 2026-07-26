@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
@@ -106,6 +107,7 @@ function groupByDate(events: TimelineEvent[]): Record<string, TimelineEvent[]> {
 export default function TimelinePage() {
   const { activeProject } = useProject();
   const { addNotification } = useNotifications();
+  const router = useRouter();
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [enabledTypes, setEnabledTypes] = useState<Set<string>>(new Set(ENTITY_TYPES));
@@ -231,7 +233,15 @@ export default function TimelinePage() {
                         <div key={event.id} className="relative">
                           {/* Timeline dot */}
                           <div className={`absolute -left-[25px] top-2 w-3 h-3 rounded-full border-2 border-navy-900 ${TYPE_COLORS[event.entity_type] || 'bg-gray-500'}`} />
-                          <div className="bg-navy-800 border border-navy-600 rounded-lg p-4 hover:border-navy-500 transition-colors">
+                          {/* Pivot to the graph, matching the ?select= convention used by
+                              cyber / geo / watchlist / search. Was a read-only card. */}
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => router.push(`/network?select=${event.id}`)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(`/network?select=${event.id}`); } }}
+                            title={`View ${event.name} in the graph`}
+                            className="bg-navy-800 border border-navy-600 rounded-lg p-4 hover:border-accent-blue cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-accent-blue">
                             <div className="flex items-center justify-between mb-1">
                               <div className="flex items-center gap-2">
                                 <span className="font-medium text-gray-200">{event.name}</span>

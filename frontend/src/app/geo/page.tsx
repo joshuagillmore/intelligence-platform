@@ -3,10 +3,11 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { geoApi, queryApi, entitiesApi, llmApi, assessApi, geoApiExtra } from '@/lib/api';
-import Markdown from '@/components/Markdown';
+import { geoApi, entitiesApi, assessApi, analysisApi, geoApiExtra } from '@/lib/api';
+import { useAssistant } from '@/lib/AssistantContext';
 
 const GeoMap = dynamic(() => import('@/components/GeoMap'), { ssr: false });
 
@@ -18,6 +19,10 @@ interface GeoLocation {
   lat?: number | null;
   lng?: number | null;
   geocoded?: boolean;
+  // Provenance the API already returns alongside the coordinates.
+  geo_source?: string;
+  geo_confidence?: string;
+  mgrs?: string;
   connections?: number;
   entity_type?: string;
   properties?: Record<string, unknown>;
@@ -54,8 +59,9 @@ export default function GeoPage() {
   const [selectedRels, setSelectedRels] = useState<LocationRelationship[]>([]);
   const [relsLoading, setRelsLoading] = useState(false);
   const [queryInput, setQueryInput] = useState('');
-  const [queryResult, setQueryResult] = useState<string | null>(null);
-  const [queryLoading, setQueryLoading] = useState(false);
+  // Answers and intel-op output render in the shared, app-wide AssistantPanel
+  // instead of a map overlay this page owns (see components/AssistantPanel).
+  const { ask: askAssistant, runTask: runAssistantTask, busy: assistantBusy } = useAssistant();
   const [geoEdges, setGeoEdges] = useState<Array<{
     source_id?: string; target_id?: string;
     source_coords?: number[]; target_coords?: number[];
@@ -133,12 +139,6 @@ export default function GeoPage() {
       shared_entities: e.shared_entities,
     })), [geoEdges, visibleIds]);
 
-  /* ── chat overlay state ── */
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'ai'; text: string }[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-
   const getLat = (loc: GeoLocation) => loc.latitude ?? loc.lat ?? (loc.properties?.latitude as number | undefined);
   const getLng = (loc: GeoLocation) => loc.longitude ?? loc.lng ?? (loc.properties?.longitude as number | undefined);
   const isGeocoded = (loc: GeoLocation) => loc.geocoded ?? !!(getLat(loc) && getLng(loc));
@@ -203,64 +203,45 @@ export default function GeoPage() {
     }
   }, [selectedLocation]);
 
-  async function askGeoQuery() {
-    if (!queryInput.trim() || !activeProject) return;
-    setQueryLoading(true);
-    setQueryResult(null);
-    try {
-      const res = await queryApi.rag(activeProject.id, queryInput);
-      setQueryResult(res.data.answer || res.data.response || JSON.stringify(res.data));
-    } catch {
-      setQueryResult('Failed to process query.');
-    } finally {
-      setQueryLoading(false);
-    }
+  function askGeoQuery() {
+    // Also guards the Enter-key path, which the disabled button does not cover.
+    if (!queryInput.trim() || !activeProject || assistantBusy) return;
+    void askAssistant(queryInput);
+    setQueryInput('');
   }
 
-  async function sendChatMessage() {
-    if (!chatInput.trim() || !activeProject) return;
-    const userMsg = chatInput.trim();
-    setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
-    setChatInput('');
-    setChatLoading(true);
-    try {
-      const res = await queryApi.rag(activeProject.id, userMsg);
-      const answer = res.data.answer || res.data.response || JSON.stringify(res.data);
-      setChatMessages(prev => [...prev, { role: 'ai', text: answer }]);
-    } catch {
-      setChatMessages(prev => [...prev, { role: 'ai', text: 'Failed to process query.' }]);
-    } finally {
-      setChatLoading(false);
-    }
-  }
-
-  async function runIntelOp(kind: 'gap' | 'assess' | 'hypothesis') {
-    if (!selectedLocation || !activeProject) return;
+  // Geo keeps its own domain logic; only the presentation is shared. runTask
+  // appends the labelled request + the result to the assistant thread.
+  function runIntelOp(kind: 'gap' | 'assess' | 'hypothesis') {
+    const location = selectedLocation;
+    if (!location || !activeProject) return;
     const label = kind === 'gap' ? 'Gap Analysis' : kind === 'assess' ? 'Generate Assessment' : 'Hypothesis Generation';
-    setChatOpen(true);
-    setChatMessages(prev => [...prev, { role: 'user', text: `${label} — ${selectedLocation.name}` }]);
-    setChatLoading(true);
-    try {
-      let text: string;
-      if (kind === 'assess') {
-        const res = await assessApi.generate(selectedLocation.id, { entity_id: selectedLocation.id, project_id: activeProject.id });
-        const d = res.data;
-        text = d.assessment || d.judgment || d.analysis || d.content || d.error || JSON.stringify(d);
-      } else {
-        const skill = kind === 'gap' ? 'gap_analysis' : 'hypothesis_generation';
-        const prompt = kind === 'gap'
-          ? `Perform a gap analysis of intelligence coverage for the location "${selectedLocation.name}" and its connected entities.`
-          : `Generate competing hypotheses about the significance of the location "${selectedLocation.name}" in this intelligence picture.`;
-        const res = await llmApi.query([{ role: 'user', content: prompt }], skill);
-        const d = res.data;
-        text = d.response || d.answer || d.content || d.result || JSON.stringify(d);
-      }
-      setChatMessages(prev => [...prev, { role: 'ai', text }]);
-    } catch {
-      setChatMessages(prev => [...prev, { role: 'ai', text: `${label} failed.` }]);
-    } finally {
-      setChatLoading(false);
-    }
+    void runAssistantTask({
+      label: `${label} — ${location.name}`,
+      run: async () => {
+        if (kind === 'assess') {
+          const res = await assessApi.generate(location.id, { entity_id: location.id, project_id: activeProject.id });
+          const d = res.data;
+          return { content: d.assessment || d.judgment || d.analysis || d.content || d.error || 'No assessment returned.' };
+        }
+        // Grounded endpoints: the backend retrieves this location's subgraph,
+        // source documents and measured coverage before it reasons, rather than
+        // handing the model a bare prompt.
+        if (kind === 'gap') {
+          const res = await analysisApi.gaps({
+            project_id: activeProject.id,
+            entity_ids: [location.id],
+          });
+          return { content: res.data.analysis || 'No output returned.' };
+        }
+        const res = await analysisApi.hypotheses({
+          project_id: activeProject.id,
+          question: `What are the competing explanations for the significance of ${location.name} in this intelligence picture?`,
+          entity_ids: [location.id],
+        });
+        return { content: res.data.analysis || 'No output returned.' };
+      },
+    });
   }
 
   const totalConnections = locations.reduce((sum, l) => sum + (l.connections || 0), 0);
@@ -332,9 +313,7 @@ export default function GeoPage() {
         <Sidebar />
         <main className="md:ml-56 flex-1 p-8 pt-14 md:pt-8">
           <h2 className="text-2xl font-bold mb-4">Geo-Intelligence</h2>
-          <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
-            <p>Select a project first.</p>
-          </div>
+          <SelectProjectPrompt action="map" />
         </main>
       </div>
     );
@@ -489,102 +468,14 @@ export default function GeoPage() {
               {totalConnections} Connections
             </span>
           </div>
-
-          {/* ═══════════════ CHAT OVERLAY (bottom of map) ═══════════════ */}
-          <div
-            className="absolute bottom-4 left-4 right-4 rounded-lg shadow-2xl flex flex-col overflow-hidden"
-            style={{
-              background: C.elevated,
-              border: `1px solid ${C.border}`,
-              maxHeight: chatOpen ? '320px' : '44px',
-              transition: 'max-height 0.25s ease',
-            }}
-          >
-            {/* Chat header */}
-            <button
-              onClick={() => setChatOpen(o => !o)}
-              className="flex items-center gap-2 px-4 py-2.5 w-full text-left shrink-0"
-              style={{ borderBottom: chatOpen ? `1px solid ${C.border}` : 'none' }}
-            >
-              {/* AI icon */}
-              <span
-                className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                style={{ background: C.primary, color: C.surface }}
-              >
-                AI
-              </span>
-              <span className="text-sm font-medium text-gray-200 flex-1">Aegis Intelligence Assistant</span>
-              <svg
-                className="w-4 h-4 text-gray-400 transition-transform"
-                style={{ transform: chatOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                fill="none" viewBox="0 0 24 24" stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-              </svg>
-            </button>
-
-            {chatOpen && (
-              <>
-                {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0" style={{ maxHeight: '220px' }}>
-                  {chatMessages.length === 0 && (
-                    <p className="text-xs" style={{ color: C.textMuted }}>
-                      Ask questions about geographic intelligence, threat vectors, or entity relationships.
-                    </p>
-                  )}
-                  {chatMessages.map((msg, i) => (
-                    <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div
-                        className="max-w-[80%] rounded-lg px-3 py-2 text-xs"
-                        style={{
-                          background: msg.role === 'user' ? C.primary : C.surface,
-                          color: msg.role === 'user' ? C.surface : '#d1d5db',
-                        }}
-                      >
-                        {msg.role === 'ai' ? (
-                          <Markdown content={msg.text} />
-                        ) : (
-                          <pre className="whitespace-pre-wrap font-sans">{msg.text}</pre>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {chatLoading && (
-                    <div className="flex justify-start">
-                      <div className="rounded-lg px-3 py-2 text-xs" style={{ background: C.surface, color: C.textDim }}>
-                        Thinking...
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Input */}
-                <div className="px-4 py-3 flex gap-2 shrink-0" style={{ borderTop: `1px solid ${C.border}` }}>
-                  <input
-                    value={chatInput}
-                    onChange={e => setChatInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && sendChatMessage()}
-                    placeholder="Ask Aegis..."
-                    className="flex-1 rounded px-3 py-1.5 text-sm focus:outline-none"
-                    style={{ background: C.surface, border: `1px solid ${C.border}`, color: '#e5e7eb' }}
-                  />
-                  <button
-                    onClick={sendChatMessage}
-                    disabled={chatLoading || !chatInput.trim()}
-                    className="px-4 py-1.5 rounded text-sm font-medium disabled:opacity-40 transition-opacity"
-                    style={{ background: C.primary, color: C.surface }}
-                  >
-                    Send
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
         </div>
 
         {/* ═══════════════ RIGHT SIDEBAR (25%) ═══════════════ */}
+        {/* md:pb-20 keeps the bottom-pinned Geographic Query clear of the fixed
+            StatusBar (which already overlapped it) and of the assistant
+            launcher docked at the bottom-right of the viewport. */}
         <div
-          className="flex flex-col w-full md:w-[25%] h-auto md:h-full overflow-y-auto pb-16 md:pb-0 border-t md:border-t-0 md:border-l"
+          className="flex flex-col w-full md:w-[25%] h-auto md:h-full overflow-y-auto pb-16 md:pb-20 border-t md:border-t-0 md:border-l"
           style={{ background: C.sidebarBg, borderColor: C.border }}
         >
           <div className="p-5 flex flex-col gap-5 flex-1">
@@ -602,13 +493,17 @@ export default function GeoPage() {
                     </p>
                   )}
                   <div className="flex items-center gap-2 mt-2">
-                    {/* ACTIVE badge */}
-                    <span
-                      className="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full border"
-                      style={{ color: C.green, borderColor: C.green }}
-                    >
-                      Active
-                    </span>
+                    {/* Source of the coordinates, when we actually know it — replaces a
+                        hardcoded "Active" badge that reflected nothing about the entity. */}
+                    {selectedLocation.geo_source && (
+                      <span
+                        className="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full border"
+                        style={{ color: C.textDim, borderColor: C.textDim }}
+                        title="How these coordinates were derived"
+                      >
+                        {String(selectedLocation.geo_source)}
+                      </span>
+                    )}
                     {/* Pivot to Network graph */}
                     <button
                       onClick={() => router.push(`/network?select=${selectedLocation.id}`)}
@@ -638,7 +533,12 @@ export default function GeoPage() {
                   </div>
                   <div className="rounded-lg p-3" style={{ background: C.elevated }}>
                     <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: C.textMuted }}>Status</div>
-                    <div className="text-sm font-medium" style={{ color: C.green }}>Geocoded</div>
+                    <div
+                      className="text-sm font-medium"
+                      style={{ color: isGeocoded(selectedLocation) ? C.green : C.textDim }}
+                    >
+                      {isGeocoded(selectedLocation) ? 'Geocoded' : 'Not geocoded'}
+                    </div>
                   </div>
                 </div>
 
@@ -714,7 +614,7 @@ export default function GeoPage() {
                   <div className="flex flex-col gap-2">
                     <button
                       onClick={() => runIntelOp('gap')}
-                      disabled={chatLoading}
+                      disabled={assistantBusy}
                       className="w-full rounded-md py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
                       style={{ background: C.primary, color: C.surface }}
                     >
@@ -722,7 +622,7 @@ export default function GeoPage() {
                     </button>
                     <button
                       onClick={() => runIntelOp('assess')}
-                      disabled={chatLoading}
+                      disabled={assistantBusy}
                       className="w-full rounded-md py-2 text-sm font-medium transition-opacity hover:opacity-90 border disabled:opacity-50"
                       style={{ background: 'transparent', color: C.primary, borderColor: C.primary }}
                     >
@@ -730,7 +630,7 @@ export default function GeoPage() {
                     </button>
                     <button
                       onClick={() => runIntelOp('hypothesis')}
-                      disabled={chatLoading}
+                      disabled={assistantBusy}
                       className="w-full rounded-md py-2 text-sm font-medium transition-opacity hover:opacity-90 border disabled:opacity-50"
                       style={{ background: 'transparent', color: C.primary, borderColor: C.primary }}
                     >
@@ -836,18 +736,17 @@ export default function GeoPage() {
                 />
                 <button
                   onClick={askGeoQuery}
-                  disabled={queryLoading || !queryInput.trim()}
+                  disabled={assistantBusy || !queryInput.trim()}
                   className="px-3 py-1.5 rounded text-sm font-medium disabled:opacity-40 transition-opacity"
                   style={{ background: C.primary, color: C.surface }}
                 >
-                  {queryLoading ? '...' : 'Ask'}
+                  {assistantBusy ? '...' : 'Ask'}
                 </button>
               </div>
-              {queryResult && (
-                <div className="mt-3 text-xs max-h-48 overflow-y-auto rounded-md p-3" style={{ background: C.elevated, color: '#d1d5db' }}>
-                  <Markdown content={queryResult} />
-                </div>
-              )}
+              <p className="mt-2 text-[10px]" style={{ color: C.textMuted }}>
+                Answers open in the Aegis assistant, with the entities, relationships and
+                documents that grounded them.
+              </p>
             </div>
           </div>
         </div>

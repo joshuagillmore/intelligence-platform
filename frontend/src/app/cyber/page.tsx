@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import GraphVisualization from '@/components/GraphVisualization';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
@@ -10,6 +11,8 @@ import { TYPE_BADGE_CLASS as TYPE_BADGE_STYLES } from '@/lib/entityStyles';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
 import AttackMatrix from '@/components/AttackMatrix';
 import AttackAttribution from '@/components/AttackAttribution';
+import Markdown from '@/components/Markdown';
+import { useNotifications } from '@/components/NotificationProvider';
 
 interface IOCEntity {
   id: string;
@@ -89,6 +92,7 @@ function SeverityStatCard({ label, count, color, subtitle, trending, progressPer
 export default function CyberPage() {
   const { activeProject } = useProject();
   const router = useRouter();
+  const { addNotification } = useNotifications();
   const [iocs, setIocs] = useState<IOCEntity[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [relationships, setRelationships] = useState<Record<string, Relationship[]>>({});
@@ -103,6 +107,10 @@ export default function CyberPage() {
   const [actorRelationships, setActorRelationships] = useState<Record<string, Relationship[]>>({});
   const [expandedActorId, setExpandedActorId] = useState<string | null>(null);
   const [generatingProfile, setGeneratingProfile] = useState<string | null>(null);
+  // Generated threat-actor profiles, keyed by actor id. The assessment is saved
+  // server-side as its own node (no GET endpoint), so keep the returned text here
+  // to render it — otherwise "Generate Profile" produces nothing the analyst sees.
+  const [actorProfiles, setActorProfiles] = useState<Record<string, string>>({});
   // Deep-link a technique from the attribution panel into the ATT&CK matrix drawer.
   const [attackFocus, setAttackFocus] = useState<string | null>(null);
 
@@ -180,14 +188,16 @@ export default function CyberPage() {
 
 
   const severityStats = useMemo(() => {
-    let critical = 0, high = 0, medium = 0, low = 0, enriched = 0, newRecent = 0;
+    let critical = 0, high = 0, medium = 0, low = 0, unrated = 0, enriched = 0, newRecent = 0;
     iocs.forEach(i => {
       const sev = typeof i.properties?.severity === 'string' ? i.properties.severity.toLowerCase() : '';
       if (sev === 'critical') critical++;
       else if (sev === 'high') high++;
       else if (sev === 'medium') medium++;
       else if (sev === 'low') low++;
-      else medium++; // default bucket
+      // No severity on the entity means exactly that — counting it as Medium
+      // invented a rating no analyst assigned. Surface it as triage backlog.
+      else unrated++;
       if (i.properties?.enriched) enriched++;
       if (i.properties?.first_seen) {
         const seen = new Date(String(i.properties.first_seen));
@@ -198,7 +208,7 @@ export default function CyberPage() {
     const enrichedPct = Math.round((enriched / total) * 100);
     const attributedCount = iocs.filter(i => i.properties?.attributed || i.properties?.threat_actor).length;
     const attributedPct = Math.round((attributedCount / total) * 100);
-    return { critical, high, medium, low, enrichedPct, attributedPct, newRecent, attributedCount };
+    return { critical, high, medium, low, unrated, enrichedPct, attributedPct, newRecent, attributedCount };
   }, [iocs]);
 
   async function toggleRow(ioc: IOCEntity) {
@@ -248,17 +258,35 @@ export default function CyberPage() {
     if (!activeProject) return;
     setGeneratingProfile(actor.id);
     try {
-      await assessApi.generate(actor.id, {
+      const gen = await assessApi.generate(actor.id, {
         entity_id: actor.id,
         project_id: activeProject.id,
       });
+      // The backend returns an error envelope (200) rather than throwing.
+      if (gen.data?.error) throw new Error(gen.data.error);
+
+      const text: string = gen.data?.assessment || gen.data?.judgment || '';
+      if (text) {
+        setActorProfiles(prev => ({ ...prev, [actor.id]: text }));
+        setExpandedActorId(actor.id); // reveal the profile we just generated
+      }
+
       // Refresh actor data
       const res = await entitiesApi.get(actor.id);
       if (res.data.entity) {
         setThreatActors(prev => prev.map(a => a.id === actor.id ? { ...a, ...res.data.entity } : a));
       }
-    } catch (e) {
-      console.error('Failed to generate profile', e);
+      addNotification({
+        type: 'success',
+        title: 'Profile Generated',
+        message: `Threat-actor profile ready for ${actor.name}.`,
+      });
+    } catch {
+      addNotification({
+        type: 'error',
+        title: 'Profile Failed',
+        message: `Could not generate a profile for ${actor.name}. Check that the LLM provider is configured and reachable.`,
+      });
     }
     setGeneratingProfile(null);
   }
@@ -275,11 +303,9 @@ export default function CyberPage() {
     return (
       <div className="flex">
         <Sidebar />
-        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
+        <main className="md:ml-56 flex-1 min-w-0 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
           <h2 className="text-2xl font-bold mb-4">Cyber Intelligence</h2>
-          <div className="rounded-lg p-8 text-center text-gray-500" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
-            <p>Select a project first.</p>
-          </div>
+          <SelectProjectPrompt action="review cyber indicators for" />
         </main>
       </div>
     );
@@ -288,7 +314,7 @@ export default function CyberPage() {
   return (
     <div className="flex" style={{ backgroundColor: '#0e1321' }}>
       <Sidebar />
-      <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
+      <main className="md:ml-56 flex-1 min-w-0 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-bold text-white">Cyber Intelligence</h2>
           <button
@@ -330,11 +356,14 @@ export default function CyberPage() {
         {pageTab === 'ioc' && (
           <>
             {/* Severity stat cards */}
-            <div className="grid grid-cols-2 md:flex gap-3 mb-6 md:flex-wrap">
+            {/* Fixed columns rather than flex-wrap: a wrapped flex-1 card stretches
+                to the full row width, which looked broken with 8 cards. */}
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 mb-6">
               <SeverityStatCard label="Critical IOCs" count={severityStats.critical} color="#ef4444" />
               <SeverityStatCard label="High Severity" count={severityStats.high} color="#f97316" />
               <SeverityStatCard label="Medium" count={severityStats.medium} color="#adc6ff" />
               <SeverityStatCard label="Low Priority" count={severityStats.low} color="#6b7280" />
+              <SeverityStatCard label="Unrated" count={severityStats.unrated} color="#6b7280" subtitle="Needs triage" />
               <SeverityStatCard label="New 24h" count={severityStats.newRecent} color="#60a5fa" />
               <SeverityStatCard label="Enriched" count={`${severityStats.enrichedPct}%`} color="#adc6ff" progressPercent={severityStats.enrichedPct} />
               <SeverityStatCard label="Attributed" count={`${severityStats.attributedPct}%`} color="#adc6ff" subtitle="Mapped to APTs" progressPercent={severityStats.attributedPct} />
@@ -362,7 +391,9 @@ export default function CyberPage() {
 
               {/* Left: IOC table (55%) */}
               <div className="w-full md:w-[55%] overflow-hidden flex flex-col" style={{ minHeight: '300px' }}>
-                <div className="rounded-lg overflow-hidden flex-1 overflow-y-auto" style={{ backgroundColor: '#1a1f2e', borderColor: '#2f3444', borderWidth: 1 }}>
+                {/* overflow-x-auto: the IOC table's min-content width (~590px) otherwise
+                    sets a floor the page can't shrink below on a phone. */}
+                <div className="rounded-lg flex-1 overflow-y-auto overflow-x-auto" style={{ backgroundColor: '#1a1f2e', borderColor: '#2f3444', borderWidth: 1 }}>
                   {iocsLoading ? (
                     <LoadingSpinner size="lg" />
                   ) : (
@@ -585,6 +616,17 @@ export default function CyberPage() {
 
                       {isExpanded && (
                         <div className="px-4 py-4" style={{ borderTop: '1px solid #2f3444' }}>
+                          {/* AI-generated threat-actor profile — rendered Markdown, matching
+                              how every other LLM product in the app is presented. */}
+                          {actorProfiles[actor.id] && (
+                            <div
+                              className="mb-4 rounded-md px-3 py-2.5"
+                              style={{ backgroundColor: 'rgba(173,198,255,0.08)', border: '1px solid rgba(173,198,255,0.3)' }}
+                            >
+                              <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-2">AI Threat Assessment</h4>
+                              <Markdown content={actorProfiles[actor.id]} className="text-xs" />
+                            </div>
+                          )}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                               <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-2">Connected Entities</h4>

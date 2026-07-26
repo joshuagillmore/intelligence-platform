@@ -2,6 +2,8 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
+import { useNotifications } from '@/components/NotificationProvider';
+import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import TopicMindMap from '@/components/TopicMindMap';
 import MindMapControls from '@/components/MindMapControls';
@@ -106,6 +108,7 @@ function getStoredLayout(): LayoutMode {
 
 export default function DataSourcesPage() {
   const { activeProject } = useProject();
+  const { addNotification } = useNotifications();
   const router = useRouter();
   // Mind map tree data
   const [topicTree, setTopicTree] = useState<TreeNode>({ name: 'Knowledge Base', id: 'root', children: [] });
@@ -392,9 +395,7 @@ export default function DataSourcesPage() {
         <Sidebar />
         <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
           <h2 className="text-2xl font-bold mb-4">Data Sources</h2>
-          <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
-            <p>Select a project first.</p>
-          </div>
+          <SelectProjectPrompt action="browse sources for" />
         </main>
       </div>
     );
@@ -467,7 +468,13 @@ export default function DataSourcesPage() {
                   a.download = `mindmap.${format === 'mermaid' ? 'mmd' : format === 'markdown' ? 'md' : 'json'}`;
                   a.click();
                   URL.revokeObjectURL(url);
-                } catch (e) { console.error('Export failed', e); }
+                } catch {
+                  addNotification({
+                    type: 'error',
+                    title: 'Export Failed',
+                    message: 'Could not export the mind map. Check the backend and try again.',
+                  });
+                }
               }}
             />
           </div>

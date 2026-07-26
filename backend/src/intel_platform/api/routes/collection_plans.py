@@ -60,6 +60,10 @@ class CreatePlanRequest(BaseModel):
     description: str = ""
     requirement: str = ""
     pir: str = ""
+    # Link to a first-class PIR (see api/routes/pirs.py). When omitted but `pir`
+    # text is supplied, the plan is anchored to a matching/new PIR so free-typed
+    # requirements still land on the project's requirements spine.
+    pir_id: str | None = None
     refined_pir: str = ""
     status: str = PlanStatus.DRAFT
     routing_rules: dict = Field(default_factory=lambda: {
@@ -101,7 +105,11 @@ class UpdateSourceRequest(BaseModel):
 class SubmitPIRRequest(BaseModel):
     """Submit a PIR to create a full collection plan via LLM."""
     project_id: str
-    pir: str
+    pir: str = ""
+    # Run against an already-persisted requirement. Omit to have one created (or
+    # an identical live one reused) from `pir` — either way the plan ends up
+    # linked to a PIR the project hub can show.
+    pir_id: str | None = None
     extraction_mode: str = "hybrid"
     created_by: str = "analyst"
 
@@ -118,6 +126,7 @@ def _plan_to_dict(plan: CollectionPlan) -> dict:
         "description": plan.description,
         "requirement": plan.requirement,
         "pir": plan.pir,
+        "pir_id": str(plan.pir_id) if plan.pir_id else None,
         "refined_pir": plan.refined_pir,
         "status": plan.status,
         "routing_rules": plan.routing_rules or {},
@@ -197,12 +206,20 @@ def _catalog_to_dict(cat: DataCatalog) -> dict:
 
 @router.post("/collection-plans")
 async def create_plan(req: CreatePlanRequest, db: AsyncSession = Depends(get_db)):
+    # Local import: pirs.py imports this module's _parse_uuid.
+    from intel_platform.api.routes.pirs import get_or_create_pir
+
+    pir_record = await get_or_create_pir(
+        db, req.project_id, req.pir, pir_id=req.pir_id, created_by=req.created_by,
+    )
+
     plan = CollectionPlan(
         project_id=req.project_id,
         name=req.name,
         description=req.description,
         requirement=req.requirement,
-        pir=req.pir,
+        pir=req.pir or (pir_record.text if pir_record else ""),
+        pir_id=pir_record.id if pir_record else None,
         refined_pir=req.refined_pir,
         status=req.status,
         routing_rules=req.routing_rules,
@@ -328,7 +345,22 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
 
     Flow: PIR → LLM refinement → LLM plan generation → create Plan + Sources → DRAFT
     Returns the plan ready for user approval.
+
+    The PIR itself is persisted first (or resolved from `pir_id`), so the plan is
+    always anchored to a requirement the project hub can list and track.
     """
+    # Local import: pirs.py imports this module's _parse_uuid.
+    from intel_platform.api.routes.pirs import get_or_create_pir
+
+    # Step 0: Anchor the run on a first-class PIR before any LLM work, so an
+    # unknown pir_id fails fast and the requirement survives an LLM outage.
+    pir_record = await get_or_create_pir(
+        db, req.project_id, req.pir, pir_id=req.pir_id, created_by=req.created_by,
+    )
+    pir_text = (req.pir or "").strip() or (pir_record.text if pir_record else "")
+    if not pir_text:
+        raise HTTPException(400, "A PIR (text or pir_id) is required")
+
     # Step 1: Get the LLM provider
     provider = None
     llm_available = False
@@ -346,7 +378,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
         logger.warning("Failed to get LLM provider for PIR plan generation: %s", e)
         llm_status = f"LLM unavailable: {e}"
 
-    refined_pir = req.pir
+    refined_pir = pir_text
     plan_description = ""
 
     if provider:
@@ -356,7 +388,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
             loader = SkillsLoader()
 
             refine_result = await provider.generate(
-                messages=[{"role": "user", "content": f"Refine this Priority Intelligence Requirement (PIR):\n\n{req.pir}"}],
+                messages=[{"role": "user", "content": f"Refine this Priority Intelligence Requirement (PIR):\n\n{pir_text}"}],
                 system=(
                     "You are an intelligence analyst. Given a PIR:\n"
                     "1. ASSESS specificity, measurability, and time-bounds\n"
@@ -406,13 +438,19 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     else:
         plan_text = ""
 
-    # Step 4: Create the plan
+    # Step 4: Create the plan, linked to the requirement it serves
+    if pir_record and refined_pir and not pir_record.refined_text:
+        # Carry the LLM's refinement back onto the requirement so the analyst
+        # does not have to re-derive it on the next run.
+        pir_record.refined_text = refined_pir
+
     plan = CollectionPlan(
         project_id=req.project_id,
-        name=f"PIR: {req.pir[:80]}{'...' if len(req.pir) > 80 else ''}",
+        name=f"PIR: {pir_text[:80]}{'...' if len(pir_text) > 80 else ''}",
         description=plan_description,
-        requirement=req.pir,
-        pir=req.pir,
+        requirement=pir_text,
+        pir=pir_text,
+        pir_id=pir_record.id if pir_record else None,
         refined_pir=refined_pir,
         status=PlanStatus.DRAFT,
         routing_rules={
@@ -547,13 +585,45 @@ async def execute_plan_endpoint(
 
 
 @router.get("/collection-plans/{plan_id}/execution-status")
-async def get_execution_status(plan_id: str):
-    """Poll the execution progress of a running collection plan."""
-    from intel_platform.services.plan_executor import get_execution_status
-    status = get_execution_status(plan_id)
-    if not status:
+async def get_execution_status(plan_id: str, db: AsyncSession = Depends(get_db)):
+    """Poll the execution progress of a running collection plan.
+
+    The in-memory plan_executor tracker only covers the synchronous plan_executor
+    path; the agentic loop (run_agentic_loop) records progress to CollectionActivity
+    instead. Fall back to that trail so the endpoint reflects a real agentic run
+    (previously it always reported "idle" while a crawl was in flight).
+    """
+    from intel_platform.services.plan_executor import get_execution_status as _mem_status
+    pid = _parse_uuid(plan_id, "plan_id")
+
+    mem = _mem_status(plan_id)
+    if mem:
+        return {"plan_id": plan_id, **mem}
+
+    result = await db.execute(
+        select(CollectionActivity)
+        .where(CollectionActivity.plan_id == pid)
+        .order_by(CollectionActivity.created_at.asc())
+    )
+    events = result.scalars().all()
+    if not events:
         return {"plan_id": plan_id, "status": "idle", "message": "No active execution"}
-    return {"plan_id": plan_id, **status}
+
+    latest = events[-1]
+    terminal = next((e for e in reversed(events) if e.event in ("plan_completed", "plan_failed")), None)
+    if terminal:
+        state = "completed" if terminal.event == "plan_completed" else "failed"
+    else:
+        state = "running"
+    return {
+        "plan_id": plan_id,
+        "status": state,
+        "message": latest.message,
+        "last_event": latest.event,
+        "sources_succeeded": sum(1 for e in events if e.event == "source_succeeded"),
+        "sources_failed": sum(1 for e in events if e.event == "source_failed"),
+        "updated_at": latest.created_at.isoformat(),
+    }
 
 
 # ---------------------------------------------------------------------------

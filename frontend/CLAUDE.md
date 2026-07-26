@@ -25,7 +25,7 @@ assertions, in `tests/e2e/`; needs the stack up + `backend/scripts/seed_demo.py`
 
 | Path | What |
 |------|------|
-| `app/` | App Router pages — one folder per view: `page.tsx` (dashboard), `collections`, `collection-plans`, `data-sources`, `network` (graph), `geo`, `timeline`, `search`, `watchlist`, `products`, `cyber`, `llm-hub`, `admin`, `login`. `layout.tsx` is the shell. |
+| `app/` | App Router pages — one folder per view: `page.tsx` (dashboard), `collections`, `collection-plans`, `data-sources`, `network` (graph), `geo`, `timeline`, `search`, `watchlist`, `analysis` (structured analytic techniques), `products`, `cyber`, `llm-hub`, `admin`, `login`. `layout.tsx` is the shell. |
 | `components/` | Shared UI: `GraphVisualization`, `GeoMap`, `TopicMindMap`, `TemporalSlider`, `Sidebar`, `StatusBar`, `MobileHeader`/`MobileBottomNav`, `NotificationProvider`, `KeyboardShortcuts`, `HighlightedExcerpt`, `MindMapControls`, `LoadingSpinner`. |
 | `stores/` | **Currently empty** — no global store library (the dead `graphStore.ts` and the `zustand`/`zundo` deps were removed; the network page hand-rolls its own local undo). |
 | `lib/` | `api.ts` (axios client → backend), `ProjectContext.tsx`, `branding.ts` (app name/version), `entityStyles.ts` (entity-color SSOT), `graphLayout.ts`, `errorMessages.ts`. |
