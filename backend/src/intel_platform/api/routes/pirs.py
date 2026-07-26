@@ -297,7 +297,12 @@ _EEI_MAX_CHARS = 400
 # The negative lookahead keeps "EEI 3: Specific devices…" out — that is a
 # numbered item, handled by _EEI_LINE, not a section heading.
 _EEI_HEADING = re.compile(
-    r"^[#*\s>]*(?:essential elements(?:\s+of\s+information)?|EEIs?)\b(?!\s*\d)"
+    # The optional `3.` is a numbered *section* heading — refinements routinely
+    # write "3. **Essential Elements of Information (EEIs)**", and anchoring
+    # without it broke EEI capture outright on that shape. Safe to allow,
+    # because the heading words are still required immediately after.
+    r"^[#*\s>]*(?:\d+[.)]\s*)?[#*\s>]*"
+    r"(?:essential elements(?:\s+of\s+information)?|EEIs?)\b(?!\s*\d)"
     r"[\s*]*:?[\s*]*(?P<tail>.*)$",
     re.IGNORECASE,
 )

@@ -338,3 +338,47 @@ class TestHeadingIsAnchored:
         assert extract_eeis("Essential Elements of Information: Who funds the group?\n") == [
             "Who funds the group?"
         ]
+
+
+class TestNumberedSectionHeading:
+    """A numbered section heading must still open the EEI list.
+
+    Observed live after over-tightening the heading anchor: refinements write
+    "3. **Essential Elements of Information (EEIs)**", the anchor rejected the
+    leading "3.", and EEI capture returned nothing at all for the whole run.
+    """
+
+    LIVE = (
+        "**Analysis:**\n\n"
+        "1. **Specificity, Measurability, and Time-Bounds**\n"
+        "   - The original PIR is broad in scope but lacks a specific timeframe.\n\n"
+        "2. **Hidden Assumptions**\n"
+        "   - The assumption that Houthi forces have demonstrated capabilities.\n\n"
+        "3. **Essential Elements of Information (EEIs)**\n"
+        "   - EEI 1: Types and models of weapon systems used in anti-ship attacks.\n"
+        "   - EEI 2: Targeting methods employed for each attack.\n"
+        "   - EEI 3: Specific details on vessels struck.\n"
+        "   - EEI 4: Dates and locations of all confirmed attacks.\n\n"
+        "**Proposed Refined PIR:**\n"
+        "Assess the specific anti-ship capabilities demonstrated by Houthi forces.\n"
+    )
+
+    def test_captures_all_four_eeis(self):
+        got = extract_eeis(self.LIVE)
+        assert len(got) == 4, got
+        assert got[0] == "Types and models of weapon systems used in anti-ship attacks."
+        assert got[3] == "Dates and locations of all confirmed attacks."
+
+    def test_analysis_sections_above_are_not_captured(self):
+        got = extract_eeis(self.LIVE)
+        assert not any("Hidden Assumptions" in g for g in got)
+        assert not any("Specificity" in g for g in got)
+
+    def test_refined_pir_section_does_not_leak(self):
+        got = extract_eeis(self.LIVE)
+        assert not any("Refined PIR" in g for g in got)
+        assert not any(g.startswith("Assess the specific") for g in got)
+
+    def test_parenthesised_abbreviation_is_not_an_eei(self):
+        """"(EEIs)" trailing the heading is a label, not a criterion."""
+        assert not any("(EEIs)" in g for g in extract_eeis(self.LIVE))
