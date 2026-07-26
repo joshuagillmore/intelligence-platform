@@ -588,10 +588,24 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
             except Exception as e:
                 logger.debug("Summarization failed for %s: %s", url or title, e)
 
+        # One bound for both storage and extraction. Previously the Document
+        # kept 50k chars while extraction chunked the *whole* page: a live crawl
+        # hit a 139,391-word page, which is hundreds of sequential LLM calls —
+        # the collection stalled with a single entity — and any entity found
+        # past the 50k mark referenced a document that no longer contained its
+        # evidence, so "Show Evidence" could never resolve it.
+        max_chars = getattr(settings, "max_document_chars", 50000)
+        if len(content) > max_chars:
+            logger.info(
+                "Truncating %s from %d to %d chars for storage and extraction",
+                url or title or source.name, len(content), max_chars,
+            )
+            content = content[:max_chars]
+
         # Store as Document in Neo4j
         doc = Document(
             name=f"[Collection] {title or url or source.name}"[:256],
-            content=content[:50000],  # Cap at 50k chars per doc
+            content=content,
             reliability_rating="C3",
             project_id=plan.project_id,
             summary_json=summary_json,

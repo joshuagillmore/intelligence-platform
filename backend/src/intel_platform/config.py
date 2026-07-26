@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     cooccurrence_confidence_min: float = 0.55
 
     # Chunking
+    # Characters of a single crawled document kept and extracted from. A live
+    # crawl returned a 139,391-word page: chunked whole, that is hundreds of
+    # sequential LLM calls, and the collection stalled with one entity to show
+    # for it. The same bound applies to what is stored, so every extracted
+    # entity's evidence remains inside the document that is kept.
+    max_document_chars: int = 50000
     chunk_size: int = 2000
     chunk_overlap: int = 50
 
