@@ -294,6 +294,15 @@ _LOW_SIGNAL_TYPES = frozenset({"URL", "Domain", "Document", "Topic", "Report", "
 # consumed by _EEI_LINE, so strip the inner one too or it lands in the criterion.
 _EEI_PREFIX = re.compile(r"^EEI\s*\d*\s*[:.\-]\s*", re.IGNORECASE)
 
+# Refinements narrate their own work ("The refined version provides a clearer
+# focus on…"). Captured as a criterion it can never be satisfied by collection,
+# so it would sit in unmet_criteria forever and block SATISFIED.
+_EEI_META = re.compile(
+    r"\b(?:refined|revised|original|updated)\s+"
+    r"(?:pir|version|requirement|statement|question|wording)\b",
+    re.IGNORECASE,
+)
+
 
 def _clean_eei(raw: str) -> str:
     """Normalise one captured line into a usable collection criterion.
@@ -308,6 +317,9 @@ def _clean_eei(raw: str) -> str:
     # A real criterion states something; a trailing colon means this was a
     # heading introducing the content below it.
     if not body or body.endswith(":"):
+        return ""
+    # Commentary about the refinement is not something collection can answer.
+    if _EEI_META.search(body):
         return ""
     return body
 

@@ -88,6 +88,26 @@ class TestExtractEeis:
             "Initial Access Vectors: Determine the primary methods used."
         ]
 
+    def test_refinement_commentary_is_not_a_criterion(self):
+        """Observed live: the model's note about its own rewrite became an EEI.
+
+        Collection can never satisfy it, so it would sit in unmet_criteria
+        forever and make the requirement permanently unsatisfiable.
+        """
+        analysis = (
+            "### EEIs\n"
+            "1. Which border regions have seen expansion?\n"
+            "2. The refined version provides a clearer focus on coastal regions.\n"
+        )
+        assert extract_eeis(analysis) == ["Which border regions have seen expansion?"]
+
+    def test_substantive_eei_mentioning_a_revision_survives(self):
+        """The filter must not eat a real criterion that happens to say 'revised'."""
+        analysis = "EEIs:\n1. Which sanctions lists were revised after the incident?\n"
+        assert extract_eeis(analysis) == [
+            "Which sanctions lists were revised after the incident?"
+        ]
+
     def test_deduplicates_case_insensitively(self):
         analysis = "EEIs:\n- Who leads the unit?\n- who leads the unit?\n- Where is it based?\n"
         assert extract_eeis(analysis) == ["Who leads the unit?", "Where is it based?"]
