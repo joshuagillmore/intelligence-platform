@@ -6,7 +6,7 @@ import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import GraphVisualization from '@/components/GraphVisualization';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { entitiesApi, graphApi, assessApi } from '@/lib/api';
+import { entitiesApi, graphApi, assessApi, entityFields } from '@/lib/api';
 import { TYPE_BADGE_CLASS as TYPE_BADGE_STYLES } from '@/lib/entityStyles';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
 import AttackMatrix from '@/components/AttackMatrix';
@@ -190,7 +190,10 @@ export default function CyberPage() {
   const severityStats = useMemo(() => {
     let critical = 0, high = 0, medium = 0, low = 0, unrated = 0, enriched = 0, newRecent = 0;
     iocs.forEach(i => {
-      const sev = typeof i.properties?.severity === 'string' ? i.properties.severity.toLowerCase() : '';
+      // entityFields: the API flattens node fields onto the entity, so reading
+      // `.properties` returned undefined for every one of these.
+      const f = entityFields(i);
+      const sev = typeof f.severity === 'string' ? f.severity.toLowerCase() : '';
       if (sev === 'critical') critical++;
       else if (sev === 'high') high++;
       else if (sev === 'medium') medium++;
@@ -198,15 +201,18 @@ export default function CyberPage() {
       // No severity on the entity means exactly that — counting it as Medium
       // invented a rating no analyst assigned. Surface it as triage backlog.
       else unrated++;
-      if (i.properties?.enriched) enriched++;
-      if (i.properties?.first_seen) {
-        const seen = new Date(String(i.properties.first_seen));
+      if (f.enriched) enriched++;
+      if (f.first_seen) {
+        const seen = new Date(String(f.first_seen));
         if (Date.now() - seen.getTime() < 86400000) newRecent++;
       }
     });
     const total = iocs.length || 1;
     const enrichedPct = Math.round((enriched / total) * 100);
-    const attributedCount = iocs.filter(i => i.properties?.attributed || i.properties?.threat_actor).length;
+    const attributedCount = iocs.filter(i => {
+      const f = entityFields(i);
+      return f.attributed || f.threat_actor;
+    }).length;
     const attributedPct = Math.round((attributedCount / total) * 100);
     return { critical, high, medium, low, unrated, enrichedPct, attributedPct, newRecent, attributedCount };
   }, [iocs]);
@@ -413,6 +419,9 @@ export default function CyberPage() {
                         const isExpanded = expandedId === ioc.id;
                         const rels = relationships[ioc.id] || [];
                         const entity = expandedEntity[ioc.id] || ioc;
+                        // Prefer the fuller entity fetched on expand; fall back to the
+                        // list row. Both are flattened, hence entityFields().
+                        const iocFields = entityFields(entity);
                         return (
                           <React.Fragment key={ioc.id}>
                             <tr
@@ -433,14 +442,14 @@ export default function CyberPage() {
                                 </span>
                               </td>
                               <td className="px-4 py-2 text-xs text-gray-400">
-                                {ioc.properties?.last_activity ? String(ioc.properties.last_activity) : ioc.properties?.first_seen ? 'Active' : 'Unknown'}
+                                {iocFields.last_activity ? String(iocFields.last_activity) : iocFields.first_seen ? 'Active' : 'Unknown'}
                               </td>
                               <td className="px-4 py-2 text-xs text-gray-400">
-                                {ioc.properties?.context ? String(ioc.properties.context) : ioc.properties?.threat_actor ? `Linked: ${String(ioc.properties.threat_actor)}` : '--'}
+                                {iocFields.context ? String(iocFields.context) : iocFields.threat_actor ? `Linked: ${String(iocFields.threat_actor)}` : '--'}
                               </td>
                               <td className="px-4 py-2 text-xs text-gray-400">{ioc.relationship_count ?? '--'}</td>
                               <td className="px-4 py-2 text-xs text-gray-400">
-                                {ioc.properties?.first_seen ? String(ioc.properties.first_seen) : '--'}
+                                {iocFields.first_seen ? String(iocFields.first_seen) : '--'}
                               </td>
                             </tr>
 
@@ -501,7 +510,7 @@ export default function CyberPage() {
                                       <EnrichmentPanel
                                         entityId={ioc.id}
                                         entityType={ioc.entity_type}
-                                        properties={entity.properties}
+                                        properties={entityFields(entity)}
                                         onEnriched={() => { refetchIoc(ioc.id); loadIOCs(); loadGraph(); }}
                                       />
                                     </div>

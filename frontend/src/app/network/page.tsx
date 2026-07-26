@@ -7,7 +7,7 @@ import TemporalSlider from '@/components/TemporalSlider';
 import { useProject } from '@/lib/ProjectContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { entitiesApi, graphApi, queryApi, llmApi, assessApi, analysisApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi } from '@/lib/api';
+import { entitiesApi, graphApi, queryApi, llmApi, assessApi, analysisApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi, entityFields } from '@/lib/api';
 import { useAssistant } from '@/lib/AssistantContext';
 import { TYPE_COLOR_CLASS as TYPE_COLORS } from '@/lib/entityStyles';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
@@ -2041,7 +2041,7 @@ function NetworkPageInner() {
                 <EnrichmentPanel
                   entityId={selectedEntity.id}
                   entityType={selectedEntity.entity_type}
-                  properties={selectedEntity.properties}
+                  properties={entityFields(selectedEntity)}
                   onEnriched={() => selectEntity(selectedEntity)}
                 />
 

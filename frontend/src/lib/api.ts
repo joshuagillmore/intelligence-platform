@@ -817,4 +817,26 @@ export const healthApi = {
   },
 };
 
+/**
+ * Return an entity's field bag regardless of how the route shaped it.
+ *
+ * The entity routes flatten node fields onto the object (`asn`, `geolocation`,
+ * `enriched`, …) while a few others (geo) nest them under `properties`. Code
+ * that read `entity.properties.x` therefore got `undefined` for everything on
+ * the flattened shape — which is why enriched observables rendered as
+ * un-enriched and the "Enriched" stat sat at 0%.
+ *
+ * Prefer this over touching `.properties` directly.
+ */
+export function entityFields(entity: unknown): Record<string, unknown> {
+  if (!entity || typeof entity !== 'object') return {};
+  const e = entity as Record<string, unknown>;
+  const nested =
+    e.properties && typeof e.properties === 'object' && !Array.isArray(e.properties)
+      ? (e.properties as Record<string, unknown>)
+      : {};
+  // Nested wins: where a route supplies both, `properties` is the explicit one.
+  return { ...e, ...nested };
+}
+
 export default api;

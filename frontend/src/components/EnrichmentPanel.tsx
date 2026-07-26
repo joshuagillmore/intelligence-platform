@@ -74,7 +74,19 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
       try {
         const { data } = await enrichmentApi.getCached(entityId);
         const cached = data?.cached;
-        if (!cancelled && cached && Object.keys(cached).length > 0) setStatus(cached);
+        if (!cancelled && cached && Object.keys(cached).length > 0) {
+          // The cache view returns each provider's payload, not the {status}
+          // envelope the live run returns — tag them so the chips read
+          // "geoip: cached" rather than "geoip: —".
+          setStatus(
+            Object.fromEntries(
+              Object.entries(cached).map(([name, payload]: [string, any]) => [
+                name,
+                { ...(payload && typeof payload === 'object' ? payload : {}), status: payload?.status ?? 'cached' },
+              ]),
+            ),
+          );
+        }
       } catch {
         /* nothing cached for this observable yet — leave the empty state */
       }
