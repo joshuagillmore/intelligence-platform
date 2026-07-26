@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import jellyfish
 
 from intel_platform.graph.store import GraphStore
@@ -85,6 +87,37 @@ def resolve_entity_name(
     return None
 
 
+# Naming conventions that identify a platform type more reliably than the model
+# does. Applied as the last step before type resolution, because an unrecognised
+# type collapses to Custom at that point and is unrecoverable afterwards.
+_GENERIC_TYPES = frozenset({
+    "Custom", "Organization", "Technology", "Infrastructure", "Product", "Person", "",
+})
+
+_NAME_TYPE_HINTS: tuple[tuple[re.Pattern, str], ...] = (
+    # Vessel prefixes: "MV Aurora Trader", "USS Georgia", "FS Provence".
+    (re.compile(r'^(MV|M/V|MT|M/T|SS|S/S|MS|M/S|RFA|FGS|FS|INS|HMAS|HMS|USS|USNS|RV)\s+\S'),
+     "Ship"),
+    # UAV designators: "MQ-9 Reaper", "RQ-4 Global Hawk".
+    (re.compile(r'^(MQ|RQ)-\d', re.IGNORECASE), "Drone"),
+)
+
+
+def _type_from_name(name: str, current: str) -> str:
+    """Re-type an entity whose name follows an unambiguous naming convention.
+
+    Only overrides the generic types the model over-uses — never a specific type
+    it chose deliberately, so an entity already typed Submarine stays Submarine.
+    """
+    n = (name or "").strip()
+    if not n or (current or "").strip() not in _GENERIC_TYPES:
+        return current
+    for pattern, better in _NAME_TYPE_HINTS:
+        if pattern.match(n):
+            return better
+    return current
+
+
 def build_graph_from_extractions(
     store: GraphStore, entities: list[dict], relationships: list[dict], project_id: str,
     source_doc_id: str = "", auto_enrich_loop=None,
@@ -148,6 +181,12 @@ def build_graph_from_extractions(
                 continue
 
         _resolution_cache[cache_key] = None
+
+        # Naming conventions get the last word, immediately before the type is
+        # resolved. Applying this during extraction was not enough: the model
+        # emits long-tail types the canon cannot enumerate ("tanker" is mapped,
+        # the next synonym is not), and whatever it chose only collapses here.
+        raw_type = _type_from_name(name, raw_type)
 
         # Normalize the entity type using the hierarchy
         specific_type, parent_category = normalize_entity_type(raw_type)

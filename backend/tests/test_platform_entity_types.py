@@ -29,3 +29,30 @@ def test_the_advertised_taxonomy_and_the_enum_agree():
     """Anything the extraction prompt offers must be representable in the graph."""
     for name in PLATFORM_TYPES:
         EntityType(name)  # raises if the enum drifts from the prompt again
+
+
+# --- naming-convention re-typing at the graph-write boundary -----------------
+from intel_platform.services.graph_builder import _type_from_name  # noqa: E402
+
+
+def test_vessel_prefixes_retype_generic_entities():
+    assert _type_from_name("MV Aurora Trader", "Custom") == "Ship"
+    assert _type_from_name("MT Coral Sky", "Organization") == "Ship"
+    assert _type_from_name("FS Provence", "Infrastructure") == "Ship"
+    assert _type_from_name("USS Georgia", "") == "Ship"
+
+
+def test_uav_designators_retype():
+    assert _type_from_name("MQ-9 Reaper", "Custom") == "Drone"
+    assert _type_from_name("RQ-4 Global Hawk", "Technology") == "Drone"
+
+
+def test_a_deliberate_specific_type_is_never_overridden():
+    assert _type_from_name("USS Georgia", "Submarine") == "Submarine"
+    assert _type_from_name("MV Aurora Trader", "Ship") == "Ship"
+
+
+def test_ordinary_names_are_untouched():
+    for name, t in [("Maersk Line", "Organization"), ("Movement", "Custom"),
+                    ("Hodeidah", "Location"), ("MV", "Custom")]:
+        assert _type_from_name(name, t) == t, name
