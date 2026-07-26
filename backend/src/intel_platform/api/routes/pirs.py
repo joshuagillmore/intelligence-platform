@@ -344,6 +344,41 @@ def extract_eeis(analysis: str, limit: int = 8) -> list[str]:
     return eeis[:limit]
 
 
+# Models emit the verdict block inconsistently: some print "EEI_ASSESSMENT:" once
+# as a header, others repeat it on every line, and some wrap the line in bold.
+_VERDICT_LINE = re.compile(
+    r"^\s*\**\s*(?:EEI_ASSESSMENT\s*:)?\s*\**\s*(?:EEI\s*)?(\d+)\s*\|\s*"
+    r"(SATISFIED|PARTIAL|UNMET)\s*\|\s*(.+?)\s*\**\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_verdicts(narrative: str, eeis: list[str]) -> list[dict]:
+    """Read the `N | VERDICT | justification` block back out of the model's reply.
+
+    A verdict the parser misses is indistinguishable from an unassessed
+    requirement, so this is deliberately permissive about how the line is
+    labelled and strict about its three fields.
+    """
+    out: list[dict] = []
+    seen: set[int] = set()
+    for line in (narrative or "").split("\n"):
+        m = _VERDICT_LINE.match(line.strip())
+        if not m:
+            continue
+        idx = int(m.group(1)) - 1
+        if not (0 <= idx < len(eeis)) or idx in seen:
+            continue
+        seen.add(idx)
+        out.append({
+            "index": idx,
+            "eei": eeis[idx],
+            "verdict": m.group(2).upper(),
+            "justification": m.group(3).strip().rstrip("*").strip(),
+        })
+    return out
+
+
 class AssessPirRequest(BaseModel):
     """Optional inputs for a satisfaction assessment."""
 
@@ -443,21 +478,7 @@ async def assess_pir(
         )
         narrative = result.content or ""
         model_name = getattr(result, "model", "") or ""
-        for line in narrative.split("\n"):
-            m = re.match(
-                r"^\s*\**\s*(\d+)\s*\|\s*(SATISFIED|PARTIAL|UNMET)\s*\|\s*(.+?)\s*\**\s*$",
-                line.strip(), re.IGNORECASE,
-            )
-            if not m:
-                continue
-            idx = int(m.group(1)) - 1
-            if 0 <= idx < len(eeis) and not any(a["index"] == idx for a in assessments):
-                assessments.append({
-                    "index": idx,
-                    "eei": eeis[idx],
-                    "verdict": m.group(2).upper(),
-                    "justification": m.group(3).strip(),
-                })
+        assessments = parse_verdicts(narrative, eeis)
     except Exception:
         logger.warning("PIR assessment failed for %s", pir_id, exc_info=True)
 
@@ -466,7 +487,11 @@ async def assess_pir(
 
     if assessments and not unmet:
         status = PirStatus.SATISFIED
-    elif satisfied:
+    elif any(a["verdict"] in ("SATISFIED", "PARTIAL") for a in assessments):
+        # A PARTIAL verdict means the collection did answer part of the element.
+        # Reporting that as OPEN loses the distinction between "we have something
+        # on this" and "we have nothing at all", which is what drives whether the
+        # next cycle re-collects or refines.
         status = PirStatus.PARTIAL
     else:
         status = PirStatus.OPEN

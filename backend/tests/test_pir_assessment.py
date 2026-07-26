@@ -7,7 +7,7 @@ model output, which is exactly where it breaks silently.
 """
 from __future__ import annotations
 
-from intel_platform.api.routes.pirs import extract_eeis
+from intel_platform.api.routes.pirs import extract_eeis, parse_verdicts
 
 
 class TestExtractEeis:
@@ -104,30 +104,69 @@ class TestExtractEeis:
         assert extract_eeis(None) == []
 
 
-class TestVerdictLineParsing:
-    """The `N | VERDICT | justification` contract the assessor parses back."""
+class TestParseVerdicts:
+    """The `N | VERDICT | justification` contract the assessor reads back.
 
-    import re as _re
+    A missed verdict is indistinguishable from an unassessed requirement, so
+    every label shape a model has actually produced is covered here.
+    """
 
-    PATTERN = _re.compile(
-        r"^\s*\**\s*(\d+)\s*\|\s*(SATISFIED|PARTIAL|UNMET)\s*\|\s*(.+?)\s*\**\s*$",
-        _re.IGNORECASE,
-    )
+    EEIS = ["Which vessels?", "Who attributed it?", "Which facilities?"]
 
-    def test_plain_line(self):
-        m = self.PATTERN.match("1 | SATISFIED | Three sources name MV Aurora Trader.")
-        assert m and m.group(2) == "SATISFIED"
+    def test_plain_lines_under_one_header(self):
+        narrative = (
+            "EEI_ASSESSMENT:\n"
+            "1 | SATISFIED | Three sources name MV Aurora Trader.\n"
+            "2 | UNMET | No collected document addresses attribution.\n"
+        )
+        got = parse_verdicts(narrative, self.EEIS)
+        assert [g["verdict"] for g in got] == ["SATISFIED", "UNMET"]
+        assert got[0]["eei"] == "Which vessels?"
 
-    def test_bold_wrapped_line(self):
-        m = self.PATTERN.match("**2 | UNMET | No collected document addresses attribution.**")
-        assert m and m.group(1) == "2" and m.group(2) == "UNMET"
+    def test_header_repeated_on_every_line(self):
+        """Observed live from command-a-plus: the label prefixes each verdict."""
+        narrative = (
+            "EEI_ASSESSMENT: 1 | UNMET | No identification of the top three groups.\n"
+            "EEI_ASSESSMENT: 2 | UNMET | No mapping of initial access vectors.\n"
+            "EEI_ASSESSMENT: 3 | UNMET | Data leak site usage is absent.\n"
+        )
+        got = parse_verdicts(narrative, self.EEIS)
+        assert len(got) == 3
+        assert all(g["verdict"] == "UNMET" for g in got)
 
-    def test_lowercase_verdict(self):
-        m = self.PATTERN.match("3 | partial | Only one of two facilities identified.")
-        assert m and m.group(2).upper() == "PARTIAL"
+    def test_bold_wrapped_and_lowercase(self):
+        narrative = (
+            "**2 | partial | Only one of two facilities identified.**\n"
+        )
+        got = parse_verdicts(narrative, self.EEIS)
+        assert got == [{
+            "index": 1, "eei": "Who attributed it?", "verdict": "PARTIAL",
+            "justification": "Only one of two facilities identified.",
+        }]
 
-    def test_prose_line_is_ignored(self):
-        assert self.PATTERN.match("The first element is well covered by the reporting.") is None
+    def test_eei_prefixed_index(self):
+        got = parse_verdicts("EEI 3 | SATISFIED | Both sites named.", self.EEIS)
+        assert got and got[0]["index"] == 2
 
-    def test_header_line_is_ignored(self):
-        assert self.PATTERN.match("EEI_ASSESSMENT:") is None
+    def test_prose_and_headers_ignored(self):
+        narrative = (
+            "The first element is well covered by the reporting.\n"
+            "EEI_ASSESSMENT:\n"
+            "Some concluding remarks about collection.\n"
+        )
+        assert parse_verdicts(narrative, self.EEIS) == []
+
+    def test_out_of_range_index_dropped(self):
+        """A model that invents a 9th EEI must not index past the list."""
+        assert parse_verdicts("9 | SATISFIED | Invented element.", self.EEIS) == []
+
+    def test_duplicate_index_keeps_first(self):
+        narrative = (
+            "1 | SATISFIED | First verdict.\n"
+            "1 | UNMET | Contradictory second verdict.\n"
+        )
+        got = parse_verdicts(narrative, self.EEIS)
+        assert len(got) == 1 and got[0]["verdict"] == "SATISFIED"
+
+    def test_empty_narrative(self):
+        assert parse_verdicts("", self.EEIS) == []
