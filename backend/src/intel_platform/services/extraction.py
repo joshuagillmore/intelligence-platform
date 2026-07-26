@@ -115,10 +115,44 @@ def _link_event_dates(entities: list[dict], relationships: list[dict]) -> None:
     for rel in relationships:
         if rel.get("rel_type") != "OCCURRED_ON":
             continue
-        source = by_name.get(rel.get("source_name", ""))
-        target = by_name.get(rel.get("target_name", ""))
-        if not source or not target or target.get("entity_type") != "Date":
+
+        src_name = rel.get("source_name", "")
+        tgt_name = rel.get("target_name", "")
+        source = by_name.get(src_name)
+        target = by_name.get(tgt_name)
+
+        # Models emit this edge in either direction — "strike OCCURRED_ON
+        # 12 March 2026" and "12 March 2026 OCCURRED_ON strike" both appear in
+        # live output. Orient it so the Date is always the target.
+        if source is not None and source.get("entity_type") == "Date" and (
+            target is None or target.get("entity_type") != "Date"
+        ):
+            src_name, tgt_name = tgt_name, src_name
+            source, target = target, source
+            rel["source_name"], rel["target_name"] = src_name, tgt_name
+
+        if target is None or target.get("entity_type") != "Date":
             continue
+
+        # The event is very often named only in the relationship and never
+        # extracted as an entity — measured live, this is the norm rather than
+        # the exception, and graph_builder then drops the edge for having a
+        # missing endpoint. That is why 22 OCCURRED_ON edges survived across a
+        # 15-run campaign and the timeline had almost nothing to sort by.
+        # Recover the event rather than losing the only temporal signal there is.
+        if source is None and src_name.strip():
+            source = {
+                "name": src_name.strip(),
+                "entity_type": "Event",
+                "confidence": float(rel.get("confidence", 0.7) or 0.7),
+                "source": rel.get("source", ""),
+                "attributes": {},
+            }
+            entities.append(source)
+            by_name[src_name] = source
+        if source is None:
+            continue
+
         _, parent_category = normalize_entity_type(source.get("entity_type", ""))
         if parent_category != "Event":
             continue
