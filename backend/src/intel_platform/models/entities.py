@@ -30,6 +30,18 @@ class EntityType(str, Enum):
     TECHNOLOGY = "Technology"
     WEAPON = "Weapon"
     VEHICLE = "Vehicle"
+    # Platform types the extraction taxonomy already advertises and the type
+    # hierarchy already resolves. They were absent here, so build_graph_from_
+    # extractions hit `EntityType(specific_type)` -> ValueError -> CUSTOM, and
+    # every ship, aircraft, drone and missile silently landed as Custom. Weapon
+    # only survived because it happened to be listed.
+    SHIP = "Ship"
+    SUBMARINE = "Submarine"
+    AIRCRAFT = "Aircraft"
+    DRONE = "Drone"
+    MISSILE = "Missile"
+    RADAR = "Radar"
+    SATELLITE = "Satellite"
     FACILITY = "Facility"
     FINANCIAL = "Financial"
     INFRASTRUCTURE = "Infrastructure"
