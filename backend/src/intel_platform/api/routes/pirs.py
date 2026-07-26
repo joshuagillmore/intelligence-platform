@@ -11,14 +11,16 @@ rather than a cross-datastore lookup.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from intel_platform.api.deps import verify_api_key
+from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.api.routes.collection_plans import _parse_uuid
 from intel_platform.db.engine import get_db
 from intel_platform.db.models import (
@@ -270,3 +272,222 @@ async def delete_pir(pir_id: str, db: AsyncSession = Depends(get_db)):
     await db.delete(pir)
     await db.commit()
     return {"deleted": True, "id": pir_id}
+
+
+# ---------------------------------------------------------------------------
+# Satisfaction assessment — does the collected intelligence answer the PIR?
+# ---------------------------------------------------------------------------
+
+_EEI_LINE = re.compile(
+    r"^\s*(?:[-*•]|\d+[.)]|EEI\s*\d*\s*[:.\-])\s*(?P<body>.{8,300}?)\s*$",
+    re.IGNORECASE,
+)
+
+_EEI_HEADING = re.compile(r"essential elements|\bEEIs?\b", re.IGNORECASE)
+
+
+def extract_eeis(analysis: str, limit: int = 8) -> list[str]:
+    """Pull Essential Elements of Information out of an LLM refinement.
+
+    The refinement prompt already asks the model to break the requirement into
+    EEIs, so they exist in the analysis prose — they were simply never captured
+    onto the PIR, which left `Pir.eeis` empty and satisfaction unmeasurable.
+    """
+    if not analysis:
+        return []
+    eeis: list[str] = []
+    in_section = False
+    for raw in analysis.split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        if _EEI_HEADING.search(line) and len(line) < 120:
+            in_section = True
+            # A heading may carry the first EEI inline after its colon.
+            tail = line.split(":", 1)[1].strip(" *_") if ":" in line else ""
+            if len(tail) >= 8:
+                eeis.append(tail)
+            continue
+        if not in_section:
+            continue
+        match = _EEI_LINE.match(line)
+        if match:
+            body = match.group("body").strip(" *_").strip()
+            if body and body.lower() not in {e.lower() for e in eeis}:
+                eeis.append(body)
+        elif line.startswith("#") or line.startswith("**"):
+            # A new heading ends the EEI list.
+            in_section = False
+        if len(eeis) >= limit:
+            break
+    return eeis[:limit]
+
+
+class AssessPirRequest(BaseModel):
+    """Optional inputs for a satisfaction assessment."""
+
+    # The collection budget this PIR was given. Reported back so a PARTIAL
+    # result can distinguish "we answered it" from "we ran out of sources".
+    source_limit: int | None = Field(default=None, ge=1)
+
+
+@router.post("/pirs/{pir_id}/assess")
+async def assess_pir(
+    pir_id: str,
+    req: AssessPirRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    store=Depends(get_graph_store),
+):
+    """Judge whether what has been collected answers the PIR.
+
+    Either the requirement is satisfied or collection stopped at its source
+    limit — and in that case the analyst needs to know *which* elements are
+    still unanswered, rather than being handed a pile of documents and left to
+    infer it. Each EEI is judged against the project's own graph, never against
+    the model's background knowledge.
+    """
+    parsed = _parse_uuid(pir_id, "pir_id")
+    pir = await db.get(Pir, parsed)
+    if not pir:
+        raise HTTPException(404, "PIR not found")
+
+    plans = (
+        await db.execute(select(CollectionPlan).where(CollectionPlan.pir_id == parsed))
+    ).scalars().all()
+    sources_used = sum(len(p.sources or []) for p in plans)
+    limit = req.source_limit if req else None
+
+    eeis = [e for e in (pir.eeis or []) if e and e.strip()]
+    if not eeis:
+        # Fall back to the requirement itself, so an un-decomposed PIR is still
+        # assessable instead of silently reporting "nothing to check".
+        eeis = [pir.refined_text or pir.text]
+
+    entities = store.search_entities(pir.project_id, limit=400)
+    by_type: dict[str, int] = {}
+    for ent in entities:
+        key = ent.get("entity_type", "?")
+        by_type[key] = by_type.get(key, 0) + 1
+
+    facts: list[str] = []
+    for ent in entities[:60]:
+        for rel in store.get_relationships(ent.get("id", ""))[:4]:
+            line = (
+                f"{rel.get('source_name', '?')} --{rel.get('rel_type', '?')}--> "
+                f"{rel.get('target_name', '?')}"
+            )
+            if rel.get("evidence"):
+                line += f" :: {str(rel['evidence'])[:150]}"
+            facts.append(line)
+        if len(facts) >= 120:
+            break
+
+    context = (
+        f"Entity types collected: {by_type}\n\n"
+        f"Named entities ({min(len(entities), 120)} of {len(entities)}):\n"
+        + ", ".join(e.get("name", "") for e in entities[:120])
+        + "\n\nAsserted relationships and their evidence:\n"
+        + "\n".join(facts[:120])
+    )
+
+    assessments: list[dict] = []
+    narrative = ""
+    model_name = ""
+    try:
+        from intel_platform.llm.providers import _get_provider
+
+        provider = await _get_provider()
+        numbered = "\n".join(f"{i + 1}. {e}" for i, e in enumerate(eeis))
+        result = await provider.generate(
+            messages=[{"role": "user", "content": (
+                f"PRIORITY INTELLIGENCE REQUIREMENT:\n{pir.refined_text or pir.text}\n\n"
+                f"ESSENTIAL ELEMENTS OF INFORMATION:\n{numbered}\n\n"
+                f"COLLECTED INTELLIGENCE:\n{context}\n\n"
+                "Judge each EEI ONLY against the collected intelligence above. Do not use "
+                "background knowledge: an element the collection did not answer is unmet, "
+                "however well you happen to know the subject.\n\n"
+                "End with a machine-readable block in exactly this format, one line per EEI:\n"
+                "EEI_ASSESSMENT:\n"
+                "1 | SATISFIED | one-line justification citing the collected evidence"
+            )}],
+            system=(
+                "You are an intelligence collection manager judging whether a requirement "
+                "has been answered. You are rigorous about the difference between 'the "
+                "collection answered this' and 'this is generally known'. The unmet "
+                "elements are the most useful part of your output — they drive the next "
+                "collection cycle. Verdicts are SATISFIED, PARTIAL or UNMET."
+            ),
+            temperature=0.2,
+            max_tokens=1600,
+        )
+        narrative = result.content or ""
+        model_name = getattr(result, "model", "") or ""
+        for line in narrative.split("\n"):
+            m = re.match(
+                r"^\s*\**\s*(\d+)\s*\|\s*(SATISFIED|PARTIAL|UNMET)\s*\|\s*(.+?)\s*\**\s*$",
+                line.strip(), re.IGNORECASE,
+            )
+            if not m:
+                continue
+            idx = int(m.group(1)) - 1
+            if 0 <= idx < len(eeis) and not any(a["index"] == idx for a in assessments):
+                assessments.append({
+                    "index": idx,
+                    "eei": eeis[idx],
+                    "verdict": m.group(2).upper(),
+                    "justification": m.group(3).strip(),
+                })
+    except Exception:
+        logger.warning("PIR assessment failed for %s", pir_id, exc_info=True)
+
+    satisfied = [a for a in assessments if a["verdict"] == "SATISFIED"]
+    unmet = [a for a in assessments if a["verdict"] != "SATISFIED"]
+
+    if assessments and not unmet:
+        status = PirStatus.SATISFIED
+    elif satisfied:
+        status = PirStatus.PARTIAL
+    else:
+        status = PirStatus.OPEN
+
+    # Only move the stored status when there was a real judgement behind it —
+    # a failed LLM call must not silently reopen a satisfied requirement.
+    if assessments:
+        pir.status = status
+        pir.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        await db.refresh(pir)
+
+    exhausted = bool(limit) and sources_used >= limit
+    if not assessments:
+        recommendation = "Assessment unavailable — the judging model returned no verdicts."
+    elif status == PirStatus.SATISFIED:
+        recommendation = "Requirement answered across all elements. No further collection needed."
+    elif exhausted:
+        recommendation = (
+            f"Collection budget exhausted ({sources_used}/{limit} sources) with "
+            f"{len(unmet)} element(s) unanswered. Raise a follow-up plan targeting them."
+        )
+    else:
+        recommendation = (
+            f"{len(unmet)} element(s) still unanswered and collection budget remains "
+            f"({sources_used}/{limit if limit else 'unbounded'} sources) — continue collection."
+        )
+
+    return {
+        "pir_id": str(pir.id),
+        "status": pir.status,
+        "eeis_total": len(eeis),
+        "eeis_satisfied": len(satisfied),
+        "assessments": assessments,
+        "unmet_criteria": [
+            {"eei": a["eei"], "verdict": a["verdict"], "why": a["justification"]} for a in unmet
+        ],
+        "entities_considered": len(entities),
+        "sources_used": sources_used,
+        "source_limit": limit,
+        "stopped_on_source_limit": exhausted and status != PirStatus.SATISFIED,
+        "recommendation": recommendation,
+        "model": model_name,
+        "narrative": narrative,
+    }

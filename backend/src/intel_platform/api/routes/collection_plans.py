@@ -498,6 +498,15 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
         # does not have to re-derive it on the next run.
         pir_record.refined_text = refined_pir
 
+    if pir_record and plan_description and not pir_record.eeis:
+        # The refinement already decomposes the requirement into EEIs; capturing
+        # them here is what makes satisfaction measurable later (`/pirs/{id}/assess`).
+        from intel_platform.api.routes.pirs import extract_eeis
+
+        captured = extract_eeis(plan_description)
+        if captured:
+            pir_record.eeis = captured
+
     plan = CollectionPlan(
         project_id=req.project_id,
         name=f"PIR: {pir_text[:80]}{'...' if len(pir_text) > 80 else ''}",
