@@ -242,14 +242,32 @@ report "not answerable from the sources planned" separately from "not collected"
 An element no available connector can satisfy is a *collection gap*, not an
 analytic failure, and conflating them makes the system look worse than it is.
 
-### 3.4 Entity hygiene, again and at scale
+### 3.4 Off-topic sources succeed, and nothing notices
+
+The failure taxonomy above counts sources that error. A quieter problem is
+sources that fetch cleanly and are simply about something else. The edge-device
+CVE requirement collected a **Bulgarian personal-blog directory**, putting
+entities like *"Блогът на Делян Делчев"*, *"Кътчето на Селин"* and *"татко
+Крокодил"* into the graph as `Custom`, `Campaign` and `Technology` nodes.
+
+Nothing in the pipeline scores a document for relevance to the requirement
+before extraction. A successful-but-irrelevant source is more expensive than a
+failed one: it consumes budget, costs a full extraction pass, and permanently
+pollutes the graph that later retrieval and products draw on.
+
+**Proposal:** score each fetched document against the PIR before extraction
+(the agentic loop already asks the model to evaluate results *after* the fact —
+this is the same call, moved earlier and used as a gate), and record rejected
+documents as `source_irrelevant` so the trail shows why the budget was spent.
+
+### 3.5 Entity hygiene, again and at scale
 
 Confirmed across every run, not just cyber: `URL` and `Domain` nodes dominate
 crawled graphs (69 of 168 entities on run 2). §2.3 works around this for the
 assessor only — the graph view, Graph-RAG retrieval, and products all still see
 it. This re-raises finding 2.3 of the previous document with quantified impact.
 
-### 3.5 `ollama_connected` reports false while Ollama is in active use
+### 3.6 `ollama_connected` reports false while Ollama is in active use
 
 `/health` only probes Ollama when it is the *default* provider. This deployment
 routes **collection** to Ollama and generation to Cohere, so the field reads
