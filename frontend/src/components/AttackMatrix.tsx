@@ -86,7 +86,7 @@ function MethodBadge({
     return (
       <span
         className="text-[9px] font-medium rounded px-1 py-0.5 flex-shrink-0 leading-none"
-        style={{ backgroundColor: '#2f3444', color: '#9ca3af' }}
+        style={{ backgroundColor: '#313849', color: '#9ca3af' }}
         title="Resolved from an explicit ATT&CK T-code"
       >
         T-code
@@ -412,7 +412,7 @@ export default function AttackMatrix({
 
   if (loading) {
     return (
-      <div className="rounded-lg p-8" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
+      <div className="rounded-lg p-8" style={{ backgroundColor: '#1a1f2e', border: '1px solid #313849' }}>
         <LoadingSpinner size="lg" />
       </div>
     );
@@ -420,7 +420,7 @@ export default function AttackMatrix({
 
   if (error) {
     return (
-      <div className="rounded-lg p-8 text-center" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
+      <div className="rounded-lg p-8 text-center" style={{ backgroundColor: '#1a1f2e', border: '1px solid #313849' }}>
         <p className="text-gray-300">Couldn&apos;t load the MITRE ATT&CK® matrix.</p>
         <button
           onClick={loadMatrix}
@@ -438,7 +438,7 @@ export default function AttackMatrix({
     return (
       <div
         className="rounded-lg p-10 text-center flex flex-col items-center"
-        style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}
+        style={{ backgroundColor: '#1a1f2e', border: '1px solid #313849' }}
       >
         <span className="material-symbols-outlined text-[40px]" style={{ color: ACCENT }}>
           grid_view
@@ -480,13 +480,13 @@ export default function AttackMatrix({
         <div className="flex flex-wrap items-center gap-2">
           <label
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium cursor-pointer select-none"
-            style={{ backgroundColor: '#1a1f2e', color: '#9ca3af', border: '1px solid #2f3444' }}
+            style={{ backgroundColor: '#1a1f2e', color: '#9ca3af', border: '1px solid #313849' }}
           >
             <input
               type="checkbox"
               checked={showOnlyCovered}
               onChange={(e) => setShowOnlyCovered(e.target.checked)}
-              className="accent-[#adc6ff]"
+              className="accent-accent-periwinkle"
             />
             Show only covered
           </label>
@@ -495,7 +495,7 @@ export default function AttackMatrix({
             onClick={handleResolve}
             disabled={resolving}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50"
-            style={{ backgroundColor: '#1a1f2e', color: ACCENT, border: '1px solid #2f3444' }}
+            style={{ backgroundColor: '#1a1f2e', color: ACCENT, border: '1px solid #313849' }}
             title="Re-map this project's TTPs onto ATT&CK techniques"
             aria-label="Refresh ATT&CK coverage from project TTPs"
           >
@@ -521,7 +521,7 @@ export default function AttackMatrix({
             onClick={handleDownloadLayer}
             disabled={downloading}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50"
-            style={{ backgroundColor: '#1a1f2e', color: ACCENT, border: '1px solid #2f3444' }}
+            style={{ backgroundColor: '#1a1f2e', color: ACCENT, border: '1px solid #313849' }}
             title="Download an ATT&CK Navigator layer for this project"
             aria-label="Download ATT&CK Navigator layer"
           >
@@ -552,7 +552,7 @@ export default function AttackMatrix({
             style={
               needsEmbed
                 ? { backgroundColor: 'rgba(96,165,250,0.15)', color: '#93c5fd', border: '1px solid rgba(96,165,250,0.45)' }
-                : { backgroundColor: 'transparent', color: '#6b7280', border: '1px solid #2f3444' }
+                : { backgroundColor: 'transparent', color: '#6b7280', border: '1px solid #313849' }
             }
             title="One-time admin step: embed all ATT&CK techniques so AI mapping can retrieve candidates (~30-90s)"
             aria-label="Embed ATT&CK techniques for AI mapping"
@@ -568,7 +568,7 @@ export default function AttackMatrix({
             onClick={handleIngest}
             disabled={ingesting}
             className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] rounded-md transition-colors disabled:opacity-50"
-            style={{ backgroundColor: 'transparent', color: '#6b7280', border: '1px solid #2f3444' }}
+            style={{ backgroundColor: 'transparent', color: '#6b7280', border: '1px solid #313849' }}
             title="Re-download the latest ATT&CK dataset"
             aria-label="Re-sync ATT&CK dataset"
           >
@@ -609,13 +609,13 @@ export default function AttackMatrix({
           <span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: ACCENT }} /> Observed
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }} /> Not observed
+          <span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: '#1a1f2e', border: '1px solid #313849' }} /> Not observed
         </span>
       </div>
 
       {/* Matrix — one column per tactic, horizontally scrollable */}
       {visibleTactics.length === 0 ? (
-        <div className="rounded-lg p-8 text-center text-gray-500" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
+        <div className="rounded-lg p-8 text-center text-gray-500" style={{ backgroundColor: '#1a1f2e', border: '1px solid #313849' }}>
           <p>No observed techniques yet.</p>
           <p className="text-xs mt-1 text-gray-600">Toggle off &ldquo;Show only covered&rdquo; to see the full matrix, or Refresh after extracting TTPs.</p>
         </div>
@@ -625,7 +625,7 @@ export default function AttackMatrix({
             {visibleTactics.map((tactic) => (
               <div key={tactic.id} className="flex flex-col w-44 flex-shrink-0">
                 {/* Tactic header */}
-                <div className="rounded-t-lg px-3 py-2 text-center sticky top-0 z-10" style={{ backgroundColor: '#2f3444' }}>
+                <div className="rounded-t-lg px-3 py-2 text-center sticky top-0 z-10" style={{ backgroundColor: '#313849' }}>
                   <div className="text-[10px] uppercase tracking-widest font-bold text-white leading-tight">{tactic.name}</div>
                   <div className="text-[10px] text-gray-500 mt-0.5">{tactic.techniques.length} techniques</div>
                 </div>
@@ -639,10 +639,10 @@ export default function AttackMatrix({
                     return (
                       <div key={`${tactic.id}-${tech.id}`}>
                         <div
-                          className={`rounded px-2 py-2 transition-all ${isSelected ? 'ring-1 ring-[#adc6ff]' : ''}`}
+                          className={`rounded px-2 py-2 transition-all ${isSelected ? 'ring-1 ring-accent-periwinkle' : ''}`}
                           style={{
                             backgroundColor: covered ? COVERED_BG : '#1a1f2e',
-                            border: covered ? `1px solid ${COVERED_BORDER}` : '1px solid #2f3444',
+                            border: covered ? `1px solid ${COVERED_BORDER}` : '1px solid #313849',
                           }}
                         >
                           <button
@@ -685,7 +685,7 @@ export default function AttackMatrix({
                         </div>
                         {/* Sub-technique list */}
                         {isExpanded && subCount > 0 && (
-                          <div className="flex flex-col gap-1 mt-1 ml-2 pl-1" style={{ borderLeft: '1px solid #2f3444' }}>
+                          <div className="flex flex-col gap-1 mt-1 ml-2 pl-1" style={{ borderLeft: '1px solid #313849' }}>
                             {tech.subtechniques.map((sub) => {
                               const subCovered = sub.observed_count > 0;
                               const subSelected = selectedId === sub.id;
@@ -693,10 +693,10 @@ export default function AttackMatrix({
                                 <button
                                   key={`${tactic.id}-${sub.id}`}
                                   onClick={() => openTechnique(sub.id)}
-                                  className={`rounded px-2 py-1.5 text-left transition-all ${subSelected ? 'ring-1 ring-[#adc6ff]' : ''}`}
+                                  className={`rounded px-2 py-1.5 text-left transition-all ${subSelected ? 'ring-1 ring-accent-periwinkle' : ''}`}
                                   style={{
                                     backgroundColor: subCovered ? COVERED_BG : '#161b28',
-                                    border: subCovered ? `1px solid ${COVERED_BORDER}` : '1px solid #2f3444',
+                                    border: subCovered ? `1px solid ${COVERED_BORDER}` : '1px solid #313849',
                                   }}
                                   aria-label={`Open detail for ${sub.name} (${sub.id})`}
                                 >
@@ -749,11 +749,11 @@ export default function AttackMatrix({
             aria-modal="true"
             aria-label="Technique detail"
             className="fixed top-0 right-0 z-50 h-full w-full max-w-md overflow-y-auto shadow-2xl"
-            style={{ backgroundColor: '#131826', borderLeft: '1px solid #2f3444' }}
+            style={{ backgroundColor: '#131826', borderLeft: '1px solid #313849' }}
           >
             <div
               className="sticky top-0 flex items-start justify-between gap-3 px-5 py-4 z-10"
-              style={{ backgroundColor: '#131826', borderBottom: '1px solid #2f3444' }}
+              style={{ backgroundColor: '#131826', borderBottom: '1px solid #313849' }}
             >
               <div>
                 <div className="font-mono text-xs" style={{ color: ACCENT }}>{selectedId}</div>
@@ -804,7 +804,7 @@ export default function AttackMatrix({
                       <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1.5">Platforms</h4>
                       <div className="flex flex-wrap gap-1.5">
                         {detail.platforms.map((p) => (
-                          <span key={p} className="text-[10px] px-2 py-0.5 rounded" style={{ backgroundColor: '#2f3444', color: '#d1d5db' }}>
+                          <span key={p} className="text-[10px] px-2 py-0.5 rounded" style={{ backgroundColor: '#313849', color: '#d1d5db' }}>
                             {p}
                           </span>
                         ))}
@@ -946,7 +946,7 @@ export default function AttackMatrix({
                             key={ent.id}
                             onClick={() => router.push(`/network?select=${ent.id}`)}
                             className="w-full text-left rounded p-2 flex items-center justify-between gap-2 transition-colors hover:brightness-125"
-                            style={{ backgroundColor: '#2f3444' }}
+                            style={{ backgroundColor: '#313849' }}
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="text-sm font-mono text-white truncate">{ent.name}</span>
@@ -996,12 +996,12 @@ export default function AttackMatrix({
               aria-modal="true"
               aria-label="ATT&CK report"
               className="w-full max-w-3xl flex flex-col rounded-lg shadow-2xl pointer-events-auto"
-              style={{ backgroundColor: '#131826', border: '1px solid #2f3444', maxHeight: 'calc(100vh - 4rem)' }}
+              style={{ backgroundColor: '#131826', border: '1px solid #313849', maxHeight: 'calc(100vh - 4rem)' }}
             >
               {/* Header + actions */}
               <div
                 className="flex items-start justify-between gap-3 px-5 py-4"
-                style={{ borderBottom: '1px solid #2f3444' }}
+                style={{ borderBottom: '1px solid #313849' }}
               >
                 <div className="min-w-0">
                   <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">MITRE ATT&CK® Report</h3>
@@ -1013,7 +1013,7 @@ export default function AttackMatrix({
                       <button
                         onClick={handleCopyReport}
                         className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-md font-medium transition-colors"
-                        style={{ backgroundColor: '#1a1f2e', color: ACCENT, border: '1px solid #2f3444' }}
+                        style={{ backgroundColor: '#1a1f2e', color: ACCENT, border: '1px solid #313849' }}
                         aria-label="Copy report markdown to clipboard"
                       >
                         <span className="material-symbols-outlined text-[14px]">{reportCopied ? 'check' : 'content_copy'}</span>
@@ -1022,7 +1022,7 @@ export default function AttackMatrix({
                       <button
                         onClick={handleDownloadReport}
                         className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-md font-medium transition-colors"
-                        style={{ backgroundColor: '#1a1f2e', color: ACCENT, border: '1px solid #2f3444' }}
+                        style={{ backgroundColor: '#1a1f2e', color: ACCENT, border: '1px solid #313849' }}
                         aria-label="Download report as a markdown file"
                       >
                         <span className="material-symbols-outlined text-[14px]">download</span>
@@ -1032,7 +1032,7 @@ export default function AttackMatrix({
                         onClick={handleDownloadLayer}
                         disabled={downloading}
                         className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] rounded-md font-medium transition-colors disabled:opacity-50"
-                        style={{ backgroundColor: '#1a1f2e', color: ACCENT, border: '1px solid #2f3444' }}
+                        style={{ backgroundColor: '#1a1f2e', color: ACCENT, border: '1px solid #313849' }}
                         aria-label="Download ATT&CK Navigator layer"
                       >
                         <span className="material-symbols-outlined text-[14px]">layers</span>

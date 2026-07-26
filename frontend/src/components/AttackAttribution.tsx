@@ -5,7 +5,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 
 const ACCENT = '#adc6ff';
 const CARD_BG = '#1a1f2e';
-const BORDER = '#2f3444';
+const BORDER = '#313849';
 
 /**
  * Candidate threat-actor attribution by ATT&CK technique overlap.

@@ -244,8 +244,8 @@ export default function DocumentViewer() {
           {evaluation && (
             <div className="mb-4 bg-navy-800 border border-navy-600 rounded-lg p-4 max-h-72 overflow-y-auto">
               <div className="flex items-center gap-2 mb-2">
-                <span className="material-symbols-outlined text-[#adc6ff] text-sm">verified_user</span>
-                <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#adc6ff]">Source Evaluation</h3>
+                <span className="material-symbols-outlined text-accent-periwinkle text-sm">verified_user</span>
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-accent-periwinkle">Source Evaluation</h3>
                 {evaluationRating && (
                   <span className={`text-[10px] px-2 py-0.5 rounded-full ml-auto ${reliabilityColor(evaluationRating)}`}>
                     Admiralty {evaluationRating}
@@ -259,10 +259,10 @@ export default function DocumentViewer() {
             const s = parseSummary(doc.summary_json);
             if (!s) return null;
             return (
-              <div className="mb-4 bg-navy-800 border border-[#adc6ff]/30 rounded-lg p-4">
+              <div className="mb-4 bg-navy-800 border border-accent-periwinkle/30 rounded-lg p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="material-symbols-outlined text-[#adc6ff] text-sm">auto_awesome</span>
-                  <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#adc6ff]">AI Summary</h3>
+                  <span className="material-symbols-outlined text-accent-periwinkle text-sm">auto_awesome</span>
+                  <h3 className="text-[10px] font-bold uppercase tracking-widest text-accent-periwinkle">AI Summary</h3>
                   {s.sentiment && (
                     <span className={`text-[10px] px-2 py-0.5 rounded-full border ml-auto ${sentimentColor[s.sentiment.toLowerCase()] || sentimentColor.neutral}`}>
                       {s.sentiment}
@@ -283,7 +283,7 @@ export default function DocumentViewer() {
                 {Array.isArray(s.topics) && s.topics.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {s.topics.slice(0, 12).map((t, i) => (
-                      <span key={i} className="text-[10px] bg-[#adc6ff]/15 text-[#adc6ff] border border-[#adc6ff]/30 px-2 py-0.5 rounded-full">{t}</span>
+                      <span key={i} className="text-[10px] bg-accent-periwinkle/15 text-accent-periwinkle border border-accent-periwinkle/30 px-2 py-0.5 rounded-full">{t}</span>
                     ))}
                   </div>
                 )}

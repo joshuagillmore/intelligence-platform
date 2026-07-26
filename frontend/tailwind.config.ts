@@ -19,6 +19,10 @@ const config: Config = {
         accent: {
           blue: '#3b82f6',
           cyan: '#06b6d4',
+          // The app's most-used accent — headings, active nav, links, panel
+          // rules. It lived as a raw #adc6ff in ~174 places before being
+          // promoted here; keep it a token so the theme stays changeable.
+          periwinkle: '#adc6ff',
         },
         threat: {
           critical: '#ef4444',

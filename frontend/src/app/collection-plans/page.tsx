@@ -234,12 +234,12 @@ export default function CollectionPlansPage() {
         {/* Dashboard Summary */}
         {dashboard && (
           <section className="mb-8">
-            <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase mb-4 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#adc6ff] animate-pulse" />
+            <h2 className="text-[10px] font-black tracking-[0.2em] text-accent-periwinkle uppercase mb-4 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-accent-periwinkle animate-pulse" />
               Collection Dashboard
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-[#1a1f2e] rounded p-4">
+              <div className="bg-navy-800 rounded p-4">
                 <div className="text-2xl font-bold text-white">{dashboard.total_plans}</div>
                 <div className="text-[10px] uppercase tracking-wider text-gray-400">Total Plans</div>
                 <div className="mt-2 flex flex-wrap gap-1">
@@ -250,7 +250,7 @@ export default function CollectionPlansPage() {
                   ))}
                 </div>
               </div>
-              <div className="bg-[#1a1f2e] rounded p-4">
+              <div className="bg-navy-800 rounded p-4">
                 <div className="text-2xl font-bold text-white">{dashboard.source_health.total}</div>
                 <div className="text-[10px] uppercase tracking-wider text-gray-400">Sources</div>
                 <div className="mt-2 flex gap-2 text-[10px]">
@@ -258,11 +258,11 @@ export default function CollectionPlansPage() {
                   {dashboard.source_health.unhealthy > 0 && <span className="text-red-400">{dashboard.source_health.unhealthy} errors</span>}
                 </div>
               </div>
-              <div className="bg-[#1a1f2e] rounded p-4">
+              <div className="bg-navy-800 rounded p-4">
                 <div className="text-2xl font-bold text-white">{dashboard.total_records_acquired.toLocaleString()}</div>
                 <div className="text-[10px] uppercase tracking-wider text-gray-400">Records Acquired</div>
               </div>
-              <div className="bg-[#1a1f2e] rounded p-4">
+              <div className="bg-navy-800 rounded p-4">
                 <div className="text-2xl font-bold text-white">{dashboard.recent_acquisitions.length}</div>
                 <div className="text-[10px] uppercase tracking-wider text-gray-400">Recent Acquisitions</div>
               </div>
@@ -274,13 +274,13 @@ export default function CollectionPlansPage() {
           {/* Left Panel: Plan List */}
           <div className="lg:w-1/3">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#adc6ff]" />
+              <h2 className="text-[10px] font-black tracking-[0.2em] text-accent-periwinkle uppercase flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-accent-periwinkle" />
                 Collection Plans
               </h2>
               <button
                 onClick={() => setShowCreate(!showCreate)}
-                className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider"
+                className="bg-accent-periwinkle hover:bg-[#4d8eff] text-[#002e6a] px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider"
               >
                 + New Plan
               </button>
@@ -288,12 +288,12 @@ export default function CollectionPlansPage() {
 
             {/* Create Plan Form */}
             {showCreate && (
-              <div className="bg-[#1a1f2e] rounded p-4 mb-4 space-y-3">
+              <div className="bg-navy-800 rounded p-4 mb-4 space-y-3">
                 <input
                   value={newPlan.name}
                   onChange={e => setNewPlan(p => ({ ...p, name: e.target.value }))}
                   placeholder="Plan name"
-                  className="w-full bg-[#090e1c] border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-[#adc6ff] placeholder:text-gray-600"
+                  className="w-full bg-[#090e1c] border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-accent-periwinkle placeholder:text-gray-600"
                 />
                 {/* Anchor the plan on a tracked PIR — created and managed on the
                     project hub, so the requirement is not retyped here. */}
@@ -301,7 +301,7 @@ export default function CollectionPlansPage() {
                   value={newPlan.pir_id}
                   onChange={e => setNewPlan(p => ({ ...p, pir_id: e.target.value }))}
                   aria-label="Priority Intelligence Requirement"
-                  className="w-full bg-[#090e1c] border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-[#adc6ff] text-gray-300"
+                  className="w-full bg-[#090e1c] border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-accent-periwinkle text-gray-300"
                 >
                   <option value="">
                     {pirs.length ? 'Priority Intelligence Requirement (optional)' : 'No PIRs yet — add one on the project hub'}
@@ -315,16 +315,16 @@ export default function CollectionPlansPage() {
                   onChange={e => setNewPlan(p => ({ ...p, requirement: e.target.value }))}
                   placeholder="Intelligence requirement — what question does this collection address?"
                   rows={3}
-                  className="w-full bg-[#090e1c] border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-[#adc6ff] placeholder:text-gray-600 resize-none"
+                  className="w-full bg-[#090e1c] border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-accent-periwinkle placeholder:text-gray-600 resize-none"
                 />
                 <input
                   value={newPlan.description}
                   onChange={e => setNewPlan(p => ({ ...p, description: e.target.value }))}
                   placeholder="Description (optional)"
-                  className="w-full bg-[#090e1c] border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-[#adc6ff] placeholder:text-gray-600"
+                  className="w-full bg-[#090e1c] border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-accent-periwinkle placeholder:text-gray-600"
                 />
                 <div className="flex gap-2">
-                  <button onClick={createPlan} disabled={creating || !newPlan.name.trim()} className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-4 py-2 rounded text-[10px] font-bold uppercase disabled:opacity-50">
+                  <button onClick={createPlan} disabled={creating || !newPlan.name.trim()} className="bg-accent-periwinkle hover:bg-[#4d8eff] text-[#002e6a] px-4 py-2 rounded text-[10px] font-bold uppercase disabled:opacity-50">
                     {creating ? 'Creating...' : 'Create'}
                   </button>
                   <button onClick={() => setShowCreate(false)} className="text-gray-400 hover:text-white px-4 py-2 text-[10px] uppercase">
@@ -340,7 +340,7 @@ export default function CollectionPlansPage() {
             {loading ? <LoadingSpinner size="sm" /> : (
               <div className="space-y-2">
                 {plans.length === 0 && (
-                  <div className="bg-[#1a1f2e] rounded p-6 text-center text-gray-500 text-sm">
+                  <div className="bg-navy-800 rounded p-6 text-center text-gray-500 text-sm">
                     No collection plans yet. Create one to start collecting data.
                   </div>
                 )}
@@ -348,7 +348,7 @@ export default function CollectionPlansPage() {
                   <button
                     key={plan.id}
                     onClick={() => setSelectedPlanId(plan.id)}
-                    className={`w-full text-left bg-[#1a1f2e] rounded p-3 hover:bg-[#252a39] transition-colors border ${selectedPlanId === plan.id ? 'border-[#adc6ff]/50' : 'border-transparent'}`}
+                    className={`w-full text-left bg-navy-800 rounded p-3 hover:bg-[#252a39] transition-colors border ${selectedPlanId === plan.id ? 'border-accent-periwinkle/50' : 'border-transparent'}`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -372,20 +372,20 @@ export default function CollectionPlansPage() {
           {/* Right Panel: Plan Detail */}
           <div className="lg:w-2/3">
             {!selectedPlan ? (
-              <div className="bg-[#1a1f2e] rounded p-8 text-center text-gray-500 text-sm">
+              <div className="bg-navy-800 rounded p-8 text-center text-gray-500 text-sm">
                 Select a collection plan to view details, manage sources, and upload data.
               </div>
             ) : (
               <div className="space-y-6">
                 {/* Plan Header */}
-                <div className="bg-[#1a1f2e] rounded p-4">
+                <div className="bg-navy-800 rounded p-4">
                   <div className="flex items-start justify-between">
                     <div>
                       <h3 className="text-lg font-bold text-white">{selectedPlan.name}</h3>
                       {/* Which requirement this plan answers to — the spine, visible
                           from the collection side of the cycle too. */}
                       {selectedPlan.pir_id && (
-                        <p className="text-[10px] uppercase tracking-widest font-bold mt-1 text-[#adc6ff]">
+                        <p className="text-[10px] uppercase tracking-widest font-bold mt-1 text-accent-periwinkle">
                           PIR · {pirs.find(p => p.id === selectedPlan.pir_id)?.title || 'linked requirement'}
                           <span className="ml-2 text-gray-500 normal-case tracking-normal font-normal">
                             {pirs.find(p => p.id === selectedPlan.pir_id)?.status || ''}
@@ -441,12 +441,12 @@ export default function CollectionPlansPage() {
                 </div>
 
                 {/* Sources */}
-                <div className="bg-[#1a1f2e] rounded p-4">
+                <div className="bg-navy-800 rounded p-4">
                   <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase">
+                    <h4 className="text-[10px] font-black tracking-[0.2em] text-accent-periwinkle uppercase">
                       Assigned Sources
                     </h4>
-                    <button onClick={() => setShowAddSource(!showAddSource)} className="text-[#adc6ff] hover:text-white text-[10px] font-bold uppercase">
+                    <button onClick={() => setShowAddSource(!showAddSource)} className="text-accent-periwinkle hover:text-white text-[10px] font-bold uppercase">
                       + Add Source
                     </button>
                   </div>
@@ -457,12 +457,12 @@ export default function CollectionPlansPage() {
                         value={newSource.name}
                         onChange={e => setNewSource(s => ({ ...s, name: e.target.value }))}
                         placeholder="Source name (e.g. 'Q1 Financial Report', 'OSINT Feed')"
-                        className="w-full bg-[#1a1f2e] border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-[#adc6ff] placeholder:text-gray-600"
+                        className="w-full bg-navy-800 border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-accent-periwinkle placeholder:text-gray-600"
                       />
                       <select
                         value={newSource.source_type}
                         onChange={e => setNewSource(s => ({ ...s, source_type: e.target.value }))}
-                        className="w-full bg-[#1a1f2e] border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-[#adc6ff] text-gray-300"
+                        className="w-full bg-navy-800 border-none text-sm py-2 px-3 rounded focus:ring-1 focus:ring-accent-periwinkle text-gray-300"
                       >
                         <option value="file_upload">File Upload (CSV, Excel, JSON)</option>
                         <option value="web_scrape">Web Scrape</option>
@@ -471,7 +471,7 @@ export default function CollectionPlansPage() {
                         <option value="rss_feed">RSS Feed</option>
                       </select>
                       <div className="flex gap-2">
-                        <button onClick={addSource} disabled={!newSource.name.trim()} className="bg-[#adc6ff] text-[#002e6a] px-3 py-1.5 rounded text-[10px] font-bold uppercase disabled:opacity-50">Add</button>
+                        <button onClick={addSource} disabled={!newSource.name.trim()} className="bg-accent-periwinkle text-[#002e6a] px-3 py-1.5 rounded text-[10px] font-bold uppercase disabled:opacity-50">Add</button>
                         <button onClick={() => setShowAddSource(false)} className="text-gray-400 text-[10px] uppercase px-3">Cancel</button>
                       </div>
                     </div>
@@ -485,7 +485,7 @@ export default function CollectionPlansPage() {
                         <div key={source.id} className="bg-[#090e1c] rounded p-3">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                              <span className="material-symbols-outlined text-base text-[#adc6ff]">
+                              <span className="material-symbols-outlined text-base text-accent-periwinkle">
                                 {SOURCE_TYPE_ICONS[source.source_type] || 'source'}
                               </span>
                               <div>
@@ -518,7 +518,7 @@ export default function CollectionPlansPage() {
                               />
                               <label
                                 htmlFor={`file-${source.id}`}
-                                className={`cursor-pointer bg-[#252a39] hover:bg-[#2f3444] text-[#adc6ff] border border-[#adc6ff]/20 px-3 py-1.5 rounded text-[10px] font-bold uppercase transition-colors ${uploading && uploadingSourceId === source.id ? 'opacity-50 pointer-events-none' : ''}`}
+                                className={`cursor-pointer bg-[#252a39] hover:bg-[#313849] text-accent-periwinkle border border-accent-periwinkle/20 px-3 py-1.5 rounded text-[10px] font-bold uppercase transition-colors ${uploading && uploadingSourceId === source.id ? 'opacity-50 pointer-events-none' : ''}`}
                               >
                                 {uploading && uploadingSourceId === source.id ? 'Uploading...' : 'Upload File'}
                               </label>
@@ -559,7 +559,7 @@ export default function CollectionPlansPage() {
                         <div className="text-[10px] text-gray-400 uppercase mb-1">Schema</div>
                         <div className="flex flex-wrap gap-1">
                           {((uploadResult as { schema_info: { columns: Array<{ name: string; type: string }> } }).schema_info.columns).map((col: { name: string; type: string }, i: number) => (
-                            <span key={i} className="bg-[#1a1f2e] text-gray-300 px-2 py-0.5 rounded text-[10px]">
+                            <span key={i} className="bg-navy-800 text-gray-300 px-2 py-0.5 rounded text-[10px]">
                               {col.name} <span className="text-gray-500">({col.type})</span>
                             </span>
                           ))}
@@ -582,7 +582,7 @@ export default function CollectionPlansPage() {
                             </thead>
                             <tbody>
                               {((uploadResult as { preview_rows: Record<string, unknown>[] }).preview_rows).slice(0, 10).map((row: Record<string, unknown>, i: number) => (
-                                <tr key={i} className="border-t border-[#1a1f2e]">
+                                <tr key={i} className="border-t border-navy-800">
                                   {Object.entries(row).filter(([k]) => k !== '_row_number').map(([k, v]) => (
                                     <td key={k} className="py-1 px-2 text-gray-300 max-w-[200px] truncate">{String(v ?? '')}</td>
                                   ))}
@@ -606,8 +606,8 @@ export default function CollectionPlansPage() {
                 )}
 
                 {/* Acquisition Log */}
-                <div className="bg-[#1a1f2e] rounded p-4">
-                  <h4 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase mb-3">
+                <div className="bg-navy-800 rounded p-4">
+                  <h4 className="text-[10px] font-black tracking-[0.2em] text-accent-periwinkle uppercase mb-3">
                     Acquisition History
                   </h4>
                   {acquisitions.length === 0 ? (

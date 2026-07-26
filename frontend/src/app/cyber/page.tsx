@@ -81,7 +81,7 @@ function SeverityStatCard({ label, count, color, subtitle, trending, progressPer
       </div>
       {subtitle && <span className="text-[10px] text-gray-500 mt-1">{subtitle}</span>}
       {progressPercent !== undefined && (
-        <div className="mt-2 w-full h-1.5 rounded-full" style={{ backgroundColor: '#2f3444' }}>
+        <div className="mt-2 w-full h-1.5 rounded-full" style={{ backgroundColor: '#313849' }}>
           <div className="h-1.5 rounded-full" style={{ width: `${progressPercent}%`, backgroundColor: color }} />
         </div>
       )}
@@ -327,7 +327,7 @@ export default function CyberPage() {
             onClick={refreshAll}
             disabled={iocsLoading}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors disabled:opacity-50"
-            style={{ backgroundColor: '#1a1f2e', color: '#adc6ff', border: '1px solid #2f3444' }}
+            style={{ backgroundColor: '#1a1f2e', color: '#adc6ff', border: '1px solid #313849' }}
             title="Reload IOCs, relationship graph, and threat actors"
             aria-label="Refresh cyber intelligence data"
           >
@@ -348,7 +348,7 @@ export default function CyberPage() {
               onClick={() => setPageTab(tab.value)}
               className={`px-5 py-2.5 text-sm font-medium transition-colors border-t-2 -mb-[1px] flex items-center gap-2 ${
                 pageTab === tab.value
-                  ? 'border-[#adc6ff] text-white'
+                  ? 'border-accent-periwinkle text-white'
                   : 'border-transparent text-gray-400 hover:text-white hover:border-gray-600'
               }`}
             >
@@ -399,13 +399,13 @@ export default function CyberPage() {
               <div className="w-full md:w-[55%] overflow-hidden flex flex-col" style={{ minHeight: '300px' }}>
                 {/* overflow-x-auto: the IOC table's min-content width (~590px) otherwise
                     sets a floor the page can't shrink below on a phone. */}
-                <div className="rounded-lg flex-1 overflow-y-auto overflow-x-auto" style={{ backgroundColor: '#1a1f2e', borderColor: '#2f3444', borderWidth: 1 }}>
+                <div className="rounded-lg flex-1 overflow-y-auto overflow-x-auto" style={{ backgroundColor: '#1a1f2e', borderColor: '#313849', borderWidth: 1 }}>
                   {iocsLoading ? (
                     <LoadingSpinner size="lg" />
                   ) : (
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 z-10" style={{ backgroundColor: '#1a1f2e' }}>
-                      <tr className="text-left" style={{ borderBottom: '1px solid #2f3444' }}>
+                      <tr className="text-left" style={{ borderBottom: '1px solid #313849' }}>
                         <th className="px-4 py-3 text-[10px] uppercase tracking-widest font-bold text-gray-400">Indicator</th>
                         <th className="px-4 py-3 text-[10px] uppercase tracking-widest font-bold text-gray-400">Type</th>
                         <th className="px-4 py-3 text-[10px] uppercase tracking-widest font-bold text-gray-400">Activity</th>
@@ -430,8 +430,8 @@ export default function CyberPage() {
                                 isExpanded ? '' : 'hover:brightness-110'
                               }`}
                               style={{
-                                borderBottom: '1px solid #2f3444',
-                                backgroundColor: isExpanded ? '#2f3444' : 'transparent',
+                                borderBottom: '1px solid #313849',
+                                backgroundColor: isExpanded ? '#313849' : 'transparent',
                                 borderLeft: isExpanded ? '3px solid #adc6ff' : '3px solid transparent',
                               }}
                             >
@@ -455,7 +455,7 @@ export default function CyberPage() {
 
                             {/* Expanded detail row */}
                             {isExpanded && (
-                              <tr style={{ backgroundColor: '#0e1321', borderBottom: '1px solid #2f3444' }}>
+                              <tr style={{ backgroundColor: '#0e1321', borderBottom: '1px solid #313849' }}>
                                 <td colSpan={6} className="px-6 py-4">
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
@@ -532,8 +532,8 @@ export default function CyberPage() {
 
               {/* Right: Cyber Relationship Graph (45%) */}
               <div className="w-full md:w-[45%] flex flex-col overflow-hidden" style={{ minHeight: '300px' }}>
-                <div className="rounded-lg flex-1 overflow-hidden flex flex-col" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
-                  <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #2f3444' }}>
+                <div className="rounded-lg flex-1 overflow-hidden flex flex-col" style={{ backgroundColor: '#1a1f2e', border: '1px solid #313849' }}>
+                  <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid #313849' }}>
                     <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Cyber Relationship Graph</h3>
                     <span className="text-xs text-gray-400">{graphNodes.length} nodes, {graphEdges.length} edges</span>
                   </div>
@@ -581,7 +581,7 @@ export default function CyberPage() {
               </div>
 
               {threatActors.length === 0 ? (
-              <div className="rounded-lg p-8 text-center text-gray-500" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
+              <div className="rounded-lg p-8 text-center text-gray-500" style={{ backgroundColor: '#1a1f2e', border: '1px solid #313849' }}>
                 <p>No threat actors found in this project.</p>
                 <p className="text-xs mt-1 text-gray-600">Ingest threat intelligence reports to extract threat actor entities.</p>
               </div>
@@ -591,11 +591,11 @@ export default function CyberPage() {
                   const isExpanded = expandedActorId === actor.id;
                   const rels = actorRelationships[actor.id] || [];
                   return (
-                    <div key={actor.id} className="rounded-lg overflow-hidden" style={{ backgroundColor: '#1a1f2e', border: '1px solid #2f3444' }}>
+                    <div key={actor.id} className="rounded-lg overflow-hidden" style={{ backgroundColor: '#1a1f2e', border: '1px solid #313849' }}>
                       <div
                         onClick={() => toggleActorRow(actor)}
                         className="px-4 py-3 cursor-pointer transition-colors flex items-center justify-between"
-                        style={{ backgroundColor: isExpanded ? '#2f3444' : 'transparent' }}
+                        style={{ backgroundColor: isExpanded ? '#313849' : 'transparent' }}
                       >
                         <div className="flex items-center gap-3">
                           <span className="w-2 h-2 rounded-full bg-red-500" />
@@ -624,7 +624,7 @@ export default function CyberPage() {
                       </div>
 
                       {isExpanded && (
-                        <div className="px-4 py-4" style={{ borderTop: '1px solid #2f3444' }}>
+                        <div className="px-4 py-4" style={{ borderTop: '1px solid #313849' }}>
                           {/* AI-generated threat-actor profile — rendered Markdown, matching
                               how every other LLM product in the app is presented. */}
                           {actorProfiles[actor.id] && (
@@ -642,7 +642,7 @@ export default function CyberPage() {
                               {rels.length > 0 ? (
                                 <div className="space-y-1 max-h-48 overflow-y-auto">
                                   {rels.map((r, i) => (
-                                    <div key={i} className="text-xs rounded p-2" style={{ backgroundColor: '#2f3444' }}>
+                                    <div key={i} className="text-xs rounded p-2" style={{ backgroundColor: '#313849' }}>
                                       <div className="flex items-center gap-2">
                                         <span className="font-medium" style={{ color: '#adc6ff' }}>{r.rel_type}</span>
                                         {r.confidence !== undefined && (

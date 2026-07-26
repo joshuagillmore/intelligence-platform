@@ -30,7 +30,7 @@ const ENTITY_COLORS: Record<string, string> = {
   'identity': 'bg-green-500/20 text-green-300 border-green-500/30',
   'vulnerability': 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
   'indicator': 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-  'default': 'bg-[#adc6ff]/15 text-[#adc6ff] border-[#adc6ff]/30',
+  'default': 'bg-accent-periwinkle/15 text-accent-periwinkle border-accent-periwinkle/30',
 };
 
 function getEntityColor(entityType: string) {
@@ -475,7 +475,7 @@ export default function ProductsPage() {
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Workbench</span>
             <span className="text-gray-600 text-[10px]">/</span>
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-[#adc6ff]">Production</span>
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-accent-periwinkle">Production</span>
           </div>
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <h2 className="text-xl font-semibold text-gray-100">Generate New Intelligence Product</h2>
@@ -485,7 +485,7 @@ export default function ProductsPage() {
                 <span className="text-xs text-gray-400">Include Evidence Chains</span>
                 <button
                   onClick={() => setIncludeEvidence(!includeEvidence)}
-                  className={`relative w-9 h-5 rounded-full transition-colors ${includeEvidence ? 'bg-[#adc6ff]' : 'bg-navy-600'}`}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${includeEvidence ? 'bg-accent-periwinkle' : 'bg-navy-600'}`}
                 >
                   <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${includeEvidence ? 'translate-x-4' : 'translate-x-0'}`} />
                 </button>
@@ -495,7 +495,7 @@ export default function ProductsPage() {
                 <span className="text-xs text-gray-400">Probability Assessments</span>
                 <button
                   onClick={() => setProbabilityAssessments(!probabilityAssessments)}
-                  className={`relative w-9 h-5 rounded-full transition-colors ${probabilityAssessments ? 'bg-[#adc6ff]' : 'bg-navy-600'}`}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${probabilityAssessments ? 'bg-accent-periwinkle' : 'bg-navy-600'}`}
                 >
                   <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${probabilityAssessments ? 'translate-x-4' : 'translate-x-0'}`} />
                 </button>
@@ -514,14 +514,14 @@ export default function ProductsPage() {
                 onClick={() => setReportType(rt.value)}
                 className={`relative text-left p-4 rounded-lg transition-all border ${
                   reportType === rt.value
-                    ? 'border-l-2 border-[#adc6ff] ring-1 ring-[#adc6ff]/30'
+                    ? 'border-l-2 border-accent-periwinkle ring-1 ring-accent-periwinkle/30'
                     : 'border-navy-600 hover:border-navy-500'
                 }`}
                 style={{ backgroundColor: reportType === rt.value ? '#1a1f2e' : '#1a1f2e' }}
               >
                 <span
                   className={`material-symbols-outlined text-xl mb-2 block ${
-                    reportType === rt.value ? 'text-[#adc6ff]' : 'text-gray-500'
+                    reportType === rt.value ? 'text-accent-periwinkle' : 'text-gray-500'
                   }`}
                 >
                   {rt.icon}
@@ -576,7 +576,7 @@ export default function ProductsPage() {
                   value={entitySearch}
                   onChange={(e) => setEntitySearch(e.target.value)}
                   placeholder="Search entities to include..."
-                  className="w-full rounded-md pl-10 pr-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#adc6ff]/50 border border-navy-600 bg-navy-700 placeholder-gray-500"
+                  className="w-full rounded-md pl-10 pr-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent-periwinkle/50 border border-navy-600 bg-navy-700 placeholder-gray-500"
                 />
                 {searching && (
                   <span className="absolute right-3 top-3 text-xs text-gray-500">Searching...</span>
@@ -629,7 +629,7 @@ export default function ProductsPage() {
               <div className="rounded-lg p-6 border border-navy-600" style={{ backgroundColor: '#1a1f2e' }}>
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                   <h3 className="text-sm font-semibold text-gray-300 flex flex-wrap items-center gap-2">
-                    <span className="material-symbols-outlined text-[#adc6ff] text-lg">article</span>
+                    <span className="material-symbols-outlined text-accent-periwinkle text-lg">article</span>
                     {viewingSavedReport ? `Saved: ${viewingSavedReport.title}` : viewingHistoryId ? 'Report (from history)' : 'Generated Report'}
                     {/* The project's marking, carried onto every exported/printed copy. */}
                     {classificationMarking && (
@@ -671,7 +671,7 @@ export default function ProductsPage() {
                       onClick={exportAsPdf}
                       disabled={!currentProduct}
                       title="Open the print dialog with a clean, classification-marked layout — save as PDF from there"
-                      className="inline-flex items-center gap-1 text-xs bg-[#adc6ff]/15 hover:bg-[#adc6ff]/25 text-[#adc6ff] border border-[#adc6ff]/30 px-3 py-1.5 rounded-md transition-colors disabled:opacity-40"
+                      className="inline-flex items-center gap-1 text-xs bg-accent-periwinkle/15 hover:bg-accent-periwinkle/25 text-accent-periwinkle border border-accent-periwinkle/30 px-3 py-1.5 rounded-md transition-colors disabled:opacity-40"
                     >
                       <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
                       Export PDF
@@ -702,7 +702,7 @@ export default function ProductsPage() {
                       value={saveTitle}
                       onChange={(e) => setSaveTitle(e.target.value)}
                       placeholder="Report title..."
-                      className="flex-1 bg-navy-600 border border-navy-500 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#adc6ff]/50"
+                      className="flex-1 bg-navy-600 border border-navy-500 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent-periwinkle/50"
                     />
                     <button
                       onClick={saveReport}
@@ -750,7 +750,7 @@ export default function ProductsPage() {
                       onMouseLeave={() => setHoveredReportId(null)}
                       className={`group p-3 rounded-md text-xs transition-colors cursor-pointer border ${
                         viewingSavedReport?.id === report.id
-                          ? 'border-[#adc6ff]/30 bg-[#adc6ff]/5'
+                          ? 'border-accent-periwinkle/30 bg-accent-periwinkle/5'
                           : 'border-transparent hover:bg-navy-700/50'
                       }`}
                       onClick={() => viewSavedReport(report)}
@@ -758,7 +758,7 @@ export default function ProductsPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-start gap-2 min-w-0 flex-1">
                           <span className={`material-symbols-outlined text-sm mt-0.5 ${
-                            viewingSavedReport?.id === report.id ? 'text-[#adc6ff]' : 'text-gray-500'
+                            viewingSavedReport?.id === report.id ? 'text-accent-periwinkle' : 'text-gray-500'
                           }`}>description</span>
                           <div className="min-w-0 flex-1">
                             <div className="font-medium text-gray-200 truncate">{report.title}</div>
@@ -782,7 +782,7 @@ export default function ProductsPage() {
                             <div className="flex items-center gap-0.5 ml-1">
                               <button
                                 onClick={(e) => { e.stopPropagation(); viewSavedReport(report); }}
-                                className="p-1 rounded hover:bg-navy-600 text-gray-400 hover:text-[#adc6ff] transition-colors"
+                                className="p-1 rounded hover:bg-navy-600 text-gray-400 hover:text-accent-periwinkle transition-colors"
                                 title="View"
                               >
                                 <span className="material-symbols-outlined text-sm">visibility</span>
@@ -827,13 +827,13 @@ export default function ProductsPage() {
                       onClick={() => viewHistoryItem(item)}
                       className={`w-full text-left p-3 rounded-md text-xs transition-colors border ${
                         viewingHistoryId === item.id
-                          ? 'border-[#adc6ff]/30 bg-[#adc6ff]/5'
+                          ? 'border-accent-periwinkle/30 bg-accent-periwinkle/5'
                           : 'border-transparent hover:bg-navy-700/50'
                       }`}
                     >
                       <div className="flex items-start gap-2">
                         <span className={`material-symbols-outlined text-sm mt-0.5 ${
-                          viewingHistoryId === item.id ? 'text-[#adc6ff]' : 'text-gray-500'
+                          viewingHistoryId === item.id ? 'text-accent-periwinkle' : 'text-gray-500'
                         }`}>schedule</span>
                         <div className="min-w-0 flex-1">
                           <div className="font-medium text-gray-200">{item.reportType}</div>
@@ -929,7 +929,7 @@ export default function ProductsPage() {
         </div>
 
         {toast && (
-          <div className="fixed bottom-6 right-6 bg-[#adc6ff] text-[#0e1321] px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium animate-pulse">
+          <div className="fixed bottom-6 right-6 bg-accent-periwinkle text-[#0e1321] px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium animate-pulse">
             {toast}
           </div>
         )}

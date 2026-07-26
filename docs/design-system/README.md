@@ -54,13 +54,34 @@ Remote project: **SENTINEL Design System**.
 | Components | `assistant-panel` | Aegis with derived citations |
 | Components | `feedback` | the four toast states, and the anti-pattern |
 
-## Known drift (measured 2026-07-26, `frontend/src`, 12 files)
+## Token consolidation — done 2026-07-26
 
-- `bg-navy-800` token class — **86 uses** ✅
-- `#1a1f2e` written inline — **33 uses** (duplicates `navy-800`)
-- `#2f3444` — **43 uses**, *not a token*, a near-duplicate of `navy-600` `#313849`
-  (differs by `rgb(-2,-4,-5)`)
+240 sites converted, verified visually neutral (14 smoke + 5 mobile + 4 seeded E2E green):
 
-Consequence: the theme cannot be changed from `tailwind.config.ts` alone — a
-re-theme is a ~76-site edit. Consolidating `#2f3444` → `navy-600` and the inline
-surfaces → `bg-navy-800` would make the config authoritative again.
+| Was | Sites | Now |
+|-----|-------|-----|
+|  — undeclared twin of  | 43 |  |
+|  /  arbitrary values | 51 |  |
+|  — the most-used colour, not a token | 146 |  (new token) |
+
+ was added to . Opacity modifiers
+(, , ) survive the conversion because Tailwind handles alpha on
+config colours — 42 of them were in play.
+
+## Still undeclared — deliberate decision needed
+
+| Value | Role | Sites |
+|-------|------|-------|
+|  | sidebar / nav ground | 21 |
+|  | deep panel ground | 14 |
+|  | third near-black | 8 |
+|  | twin of  | 29 |
+
+Four near-blacks against one declared . Unlike the twins above these
+may be intentional depth layering, so they are **not** swept — flattening them
+would collapse real hierarchy. Decide how many ground levels the interface needs,
+then declare exactly that many.
+
+Remaining: 33  inline objects, several
+behind conditionals. Converting them needs per-site JSX judgement rather than a
+find/replace.

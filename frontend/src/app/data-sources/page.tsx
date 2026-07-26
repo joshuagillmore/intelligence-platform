@@ -425,17 +425,17 @@ export default function DataSourcesPage() {
           {/* Header + Controls */}
           <div className="flex-none px-4 pt-4 pb-2">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-[10px] font-bold text-[#adc6ff] uppercase tracking-widest">Topic Mind Map</h3>
+              <h3 className="text-[10px] font-bold text-accent-periwinkle uppercase tracking-widest">Topic Mind Map</h3>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setFocusMode(!focusMode)}
-                  className="text-[9px] font-bold text-gray-500 hover:text-[#adc6ff] uppercase tracking-widest transition-colors"
+                  className="text-[9px] font-bold text-gray-500 hover:text-accent-periwinkle uppercase tracking-widest transition-colors"
                 >
                   {focusMode ? 'Exit Focus' : 'Focus'}
                 </button>
                 <button
                   onClick={loadTopics}
-                  className="text-[9px] font-bold text-[#adc6ff] hover:text-white uppercase tracking-widest transition-colors"
+                  className="text-[9px] font-bold text-accent-periwinkle hover:text-white uppercase tracking-widest transition-colors"
                 >
                   Refresh
                 </button>
@@ -482,14 +482,14 @@ export default function DataSourcesPage() {
           {/* Map */}
           <div className="flex-1 px-4 pb-2 min-h-0">
             {loading ? (
-              <div className="flex items-center justify-center bg-[#0a0f1c] rounded-lg border border-[#1a1f2e] h-full">
+              <div className="flex items-center justify-center bg-[#0a0f1c] rounded-lg border border-navy-800 h-full">
                 <LoadingSpinner />
               </div>
             ) : loadError ? (
-              <div className="flex items-center justify-center bg-[#0a0f1c] rounded-lg border border-[#1a1f2e] h-full">
+              <div className="flex items-center justify-center bg-[#0a0f1c] rounded-lg border border-navy-800 h-full">
                 <div className="text-center">
                   <p className="text-red-400 text-sm mb-2">{loadError}</p>
-                  <button onClick={loadTopics} className="text-xs text-[#adc6ff] hover:underline">Retry</button>
+                  <button onClick={loadTopics} className="text-xs text-accent-periwinkle hover:underline">Retry</button>
                 </div>
               </div>
             ) : topicTree.children && topicTree.children.length > 0 ? (
@@ -503,10 +503,10 @@ export default function DataSourcesPage() {
                 onBreadcrumbsChange={setBreadcrumbs}
               />
             ) : (
-              <div className="flex items-center justify-center bg-[#0a0f1c] rounded-lg border border-[#1a1f2e] h-full">
+              <div className="flex items-center justify-center bg-[#0a0f1c] rounded-lg border border-navy-800 h-full">
                 <div className="text-center text-gray-500 text-sm">
                   <p className="mb-2">No topics found. Ingest documents to populate.</p>
-                  <a href="/collections" className="text-[#adc6ff] text-xs hover:underline">Go to Collections to ingest documents</a>
+                  <a href="/collections" className="text-accent-periwinkle text-xs hover:underline">Go to Collections to ingest documents</a>
                 </div>
               </div>
             )}
@@ -518,7 +518,7 @@ export default function DataSourcesPage() {
           <div className="flex-1 flex flex-col md:flex-row gap-4 p-4 pt-2 min-h-0 overflow-auto md:overflow-hidden">
 
             {/* Left: Documents (evidence-centric) */}
-            <div className="w-full md:w-1/2 overflow-y-auto bg-[#0d1220] rounded-lg border border-[#1a1f2e] p-4">
+            <div className="w-full md:w-1/2 overflow-y-auto bg-[#0d1220] rounded-lg border border-navy-800 p-4">
               {!isLeafSelected ? (
                 <div className="flex items-center justify-center h-full text-gray-500 text-sm">
                   <p>Click a topic node above to view associated documents.</p>
@@ -536,7 +536,7 @@ export default function DataSourcesPage() {
                         : <>Documents for &ldquo;{selectedNodeName}&rdquo;</>
                       }
                     </h3>
-                    <span className="text-[10px] bg-[#1a1f2e] text-gray-400 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] bg-navy-800 text-gray-400 px-2 py-0.5 rounded-full">
                       {documents.length} source{documents.length !== 1 ? 's' : ''}
                     </span>
                   </div>
@@ -554,7 +554,7 @@ export default function DataSourcesPage() {
                         return (
                           <div
                             key={i}
-                            className="bg-[#090e1c] rounded-sm border border-[#1a1f2e] hover:bg-[#161b2a] transition-all group"
+                            className="bg-[#090e1c] rounded-sm border border-navy-800 hover:bg-[#161b2a] transition-all group"
                           >
                             {/* Document header */}
                             <div
@@ -562,7 +562,7 @@ export default function DataSourcesPage() {
                               onClick={() => router.push(`/documents/${doc.id}`)}
                             >
                               <div className="flex justify-between items-start mb-2">
-                                <h4 className="text-sm font-bold text-white group-hover:text-[#adc6ff] transition-colors flex-1">
+                                <h4 className="text-sm font-bold text-white group-hover:text-accent-periwinkle transition-colors flex-1">
                                   {doc.name}
                                 </h4>
                                 <div className="flex items-center gap-1.5 flex-none ml-2">
@@ -607,7 +607,7 @@ export default function DataSourcesPage() {
                             {(doc.content || excerpts.length > 2) && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); toggleDocExpanded(doc.id); }}
-                                className="w-full text-[9px] font-bold text-gray-500 hover:text-[#adc6ff] py-1.5 border-t border-[#1a1f2e]/50 uppercase tracking-widest transition-colors"
+                                className="w-full text-[9px] font-bold text-gray-500 hover:text-accent-periwinkle py-1.5 border-t border-navy-800/50 uppercase tracking-widest transition-colors"
                               >
                                 {isExpanded ? 'Show Less' : 'Show Full Document'}
                               </button>
@@ -615,7 +615,7 @@ export default function DataSourcesPage() {
 
                             {/* Expanded full document content */}
                             {isExpanded && doc.content && (
-                              <div className="px-4 pb-4 text-xs text-gray-400/70 leading-relaxed whitespace-pre-wrap border-t border-[#1a1f2e]/50 pt-3 max-h-64 overflow-y-auto">
+                              <div className="px-4 pb-4 text-xs text-gray-400/70 leading-relaxed whitespace-pre-wrap border-t border-navy-800/50 pt-3 max-h-64 overflow-y-auto">
                                 <HighlightedExcerpt
                                   text={doc.content}
                                   keywords={keywords}
@@ -639,13 +639,13 @@ export default function DataSourcesPage() {
                         {connectedEntities.slice(0, 15).map((ce, i) => (
                           <span
                             key={i}
-                            className="flex items-center gap-1.5 bg-[#2f3444] px-2.5 py-1.5 rounded-sm border border-[#424754]/20 text-xs cursor-pointer hover:bg-[#3a4050] transition-colors"
+                            className="flex items-center gap-1.5 bg-[#313849] px-2.5 py-1.5 rounded-sm border border-[#424754]/20 text-xs cursor-pointer hover:bg-[#3a4050] transition-colors"
                             onClick={() => {
                               // Search mind map for topics containing this entity
                               setSearchQuery(ce.name);
                             }}
                           >
-                            <span className="font-bold text-[#adc6ff]">{ce.name}</span>
+                            <span className="font-bold text-accent-periwinkle">{ce.name}</span>
                             <span className={`text-[8px] font-black px-1 rounded-sm ${entityTypeColor(ce.entity_type)}`}>
                               {ce.entity_type}
                             </span>
@@ -659,7 +659,7 @@ export default function DataSourcesPage() {
             </div>
 
             {/* Right: LLM Summary + Conversation */}
-            <div className="w-full md:w-1/2 overflow-y-auto bg-[#0d1220] rounded-lg border border-[#1a1f2e] p-4 flex flex-col">
+            <div className="w-full md:w-1/2 overflow-y-auto bg-[#0d1220] rounded-lg border border-navy-800 p-4 flex flex-col">
               {!isLeafSelected ? (
                 <div className="flex items-center justify-center h-full text-gray-500 text-sm">
                   <p>Select a topic to see its intelligence summary.</p>
@@ -681,14 +681,14 @@ export default function DataSourcesPage() {
                   )}
 
                   {/* AI Summary */}
-                  <div className="bg-[#161b2a]/50 rounded-xl p-6 border border-[#adc6ff]/10 relative overflow-y-auto mb-4">
+                  <div className="bg-[#161b2a]/50 rounded-xl p-6 border border-accent-periwinkle/10 relative overflow-y-auto mb-4">
                     <div className="absolute top-0 right-0 p-4 opacity-5">
                       <span className="material-symbols-outlined text-6xl">auto_awesome</span>
                     </div>
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[#adc6ff] text-sm">auto_awesome</span>
-                        <h3 className="font-bold text-[10px] uppercase tracking-widest text-[#adc6ff]">
+                        <span className="material-symbols-outlined text-accent-periwinkle text-sm">auto_awesome</span>
+                        <h3 className="font-bold text-[10px] uppercase tracking-widest text-accent-periwinkle">
                           Intelligence Summary
                         </h3>
                       </div>
@@ -705,7 +705,7 @@ export default function DataSourcesPage() {
                               generateSummary(selectedNodeId, selectedNodeName, entityContext);
                             }
                           }}
-                          className="bg-[#adc6ff]/10 hover:bg-[#adc6ff]/20 text-[#adc6ff] px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border border-[#adc6ff]/20"
+                          className="bg-accent-periwinkle/10 hover:bg-accent-periwinkle/20 text-accent-periwinkle px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border border-accent-periwinkle/20"
                         >
                           Regenerate
                         </button>
@@ -727,7 +727,7 @@ export default function DataSourcesPage() {
                               generateSummary(selectedNodeId, selectedNodeName, entityContext);
                             }
                           }}
-                          className="bg-[#adc6ff]/10 hover:bg-[#adc6ff]/20 text-[#adc6ff] px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition-colors border border-[#adc6ff]/20 flex items-center gap-2"
+                          className="bg-accent-periwinkle/10 hover:bg-accent-periwinkle/20 text-accent-periwinkle px-4 py-2 rounded text-xs font-bold uppercase tracking-wider transition-colors border border-accent-periwinkle/20 flex items-center gap-2"
                         >
                           <span className="material-symbols-outlined text-sm">auto_awesome</span>
                           Generate Intelligence Summary
@@ -744,8 +744,8 @@ export default function DataSourcesPage() {
                           key={i}
                           className={`rounded-sm p-3 text-sm ${
                             msg.role === 'user'
-                              ? 'bg-[#1a1f2e] text-gray-300 border-l-2 border-[#adc6ff]/40 whitespace-pre-wrap'
-                              : 'bg-[#090e1c] text-gray-400 border border-[#1a1f2e]'
+                              ? 'bg-navy-800 text-gray-300 border-l-2 border-accent-periwinkle/40 whitespace-pre-wrap'
+                              : 'bg-[#090e1c] text-gray-400 border border-navy-800'
                           }`}
                         >
                           <span className="text-[9px] font-bold uppercase tracking-widest text-gray-600 block mb-1">
@@ -784,7 +784,7 @@ export default function DataSourcesPage() {
                   </div>
 
                   {/* Ask about this topic */}
-                  <div className="mt-auto bg-[#1a1f2e] border border-[#252a39] rounded-lg p-4">
+                  <div className="mt-auto bg-navy-800 border border-[#252a39] rounded-lg p-4">
                     <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
                       Ask About This Topic
                     </h3>
@@ -794,12 +794,12 @@ export default function DataSourcesPage() {
                         onChange={(e) => setQueryInput(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && askAboutTopic()}
                         placeholder={`Ask about ${selectedNodeName}...`}
-                        className="flex-1 bg-[#090e1c] border border-[#1a1f2e] rounded-sm px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#adc6ff]"
+                        className="flex-1 bg-[#090e1c] border border-navy-800 rounded-sm px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent-periwinkle"
                       />
                       <button
                         onClick={askAboutTopic}
                         disabled={queryLoading || !queryInput.trim()}
-                        className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-4 py-2 rounded-sm text-sm font-bold disabled:opacity-50 transition-colors"
+                        className="bg-accent-periwinkle hover:bg-[#4d8eff] text-[#002e6a] px-4 py-2 rounded-sm text-sm font-bold disabled:opacity-50 transition-colors"
                       >
                         {queryLoading ? 'Asking...' : 'Ask'}
                       </button>

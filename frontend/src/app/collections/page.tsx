@@ -470,8 +470,8 @@ PIR: ${pirText}` }],
         {/* Collection Pipeline */}
         <section className="max-w-5xl mx-auto">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#adc6ff] animate-pulse" />
+            <h2 className="text-[10px] font-black tracking-[0.2em] text-accent-periwinkle uppercase flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-accent-periwinkle animate-pulse" />
               Collection Pipeline
             </h2>
             {workflowActive && (
@@ -484,7 +484,7 @@ PIR: ${pirText}` }],
           <div className="space-y-2">
 
             {/* ──── STEP 1: REFINE PIR ──── */}
-            <div className="bg-[#1a1f2e] border border-[#252a39] rounded overflow-hidden">
+            <div className="bg-navy-800 border border-[#252a39] rounded overflow-hidden">
               <button
                 onClick={() => setStep1Open(!step1Open)}
                 className="w-full flex items-center justify-between p-4 text-left hover:bg-[#1e2436] transition-colors"
@@ -492,7 +492,7 @@ PIR: ${pirText}` }],
                 <div className="flex items-center gap-3">
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
                     refinedPir || refineAnalysis ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
-                    refineLoading ? 'bg-[#adc6ff]/20 text-[#adc6ff] border border-[#adc6ff]/30 animate-pulse' :
+                    refineLoading ? 'bg-accent-periwinkle/20 text-accent-periwinkle border border-accent-periwinkle/30 animate-pulse' :
                     'bg-[#252a39] text-gray-400 border border-[#353a49]'
                   }`}>
                     {refinedPir || refineAnalysis ? <span className="material-symbols-outlined text-xs">check</span> : '1'}
@@ -518,7 +518,7 @@ PIR: ${pirText}` }],
                         value={selectedPirId}
                         onChange={(e) => selectPir(e.target.value)}
                         aria-label="Existing PIR"
-                        className="bg-[#1a1f2e] border border-[#353a49] text-xs text-gray-300 rounded px-2 py-1.5 max-w-full focus:outline-none focus:ring-1 focus:ring-[#adc6ff]"
+                        className="bg-navy-800 border border-[#353a49] text-xs text-gray-300 rounded px-2 py-1.5 max-w-full focus:outline-none focus:ring-1 focus:ring-accent-periwinkle"
                       >
                         <option value="">New requirement (not yet tracked)</option>
                         {projectPirs.map(p => (
@@ -550,7 +550,7 @@ PIR: ${pirText}` }],
                         ta.style.height = `${ta.scrollHeight}px`;
                       }}
                       rows={2}
-                      className="w-full bg-[#1a1f2e] border border-[#353a49] focus:ring-1 focus:ring-[#adc6ff] focus:border-[#adc6ff] text-sm py-3 px-4 rounded font-medium placeholder:text-gray-600 placeholder:italic transition-all resize-none"
+                      className="w-full bg-navy-800 border border-[#353a49] focus:ring-1 focus:ring-accent-periwinkle focus:border-accent-periwinkle text-sm py-3 px-4 rounded font-medium placeholder:text-gray-600 placeholder:italic transition-all resize-none"
                       placeholder="Enter your Priority Intelligence Requirement..."
                     />
                   </div>
@@ -560,7 +560,7 @@ PIR: ${pirText}` }],
                     <button
                       onClick={refinePir}
                       disabled={refineLoading || !pir.trim()}
-                      className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-6 py-2 rounded text-[10px] font-black tracking-widest uppercase transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      className="bg-accent-periwinkle hover:bg-[#4d8eff] text-[#002e6a] px-6 py-2 rounded text-[10px] font-black tracking-widest uppercase transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
                       {refineLoading ? (
                         <><LoadingSpinner size="sm" /> Refining...</>
@@ -583,7 +583,7 @@ PIR: ${pirText}` }],
                   {refineAnalysis && (
                     <div className="space-y-3">
                       {refinedPir !== null && (
-                        <div className="bg-[#1a1f2e] border-l-2 border-emerald-500 rounded p-4">
+                        <div className="bg-navy-800 border-l-2 border-emerald-500 rounded p-4">
                           <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-bold block mb-1">
                             Refined PIR <span className="text-gray-500 normal-case font-normal">· editable</span>
                           </span>
@@ -596,7 +596,7 @@ PIR: ${pirText}` }],
                           />
                         </div>
                       )}
-                      <div className="bg-[#1a1f2e] rounded p-4 max-h-60 overflow-y-auto">
+                      <div className="bg-navy-800 rounded p-4 max-h-60 overflow-y-auto">
                         <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-2">Analysis</span>
                         <p className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed">{refineAnalysis}</p>
                       </div>
@@ -607,7 +607,7 @@ PIR: ${pirText}` }],
             </div>
 
             {/* ──── STEP 2: GENERATE PLAN ──── */}
-            <div className={`bg-[#1a1f2e] border border-[#252a39] rounded overflow-hidden transition-opacity ${
+            <div className={`bg-navy-800 border border-[#252a39] rounded overflow-hidden transition-opacity ${
               !pir.trim() && !refinedPir ? 'opacity-40 pointer-events-none' : ''
             }`}>
               <button
@@ -618,7 +618,7 @@ PIR: ${pirText}` }],
                 <div className="flex items-center gap-3">
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${
                     activePlan ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
-                    planLoading ? 'bg-[#adc6ff]/20 text-[#adc6ff] border border-[#adc6ff]/30 animate-pulse' :
+                    planLoading ? 'bg-accent-periwinkle/20 text-accent-periwinkle border border-accent-periwinkle/30 animate-pulse' :
                     'bg-[#252a39] text-gray-400 border border-[#353a49]'
                   }`}>
                     {activePlan ? <span className="material-symbols-outlined text-xs">check</span> : '2'}
@@ -636,7 +636,7 @@ PIR: ${pirText}` }],
               {step2Open && (
                 <div className="border-t border-[#252a39] p-4 md:p-6 space-y-4 bg-[#0d1220]">
                   {/* Show what PIR will be used */}
-                  <div className="bg-[#1a1f2e] rounded p-3">
+                  <div className="bg-navy-800 rounded p-3">
                     <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">PIR to Plan</span>
                     <p className="text-sm text-gray-300">{refinedPir || pir.trim()}</p>
                     {refinedPir && refinedPir !== pir.trim() && (
@@ -670,7 +670,7 @@ PIR: ${pirText}` }],
                   {activePlan && planItems.length > 0 && (
                     <div className="bg-[#161b2a] rounded overflow-x-auto">
                       <table className="w-full text-left border-separate border-spacing-y-1 min-w-[500px]">
-                        <thead className="bg-[#2f3444]">
+                        <thead className="bg-[#313849]">
                           <tr>
                             <th className="px-4 py-2 text-[10px] font-bold text-gray-400 tracking-widest uppercase">Source</th>
                             <th className="px-4 py-2 text-[10px] font-bold text-gray-400 tracking-widest uppercase">Description</th>
@@ -679,10 +679,10 @@ PIR: ${pirText}` }],
                         </thead>
                         <tbody>
                           {planItems.map(item => (
-                            <tr key={item.id} className="bg-[#1a1f2e] hover:bg-[#343949] transition-colors group">
+                            <tr key={item.id} className="bg-navy-800 hover:bg-[#343949] transition-colors group">
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
-                                  <span className="material-symbols-outlined text-xs text-[#adc6ff]">
+                                  <span className="material-symbols-outlined text-xs text-accent-periwinkle">
                                     {SOURCE_TYPE_ICONS[item.source_type] || 'description'}
                                   </span>
                                   <span className="text-xs font-semibold capitalize">{item.source_type.replace('_', ' ')}</span>
@@ -721,7 +721,7 @@ PIR: ${pirText}` }],
 
                   {/* Analysis from plan if available */}
                   {activePlan?.description && (
-                    <div className="bg-[#1a1f2e] rounded p-4 max-h-40 overflow-y-auto">
+                    <div className="bg-navy-800 rounded p-4 max-h-40 overflow-y-auto">
                       <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-2">Plan Analysis</span>
                       <p className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed">{activePlan.description}</p>
                     </div>
@@ -731,7 +731,7 @@ PIR: ${pirText}` }],
             </div>
 
             {/* ──── STEP 3: EXECUTE ──── */}
-            <div className={`bg-[#1a1f2e] border border-[#252a39] rounded overflow-hidden transition-opacity ${
+            <div className={`bg-navy-800 border border-[#252a39] rounded overflow-hidden transition-opacity ${
               !activePlan ? 'opacity-40 pointer-events-none' : ''
             }`}>
               <button
@@ -759,22 +759,22 @@ PIR: ${pirText}` }],
                 <div className="border-t border-[#252a39] p-4 md:p-6 space-y-4 bg-[#0d1220]">
                   {/* Summary */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-[#1a1f2e] rounded p-3">
+                    <div className="bg-navy-800 rounded p-3">
                       <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">PIR</span>
                       <p className="text-xs text-gray-300">{activePlan.refined_pir || activePlan.pir || pir}</p>
                     </div>
-                    <div className="bg-[#1a1f2e] rounded p-3">
+                    <div className="bg-navy-800 rounded p-3">
                       <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">Sources</span>
-                      <p className="text-lg font-black text-[#adc6ff]">{planItems.filter(i => i.approved).length}</p>
+                      <p className="text-lg font-black text-accent-periwinkle">{planItems.filter(i => i.approved).length}</p>
                       <p className="text-[10px] text-gray-500">of {planItems.length} approved</p>
                     </div>
-                    <div className="bg-[#1a1f2e] rounded p-3">
+                    <div className="bg-navy-800 rounded p-3">
                       <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">Status</span>
                       <p className="text-xs text-amber-400 font-bold uppercase">Awaiting Approval</p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 bg-[#1a1f2e] rounded p-3">
+                  <div className="flex items-center gap-3 bg-navy-800 rounded p-3">
                     <label htmlFor="maxResults" className="text-[10px] text-gray-400 uppercase tracking-widest font-bold whitespace-nowrap">Results / source</label>
                     <input
                       id="maxResults"
@@ -794,7 +794,7 @@ PIR: ${pirText}` }],
                     <button
                       onClick={executePlan}
                       disabled={loading || planItems.filter(i => i.approved).length === 0}
-                      className="bg-gradient-to-br from-[#adc6ff] to-[#4d8eff] text-[#002e6a] px-8 py-2.5 rounded text-xs font-black tracking-widest uppercase hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shadow-[0_0_8px_rgba(173,198,255,0.3)] flex items-center gap-2"
+                      className="bg-gradient-to-br from-accent-periwinkle to-[#4d8eff] text-[#002e6a] px-8 py-2.5 rounded text-xs font-black tracking-widest uppercase hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shadow-[0_0_8px_rgba(173,198,255,0.3)] flex items-center gap-2"
                     >
                       {loading ? (
                         <><LoadingSpinner size="sm" /> Executing...</>
@@ -819,7 +819,7 @@ PIR: ${pirText}` }],
         {/* Active Streams */}
         {activeStreams.length > 0 && (
           <section className="max-w-5xl mx-auto">
-            <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase mb-4 flex items-center gap-2">
+            <h2 className="text-[10px] font-black tracking-[0.2em] text-accent-periwinkle uppercase mb-4 flex items-center gap-2">
               <span className="material-symbols-outlined text-sm">sync</span>
               Active Streams
             </h2>
@@ -831,7 +831,7 @@ PIR: ${pirText}` }],
                   : col.status?.toUpperCase() === 'PENDING' ? 0
                   : 10;
                 return (
-                  <div key={col.id} className="bg-[#1a1f2e] p-6 rounded relative overflow-hidden group">
+                  <div key={col.id} className="bg-navy-800 p-6 rounded relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                       <span className="material-symbols-outlined text-6xl">lan</span>
                     </div>
@@ -841,12 +841,12 @@ PIR: ${pirText}` }],
                           <h3 className="text-sm font-bold text-gray-200">{col.pir.substring(0, 60)}{col.pir.length > 60 ? '...' : ''}</h3>
                           <p className="text-[10px] text-gray-500 font-mono mt-1">ID: {col.id.substring(0, 16)}</p>
                         </div>
-                        <span className="text-xs font-black text-[#adc6ff]">{progress}%</span>
+                        <span className="text-xs font-black text-accent-periwinkle">{progress}%</span>
                       </div>
                       <div>
-                        <div className="w-full h-1.5 bg-[#2f3444] rounded-full overflow-hidden mb-3">
+                        <div className="w-full h-1.5 bg-[#313849] rounded-full overflow-hidden mb-3">
                           <div
-                            className="h-full bg-gradient-to-r from-[#adc6ff] to-[#4d8eff] relative shadow-[0_0_8px_rgba(173,198,255,0.3)]"
+                            className="h-full bg-gradient-to-r from-accent-periwinkle to-[#4d8eff] relative shadow-[0_0_8px_rgba(173,198,255,0.3)]"
                             style={{ width: `${progress}%` }}
                           >
                             <div className="absolute right-0 top-0 bottom-0 w-1 bg-white/40 blur-[2px]" />
@@ -868,7 +868,7 @@ PIR: ${pirText}` }],
         {/* Collection Plans */}
         {plans.length > 0 && (
           <section className="max-w-5xl mx-auto">
-            <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase mb-4 flex items-center gap-2">
+            <h2 className="text-[10px] font-black tracking-[0.2em] text-accent-periwinkle uppercase mb-4 flex items-center gap-2">
               <span className="material-symbols-outlined text-sm">assignment</span>
               Collection Plans
               <span className="text-gray-500 font-mono ml-2">({plans.length})</span>
@@ -882,13 +882,13 @@ PIR: ${pirText}` }],
                   : 'bg-gray-600/20 text-gray-500';
                 const isExpanded = expandedIds.has(String(plan.id));
                 return (
-                  <div key={plan.id} className="bg-[#1a1f2e] border border-[#252a39] rounded overflow-hidden">
+                  <div key={plan.id} className="bg-navy-800 border border-[#252a39] rounded overflow-hidden">
                     <div className="p-4 cursor-pointer hover:bg-[#1e2436] transition-colors" onClick={() => { toggleExpanded(String(plan.id)); loadActivity(String(plan.id)); }}>
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-gray-300 truncate">{plan.pir || plan.name}</p>
                           {plan.refined_pir && plan.refined_pir !== plan.pir && (
-                            <p className="text-[10px] text-[#adc6ff] mt-1 truncate">Refined: {plan.refined_pir}</p>
+                            <p className="text-[10px] text-accent-periwinkle mt-1 truncate">Refined: {plan.refined_pir}</p>
                           )}
                           <div className="flex items-center gap-3 mt-2">
                             <span className="text-[10px] text-gray-500 font-mono">{plan.created_at ? new Date(plan.created_at).toLocaleString() : ''}</span>
@@ -928,13 +928,13 @@ PIR: ${pirText}` }],
                                   : 'radio_button_unchecked';
                                 const statusColor = cs === 'succeeded' ? 'text-emerald-400'
                                   : cs === 'failed' ? 'text-red-400'
-                                  : cs === 'collecting' ? 'text-[#adc6ff] animate-spin'
+                                  : cs === 'collecting' ? 'text-accent-periwinkle animate-spin'
                                   : cs === 'queued' ? 'text-amber-400'
                                   : cs === 'awaiting_upload' ? 'text-orange-400'
                                   : 'text-gray-500';
                                 return (
-                                  <div key={src.id} className="flex items-center gap-3 bg-[#1a1f2e] rounded px-3 py-2">
-                                    <span className="material-symbols-outlined text-xs text-[#adc6ff]">
+                                  <div key={src.id} className="flex items-center gap-3 bg-navy-800 rounded px-3 py-2">
+                                    <span className="material-symbols-outlined text-xs text-accent-periwinkle">
                                       {SOURCE_TYPE_ICONS[src.source_type] || 'description'}
                                     </span>
                                     <span className="text-xs text-gray-300 capitalize flex-none w-20">{src.source_type.replace('_', ' ')}</span>
@@ -962,11 +962,11 @@ PIR: ${pirText}` }],
                         {activityLogs[String(plan.id)] && activityLogs[String(plan.id)].length > 0 && (
                           <div>
                             <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">Activity Log</span>
-                            <div className="bg-[#1a1f2e] rounded p-3 max-h-40 overflow-y-auto space-y-1 font-mono">
+                            <div className="bg-navy-800 rounded p-3 max-h-40 overflow-y-auto space-y-1 font-mono">
                               {activityLogs[String(plan.id)].map(a => {
                                 const eventColor = a.event.includes('failed') ? 'text-red-400'
                                   : a.event.includes('fetched') || a.event.includes('succeeded') || a.event.includes('completed') ? 'text-emerald-400'
-                                  : a.event.includes('fetching') || a.event.includes('collecting') ? 'text-[#adc6ff]'
+                                  : a.event.includes('fetching') || a.event.includes('collecting') ? 'text-accent-periwinkle'
                                   : a.event.includes('started') ? 'text-amber-400'
                                   : 'text-gray-500';
                                 return (
@@ -1037,7 +1037,7 @@ PIR: ${pirText}` }],
                   onClick={() => fileInputRef.current?.click()}
                   className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
                     dragOver
-                      ? 'border-[#adc6ff] bg-[#adc6ff]/10'
+                      ? 'border-accent-periwinkle bg-accent-periwinkle/10'
                       : 'border-navy-600 hover:border-navy-500 hover:bg-navy-700/50'
                   }`}
                 >
@@ -1063,7 +1063,7 @@ PIR: ${pirText}` }],
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-gray-400">Reliability:</label>
                     <select value={fileReliability} onChange={(e) => setFileReliability(e.target.value)}
-                      className="bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-[#adc6ff]">
+                      className="bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-periwinkle">
                       <option value="A1">A1 - Reliable, Confirmed</option>
                       <option value="B2">B2 - Usually Reliable, Probably True</option>
                       <option value="C3">C3 - Fairly Reliable, Possibly True</option>
@@ -1075,12 +1075,12 @@ PIR: ${pirText}` }],
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-gray-400">Extraction Mode:</label>
                     <select value={extractionMode} onChange={(e) => setExtractionMode(e.target.value)}
-                      className="bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-[#adc6ff]">
+                      className="bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-periwinkle">
                       {EXTRACTION_MODES.map(m => (<option key={m.value} value={m.value}>{m.label}</option>))}
                     </select>
                   </div>
                   <button onClick={uploadFiles} disabled={fileUploading || selectedFiles.length === 0}
-                    className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-4 py-2 rounded text-sm font-bold disabled:opacity-50 transition-colors">
+                    className="bg-accent-periwinkle hover:bg-[#4d8eff] text-[#002e6a] px-4 py-2 rounded text-sm font-bold disabled:opacity-50 transition-colors">
                     {fileUploading ? 'Uploading...' : `Upload ${selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''}`}
                   </button>
                 </div>
@@ -1108,19 +1108,19 @@ PIR: ${pirText}` }],
               <div className="px-6 pb-6">
                 <textarea value={uploadContent} onChange={(e) => setUploadContent(e.target.value)}
                   placeholder="Paste document text here for ingestion and entity extraction..."
-                  className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm h-40 focus:outline-none focus:border-[#adc6ff] resize-none font-mono" />
+                  className="w-full bg-navy-700 border border-navy-600 rounded px-3 py-2 text-sm h-40 focus:outline-none focus:border-accent-periwinkle resize-none font-mono" />
                 <div className="flex items-center gap-4 mt-3">
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-gray-400">Reliability:</label>
                     <select value={uploadReliability} onChange={(e) => setUploadReliability(e.target.value)}
-                      className="bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-[#adc6ff]">
+                      className="bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-accent-periwinkle">
                       <option value="A1">A1 - Reliable, Confirmed</option>
                       <option value="C3">C3 - Fairly Reliable, Possibly True</option>
                       <option value="F6">F6 - Cannot Be Judged</option>
                     </select>
                   </div>
                   <button onClick={uploadDocument} disabled={uploading || !uploadContent.trim()}
-                    className="bg-[#adc6ff] hover:bg-[#4d8eff] text-[#002e6a] px-4 py-2 rounded text-sm font-bold disabled:opacity-50 transition-colors">
+                    className="bg-accent-periwinkle hover:bg-[#4d8eff] text-[#002e6a] px-4 py-2 rounded text-sm font-bold disabled:opacity-50 transition-colors">
                     {uploading ? 'Uploading...' : 'Upload Document'}
                   </button>
                 </div>
@@ -1134,7 +1134,7 @@ PIR: ${pirText}` }],
 
         {/* Collection History */}
         <section className="max-w-5xl mx-auto pb-12">
-          <h2 className="text-[10px] font-black tracking-[0.2em] text-[#adc6ff] uppercase mb-4 flex items-center gap-2">
+          <h2 className="text-[10px] font-black tracking-[0.2em] text-accent-periwinkle uppercase mb-4 flex items-center gap-2">
             <span className="material-symbols-outlined text-sm">history</span>
             Collection History
             <span className="text-gray-500 font-mono ml-2">({collections.length})</span>
@@ -1142,7 +1142,7 @@ PIR: ${pirText}` }],
           {collectionsLoading ? (
             <LoadingSpinner />
           ) : completedCollections.length === 0 ? (
-            <div className="bg-[#1a1f2e] border border-[#252a39] rounded p-8 text-center text-gray-500 text-sm">
+            <div className="bg-navy-800 border border-[#252a39] rounded p-8 text-center text-gray-500 text-sm">
               No collection history yet. Create a PIR above to get started.
             </div>
           ) : (
@@ -1158,7 +1158,7 @@ PIR: ${pirText}` }],
                   : 'bg-gray-900/30 text-gray-400';
 
                 return (
-                  <div key={col.id} className="bg-[#1a1f2e] border border-[#252a39] rounded overflow-hidden">
+                  <div key={col.id} className="bg-navy-800 border border-[#252a39] rounded overflow-hidden">
                     <div
                       className="p-4 cursor-pointer hover:bg-[#1e2436] transition-colors"
                       onClick={() => toggleExpanded(col.id)}
@@ -1167,7 +1167,7 @@ PIR: ${pirText}` }],
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-gray-300 truncate">{col.pir}</p>
                           {col.refined_pir && (
-                            <p className="text-[10px] text-[#adc6ff] mt-1 truncate">Refined: {col.refined_pir}</p>
+                            <p className="text-[10px] text-accent-periwinkle mt-1 truncate">Refined: {col.refined_pir}</p>
                           )}
                           <div className="flex items-center gap-3 mt-2">
                             {col.created_at && (
@@ -1210,7 +1210,7 @@ PIR: ${pirText}` }],
                         {col.refinement && (
                           <div>
                             <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">LLM Refinement</span>
-                            <div className="bg-[#1a1f2e] rounded p-3 max-h-60 overflow-y-auto">
+                            <div className="bg-navy-800 rounded p-3 max-h-60 overflow-y-auto">
                               <p className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed">{col.refinement}</p>
                             </div>
                           </div>
@@ -1221,8 +1221,8 @@ PIR: ${pirText}` }],
                             <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mb-1">Collection Plan</span>
                             <div className="space-y-1">
                               {col.plan.map((item, i) => (
-                                <div key={i} className="flex items-center gap-3 bg-[#1a1f2e] rounded px-3 py-2">
-                                  <span className="material-symbols-outlined text-xs text-[#adc6ff]">
+                                <div key={i} className="flex items-center gap-3 bg-navy-800 rounded px-3 py-2">
+                                  <span className="material-symbols-outlined text-xs text-accent-periwinkle">
                                     {SOURCE_TYPE_ICONS[item.source_type] || 'description'}
                                   </span>
                                   <span className="text-xs text-gray-300 capitalize flex-none">{(item.source_type || '').replace('_', ' ')}</span>

@@ -262,7 +262,7 @@ export default function AnalysisPage() {
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">Workbench</span>
             <span className="text-gray-600 text-[10px]">/</span>
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-[#adc6ff]">Tradecraft</span>
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-accent-periwinkle">Tradecraft</span>
           </div>
           <h2 className="text-xl font-semibold text-gray-100">Structured Analytic Techniques</h2>
           <p className="text-xs text-gray-500 mt-1">
@@ -278,12 +278,12 @@ export default function AnalysisPage() {
               onClick={() => setTechnique(t.id)}
               className={`text-left p-4 rounded-lg transition-all border ${
                 technique === t.id
-                  ? 'border-l-2 border-[#adc6ff] ring-1 ring-[#adc6ff]/30'
+                  ? 'border-l-2 border-accent-periwinkle ring-1 ring-accent-periwinkle/30'
                   : 'border-navy-600 hover:border-navy-500'
               }`}
               style={{ backgroundColor: '#1a1f2e' }}
             >
-              <span className={`material-symbols-outlined text-xl mb-2 block ${technique === t.id ? 'text-[#adc6ff]' : 'text-gray-500'}`}>
+              <span className={`material-symbols-outlined text-xl mb-2 block ${technique === t.id ? 'text-accent-periwinkle' : 'text-gray-500'}`}>
                 {t.icon}
               </span>
               <div className={`text-sm font-medium mb-1 ${technique === t.id ? 'text-gray-100' : 'text-gray-300'}`}>{t.label}</div>
@@ -305,7 +305,7 @@ export default function AnalysisPage() {
                     value={question}
                     onChange={(e) => setQuestion(e.target.value)}
                     placeholder="Who is responsible for the depot shipments?"
-                    className="w-full rounded-md px-3 py-2 text-sm h-20 border border-navy-600 bg-navy-700 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#adc6ff]/50"
+                    className="w-full rounded-md px-3 py-2 text-sm h-20 border border-navy-600 bg-navy-700 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-accent-periwinkle/50"
                   />
                 </div>
               )}
@@ -319,7 +319,7 @@ export default function AnalysisPage() {
                     value={focus}
                     onChange={(e) => setFocus(e.target.value)}
                     placeholder="What we still need to know about the logistics network..."
-                    className="w-full rounded-md px-3 py-2 text-sm h-20 border border-navy-600 bg-navy-700 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#adc6ff]/50"
+                    className="w-full rounded-md px-3 py-2 text-sm h-20 border border-navy-600 bg-navy-700 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-accent-periwinkle/50"
                   />
                 </div>
               )}
@@ -341,7 +341,7 @@ export default function AnalysisPage() {
                           onChange={() => setSelectedDocs(prev =>
                             prev.includes(doc.id) ? prev.filter(x => x !== doc.id) : [...prev, doc.id]
                           )}
-                          className="mt-0.5 accent-[#adc6ff]"
+                          className="mt-0.5 accent-accent-periwinkle"
                         />
                         <span className="flex-1 truncate">{doc.name}</span>
                         <span className="text-[10px] text-gray-500 flex-none">{doc.reliability_rating || 'unrated'}</span>
@@ -353,7 +353,7 @@ export default function AnalysisPage() {
                       type="checkbox"
                       checked={applyRatings}
                       onChange={(e) => setApplyRatings(e.target.checked)}
-                      className="accent-[#adc6ff]"
+                      className="accent-accent-periwinkle"
                     />
                     Write ratings back to the documents
                   </label>
@@ -385,7 +385,7 @@ export default function AnalysisPage() {
                     value={entitySearch}
                     onChange={(e) => setEntitySearch(e.target.value)}
                     placeholder="Search entities..."
-                    className="w-full rounded-md px-3 py-2 text-sm border border-navy-600 bg-navy-700 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#adc6ff]/50"
+                    className="w-full rounded-md px-3 py-2 text-sm border border-navy-600 bg-navy-700 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-accent-periwinkle/50"
                   />
                   {entityResults.length > 0 && (
                     <div className="mt-1 border border-navy-600 rounded-md max-h-40 overflow-y-auto" style={{ backgroundColor: '#252b3d' }}>
@@ -415,7 +415,7 @@ export default function AnalysisPage() {
                     checked={saveAssessment}
                     onChange={(e) => setSaveAssessment(e.target.checked)}
                     disabled={selectedEntities.length === 0}
-                    className="accent-[#adc6ff]"
+                    className="accent-accent-periwinkle"
                   />
                   Record leading hypothesis as an assessment
                   {selectedEntities.length === 0 && <span className="text-gray-600">(needs a focus entity)</span>}
@@ -465,12 +465,12 @@ export default function AnalysisPage() {
                   {hypotheses.map(h => (
                     <div key={h.id} className="border border-navy-600 rounded-md p-2.5 bg-navy-700">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-[#adc6ff]">{h.id}</span>
+                        <span className="text-xs font-semibold text-accent-periwinkle">{h.id}</span>
                         <span className="text-[10px] text-gray-400">{h.probability_label} ({(h.probability * 100).toFixed(0)}%)</span>
                       </div>
                       <p className="text-[11px] text-gray-300 mt-1 leading-snug">{h.statement}</p>
                       <div className="mt-1.5 h-1 rounded-full bg-navy-800 overflow-hidden">
-                        <div className="h-full bg-[#adc6ff]" style={{ width: `${Math.round(h.probability * 100)}%` }} />
+                        <div className="h-full bg-accent-periwinkle" style={{ width: `${Math.round(h.probability * 100)}%` }} />
                       </div>
                     </div>
                   ))}
@@ -486,7 +486,7 @@ export default function AnalysisPage() {
                     <div key={r.document_id} className="flex items-center gap-2 text-[11px]">
                       <span className="text-gray-300 truncate flex-1">{r.name}</span>
                       <span className="text-[10px] text-gray-500 flex-none">{r.corroborating_documents} corrob.</span>
-                      <span className="font-mono text-[#adc6ff] flex-none w-8 text-right">{r.admiralty_rating || '—'}</span>
+                      <span className="font-mono text-accent-periwinkle flex-none w-8 text-right">{r.admiralty_rating || '—'}</span>
                     </div>
                   ))}
                 </div>
@@ -509,7 +509,7 @@ export default function AnalysisPage() {
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <h3 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[#adc6ff] text-lg">article</span>
+                      <span className="material-symbols-outlined text-accent-periwinkle text-lg">article</span>
                       {outputTitle}
                     </h3>
                     <div className="flex items-center gap-2">
@@ -517,7 +517,7 @@ export default function AnalysisPage() {
                         value={saveTitle}
                         onChange={(e) => setSaveTitle(e.target.value)}
                         placeholder="Title to save as..."
-                        className="rounded-md px-2 py-1.5 text-xs border border-navy-600 bg-navy-700 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-[#adc6ff]/50"
+                        className="rounded-md px-2 py-1.5 text-xs border border-navy-600 bg-navy-700 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-accent-periwinkle/50"
                       />
                       <button
                         onClick={saveToProducts}

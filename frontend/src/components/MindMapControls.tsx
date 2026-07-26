@@ -64,7 +64,7 @@ export default function MindMapControls({
               {i > 0 && <span className="text-gray-600">&rsaquo;</span>}
               <button
                 onClick={() => onBreadcrumbClick(item)}
-                className="hover:text-[#adc6ff] transition-colors"
+                className="hover:text-accent-periwinkle transition-colors"
               >
                 {item.name}
               </button>
@@ -82,7 +82,7 @@ export default function MindMapControls({
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             placeholder="Search topics..."
-            className="w-full bg-[#090e1c] border border-navy-800 rounded-sm px-2.5 py-1.5 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#adc6ff]/50"
+            className="w-full bg-[#090e1c] border border-navy-800 rounded-sm px-2.5 py-1.5 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-accent-periwinkle/50"
           />
         </div>
 
@@ -120,7 +120,7 @@ export default function MindMapControls({
             onClick={() => onLayoutChange('radial')}
             className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors rounded-l-sm ${
               layout === 'radial'
-                ? 'bg-[#adc6ff]/15 text-[#adc6ff] border-r border-[#adc6ff]/20'
+                ? 'bg-accent-periwinkle/15 text-accent-periwinkle border-r border-accent-periwinkle/20'
                 : 'text-gray-500 hover:text-gray-300'
             }`}
             title="Radial layout"
@@ -131,7 +131,7 @@ export default function MindMapControls({
             onClick={() => onLayoutChange('horizontal')}
             className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors rounded-r-sm ${
               layout === 'horizontal'
-                ? 'bg-[#adc6ff]/15 text-[#adc6ff] border-l border-[#adc6ff]/20'
+                ? 'bg-accent-periwinkle/15 text-accent-periwinkle border-l border-accent-periwinkle/20'
                 : 'text-gray-500 hover:text-gray-300'
             }`}
             title="Horizontal layout"
@@ -165,7 +165,7 @@ export default function MindMapControls({
               onClick={() => onClusteringMethodChange('tfidf')}
               className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors rounded-l-sm ${
                 clusteringMethod === 'tfidf'
-                  ? 'bg-[#adc6ff]/15 text-[#adc6ff]'
+                  ? 'bg-accent-periwinkle/15 text-accent-periwinkle'
                   : 'text-gray-500 hover:text-gray-300'
               }`}
               title="Keyword-based clustering (TF-IDF)"
@@ -195,7 +195,7 @@ export default function MindMapControls({
                 onClick={() => onGranularityChange(g)}
                 className={`px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-colors ${
                   granularity === g
-                    ? 'bg-[#adc6ff]/15 text-[#adc6ff]'
+                    ? 'bg-accent-periwinkle/15 text-accent-periwinkle'
                     : 'text-gray-500 hover:text-gray-300'
                 }`}
                 title={`${g} granularity`}

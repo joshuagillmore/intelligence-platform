@@ -8,19 +8,19 @@
   h2 { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:#8a95ab;
        margin:24px 0 10px; font-weight:700; }
   .cmp { display:flex; gap:14px; flex-wrap:wrap; }
-  .box { border-radius:8px; padding:13px 15px; width:230px; }
+  .box { border-radius:8px; padding:13px 15px; width:236px; }
   .ok { border:1px solid rgba(34,197,94,.4); background:rgba(20,83,45,.18); }
   .no { border:1px dashed rgba(239,68,68,.45); background:rgba(69,10,10,.18); }
   .bt { font-size:10px; letter-spacing:.12em; text-transform:uppercase; font-weight:800; margin-bottom:7px; }
   .code { font-family:"JetBrains Mono","Fira Code",monospace; font-size:10.5px; color:#d1d5db;
           line-height:1.6; word-break:break-all; }
-  table { border-collapse:collapse; width:100%; max-width:520px; font-size:12px; margin-top:4px; }
+  table { border-collapse:collapse; width:100%; max-width:560px; font-size:12px; margin-top:4px; }
   th { text-align:left; font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;
        color:#67748f; font-weight:800; padding:7px 10px; border-bottom:1px solid #252b3d; }
   td { padding:8px 10px; border-bottom:1px solid #1a1f2e; }
   .mono { font-family:"JetBrains Mono","Fira Code",monospace; font-size:11px; }
   .num { text-align:right; font-variant-numeric:tabular-nums; }
-  .warn { color:#fbbf24; } .good { color:#4ade80; }
+  .warn { color:#fbbf24; } .good { color:#4ade80; } .gone { color:#67748f; text-decoration:line-through; }
   .sw { display:inline-block; width:11px; height:11px; border-radius:3px; vertical-align:-1px;
         margin-right:6px; border:1px solid #313849; }
   .note { font-size:11.5px; color:#67748f; margin-top:18px; font-style:italic; max-width:66ch; }
@@ -34,33 +34,41 @@
   <h2>The rule</h2>
   <div class="cmp">
     <div class="box ok"><div class="bt" style="color:#4ade80">Do</div>
-      <div class="code">className="bg-navy-800<br>&nbsp;&nbsp;border border-navy-600"</div></div>
+      <div class="code">className="bg-navy-800<br>&nbsp;&nbsp;text-accent-periwinkle"</div></div>
     <div class="box no"><div class="bt" style="color:#f87171">Don't</div>
-      <div class="code">style={{ backgroundColor:<br>&nbsp;&nbsp;'#1a1f2e' }}</div></div>
+      <div class="code">className="bg-[#1a1f2e]<br>&nbsp;&nbsp;text-[#adc6ff]"</div></div>
   </div>
 
-  <h2>Measured — frontend/src, 12 files</h2>
+  <h2>Consolidated — 2026-07-26</h2>
   <table>
-    <tr><th>Value</th><th>Status</th><th class="num">Uses</th></tr>
-    <tr><td><span class="sw" style="background:#1a1f2e"></span><span class="mono">bg-navy-800</span></td>
-        <td class="good">token class</td><td class="num good">86</td></tr>
-    <tr><td><span class="sw" style="background:#1a1f2e"></span><span class="mono">#1a1f2e</span> inline</td>
-        <td class="warn">duplicates navy-800</td><td class="num warn">33</td></tr>
+    <tr><th>Value</th><th>Was</th><th class="num">Sites</th><th>Now</th></tr>
     <tr><td><span class="sw" style="background:#2f3444"></span><span class="mono">#2f3444</span></td>
-        <td class="warn">not a token at all</td><td class="num warn">43</td></tr>
-    <tr><td><span class="sw" style="background:#313849"></span><span class="mono">navy-600 #313849</span></td>
-        <td class="good">token</td><td class="num good">—</td></tr>
+        <td class="warn">undeclared twin of navy-600</td><td class="num">43</td>
+        <td class="good">→ navy-600</td></tr>
+    <tr><td><span class="sw" style="background:#1a1f2e"></span><span class="mono">[#1a1f2e]</span></td>
+        <td class="warn">arbitrary value</td><td class="num">51</td>
+        <td class="good">→ bg/border-navy-800</td></tr>
+    <tr><td><span class="sw" style="background:#adc6ff"></span><span class="mono">[#adc6ff]</span></td>
+        <td class="warn">not a token at all</td><td class="num">146</td>
+        <td class="good">→ accent-periwinkle</td></tr>
+  </table>
+  <p class="sub" style="margin:10px 0 0">240 sites. <span class="mono">#adc6ff</span> — the app's
+    most-used colour, carrying headings, active nav, links and panel rules — was a raw hex in 146
+    places; it is now a first-class token. Verified visually neutral: 14 smoke + 5 mobile + 4 seeded
+    E2E green, and the rendered views are pixel-equivalent.</p>
+
+  <h2>Still undeclared — a judgement call, not a sweep</h2>
+  <table>
+    <tr><th>Value</th><th>Role</th><th class="num">Sites</th></tr>
+    <tr><td><span class="sw" style="background:#0e1321"></span><span class="mono">#0e1321</span></td><td>sidebar / nav ground</td><td class="num">21</td></tr>
+    <tr><td><span class="sw" style="background:#090e1c"></span><span class="mono">#090e1c</span></td><td>deep panel ground</td><td class="num">14</td></tr>
+    <tr><td><span class="sw" style="background:#0d1220"></span><span class="mono">#0d1220</span></td><td>third near-black</td><td class="num">8</td></tr>
+    <tr><td><span class="sw" style="background:#252a39"></span><span class="mono">#252a39</span></td><td>twin of navy-700</td><td class="num">29</td></tr>
   </table>
 
-  <h2>The specific problem</h2>
-  <p class="sub" style="margin-bottom:8px">The app has <strong>two border greys</strong>:
-    <span class="mono">#313849</span> (the <span class="mono">navy-600</span> token) and
-    <span class="mono">#2f3444</span> (undeclared, 43 uses). They differ by
-    <span class="mono">rgb(-2,-4,-5)</span> — invisible on screen, but two separate values to
-    maintain. Nobody chose that; it accreted.</p>
-
-  <p class="note">The cost is not aesthetic. With the surface colour written inline in 33 places and
-    an undeclared grey in 43 more, the theme cannot be changed from
-    <span class="mono">tailwind.config.ts</span> — a re-theme becomes a 76-site edit. Consolidating
-    to <span class="mono">navy-600</span> and the token classes makes the config authoritative again.</p>
+  <p class="note">Four near-blacks are in play against a single declared
+    <span class="mono">navy-900</span>. Unlike the twins above, these may be deliberate depth
+    layering — flattening them to one value would collapse real visual hierarchy, so they are
+    reported rather than swept. The honest next step is to decide how many ground levels the
+    interface actually needs, then declare exactly that many.</p>
 </div>

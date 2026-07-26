@@ -153,7 +153,7 @@ export default function Sidebar() {
       {/* Branding + Notification Bell */}
       <div className="px-5 py-5 flex items-start justify-between">
         <div className="flex flex-col gap-0.5">
-          <span className="text-[#adc6ff] font-black text-sm tracking-tight">{APP_NAME}</span>
+          <span className="text-accent-periwinkle font-black text-sm tracking-tight">{APP_NAME}</span>
           <span className="text-[10px] tracking-widest uppercase font-medium text-gray-500">{APP_VERSION}</span>
         </div>
         {/* Notification Bell */}
@@ -246,11 +246,11 @@ export default function Sidebar() {
             href={item.href}
             className={`flex items-center gap-3 px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider transition-colors ${
               isActive(item.href)
-                ? 'bg-navy-800 text-[#adc6ff] border-l-2 border-accent-blue'
+                ? 'bg-navy-800 text-accent-periwinkle border-l-2 border-accent-blue'
                 : 'text-gray-500 hover:text-gray-300 hover:bg-navy-800/50'
             }`}
           >
-            <span className={`material-symbols-outlined text-lg ${isActive(item.href) ? 'text-[#adc6ff]' : ''}`}>{item.icon}</span>
+            <span className={`material-symbols-outlined text-lg ${isActive(item.href) ? 'text-accent-periwinkle' : ''}`}>{item.icon}</span>
             <span className="flex-1 truncate">{item.name}</span>
             {item.name === 'Collections' && activeCollections > 0 && (
               <span className="w-2 h-2 rounded-full bg-accent-blue animate-pulse" title={`${activeCollections} active task${activeCollections > 1 ? 's' : ''}`} />
@@ -267,14 +267,14 @@ export default function Sidebar() {
             href={item.href}
             className={`flex items-center gap-3 px-4 py-2 text-[10px] font-medium uppercase tracking-wider transition-colors ${
               isActive(item.href)
-                ? 'bg-navy-800 text-[#adc6ff] border-l-2 border-accent-blue'
+                ? 'bg-navy-800 text-accent-periwinkle border-l-2 border-accent-blue'
                 : 'text-gray-500 hover:text-gray-300 hover:bg-navy-800/50'
             }`}
           >
-            <span className={`material-symbols-outlined text-base ${isActive(item.href) ? 'text-[#adc6ff]' : ''}`}>{item.icon}</span>
+            <span className={`material-symbols-outlined text-base ${isActive(item.href) ? 'text-accent-periwinkle' : ''}`}>{item.icon}</span>
             <span className="flex-1">{item.name}</span>
             {item.name === 'Watchlist' && watchlistCount > 0 && (
-              <span className="min-w-[18px] h-[18px] rounded-full bg-accent-blue/20 text-[#adc6ff] text-[9px] flex items-center justify-center font-bold">{watchlistCount}</span>
+              <span className="min-w-[18px] h-[18px] rounded-full bg-accent-blue/20 text-accent-periwinkle text-[9px] flex items-center justify-center font-bold">{watchlistCount}</span>
             )}
           </Link>
         ))}
