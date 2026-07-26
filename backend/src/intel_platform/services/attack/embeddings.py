@@ -26,6 +26,10 @@ from intel_platform.llm.embeddings import EmbeddingProvider, get_embedding_provi
 
 logger = logging.getLogger(__name__)
 
+# Why the last embed run produced nothing. Read by the /attack/embed route so an
+# operator can tell "already done" from "the provider rate-limited us".
+last_failure_reason: str = ""
+
 # Texts per embedding API call (mirrors vector_search; providers cap ~96-2048).
 _EMBED_BATCH_SIZE = 96
 
@@ -58,12 +62,20 @@ async def embed_techniques(
     """Embed every ATT&CK technique and UPSERT into ``attack_technique_embeddings``.
 
     Idempotent (upsert on ``technique_id``). Offloads the sync Neo4j read via
-    ``asyncio.to_thread``. Degrades to ``0`` (never raises) when embedding fails,
-    so a missing/unreachable embedding provider doesn't 500 the admin endpoint.
-    Returns the number of techniques embedded. The caller commits the session.
+    ``asyncio.to_thread``. Never raises, so a missing or rate-limited embedding
+    provider doesn't 500 the admin endpoint — but it does record *why* it
+    embedded nothing in ``last_failure_reason``. Returning a bare ``0`` for four
+    different causes (no catalogue, no provider, provider error, count mismatch)
+    made a rate-limited run look identical to an already-complete one, which is
+    exactly how an empty catalogue went unnoticed until ATT&CK mapping silently
+    matched nothing. The caller commits the session.
     """
+    global last_failure_reason
+    last_failure_reason = ""
+
     techniques = await asyncio.to_thread(_fetch_techniques, driver)
     if not techniques:
+        last_failure_reason = "no_techniques_in_graph"
         return 0
 
     if provider is None:
@@ -71,6 +83,7 @@ async def embed_techniques(
             provider = get_embedding_provider()
         except Exception:
             logger.warning("No embedding provider available for ATT&CK embed", exc_info=True)
+            last_failure_reason = "no_embedding_provider"
             return 0
 
     texts = [_technique_text(t) for t in techniques]
@@ -79,12 +92,20 @@ async def embed_techniques(
         for i in range(0, len(texts), _EMBED_BATCH_SIZE):
             result = await provider.embed(texts[i : i + _EMBED_BATCH_SIZE], input_type="search_document")
             vectors.extend(result.embeddings)
-    except Exception:
+    except Exception as exc:
         logger.warning("ATT&CK technique embedding failed — skipped", exc_info=True)
+        # A trial key rate-limiting a 695-technique catalogue is the common case
+        # and is retryable; say so rather than reporting a flat zero.
+        last_failure_reason = (
+            "embedding_provider_rate_limited"
+            if "429" in str(exc) or "rate limit" in str(exc).lower()
+            else "embedding_provider_error"
+        )
         return 0
 
     if len(vectors) != len(techniques):
         logger.warning("Embedding count mismatch: %d vectors for %d techniques", len(vectors), len(techniques))
+        last_failure_reason = "embedding_count_mismatch"
         return 0
 
     now = datetime.now(timezone.utc)

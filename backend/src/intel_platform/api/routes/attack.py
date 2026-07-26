@@ -100,6 +100,21 @@ async def resolve_cve(
         raise HTTPException(status_code=502, detail="Failed to resolve CVEs to ATT&CK")
 
 
+_EMBED_REASONS = {
+    "no_techniques_in_graph":
+        "No ATT&CK techniques are loaded. Run POST /api/attack/ingest first.",
+    "no_embedding_provider":
+        "No embedding provider is configured or reachable.",
+    "embedding_provider_rate_limited":
+        "The embedding provider rate-limited the request. Retry later — a trial key "
+        "cannot embed the full catalogue in a single pass.",
+    "embedding_provider_error":
+        "The embedding provider returned an error.",
+    "embedding_count_mismatch":
+        "The provider returned fewer vectors than there are techniques.",
+}
+
+
 @router.post("/attack/embed", dependencies=[Depends(require_admin)])
 async def embed(
     driver: Driver = Depends(get_neo4j_driver),
@@ -113,10 +128,19 @@ async def embed(
     try:
         async with _embed_lock:
             embedded = await attack_embeddings.embed_techniques(db, driver)
+            reason = attack_embeddings.last_failure_reason
             await db.commit()
     except Exception:
         logger.exception("ATT&CK technique embedding failed")
         raise HTTPException(status_code=502, detail="Failed to embed the ATT&CK technique catalog")
+    # A zero with no explanation reads as "already done". Say which it was —
+    # a rate-limited trial key is retryable, a missing catalogue is not.
+    if not embedded and reason:
+        return {
+            "embedded": 0,
+            "reason": reason,
+            "detail": _EMBED_REASONS.get(reason, "Embedding produced no rows."),
+        }
     return {"embedded": embedded}
 
 

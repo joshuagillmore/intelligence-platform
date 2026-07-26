@@ -217,3 +217,39 @@ def test_attribution_passthrough(client, analyst_header):
     body = resp.json()
     assert body["observed_total"] == 2
     assert body["groups"][0]["id"] == "G0001"
+
+
+def test_embed_zero_reports_why(client, admin_header, _override_db):
+    """A bare {"embedded": 0} reads as "already done".
+
+    Found live: a trial Cohere key rate-limited the 695-technique catalogue, the
+    route returned 200 with {"embedded": 0}, and ATT&CK mapping then silently
+    matched nothing because the catalogue was never embedded.
+    """
+    from intel_platform.services.attack import embeddings as attack_embeddings
+
+    async def _fail(*a, **kw):
+        attack_embeddings.last_failure_reason = "embedding_provider_rate_limited"
+        return 0
+
+    with patch("intel_platform.api.routes.attack.attack_embeddings.embed_techniques", new=_fail):
+        resp = client.post("/api/attack/embed", headers=admin_header)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["embedded"] == 0
+    assert body["reason"] == "embedding_provider_rate_limited"
+    assert "Retry later" in body["detail"]
+
+
+def test_embed_success_has_no_reason(client, admin_header, _override_db):
+    from intel_platform.services.attack import embeddings as attack_embeddings
+
+    async def _ok(*a, **kw):
+        attack_embeddings.last_failure_reason = ""
+        return 695
+
+    with patch("intel_platform.api.routes.attack.attack_embeddings.embed_techniques", new=_ok):
+        body = client.post("/api/attack/embed", headers=admin_header).json()
+
+    assert body == {"embedded": 695}
