@@ -59,7 +59,7 @@ could only ever read "Single source" before.
 
 ## 2. Found, not fixed — recommended work
 
-### 2.1 Contradiction is not detected (highest value)
+### 2.1 Contradiction is not detected — FIXED after this was written
 
 A document explicitly denying a claim — *"Ansar Allah did not conduct the attack
 on MV Northern Star"* — produces no `CONFLICT`. It is either dropped or becomes
@@ -71,13 +71,23 @@ represent *disputed* reporting will quietly present contested claims as settled.
 The field and the UI state already exist (the evidence chain renders CONFLICT in
 red) — only the detection is missing.
 
-**Proposal:** negation-aware relation extraction. The extraction prompt should be
-asked to emit a `polarity` (`asserts` / `denies`) per relationship; on merge, a
-`denies` against an existing `asserts` sets `corroboration_agreement=CONFLICT`
-rather than incrementing support. NLP-mode extraction can use a dependency-based
-negation check as a weaker fallback.
+**Implemented** (commit `a3d26b83`). Four parts were needed; changing only the
+prompt did nothing, because `extraction.py` was dropping the field:
 
-### 2.2 Entity taxonomy has no domain coverage beyond cyber
+1. `entity_extraction` asks for a per-relationship `polarity`.
+2. `extraction.py` maps it through.
+3. `Relationship.polarity` carries it; `graph_builder` normalises it.
+4. `create_relationship` treats an assert/deny collision as CONFLICT, takes the
+   *weaker* confidence, and keeps a dispute sticky.
+
+Measured: Reuters asserting the attack and Janes denying it moved from
+`AGREE, corroboration 2, confidence 0.95` — a denial *raising* confidence — to
+`CONFLICT, corroboration 2, confidence 0.85`.
+
+Still open: NLP-mode extraction has no negation handling, so denials are only
+detected on the LLM path.
+
+### 2.2 Domain types exist but are rarely selected
 
 Maritime entities landed as `Custom`, `Organization` or `Technology`:
 
@@ -86,10 +96,14 @@ Maritime entities landed as `Custom`, `Organization` or `Technology`:
   hypothesis as a candidate *attacker*
 - `Ghadr-380` → `Weapon` (correct — the type exists but is rarely selected)
 
-**Proposal:** extend the type hierarchy with `Vessel`, `Aircraft`, `WeaponSystem`,
-`Facility`, `Unit`, and give the extraction prompt the domain vocabulary. Without
-it the graph cannot answer "which vessels were attacked", which was the actual
-PIR.
+**Correction to the first draft of this document:** the taxonomy is not missing.
+`entity_extraction.yaml` already offers `Ship`, `Aircraft`, `Missile`,
+`Submarine`, `Drone`, `Radar` under Equipment. The problem is *selection* — the
+model reaches for `Custom` or `Organization` instead.
+
+**Proposal:** few-shot examples in the extraction prompt for non-cyber domains,
+and a validation pass that re-types obvious cases (a name prefixed "MV"/"USS" is
+a Ship). Cheaper than extending the hierarchy, and addresses the real cause.
 
 ### 2.3 Extraction noise on crawled pages
 
