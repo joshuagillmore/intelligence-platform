@@ -1,3 +1,4 @@
+import logging
 import uuid as uuid_mod
 from datetime import datetime, timezone
 
@@ -5,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -21,7 +24,23 @@ ENTITY_TO_STIX = {
     "Hash": "file",
     "Vulnerability": "vulnerability",
     "TTP": "attack-pattern",
+    # These have exact STIX SCO equivalents and were being dropped silently. On
+    # one campaign project that was 175 URL and 24 Software entities missing
+    # from the export — a consumer would see an incident with no indicators.
+    "URL": "url",
+    "EmailAddress": "email-addr",
+    "Software": "software",
+    "Product": "software",
+    "Report": "report",
 }
+
+# Entity types with no faithful STIX 2.1 equivalent. Listed rather than left to
+# fall through the map, so "not exported" is a recorded decision and the export
+# can report what it left behind.
+UNMAPPED_STIX_TYPES = frozenset({
+    "Custom", "Technology", "Infrastructure", "Event", "Date", "Quantity",
+    "Financial", "Document", "Topic", "Assessment", "Collection",
+})
 
 
 def _to_stix_object(entity: dict) -> dict | None:
@@ -65,6 +84,19 @@ def _to_stix_object(entity: dict) -> dict | None:
         obj["name"] = name
     elif stix_type == "attack-pattern":
         obj["name"] = name
+    elif stix_type == "url":
+        obj["value"] = name
+    elif stix_type == "email-addr":
+        obj["value"] = name
+    elif stix_type == "software":
+        obj["name"] = name
+    elif stix_type == "report":
+        obj["name"] = name
+        # Required by the spec; a collected document is reporting until it is
+        # characterised as something more specific.
+        obj["report_types"] = ["threat-report"]
+        obj["published"] = entity.get("created_at") or obj["created"]
+        obj["object_refs"] = []
 
     return obj
 
@@ -153,6 +185,10 @@ def export_stix(project_id: str, store: GraphStore = Depends(get_graph_store)):
 
     stix_objects = []
     id_map = {}  # entity_id -> stix_id
+    # What STIX cannot faithfully carry. Reported in the bundle rather than
+    # silently dropped: an export that omits a third of the graph without
+    # saying so reads to a consumer as a graph that never had it.
+    omitted: dict[str, int] = {}
 
     # Convert entities
     for entity in entities:
@@ -160,6 +196,9 @@ def export_stix(project_id: str, store: GraphStore = Depends(get_graph_store)):
         if stix_obj:
             stix_objects.append(stix_obj)
             id_map[entity.get("id", "")] = stix_obj["id"]
+        else:
+            etype = entity.get("entity_type", "?")
+            omitted[etype] = omitted.get(etype, 0) + 1
 
     # Convert relationships
     STIX_REL_MAP = {
@@ -195,6 +234,14 @@ def export_stix(project_id: str, store: GraphStore = Depends(get_graph_store)):
         "id": f"bundle--{str(uuid_mod.uuid4())}",
         "objects": stix_objects,
     }
+    if omitted:
+        # A custom property (`x_` prefixed, per the spec's extension rules) so
+        # the bundle stays valid STIX while still admitting what it left behind.
+        bundle["x_sentinel_omitted_entity_types"] = omitted
+        logger.info(
+            "STIX export for %s omitted %d entities with no STIX equivalent: %s",
+            project_id, sum(omitted.values()), omitted,
+        )
 
     return JSONResponse(
         content=bundle,
