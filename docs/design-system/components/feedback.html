@@ -1,0 +1,48 @@
+<!-- @dsCard group="Components" -->
+<style>
+  .ds { background:#0f1219; color:#e6ecf7; font-family:Inter,"SF Pro Display",system-ui,sans-serif;
+        padding:28px; margin:0; }
+  .ds h1 { font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:#adc6ff;
+           margin:0 0 4px; font-weight:800; }
+  .ds .sub { font-size:12.5px; color:#8a95ab; margin:0 0 22px; max-width:64ch; }
+  h2 { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:#8a95ab;
+       margin:22px 0 10px; font-weight:700; }
+  .t { background:#1a1f2e; border-left:3px solid; border-radius:8px; padding:11px 14px;
+       margin-bottom:8px; max-width:430px; }
+  .tt { font-size:12.5px; font-weight:650; margin-bottom:2px; }
+  .tm { font-size:11.5px; color:#8a95ab; line-height:1.45; }
+  .note { font-size:11.5px; color:#67748f; margin-top:18px; font-style:italic; max-width:64ch; }
+  .dont { border:1px dashed rgba(239,68,68,.45); border-radius:8px; padding:12px 14px;
+          font-size:11.5px; color:#8a95ab; max-width:430px; margin-top:6px; }
+</style>
+<div class="ds">
+  <h1>Feedback</h1>
+  <p class="sub">Four states, one component. Every action that reaches the network reports its
+    outcome — a control that silently swallows a failure teaches the analyst not to trust the tool.</p>
+
+  <h2>States</h2>
+  <div class="t" style="border-color:#3b82f6">
+    <div class="tt">Generating report</div>
+    <div class="tm">Creating INTSUM from graph evidence…</div>
+  </div>
+  <div class="t" style="border-color:#22c55e">
+    <div class="tt">Profile generated</div>
+    <div class="tm">Threat-actor profile ready for APT-Demo.</div>
+  </div>
+  <div class="t" style="border-color:#ef4444">
+    <div class="tt">Export failed</div>
+    <div class="tm">Could not build the STIX export. Check the backend and try again.</div>
+  </div>
+  <div class="t" style="border-color:#313849">
+    <div class="tt">Collection complete</div>
+    <div class="tm">2 sources succeeded, 2 failed, 1 upload pending.</div>
+  </div>
+
+  <h2>Not this</h2>
+  <div class="dont">✗ <code>console.error('Export failed', e)</code> — the button finishes, no file
+    arrives, and the analyst is told nothing.</div>
+
+  <p class="note">Errors say what broke and what to do next; they do not apologise and are never
+    vague. A failure message never becomes the content it failed to produce — error text written
+    into a report body is savable and exportable as though it were the product.</p>
+</div>

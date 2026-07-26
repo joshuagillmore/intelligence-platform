@@ -1,0 +1,58 @@
+<!-- @dsCard group="Workflow" -->
+<style>
+  .ds { background:#0f1219; color:#e6ecf7; font-family:Inter,"SF Pro Display",system-ui,sans-serif;
+        padding:28px; margin:0; }
+  .ds h1 { font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:#adc6ff;
+           margin:0 0 4px; font-weight:800; }
+  .ds .sub { font-size:12.5px; color:#8a95ab; margin:0 0 22px; max-width:64ch; }
+  h2 { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:#8a95ab;
+       margin:22px 0 10px; font-weight:700; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; }
+  .st { font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+        padding:3px 10px; border-radius:5px; border:1px solid; }
+  .src { display:flex; align-items:center; gap:11px; background:#1a1f2e; border:1px solid #252b3d;
+         border-radius:8px; padding:11px 14px; margin-bottom:7px; }
+  .sn { font-size:12.5px; font-weight:600; }
+  .sm { font-size:11px; color:#67748f; margin-top:2px; }
+  .badge { margin-left:auto; font-size:9.5px; font-weight:800; letter-spacing:.08em;
+           padding:2px 8px; border-radius:4px; }
+  .note { font-size:11.5px; color:#67748f; margin-top:18px; font-style:italic; max-width:64ch; }
+</style>
+<div class="ds">
+  <h1>Collection plan</h1>
+  <p class="sub">A plan is a requirement plus the sources tasked against it. Every source reports its
+    own health independently, so a partly-failing plan is legible rather than binary.</p>
+
+  <h2>Plan lifecycle</h2>
+  <div class="row">
+    <span class="st" style="color:#9ca3af;border-color:rgba(107,114,128,.3);background:rgba(107,114,128,.2)">Draft</span>
+    <span class="st" style="color:#34d399;border-color:rgba(16,185,129,.3);background:rgba(16,185,129,.2)">Active</span>
+    <span class="st" style="color:#fbbf24;border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.2)">Paused</span>
+    <span class="st" style="color:#60a5fa;border-color:rgba(59,130,246,.3);background:rgba(59,130,246,.2)">Completed</span>
+    <span class="st" style="color:#6b7280;border-color:rgba(75,85,99,.3);background:rgba(75,85,99,.2)">Archived</span>
+  </div>
+
+  <h2>Assigned sources — per-source health</h2>
+  <div class="src">
+    <span>🌐</span>
+    <div><div class="sn">Threat actor mentions on Dark Web forums</div>
+      <div class="sm">Web Scrape · 3 records · last success Jul 24, 12:58</div></div>
+    <span class="badge" style="background:rgba(16,185,129,.2);color:#34d399">OK</span>
+  </div>
+  <div class="src">
+    <span>📡</span>
+    <div><div class="sn">Latest cybersecurity news from BleepingComputer</div>
+      <div class="sm">RSS Feed · 0 records · 403 Forbidden</div></div>
+    <span class="badge" style="background:rgba(239,68,68,.2);color:#f87171">Error</span>
+  </div>
+  <div class="src">
+    <span>📄</span>
+    <div><div class="sn">Upload annual threat report from Symantec</div>
+      <div class="sm">File Upload · awaiting manual upload</div></div>
+    <span class="badge" style="background:rgba(107,114,128,.2);color:#9ca3af">Pending</span>
+  </div>
+
+  <p class="note">A failed source never fails the plan. The dashboard reads “5 sources · 3 healthy ·
+    2 errors” — a collection manager needs to see which leg is down, not just that something is.
+    Reachability is a property of the source, and anti-bot blocks and bad endpoints are normal.</p>
+</div>

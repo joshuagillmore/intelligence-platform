@@ -1,0 +1,58 @@
+<!-- @dsCard group="Components" -->
+<style>
+  .ds { background:#0f1219; color:#e6ecf7; font-family:Inter,"SF Pro Display",system-ui,sans-serif;
+        padding:28px; margin:0; }
+  .ds h1 { font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:#adc6ff;
+           margin:0 0 4px; font-weight:800; }
+  .ds .sub { font-size:12.5px; color:#8a95ab; margin:0 0 22px; max-width:64ch; }
+  .panel { background:#1a1f2e; border:1px solid #313849; border-radius:11px; max-width:480px; overflow:hidden; }
+  .hd { display:flex; align-items:center; gap:8px; padding:11px 15px; border-bottom:1px solid #252b3d; }
+  .av { width:21px; height:21px; border-radius:50%; background:#3b82f6; color:#fff; font-size:9.5px;
+        font-weight:800; display:flex; align-items:center; justify-content:center; }
+  .nm { font-size:12.5px; font-weight:650; }
+  .tabs { margin-left:auto; display:flex; gap:3px; }
+  .tab { font-size:10.5px; padding:3px 9px; border-radius:5px; color:#8a95ab; }
+  .on { background:#252b3d; color:#adc6ff; font-weight:600; }
+  .body { padding:15px; }
+  .you { background:#252b3d; border-radius:8px; padding:9px 12px; font-size:12px; color:#d1d5db;
+         margin-bottom:11px; }
+  .ai { font-size:12.5px; color:#d1d5db; line-height:1.6; }
+  .ai strong { color:#fff; }
+  .cite { margin-top:11px; border-top:1px solid #252b3d; padding-top:9px; }
+  .cl { font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:#67748f;
+        font-weight:800; margin-bottom:6px; }
+  .c { display:flex; gap:7px; align-items:center; font-size:11px; color:#8a95ab; margin-bottom:4px; }
+  .cd { width:6px; height:6px; border-radius:50%; flex:0 0 auto; }
+  .save { margin-top:12px; font-size:11px; color:#adc6ff; font-weight:600; }
+  .note { font-size:11.5px; color:#67748f; margin-top:18px; font-style:italic; max-width:64ch; }
+</style>
+<div class="ds">
+  <h1>Aegis assistant</h1>
+  <p class="sub">One assistant, mounted app-wide, project-scoped, thread persisted across
+    navigation. Every answer is retrieval-grounded and shows what grounded it — an ungrounded answer
+    in an intelligence tool is worse than no answer.</p>
+
+  <div class="panel">
+    <div class="hd">
+      <span class="av">AI</span><span class="nm">Aegis</span>
+      <div class="tabs"><span class="tab on">Chat</span><span class="tab">Notebook</span></div>
+    </div>
+    <div class="body">
+      <div class="you">What infrastructure does APT-Nebula use against energy operators?</div>
+      <div class="ai">Two elements are attested. <strong>45.83.12.7</strong> is used as a
+        command-and-control server, and the domain <strong>nord-industrial.example</strong> resolves
+        to it. The IP geolocates to Tehran, Iran.</div>
+      <div class="cite">
+        <div class="cl">Grounded in</div>
+        <div class="c"><span class="cd" style="background:#ef4444"></span> APT-Nebula — ThreatActor</div>
+        <div class="c"><span class="cd" style="background:#06b6d4"></span> 45.83.12.7 — IPAddress · USES (90%)</div>
+        <div class="c"><span class="cd" style="background:#6b7280"></span> 2 source documents · C3</div>
+      </div>
+      <div class="save">＋ Save as product</div>
+    </div>
+  </div>
+
+  <p class="note">Citations are derived from the retrieval context the model was actually given, not
+    generated alongside the answer — a model asked to cite itself will invent sources. “Save as
+    product” is the handoff: an answer worth keeping becomes a draft artefact rather than scrollback.</p>
+</div>

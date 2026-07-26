@@ -1,0 +1,52 @@
+<!-- @dsCard group="Workflow" -->
+<style>
+  .ds { background:#0f1219; color:#e6ecf7; font-family:Inter,"SF Pro Display",system-ui,sans-serif;
+        padding:28px; margin:0; }
+  .ds h1 { font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:#adc6ff;
+           margin:0 0 4px; font-weight:800; }
+  .ds .sub { font-size:12.5px; color:#8a95ab; margin:0 0 22px; max-width:64ch; }
+  .panel { background:#1a1f2e; border-radius:9px; padding:18px 20px; border-left:3px solid #adc6ff; }
+  .hd { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:4px; }
+  .ht { font-size:13.5px; font-weight:700; }
+  .cnt { font-size:11px; color:#67748f; margin-bottom:14px; }
+  .new { font-size:11.5px; border:1px solid #313849; background:#252b3d; color:#d1d5db;
+         padding:6px 12px; border-radius:6px; white-space:nowrap; }
+  .req { background:#0f1219; border:1px solid #252b3d; border-radius:7px; padding:12px 14px; }
+  .tags { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:7px; }
+  .pill { font-size:9.5px; font-weight:800; letter-spacing:.1em; text-transform:uppercase;
+          padding:2px 8px; border-radius:4px; }
+  .q { font-size:12.5px; font-weight:600; color:#e6ecf7; line-height:1.5; }
+  .acts { display:flex; gap:14px; margin-top:10px; font-size:11.5px; }
+  .a1 { color:#adc6ff; font-weight:600; } .a2 { color:#8a95ab; } .a3 { color:#f87171; }
+  .note { font-size:11.5px; color:#67748f; margin-top:18px; font-style:italic; max-width:64ch; }
+</style>
+<div class="ds">
+  <h1>PIR panel — the requirements spine</h1>
+  <p class="sub">Priority Intelligence Requirements sit at the head of the project, because the whole
+    cycle answers to them. Without this the requirement lives only as free text retyped into
+    collection each run, and nothing links what was asked to what was produced.</p>
+
+  <div class="panel">
+    <div class="hd">
+      <div>
+        <div class="ht">Priority Intelligence Requirements</div>
+        <div class="cnt">What this project is trying to answer — 1 outstanding of 1</div>
+      </div>
+      <span class="new">New PIR</span>
+    </div>
+    <div class="req">
+      <div class="tags">
+        <span class="pill" style="background:rgba(59,130,246,.2);color:#60a5fa">Open</span>
+        <span class="pill" style="background:rgba(249,115,22,.2);color:#fb923c">High</span>
+      </div>
+      <div class="q">What infrastructure and TTPs are threat actors using against European
+        energy-grid operators, and who is likely responsible?</div>
+      <div class="acts"><span class="a1">Collect →</span><span class="a2">Edit</span><span class="a3">Delete</span></div>
+    </div>
+  </div>
+
+  <p class="note">Status is <span style="font-family:monospace">OPEN → PARTIAL → SATISFIED →
+    ARCHIVED</span>. “Collect →” is the load-bearing control: it carries the requirement into a
+    collection plan, so the plan is anchored to the PIR rather than to a copied sentence. An untitled
+    PIR derives its title from its own text and renders once, not twice.</p>
+</div>

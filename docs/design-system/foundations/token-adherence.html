@@ -1,0 +1,66 @@
+<!-- @dsCard group="Foundations" -->
+<style>
+  .ds { background:#0f1219; color:#e6ecf7; font-family:Inter,"SF Pro Display",system-ui,sans-serif;
+        padding:28px; margin:0; }
+  .ds h1 { font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:#adc6ff;
+           margin:0 0 4px; font-weight:800; }
+  .ds .sub { font-size:12.5px; color:#8a95ab; margin:0 0 22px; max-width:66ch; }
+  h2 { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:#8a95ab;
+       margin:24px 0 10px; font-weight:700; }
+  .cmp { display:flex; gap:14px; flex-wrap:wrap; }
+  .box { border-radius:8px; padding:13px 15px; width:230px; }
+  .ok { border:1px solid rgba(34,197,94,.4); background:rgba(20,83,45,.18); }
+  .no { border:1px dashed rgba(239,68,68,.45); background:rgba(69,10,10,.18); }
+  .bt { font-size:10px; letter-spacing:.12em; text-transform:uppercase; font-weight:800; margin-bottom:7px; }
+  .code { font-family:"JetBrains Mono","Fira Code",monospace; font-size:10.5px; color:#d1d5db;
+          line-height:1.6; word-break:break-all; }
+  table { border-collapse:collapse; width:100%; max-width:520px; font-size:12px; margin-top:4px; }
+  th { text-align:left; font-size:9.5px; letter-spacing:.12em; text-transform:uppercase;
+       color:#67748f; font-weight:800; padding:7px 10px; border-bottom:1px solid #252b3d; }
+  td { padding:8px 10px; border-bottom:1px solid #1a1f2e; }
+  .mono { font-family:"JetBrains Mono","Fira Code",monospace; font-size:11px; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; }
+  .warn { color:#fbbf24; } .good { color:#4ade80; }
+  .sw { display:inline-block; width:11px; height:11px; border-radius:3px; vertical-align:-1px;
+        margin-right:6px; border:1px solid #313849; }
+  .note { font-size:11.5px; color:#67748f; margin-top:18px; font-style:italic; max-width:66ch; }
+</style>
+<div class="ds">
+  <h1>Token adherence</h1>
+  <p class="sub">A token only holds if it is the single way to express its value. Where a colour is
+    also written inline, the token stops being canonical — and the theme stops being changeable in
+    one place.</p>
+
+  <h2>The rule</h2>
+  <div class="cmp">
+    <div class="box ok"><div class="bt" style="color:#4ade80">Do</div>
+      <div class="code">className="bg-navy-800<br>&nbsp;&nbsp;border border-navy-600"</div></div>
+    <div class="box no"><div class="bt" style="color:#f87171">Don't</div>
+      <div class="code">style={{ backgroundColor:<br>&nbsp;&nbsp;'#1a1f2e' }}</div></div>
+  </div>
+
+  <h2>Measured — frontend/src, 12 files</h2>
+  <table>
+    <tr><th>Value</th><th>Status</th><th class="num">Uses</th></tr>
+    <tr><td><span class="sw" style="background:#1a1f2e"></span><span class="mono">bg-navy-800</span></td>
+        <td class="good">token class</td><td class="num good">86</td></tr>
+    <tr><td><span class="sw" style="background:#1a1f2e"></span><span class="mono">#1a1f2e</span> inline</td>
+        <td class="warn">duplicates navy-800</td><td class="num warn">33</td></tr>
+    <tr><td><span class="sw" style="background:#2f3444"></span><span class="mono">#2f3444</span></td>
+        <td class="warn">not a token at all</td><td class="num warn">43</td></tr>
+    <tr><td><span class="sw" style="background:#313849"></span><span class="mono">navy-600 #313849</span></td>
+        <td class="good">token</td><td class="num good">—</td></tr>
+  </table>
+
+  <h2>The specific problem</h2>
+  <p class="sub" style="margin-bottom:8px">The app has <strong>two border greys</strong>:
+    <span class="mono">#313849</span> (the <span class="mono">navy-600</span> token) and
+    <span class="mono">#2f3444</span> (undeclared, 43 uses). They differ by
+    <span class="mono">rgb(-2,-4,-5)</span> — invisible on screen, but two separate values to
+    maintain. Nobody chose that; it accreted.</p>
+
+  <p class="note">The cost is not aesthetic. With the surface colour written inline in 33 places and
+    an undeclared grey in 43 more, the theme cannot be changed from
+    <span class="mono">tailwind.config.ts</span> — a re-theme becomes a 76-site edit. Consolidating
+    to <span class="mono">navy-600</span> and the token classes makes the config authoritative again.</p>
+</div>

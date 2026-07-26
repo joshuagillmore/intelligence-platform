@@ -1,0 +1,55 @@
+<!-- @dsCard group="Workflow" -->
+<style>
+  .ds { background:#0f1219; color:#e6ecf7; font-family:Inter,"SF Pro Display",system-ui,sans-serif;
+        padding:28px; margin:0; }
+  .ds h1 { font-size:15px; letter-spacing:.18em; text-transform:uppercase; color:#adc6ff;
+           margin:0 0 4px; font-weight:800; }
+  .ds .sub { font-size:12.5px; color:#8a95ab; margin:0 0 22px; max-width:64ch; }
+  h2 { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:#8a95ab;
+       margin:22px 0 10px; font-weight:700; }
+  .cols { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .tac { font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:#8a95ab;
+         font-weight:800; margin-bottom:7px; }
+  .cell { border-radius:6px; padding:8px 10px; font-size:11px; margin-bottom:5px; line-height:1.35; }
+  .un { background:#1a1f2e; border:1px solid #2f3444; color:#9ca3af; }
+  .cov { background:rgba(173,198,255,.15); border:1px solid rgba(173,198,255,.3); color:#adc6ff; font-weight:600; }
+  .sub2 { background:#161b28; border:1px solid #2f3444; color:#8a95ab; margin-left:10px; font-size:10.5px; }
+  .mono { font-family:"JetBrains Mono","Fira Code",monospace; }
+  .note { font-size:11.5px; color:#67748f; margin-top:18px; font-style:italic; max-width:64ch; }
+</style>
+<div class="ds">
+  <h1>ATT&amp;CK coverage</h1>
+  <p class="sub">MITRE ATT&amp;CK® Enterprise as a coverage surface: which techniques this project has
+    actually observed, against the full matrix. Covered cells are the only ones that carry the
+    accent — everything else stays quiet so the picture reads at a glance.</p>
+
+  <h2>Cell states</h2>
+  <div class="cols">
+    <div>
+      <div class="tac">Initial Access</div>
+      <div class="cell cov"><span class="mono">T1566</span> Phishing</div>
+      <div class="cell sub2 cov"><span class="mono">T1566.001</span> Spearphishing Attachment</div>
+      <div class="cell un"><span class="mono">T1190</span> Exploit Public-Facing App</div>
+    </div>
+    <div>
+      <div class="tac">Execution</div>
+      <div class="cell cov"><span class="mono">T1059</span> Command &amp; Scripting</div>
+      <div class="cell sub2 cov"><span class="mono">T1059.001</span> PowerShell</div>
+      <div class="cell un"><span class="mono">T1053</span> Scheduled Task/Job</div>
+    </div>
+    <div>
+      <div class="tac">Persistence</div>
+      <div class="cell un"><span class="mono">T1547</span> Boot Autostart</div>
+      <div class="cell un"><span class="mono">T1136</span> Create Account</div>
+    </div>
+    <div>
+      <div class="tac">Exfiltration</div>
+      <div class="cell un"><span class="mono">T1041</span> Exfil Over C2 Channel</div>
+      <div class="cell un"><span class="mono">T1567</span> Exfil Over Web Service</div>
+    </div>
+  </div>
+
+  <p class="note">Sub-techniques sit indented on a darker ground so the parent/child relationship is
+    structural rather than decorative. Attribution derived from technique overlap is always labelled
+    <em>candidate / suggestive</em> — a lead to investigate, never confirmed attribution.</p>
+</div>

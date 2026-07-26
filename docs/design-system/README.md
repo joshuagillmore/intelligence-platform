@@ -42,3 +42,25 @@ Remote project: **SENTINEL Design System**.
 | Components | `empty-and-error-states` | no-project CTA, failure alert |
 | Components | `intelligence-product` | rendered INTSUM with classification + export |
 | Components | `enrichment-panel` | provider results with provenance and cache status |
+
+## Added in the second pass
+
+| Group | Card | Covers |
+|-------|------|--------|
+| Foundations | `token-adherence` | the rule, plus measured drift (see below) |
+| Workflow | `pir-panel` | requirements spine, OPEN→SATISFIED lifecycle |
+| Workflow | `collection-plan` | plan lifecycle + per-source health |
+| Workflow | `attack-coverage` | ATT&CK cell states, sub-technique nesting |
+| Components | `assistant-panel` | Aegis with derived citations |
+| Components | `feedback` | the four toast states, and the anti-pattern |
+
+## Known drift (measured 2026-07-26, `frontend/src`, 12 files)
+
+- `bg-navy-800` token class — **86 uses** ✅
+- `#1a1f2e` written inline — **33 uses** (duplicates `navy-800`)
+- `#2f3444` — **43 uses**, *not a token*, a near-duplicate of `navy-600` `#313849`
+  (differs by `rgb(-2,-4,-5)`)
+
+Consequence: the theme cannot be changed from `tailwind.config.ts` alone — a
+re-theme is a ~76-site edit. Consolidating `#2f3444` → `navy-600` and the inline
+surfaces → `bg-navy-800` would make the config authoritative again.
