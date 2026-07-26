@@ -54,6 +54,40 @@ class TestExtractEeis:
         )
         assert extract_eeis(analysis) == ["What is the timeframe of interest?"]
 
+    def test_double_labelled_line_strips_inner_marker(self):
+        """Observed live: the model writes "3. EEI 3: ..." and both markers must go."""
+        analysis = (
+            "### EEIs\n"
+            "1. Specific TTPs employed by APT44 since 2024.\n"
+            "3. EEI 3: Specific ICS devices compromised since January 2024.\n"
+        )
+        eeis = extract_eeis(analysis)
+        assert eeis == [
+            "Specific TTPs employed by APT44 since 2024.",
+            "Specific ICS devices compromised since January 2024.",
+        ]
+
+    def test_bare_eei_marker_line(self):
+        assert extract_eeis("EEIs:\nEEI 1: Who controls the port?\n") == [
+            "Who controls the port?"
+        ]
+
+    def test_section_label_is_not_a_criterion(self):
+        """Observed live: "Refined PIR:" was captured as an EEI and then assessed."""
+        analysis = (
+            "### EEIs\n"
+            "1. Which ICS protocols were targeted?\n"
+            "2. Refined PIR:\n"
+        )
+        assert extract_eeis(analysis) == ["Which ICS protocols were targeted?"]
+
+    def test_inline_bold_is_removed(self):
+        """Observed live: "**Initial Access Vectors:** Determine…" kept its markers."""
+        analysis = "EEIs:\n1. **Initial Access Vectors:** Determine the primary methods used.\n"
+        assert extract_eeis(analysis) == [
+            "Initial Access Vectors: Determine the primary methods used."
+        ]
+
     def test_deduplicates_case_insensitively(self):
         analysis = "EEIs:\n- Who leads the unit?\n- who leads the unit?\n- Where is it based?\n"
         assert extract_eeis(analysis) == ["Who leads the unit?", "Where is it based?"]

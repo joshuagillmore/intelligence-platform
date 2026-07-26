@@ -285,6 +285,27 @@ _EEI_LINE = re.compile(
 
 _EEI_HEADING = re.compile(r"essential elements|\bEEIs?\b", re.IGNORECASE)
 
+# Models double-label: "3. EEI 3: Specific devices…". The outer marker is
+# consumed by _EEI_LINE, so strip the inner one too or it lands in the criterion.
+_EEI_PREFIX = re.compile(r"^EEI\s*\d*\s*[:.\-]\s*", re.IGNORECASE)
+
+
+def _clean_eei(raw: str) -> str:
+    """Normalise one captured line into a usable collection criterion.
+
+    Observed live, in order of appearance: an inner `EEI 3:` label surviving the
+    outer marker, `**bold**` runs left mid-string by "**Initial Access
+    Vectors:** Determine…", and section labels like "Refined PIR:" picked up as
+    if they were criteria. A criterion that is only a label cannot be judged,
+    so it is dropped rather than assessed and reported as unmet.
+    """
+    body = _EEI_PREFIX.sub("", raw.strip().strip("*_ ")).replace("**", "").strip("*_ ").strip()
+    # A real criterion states something; a trailing colon means this was a
+    # heading introducing the content below it.
+    if not body or body.endswith(":"):
+        return ""
+    return body
+
 
 def extract_eeis(analysis: str, limit: int = 8) -> list[str]:
     """Pull Essential Elements of Information out of an LLM refinement.
@@ -304,7 +325,7 @@ def extract_eeis(analysis: str, limit: int = 8) -> list[str]:
         if _EEI_HEADING.search(line) and len(line) < 120:
             in_section = True
             # A heading may carry the first EEI inline after its colon.
-            tail = line.split(":", 1)[1].strip(" *_") if ":" in line else ""
+            tail = _clean_eei(line.split(":", 1)[1]) if ":" in line else ""
             if len(tail) >= 8:
                 eeis.append(tail)
             continue
@@ -312,7 +333,7 @@ def extract_eeis(analysis: str, limit: int = 8) -> list[str]:
             continue
         match = _EEI_LINE.match(line)
         if match:
-            body = match.group("body").strip(" *_").strip()
+            body = _clean_eei(match.group("body"))
             if body and body.lower() not in {e.lower() for e in eeis}:
                 eeis.append(body)
         elif line.startswith("#") or line.startswith("**"):
