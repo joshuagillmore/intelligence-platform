@@ -42,11 +42,17 @@ async def execute_plan(
     db_factory: async_sessionmaker[AsyncSession],
     store: GraphStore,
     extraction_mode: str = "nlp",
+    source_limit: int | None = None,
 ) -> dict:
     """Execute all sources in a collection plan autonomously.
 
     Designed to run as asyncio.create_task() — creates its own DB session
     since the request session is closed after the response is sent.
+
+    `source_limit` caps how many sources are actually collected, so a
+    requirement can be answered *or* stop against a stated collection budget.
+    Without it the planner's proposed source count is the only bound, and a plan
+    given a budget of 3 would happily run 5.
     """
     execution_id = str(uuid.uuid4())
     _running_executions[plan_id] = {
@@ -76,10 +82,29 @@ async def execute_plan(
             status = _running_executions[plan_id]
             status["sources_total"] = len(sources)
 
+            status["source_limit"] = source_limit
+            attempted = 0
+
             for source in sources:
                 if not source.enabled:
                     status["sources_skipped"] += 1
                     continue
+
+                # Stop against the collection budget. Recorded as an explicit
+                # event so the plan reports "stopped on budget" rather than
+                # looking as though it simply had fewer sources.
+                if source_limit is not None and attempted >= source_limit:
+                    status["sources_skipped"] += 1
+                    status["stopped_on_source_limit"] = True
+                    status["source_results"].append({
+                        "source_id": str(source.id),
+                        "source_name": source.name,
+                        "result": "skipped",
+                        "reason": f"source budget of {source_limit} reached",
+                    })
+                    continue
+
+                attempted += 1
 
                 # Skip file_upload sources (require manual upload)
                 if source.source_type == "file_upload":

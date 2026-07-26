@@ -566,6 +566,10 @@ class ExecuteRequest(BaseModel):
     # How many results to pull per source: URLs/pages for web_scrape/database/
     # api_feed, items for rss_feed. Clamped to 1..25.
     max_results_per_source: int = 10
+    # Collection budget: stop after this many sources even if the plan proposes
+    # more. Pairs with `POST /pirs/{id}/assess`, which reports whether the
+    # requirement was answered or the budget ran out first.
+    source_limit: int | None = Field(default=None, ge=1)
 
 
 @router.post("/collection-plans/{plan_id}/execute")
@@ -620,6 +624,7 @@ async def execute_plan_endpoint(
     from intel_platform.api.routes.llm import _get_collection_provider
 
     all_auto = [s for s in sources if s.enabled and s.source_type != "file_upload"]
+    source_limit = body.source_limit if body else None
     if all_auto:
         session_factory = get_session_factory()
         max_results = max(1, min(25, body.max_results_per_source if body else 10))
@@ -632,6 +637,7 @@ async def execute_plan_endpoint(
                 # Ollama when configured), keeping the cloud key for products.
                 get_provider=_get_collection_provider,
                 max_results_per_source=max_results,
+                source_limit=source_limit,
             )
         )
 
@@ -640,9 +646,11 @@ async def execute_plan_endpoint(
         "execution_status": "started" if all_auto else "no_executable_sources",
         "message": f"Agentic execution started with {len(all_auto)} source(s)." if all_auto
                    else "Plan activated but no automated sources found.",
-        "sources_queued": len(all_auto),
+        "sources_queued": min(len(all_auto), source_limit) if source_limit else len(all_auto),
         "sources_manual": len(file_only),
         "sources_missing_config": len(missing_config),
+        "source_limit": source_limit,
+        "sources_over_budget": max(0, len(all_auto) - source_limit) if source_limit else 0,
         "warnings": warnings,
     }
 
