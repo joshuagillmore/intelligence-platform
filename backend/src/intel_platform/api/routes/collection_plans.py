@@ -42,6 +42,58 @@ logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
+def _split_refinement(content: str, fallback: str) -> tuple[str, str]:
+    """Split an LLM refinement into (refined PIR, analysis).
+
+    The prompt asks for the refined PIR on the first line, but models routinely
+    emit a label first ("Refined PIR:", "**Refined PIR**") and put the text on
+    the next line. Taking line 0 verbatim captured the label and pushed the real
+    requirement into the description, leaving refined_pir 12 characters long.
+    """
+    text = (content or "").strip()
+    if not text:
+        return fallback, ""
+
+    lines = text.split("\n")
+    # Trailing markdown matters too — "**Refined PIR**" is as common as "Refined PIR:".
+    label = re.compile(r'^\s*[*_#>\-\s]*refined\s*pir\s*[*_]*\s*[:\-–]?\s*[*_]*\s*$', re.IGNORECASE)
+    inline = re.compile(
+        r'^\s*[*_#>\-\s]*refined\s*pir\s*[*_]*\s*[:\-–]\s*(?P<body>.+)$', re.IGNORECASE
+    )
+
+    for i, raw in enumerate(lines):
+        line = raw.strip()
+        if not line:
+            continue
+        m = inline.match(line)
+        if m:
+            # "Refined PIR: <text>" on one line. Clean first, then check — for
+            # "**Refined PIR:**" the capture is just the closing "**", which is
+            # truthy but empty once stripped, and the real text is the next line.
+            body = m.group("body").strip().strip('"').strip("*").strip()
+            if body:
+                return body, "\n".join(lines[i + 1:]).strip()
+            for j in range(i + 1, len(lines)):
+                nxt = lines[j].strip()
+                if nxt:
+                    return nxt.strip('"').strip("*").strip(), "\n".join(lines[j + 1:]).strip()
+            return fallback, ""
+        if label.match(line):
+            # Label alone — the requirement is the next non-empty line.
+            for j in range(i + 1, len(lines)):
+                nxt = lines[j].strip()
+                if nxt:
+                    return (
+                        nxt.strip('"').strip("*").strip(),
+                        "\n".join(lines[j + 1:]).strip(),
+                    )
+            return fallback, ""
+        # First substantive line, no label in sight.
+        return line.strip('"').strip("*").strip(), "\n".join(lines[i + 1:]).strip()
+
+    return fallback, ""
+
+
 def _parse_uuid(value: str, label: str = "ID") -> uuid.UUID:
     """Safely parse a UUID string, raising 400 on invalid input."""
     try:
@@ -399,10 +451,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
                 ),
                 temperature=0.3,
             )
-            # First line is the refined PIR, rest is the analysis
-            lines = refine_result.content.strip().split("\n", 1)
-            refined_pir = lines[0].strip().strip('"').strip("*").strip()
-            plan_description = lines[1].strip() if len(lines) > 1 else ""
+            refined_pir, plan_description = _split_refinement(refine_result.content, pir_text)
         except Exception as e:
             logger.warning("PIR refinement failed: %s", e)
 
@@ -412,6 +461,11 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
             plan_result = await provider.generate(
                 messages=[{"role": "user", "content": (
                     f"Create a collection plan for this PIR:\n\n{refined_pir}\n\n"
+                    f"Original requirement, for domain context:\n{pir_text}\n\n"
+                    "The sources MUST match the subject matter of that requirement. A maritime,"
+                    " economic, political or humanitarian PIR needs maritime, economic, political"
+                    " or humanitarian sources — do not default to cyber-threat sources unless the"
+                    " requirement is actually about cyber.\n\n"
                     "For each source, output a numbered list item in EXACTLY this format:\n"
                     'N. [SOURCE_TYPE] Description of what to collect\n'
                     '   CONFIG: {"key": "value"}\n\n'
@@ -422,9 +476,9 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
                     "- file_upload: no CONFIG needed (analyst uploads manually)\n\n"
                     "Include 3-7 concrete, actionable sources with REAL URLs.\n"
                     "Focus on publicly accessible sources relevant to the PIR.\n"
-                    "Example:\n"
-                    '1. [web_scrape] CISA advisories on the threat actor\n'
-                    '   CONFIG: {"url": "https://www.cisa.gov/news-events/cybersecurity-advisories"}\n'
+                    "Examples of the FORMAT only — pick sources for the actual subject, not these:\n"
+                    '1. [web_scrape] UKMTO maritime incident advisories\n'
+                    '   CONFIG: {"url": "https://www.ukmto.org/incidents"}\n'
                     '2. [rss_feed] Reuters world news feed\n'
                     '   CONFIG: {"feed_url": "https://feeds.reuters.com/reuters/worldNews"}'
                 )}],
