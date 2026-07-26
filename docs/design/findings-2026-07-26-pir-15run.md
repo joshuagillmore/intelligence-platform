@@ -108,7 +108,56 @@ Measured on the same collection: 1 of 3 elements judged → 3 of 3, with
 justifications citing collected specifics — *"lists multiple initial access
 vectors for Akira but does not specify preferred vectors per group"*.
 
-### 2.4 PARTIAL progress was stored as OPEN
+### 2.4 The product did not know what question it was answering
+
+**Severity: high — this was the worst output of the campaign.**
+`POST /reports/generate` took `entity_ids` and no requirement. It built both its
+retrieval query and its subject from the entity list, so the product answered
+"tell me about these entities" rather than the PIR that drove the collection.
+
+The Iranian water-utility OT run passed in entities that included crawled site
+furniture. The product it produced:
+
+> **Subject:** EPA Web Ecosystem, Multilingual Support, CISA Water-Sector
+> Assistance, and Potential Cyber Exposure
+>
+> 2. *EPA provides language support in at least 12 non-English languages…* —
+>    **Likely**
+> 3. *EPA's site aggregates 32 distinct events/topics (e.g., Air, Bed Bugs,
+>    Chemicals…)* — **Almost Certain**
+
+A language selector and a topic menu, written up as intelligence judgements in
+ICD 203 probability language, for a requirement about PLC and HMI compromise.
+
+`requirement` (or `pir_id`) now leads retrieval and is stated to the writer as
+the subject, with supplied entities demoted to candidate evidence that is known
+to contain web furniture. Same graph, same entities, regenerated:
+
+> **Subject:** Iranian-Linked Groups Targeting Water and Wastewater Utility
+> Operational Technology
+>
+> Iranian-affiliated cyber actors have compromised water and wastewater utility
+> operational technology… The advisory confirms that OT systems were targeted,
+> but the collected evidence does **not** specify the exact PLC or HMI devices
+> exploited, nor does it provide detailed defensive mitigations.
+
+It now answers the requirement and states the gap, instead of finding something
+confident to say about whatever was collected.
+
+### 2.5 A requirement was declared answered on one verdict out of five
+
+**Severity: high.** `unmet` was computed only over elements the model actually
+returned a verdict for. An Arctic requirement with five EEIs came back with one
+verdict, and the PIR was stored `SATISFIED` — *"Requirement answered across all
+elements"* — with four elements never judged at all. Silence read as success.
+
+Unjudged elements are now explicit `UNASSESSED` entries that count against
+satisfaction and appear in `unmet_criteria`. Re-run on the same data: a false
+`SATISFIED (1/5)` became an honest `PARTIAL (1/5)` naming the four outstanding
+elements. A separate flag preserves the original guarantee that a total judging
+failure leaves the stored status untouched.
+
+### 2.6 PARTIAL progress was stored as OPEN
 
 Only `SATISFIED` counted toward progress, so a PIR with two PARTIAL elements
 was persisted as `OPEN`. That erases the distinction between "we have something
