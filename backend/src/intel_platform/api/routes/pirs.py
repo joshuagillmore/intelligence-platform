@@ -10,6 +10,7 @@ rather than a cross-datastore lookup.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import uuid
@@ -436,35 +437,45 @@ async def assess_pir(
         # assessable instead of silently reporting "nothing to check".
         eeis = [pir.refined_text or pir.text]
 
-    entities = store.search_entities(pir.project_id, limit=600)
+    def _gather() -> tuple[list[dict], list[dict], list[str]]:
+        """Read the graph for judging.
+
+        The Neo4j driver is synchronous and this walks up to 150 entities, so it
+        runs in a worker thread — blocking the event loop here would stall every
+        other request, including the collection runs that feed it.
+        """
+        found = store.search_entities(pir.project_id, limit=600)
+
+        # `search_entities` orders by name, so a naive head-slice hands the judge
+        # an alphabetical sample dominated by crawl furniture — measured on a
+        # live run: 400 entities considered, the ThreatActors and Campaigns
+        # never shown, and the requirement wrongly reported as having no
+        # evidence at all. Rank so the substantive entities fit in the window.
+        substantive = [e for e in found if e.get("entity_type") not in _LOW_SIGNAL_TYPES]
+        chosen = substantive or found
+
+        lines: list[str] = []
+        seen: set[str] = set()
+        for ent in chosen[:150]:
+            for rel in store.get_relationships(ent.get("id", ""))[:6]:
+                if not (rel.get("target_name") and rel.get("source_name")):
+                    continue
+                line = f"{rel['source_name']} --{rel.get('rel_type', '?')}--> {rel['target_name']}"
+                if rel.get("evidence"):
+                    line += f" :: {str(rel['evidence'])[:200]}"
+                if line not in seen:
+                    seen.add(line)
+                    lines.append(line)
+            if len(lines) >= 200:
+                break
+        return found, chosen, lines
+
+    entities, ranked, facts = await asyncio.to_thread(_gather)
+
     by_type: dict[str, int] = {}
     for ent in entities:
         key = ent.get("entity_type", "?")
         by_type[key] = by_type.get(key, 0) + 1
-
-    # `search_entities` orders by name, so a naive head-slice hands the judge an
-    # alphabetical sample dominated by crawl furniture — measured on a live run:
-    # 400 entities considered, the ThreatActors and Campaigns never shown, and
-    # the requirement wrongly reported as having no evidence at all. Rank so the
-    # substantive entities are the ones that fit in the window.
-    substantive = [e for e in entities if e.get("entity_type") not in _LOW_SIGNAL_TYPES]
-    ranked = substantive or entities
-
-    facts: list[str] = []
-    seen_facts: set[str] = set()
-    for ent in ranked[:150]:
-        for rel in store.get_relationships(ent.get("id", ""))[:6]:
-            if rel.get("target_name") and rel.get("source_name"):
-                line = (
-                    f"{rel['source_name']} --{rel.get('rel_type', '?')}--> {rel['target_name']}"
-                )
-                if rel.get("evidence"):
-                    line += f" :: {str(rel['evidence'])[:200]}"
-                if line not in seen_facts:
-                    seen_facts.add(line)
-                    facts.append(line)
-        if len(facts) >= 200:
-            break
 
     context = (
         f"Entity types collected: {by_type}\n\n"
