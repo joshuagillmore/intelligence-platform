@@ -146,10 +146,42 @@ system_prompt: |
       {"source_entity": "Valery Gerasimov", "target_entity": "76th Guards Air Assault Division", "relationship_type": "COMMANDED_BY", "confidence": 0.85, "evidence": "General Valery Gerasimov ordered the deployment"},
       {"source_entity": "76th Guards Air Assault Division", "target_entity": "Mozdok Airbase", "relationship_type": "DEPLOYED_AT", "confidence": 0.90, "evidence": "deployment to the Mozdok Airbase"},
       {"source_entity": "Mozdok Airbase", "target_entity": "North Ossetia", "relationship_type": "LOCATED_AT", "confidence": 0.90, "evidence": "Mozdok Airbase in North Ossetia"},
-      {"source_entity": "Jens Stoltenberg", "target_entity": "NATO", "relationship_type": "BELONGS_TO", "confidence": 0.95, "evidence": "NATO Secretary General Jens Stoltenberg"}
+      {"source_entity": "Jens Stoltenberg", "target_entity": "NATO", "relationship_type": "BELONGS_TO", "confidence": 0.95, "evidence": "NATO Secretary General Jens Stoltenberg"},
+      {"source_entity": "Mozdok deployment", "target_entity": "14 February 2026", "relationship_type": "OCCURRED_ON", "confidence": 0.90, "evidence": "the deployment began on 14 February 2026"}
     ]
   }
   ```
+
+  ## Dating events — always link an event to its date
+
+  Every Event you extract must be linked to the date it happened via
+  `OCCURRED_ON`, whenever the text states or implies one. Extract the date as a
+  `Date` entity and emit the relationship. An undated event cannot be placed on
+  a timeline, which is where most of its analytic value lies.
+
+  This is the single most frequently missed relationship: dates are usually
+  extracted as standalone `Date` entities and then left unconnected to the event
+  they belong to. Connect them.
+
+  ```
+  Text: "Houthi forces struck the MV Northern Star on 12 March 2026."
+
+  entities:      {"name": "MV Northern Star strike", "entity_type": "Event", ...}
+                 {"name": "12 March 2026", "entity_type": "Date", ...}
+  relationships: {"source_entity": "MV Northern Star strike",
+                  "target_entity": "12 March 2026",
+                  "relationship_type": "OCCURRED_ON", "confidence": 0.95,
+                  "evidence": "struck the MV Northern Star on 12 March 2026"}
+  ```
+
+  Use the most precise date the text gives ("March 2026" and "2024" are both
+  acceptable when that is all it says). Do not invent a date that is not there.
+
+  **Every name used in a relationship must also appear in `entities`.** Naming an
+  event only in a relationship — `"MV Northern Star strike" OCCURRED_ON "12 March
+  2026"` with no `MV Northern Star strike` entity — makes the relationship
+  unusable and it is discarded. If you assert that an event happened, extract the
+  event as an `Event` entity in the same response.
 
   ## Instructions
 
@@ -158,6 +190,7 @@ system_prompt: |
   3. Always include aliases when entities have multiple names
   4. Extract relationships between entities, not just co-occurrence — identify the nature of the relationship
   5. Provide evidence snippets for each relationship
+  5a. Link every Event to its date with OCCURRED_ON when the text gives one
   6. Resolve coreferences — do not create duplicate entities for the same real-world entity
   7. Return ONLY valid JSON — no additional text or explanation
 temperature: 0.2

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from urllib.parse import urlsplit
 
@@ -12,6 +13,8 @@ from intel_platform.models.entities import (
 )
 from intel_platform.models.relationships import Relationship
 from intel_platform.models.type_hierarchy import normalize_entity_type
+
+logger = logging.getLogger(__name__)
 
 ENTITY_TYPE_MAP = {
     "Person": Person, "Organization": Organization, "Location": Location,
@@ -93,6 +96,10 @@ def resolve_entity_name(
 # type collapses to Custom at that point and is unrecoverable afterwards.
 _GENERIC_TYPES = frozenset({
     "Custom", "Organization", "Technology", "Infrastructure", "Product", "Person", "",
+    # The model reaches for these catch-all equipment labels constantly:
+    # "MV Northern Star" came back as EquipmentType, which the naming hint below
+    # would otherwise decline to override because it looks like a deliberate choice.
+    "EquipmentType", "Equipment", "Vehicle", "Asset", "Platform", "System",
 })
 
 _NAME_TYPE_HINTS: tuple[tuple[re.Pattern, str], ...] = (
@@ -199,6 +206,7 @@ def build_graph_from_extractions(
 
     created = 0
     merged = 0
+    entities_filtered = 0
     name_to_id: dict[str, str] = {}
     # Newly-created entities (id/name/type/project) — fed to the selective
     # auto-enrich hook after the build; the hook filters to cyber types and is
@@ -218,6 +226,7 @@ def build_graph_from_extractions(
         raw_type = ent_data["entity_type"]
 
         if _is_junk_name(name) or _is_web_chrome(name, raw_type):
+            entities_filtered += 1
             continue
 
         # Check intra-batch cache first
@@ -309,10 +318,21 @@ def build_graph_from_extractions(
 
     cooccurrence_min = settings.cooccurrence_confidence_min
     rels_created = 0
+    rels_dropped = 0
+    dropped_types: dict[str, int] = {}
     for rel_data in relationships:
         source_id = name_to_id.get(rel_data["source_name"])
         target_id = name_to_id.get(rel_data["target_name"])
         if not source_id or not target_id:
+            # The model named an endpoint it never extracted as an entity. This
+            # was silent, and it is how event dating stayed broken across a
+            # 15-run campaign: OCCURRED_ON edges were emitted pointing at event
+            # names that had no entity, so 22 of them survived out of 2,418
+            # relationships and the timeline had nothing to sort by.
+            rels_dropped += 1
+            dropped_types[rel_data.get("rel_type", "?")] = (
+                dropped_types.get(rel_data.get("rel_type", "?"), 0) + 1
+            )
             continue
         confidence = rel_data.get("confidence", 0.5)
         # Blanket co-occurrence edges need a higher confidence bar to be
@@ -350,4 +370,19 @@ def build_graph_from_extractions(
     except Exception:
         pass
 
-    return {"entities_created": created, "entities_merged": merged, "relationships_created": rels_created}
+    if rels_dropped:
+        # Surfaced rather than swallowed: a build that discards a third of its
+        # relationships looks identical to one that never produced them.
+        logger.warning(
+            "Dropped %d relationship(s) naming entities that were never extracted: %s",
+            rels_dropped, dropped_types,
+        )
+
+    return {
+        "entities_created": created,
+        "entities_merged": merged,
+        "entities_filtered": entities_filtered,
+        "relationships_created": rels_created,
+        "relationships_dropped": rels_dropped,
+        "relationships_dropped_by_type": dropped_types,
+    }
