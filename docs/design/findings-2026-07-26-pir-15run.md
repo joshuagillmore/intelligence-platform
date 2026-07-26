@@ -203,7 +203,43 @@ put to the model again on their own. Verified on that run: 1 of 5 judged became
 5 of 5, each citing collected specifics. Across the final re-assessment of all
 fifteen requirements, **no element was left unjudged**.
 
-### 2.7 PARTIAL progress was stored as OPEN
+### 2.7 The timeline was an ingestion log, not a chronology
+
+**Severity: high — it disabled one of the four analyst views.** The timeline
+sorts by `Event.event_datetime` and falls back to ingestion time. Across the
+campaign, **2 of 6,221 entities carried an `event_datetime`**, so a project's
+380 "events" were all stamped with the instant the crawl wrote them. For a
+temporal view, that is the whole value gone.
+
+The linking code (`_link_event_dates`) was correct. Its input was not:
+
+| | measured |
+|---|---|
+| `OCCURRED_ON` edges | 22 of 2,418 relationships (0.9%) |
+| `Event` nodes | 138, none dated |
+| `Date` nodes | 300, extracted but unattached |
+
+Two causes, both invisible:
+
+1. Models name the event **only in the relationship** — `"MV Northern Star
+   strike" OCCURRED_ON "12 March 2026"` with no such entity — and
+   `graph_builder` then dropped the edge for a missing endpoint, silently.
+2. The edge is emitted in either direction about equally.
+
+`_link_event_dates` now orients the edge and recovers the event as an `Event`
+entity when it exists only as an endpoint. Narrow by construction: only an
+`OCCURRED_ON` edge whose other endpoint is a real `Date` can create anything.
+
+Prompt changes alone did not fix this on `qwen2.5:14b` — worth recording, since
+the polarity fix earlier in this project *was* achievable with prompt plus
+example. Measured on maritime prose: **0 dated events → 3**, each with a date
+parsed from the source text.
+
+`graph_builder` now also counts and logs dropped relationships and filtered
+entities. A build that discards a third of its edges previously looked identical
+to one that never produced them, which is precisely how this hid.
+
+### 2.8 PARTIAL progress was stored as OPEN
 
 Only `SATISFIED` counted toward progress, so a PIR with two PARTIAL elements
 was persisted as `OPEN`. That erases the distinction between "we have something
