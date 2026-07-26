@@ -712,6 +712,9 @@ export const reportsApi = {
 
 export const timelineApi = {
   get: (projectId: string) => api.get('/timeline', { params: { project_id: projectId } }),
+  /** Event-date distribution for the network view's brush filter. */
+  histogram: (projectId: string, bucket: 'day' | 'month' | 'year' = 'month') =>
+    api.get('/timeline/histogram', { params: { project_id: projectId, bucket } }),
 };
 
 export const notebookApi = {
