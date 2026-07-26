@@ -126,7 +126,16 @@ export default function ProductsPage() {
     setSavedReportsLoading(true);
     try {
       const res = await reportsApi.list(activeProject.id);
-      setSavedReports(Array.isArray(res.data) ? res.data : res.data.reports || []);
+      const rows = Array.isArray(res.data) ? res.data : res.data.reports || [];
+      // Reports are Neo4j entities, so the API returns the title as `name`.
+      // Normalise once here — everything downstream (panel header, export
+      // filename and front matter, error messages) reads `.title`.
+      setSavedReports(
+        rows.map((r: SavedReport & { name?: string }) => ({
+          ...r,
+          title: r.title || r.name || r.report_type || 'Untitled report',
+        })),
+      );
     } catch {
       setSavedReports([]);
     } finally {

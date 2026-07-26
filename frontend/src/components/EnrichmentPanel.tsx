@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { enrichmentApi } from '@/lib/api';
 import { TYPE_ICON } from '@/lib/entityStyles';
 
@@ -61,6 +61,26 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Record<string, any> | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Show enrichment the backend has already cached. Without this the panel only
+  // ever populated from a fresh Investigate click, so a previously-enriched
+  // observable still read "No enrichment yet" — the results were persisted and
+  // served by GET /enrichment/entities/{id}, just never requested.
+  // Declared before the early return below so hook order stays stable.
+  useEffect(() => {
+    if (!ENRICHABLE_TYPES.includes(entityType)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await enrichmentApi.getCached(entityId);
+        const cached = data?.cached;
+        if (!cancelled && cached && Object.keys(cached).length > 0) setStatus(cached);
+      } catch {
+        /* nothing cached for this observable yet — leave the empty state */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [entityId, entityType]);
 
   if (!ENRICHABLE_TYPES.includes(entityType)) return null;
 
