@@ -171,6 +171,12 @@ _LLM_TYPE_CANON = {
     "backdoor": "Malware", "ransomware": "Malware", "trojan": "Malware",
     "botnet": "Malware", "malwarefamily": "Malware", "rootkit": "Malware",
     "c2server": "Infrastructure",
+    # Maritime/air platforms the model emits that had no canonical mapping, so
+    # they degraded to Custom in the graph builder and vessels never typed as
+    # vessels. Ship/Aircraft are already valid Equipment types.
+    "vessel": "Ship", "boat": "Ship", "tanker": "Ship", "cargoship": "Ship",
+    "warship": "Ship", "frigate": "Ship", "destroyer": "Ship", "carrier": "Ship",
+    "airplane": "Aircraft", "jet": "Aircraft", "helicopter": "Aircraft", "uav": "Drone",
     # Location umbrella
     "country": "Location", "city": "Location", "region": "Location",
     "facility": "Location", "base": "Location", "port": "Location",
@@ -181,9 +187,13 @@ _LLM_TYPE_CANON = {
     "analyst": "Person", "operative": "Person", "diplomat": "Person",
     "commander": "Person", "politician": "Person", "scientist": "Person",
     "executive": "Person", "agent": "Person", "informant": "Person",
-    # Equipment / naval
-    "ship": "Vessel", "submarine": "Vessel", "aircraft": "EquipmentType",
-    "drone": "EquipmentType", "missile": "Weapon", "radar": "EquipmentType",
+    # Equipment / naval. These previously mapped onto "Vessel" and
+    # "EquipmentType", neither of which is a real graph type — they normalise to
+    # parent "Other" and the graph builder then falls back to Custom. So every
+    # ship, submarine, aircraft and drone landed as Custom. Map onto the types
+    # the hierarchy actually defines under Equipment.
+    "ship": "Ship", "submarine": "Submarine", "aircraft": "Aircraft",
+    "drone": "Drone", "missile": "Weapon", "radar": "Radar",
     "satellite": "EquipmentType", "artillery": "Weapon", "vehicle": "EquipmentType",
     "hardware": "EquipmentType", "tank": "MilitaryAsset",
     # Intelligence docs
@@ -196,6 +206,37 @@ def _normalize_llm_entity_type(raw: str) -> str:
     if not raw:
         return "Person"
     return _LLM_TYPE_CANON.get(raw.strip().lower(), raw.strip())
+
+
+# Naming conventions that identify a type more reliably than the model does.
+# The taxonomy already offers Ship/Aircraft/Missile; the model reaches for
+# "Custom" or "Organization" instead, so vessels never render as vessels.
+_TYPE_HINTS: tuple[tuple[re.Pattern, str, tuple[str, ...]], ...] = (
+    # Vessel prefixes: MV/MT/SS/USS/HMS/RFA/FGS, e.g. "MV Aurora Trader".
+    (re.compile(r'^(MV|M/V|MT|M/T|SS|S/S|USS|USNS|HMS|HMAS|RFA|FGS|FS|INS)\s+\S', re.IGNORECASE),
+     "Ship", ("Custom", "Organization", "Technology", "Person", "")),
+    # Air platforms and UAV designators, e.g. "MQ-9 Reaper", "F/A-18".
+    (re.compile(r'^(MQ|RQ|F/A|F-|SU-|MIG-|KC-|C-|P-8|E-3)\s?-?\d', re.IGNORECASE),
+     "Aircraft", ("Custom", "Technology", "Organization", "")),
+)
+
+
+def _apply_type_hints(entities: list[dict]) -> list[dict]:
+    """Re-type entities whose name follows an unambiguous naming convention.
+
+    Only overrides types the model is known to over-use for these — never a
+    confident, specific type it already chose correctly.
+    """
+    for ent in entities:
+        name = (ent.get("name") or "").strip()
+        if not name:
+            continue
+        current = (ent.get("entity_type") or "").strip()
+        for pattern, better, overridable in _TYPE_HINTS:
+            if current in overridable and pattern.match(name):
+                ent["entity_type"] = better
+                break
+    return entities
 
 
 def _normalize_rel_type(raw: str) -> str:
@@ -731,7 +772,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
         entities.append(entity)
 
     # 4. Postprocess to fix misclassifications
-    entities = _postprocess_entities(entities)
+    entities = _apply_type_hints(_postprocess_entities(entities))
 
     # 5. Optional coreference resolution
     from intel_platform.config import settings
@@ -915,6 +956,7 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
                 ),
             })
 
+        _apply_type_hints(entities)
         _link_event_dates(entities, relationships)
 
         return entities, relationships
@@ -989,5 +1031,10 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], l
     # Re-resolve event_datetime over the merged set — catches cases where the
     # Event came from one method and its OCCURRED_ON Date from the other.
     _link_event_dates(merged_entities, merged_rels)
+
+    # Naming-convention re-typing runs last, over the merged set: applying it
+    # inside the LLM branch alone was ineffective, because an NLP entity of the
+    # same name could still carry the generic type into the merge.
+    _apply_type_hints(merged_entities)
 
     return merged_entities, merged_rels
