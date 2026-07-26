@@ -145,30 +145,116 @@ def _parse_event_date(date_str: str) -> str | None:
     return dt.isoformat()
 
 
+# Intelligence writing hedges and brackets dates far more than it states them
+# outright. Measured against fourteen real phrasings, a bare dateutil parse
+# resolved five; these forms account for most of the rest and every one of them
+# carries a usable year.
+_QUARTER = re.compile(r"\bQ([1-4])\s*,?\s*(?:of\s+)?(\d{4})\b", re.IGNORECASE)
+_BETWEEN = re.compile(
+    r"\bbetween\s+(.+?)\s+and\s+(.+)$", re.IGNORECASE,
+)
+_SINCE = re.compile(r"\b(?:since|from|after)\s+(.+)$", re.IGNORECASE)
+_HEDGE = re.compile(
+    r"\b(early|mid|late|beginning\s+of|start\s+of|end\s+of|middle\s+of)\b[\s\-]*",
+    re.IGNORECASE,
+)
+# Which third of the period a hedge points at, as (start fraction, end fraction).
+_HEDGE_SPAN = {
+    "early": (0.0, 1 / 3), "beginning": (0.0, 1 / 3), "start": (0.0, 1 / 3),
+    "mid": (1 / 3, 2 / 3), "middle": (1 / 3, 2 / 3),
+    "late": (2 / 3, 1.0), "end": (2 / 3, 1.0),
+}
+
+
+def _plain(iso: str) -> datetime:
+    dt = datetime.fromisoformat(iso)
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
+def _resolve_plain(text: str) -> tuple[str, str, str] | None:
+    """(t_start, t_end, precision) for a date dateutil can take as written."""
+    precision = _date_precision(text)
+    if not precision:
+        return None
+    iso = _parse_event_date(text)
+    if not iso:
+        return None
+    t_start, t_end = _date_bounds(_plain(iso), precision)
+    return t_start, t_end, precision
+
+
 def resolve_date_text(date_str: str) -> dict | None:
     """Resolve a date as written into an interval plus its stated precision.
 
-    Returns ``None`` when the text carries no usable year, which is the honest
-    answer for "last Tuesday" or "Q1" with no year in sight — better than
-    silently anchoring it to today.
+    Returns ``None`` when the text carries no usable year — the honest answer
+    for "last Tuesday" or "12 March" with no year in sight, which is better than
+    silently anchoring to today. Reporting that omits the year is relying on its
+    publication date to supply it, and that is not information this function has.
     """
-    precision = _date_precision(date_str)
-    if not precision:
+    raw = (date_str or "").strip()
+    if not raw:
         return None
-    iso = _parse_event_date(date_str)
-    if not iso:
-        return None
-    dt = datetime.fromisoformat(iso)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    t_start, t_end = _date_bounds(dt, precision)
-    return {
-        "event_datetime": t_start,
-        "t_start": t_start,
-        "t_end": t_end,
-        "date_precision": precision,
-        "date_text": date_str.strip()[:120],
-    }
+    label = raw[:120]
+
+    def out(t_start: str, t_end: str, precision: str) -> dict:
+        return {
+            "event_datetime": t_start,
+            "t_start": t_start,
+            "t_end": t_end,
+            "date_precision": precision,
+            "date_text": label,
+        }
+
+    # "Q1 2026" — a defined three-month span dateutil cannot read.
+    q = _QUARTER.search(raw)
+    if q:
+        quarter, year = int(q.group(1)), int(q.group(2))
+        start = datetime(year, 3 * (quarter - 1) + 1, 1, tzinfo=timezone.utc)
+        end_month = start.month + 3
+        end = (datetime(year + 1, end_month - 12, 1, tzinfo=timezone.utc)
+               if end_month > 12 else datetime(year, end_month, 1, tzinfo=timezone.utc))
+        return out(start.isoformat(), (end - timedelta(microseconds=1)).isoformat(), "month")
+
+    # "between March and June 2026" — the trailing year governs both ends, so
+    # the opening half is retried with it appended when it parses alone.
+    b = _BETWEEN.search(raw)
+    if b:
+        left, right = b.group(1).strip(), b.group(2).strip()
+        right_r = _resolve_plain(right)
+        if right_r:
+            left_r = _resolve_plain(left) or _resolve_plain(f"{left} {right_r[0][:4]}")
+            if left_r:
+                return out(left_r[0], right_r[1], right_r[2])
+            return out(right_r[0], right_r[1], right_r[2])
+
+    # "since 2024" — open at the right-hand end. `t_end` carries the bound of
+    # the stated period; that the period continues is the reader's inference.
+    s = _SINCE.search(raw)
+    if s:
+        inner = _resolve_plain(s.group(1).strip())
+        if inner:
+            return out(inner[0], inner[1], inner[2])
+
+    # "early March 2026", "mid-2024" — resolve the underlying date, then narrow
+    # to the third of the period the hedge points at.
+    h = _HEDGE.search(raw)
+    if h:
+        stripped = _HEDGE.sub("", raw).strip()
+        inner = _resolve_plain(stripped)
+        if inner:
+            t_start, t_end, precision = inner
+            word = h.group(1).split()[0].lower()
+            span = _HEDGE_SPAN.get(word)
+            if span:
+                start_dt, end_dt = _plain(t_start), _plain(t_end)
+                total = (end_dt - start_dt).total_seconds()
+                lo = start_dt + timedelta(seconds=total * span[0])
+                hi = start_dt + timedelta(seconds=total * span[1])
+                return out(lo.isoformat(), hi.isoformat(), precision)
+            return out(t_start, t_end, precision)
+
+    plain = _resolve_plain(raw)
+    return out(*plain) if plain else None
 
 
 def _link_event_dates(entities: list[dict], relationships: list[dict]) -> None:

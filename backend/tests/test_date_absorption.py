@@ -150,3 +150,60 @@ class TestCrossTypeMergeIsBlocked:
     def test_distinct_categories_are_incompatible(self):
         assert not _types_compatible("Event", "Ship")
         assert not _types_compatible("Location", "Person")
+
+
+class TestRealWorldPhrasings:
+    """Intelligence writing hedges and brackets dates more than it states them.
+
+    Measured against fourteen phrasings taken from how reporting actually reads,
+    a bare dateutil parse resolved five. These are the forms that carry a usable
+    year and were being thrown away.
+    """
+
+    def test_quarter(self):
+        got = resolve_date_text("Q1 2026")
+        assert got["t_start"].startswith("2026-01-01")
+        assert got["t_end"].startswith("2026-03-31")
+
+    def test_fourth_quarter_rolls_the_year(self):
+        got = resolve_date_text("Q4 2026")
+        assert got["t_start"].startswith("2026-10-01")
+        assert got["t_end"].startswith("2026-12-31")
+
+    def test_early_narrows_to_the_first_third(self):
+        got = resolve_date_text("early March 2026")
+        assert got["t_start"].startswith("2026-03-01")
+        assert got["t_end"][:10] < "2026-03-15"
+
+    def test_late_narrows_to_the_last_third(self):
+        got = resolve_date_text("late March 2026")
+        assert got["t_start"][:10] > "2026-03-15"
+        assert got["t_end"].startswith("2026-03-31")
+
+    def test_mid_year(self):
+        got = resolve_date_text("mid-2024")
+        assert "2024-04" < got["t_start"][:7] < "2024-09"
+
+    def test_since_a_year(self):
+        got = resolve_date_text("since 2024")
+        assert got["t_start"].startswith("2024-01-01")
+
+    def test_between_two_months_sharing_a_year(self):
+        """The trailing year governs both ends — "March" alone has none."""
+        got = resolve_date_text("between March and June 2026")
+        assert got["t_start"].startswith("2026-03-01")
+        assert got["t_end"].startswith("2026-06-30")
+
+    def test_year_less_phrasings_stay_rejected(self):
+        # Reporting that omits the year leans on its publication date, which is
+        # not information this function has. Guessing would be worse.
+        for text in ("12 March", "on Tuesday", "last month", "next quarter"):
+            assert resolve_date_text(text) is None, text
+
+    def test_a_year_inside_a_name_is_not_a_date(self):
+        assert resolve_date_text("the 2016 DNC hack") is None
+
+    def test_plain_dates_are_unaffected(self):
+        for text, precision in (("12 March 2026", "day"), ("March 2026", "month"),
+                                ("2024", "year"), ("2026-03-12", "day")):
+            assert resolve_date_text(text)["date_precision"] == precision, text
