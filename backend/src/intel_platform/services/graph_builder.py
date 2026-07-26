@@ -25,6 +25,22 @@ ENTITY_TYPE_MAP = {
 }
 
 
+def _types_compatible(a: str, b: str) -> bool:
+    """Whether two entity types may be fuzzy-merged into one entity.
+
+    Same specific type, or same parent category (so "Commander" and "Person"
+    still merge). An unknown type is permissive — the pre-existing behaviour for
+    entities the model left untyped.
+    """
+    if not a or not b or a == b:
+        return True
+    a_specific, a_parent = normalize_entity_type(a)
+    b_specific, b_parent = normalize_entity_type(b)
+    if a_specific == b_specific:
+        return True
+    return bool(a_parent) and a_parent == b_parent
+
+
 def resolve_entity_name(
     name: str, existing_names: list[str], threshold: float = 0.92,
     entity_type: str = "", existing_types: dict[str, str] | None = None,
@@ -60,6 +76,14 @@ def resolve_entity_name(
             existing_type = existing_types.get(existing, "")
             if existing_type in EXACT_MATCH_TYPES or entity_type in EXACT_MATCH_TYPES:
                 continue  # Don't fuzzy-match cyber entities
+            # Never merge across categories. "MV Northern Star strike" (Event)
+            # scores ~0.95 Jaro-Winkler against "MV Northern Star" (Ship) on the
+            # shared prefix, and merging the two silently destroyed the event
+            # along with the date attached to it — measured: two of three dated
+            # events lost on a single passage. An event that happens to a vessel
+            # is not that vessel.
+            if existing_type and not _types_compatible(entity_type, existing_type):
+                continue
 
         # Exact match
         if name_lower == existing_lower:
@@ -207,6 +231,9 @@ def build_graph_from_extractions(
     created = 0
     merged = 0
     entities_filtered = 0
+    dates_absorbed = 0
+    dates_orphaned = 0
+    absorbed_names: set[str] = set()
     name_to_id: dict[str, str] = {}
     # Newly-created entities (id/name/type/project) — fed to the selective
     # auto-enrich hook after the build; the hook filters to cyber types and is
@@ -227,6 +254,23 @@ def build_graph_from_extractions(
 
         if _is_junk_name(name) or _is_web_chrome(name, raw_type):
             entities_filtered += 1
+            continue
+
+        # Dates are properties, not nodes. A date has no agency — it cannot act,
+        # be targeted or be attributed — so as a node it only dilutes centrality
+        # and returns useless Graph-RAG context, while as a property it is
+        # directly filterable. Dropped here rather than at extraction so the
+        # OCCURRED_ON edge is still available to do the absorbing first.
+        #
+        # An orphan (never linked to anything) carries no information either:
+        # "March 2026" on its own tells an analyst nothing. Both are counted so
+        # a run can report what it did rather than silently shedding nodes.
+        if raw_type == "Date":
+            if (ent_data.get("attributes") or {}).get("_absorbed"):
+                dates_absorbed += 1
+            else:
+                dates_orphaned += 1
+            absorbed_names.add(name)
             continue
 
         # Check intra-batch cache first
@@ -319,20 +363,27 @@ def build_graph_from_extractions(
     cooccurrence_min = settings.cooccurrence_confidence_min
     rels_created = 0
     rels_dropped = 0
+    rels_retired = 0
     dropped_types: dict[str, int] = {}
     for rel_data in relationships:
         source_id = name_to_id.get(rel_data["source_name"])
         target_id = name_to_id.get(rel_data["target_name"])
         if not source_id or not target_id:
-            # The model named an endpoint it never extracted as an entity. This
-            # was silent, and it is how event dating stayed broken across a
-            # 15-run campaign: OCCURRED_ON edges were emitted pointing at event
-            # names that had no entity, so 22 of them survived out of 2,418
-            # relationships and the timeline had nothing to sort by.
-            rels_dropped += 1
-            dropped_types[rel_data.get("rel_type", "?")] = (
-                dropped_types.get(rel_data.get("rel_type", "?"), 0) + 1
-            )
+            # An OCCURRED_ON edge whose Date endpoint was absorbed is redundant
+            # by design — the date now lives on the entity — so it is retired,
+            # not lost. Everything else here is the model naming an endpoint it
+            # never extracted, which was silent and is how event dating stayed
+            # broken across a 15-run campaign.
+            if rel_data.get("rel_type") == "OCCURRED_ON" and (
+                rel_data["source_name"] in absorbed_names
+                or rel_data["target_name"] in absorbed_names
+            ):
+                rels_retired += 1
+            else:
+                rels_dropped += 1
+                dropped_types[rel_data.get("rel_type", "?")] = (
+                    dropped_types.get(rel_data.get("rel_type", "?"), 0) + 1
+                )
             continue
         confidence = rel_data.get("confidence", 0.5)
         # Blanket co-occurrence edges need a higher confidence bar to be
@@ -382,6 +433,9 @@ def build_graph_from_extractions(
         "entities_created": created,
         "entities_merged": merged,
         "entities_filtered": entities_filtered,
+        "dates_absorbed": dates_absorbed,
+        "dates_orphaned": dates_orphaned,
+        "relationships_retired": rels_retired,
         "relationships_created": rels_created,
         "relationships_dropped": rels_dropped,
         "relationships_dropped_by_type": dropped_types,
