@@ -73,6 +73,13 @@ class GenerateReportRequest(BaseModel):
     report_type: str = "general"
     skill_name: str = "report_writing"
     entity_ids: list[str] = []
+    # The requirement this product answers. Without it a report is only "tell me
+    # about these entities": one run collecting on Iranian intrusions into water
+    # utility OT produced an assessment of the EPA website's language options and
+    # topic menu, in full ICD 203 probability language, because the nav furniture
+    # was among the entities passed in. Supply the PIR text, or `pir_id` to load it.
+    requirement: str = ""
+    pir_id: str | None = None
     include_evidence: bool = True
     probability_assessments: bool = False
     max_hops: int = Field(2, ge=1, le=4)
@@ -125,6 +132,21 @@ async def generate_report(
 
     entity_names: list[str] = await asyncio.to_thread(_resolve_entity_names)
 
+    # Resolve the requirement this product is answering. It steers retrieval and
+    # is stated to the writer, so the product addresses the question rather than
+    # narrating whichever entities happened to be selected.
+    requirement = (req.requirement or "").strip()
+    if not requirement and req.pir_id:
+        try:
+            from intel_platform.api.routes.collection_plans import _parse_uuid
+            from intel_platform.db.models import Pir
+
+            pir = await session.get(Pir, _parse_uuid(req.pir_id, "pir_id"))
+            if pir:
+                requirement = (pir.refined_text or pir.text or "").strip()
+        except Exception:
+            logger.warning("Could not load PIR %s for report grounding", req.pir_id, exc_info=True)
+
     context = ""
     context_nodes = 0
     context_edges = 0
@@ -135,7 +157,10 @@ async def generate_report(
 
     if req.entity_ids:
         understanding = {
-            "query": ", ".join(entity_names) or req.report_type,
+            # Lead the retrieval query with the requirement when there is one:
+            # entity names alone pull whatever is adjacent, which is how crawl
+            # furniture ended up anchoring a report.
+            "query": requirement or ", ".join(entity_names) or req.report_type,
             "target_entities": [{"id": eid} for eid in req.entity_ids],
             "intent": "report_generation",
         }
@@ -146,11 +171,11 @@ async def generate_report(
         context_nodes = retrieved.get("node_count", 0)
         context_edges = retrieved.get("edge_count", 0)
 
-        if req.use_vector and entity_names:
+        if req.use_vector and (entity_names or requirement):
             try:
                 from intel_platform.services.vector_search import vector_search
                 vec_results = await vector_search(
-                    ", ".join(entity_names), req.project_id, session, limit=15,
+                    requirement or ", ".join(entity_names), req.project_id, session, limit=15,
                 )
             except Exception:
                 logger.warning("Vector search failed during report generation", exc_info=True)
@@ -178,8 +203,21 @@ async def generate_report(
     system = loader.get_system_prompt(req.skill_name, include_foundation=True) or ""
 
     instructions = [f"Generate a {req.report_type} intelligence product"]
+    if requirement:
+        instructions.append(
+            f"answering this intelligence requirement: {requirement}\n"
+            "The requirement is the subject of the product. Entities supplied below are "
+            "candidate evidence, not the topic — collected material includes web page "
+            "furniture (site navigation, language selectors, topic menus, cookie notices), "
+            "and none of it belongs in an assessment. Where the collection does not answer "
+            "the requirement, say so plainly under information gaps rather than writing "
+            "judgements about whatever else was collected"
+        )
     if entity_names:
-        instructions.append(f"covering: {', '.join(entity_names)}")
+        instructions.append(
+            f"drawing on these entities where they bear on the requirement: {', '.join(entity_names)}"
+            if requirement else f"covering: {', '.join(entity_names)}"
+        )
     if req.include_evidence:
         instructions.append(
             "Include evidence chains — cite the specific graph relationships and "

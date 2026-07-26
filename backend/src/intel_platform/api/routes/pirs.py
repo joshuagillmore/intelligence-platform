@@ -513,10 +513,28 @@ async def assess_pir(
     except Exception:
         logger.warning("PIR assessment failed for %s", pir_id, exc_info=True)
 
+    # An element the model did not return a verdict for has NOT been shown to be
+    # answered. Treating silence as success declared a requirement SATISFIED off
+    # one verdict out of five, so unjudged elements are made explicit instead.
+    # Whether the model returned anything at all — distinct from whether every
+    # element got a verdict. A total judging failure must leave the stored status
+    # untouched rather than reopening a satisfied requirement.
+    any_verdict = bool(assessments)
+    judged = {a["index"] for a in assessments}
+    for i, eei in enumerate(eeis):
+        if i not in judged:
+            assessments.append({
+                "index": i,
+                "eei": eei,
+                "verdict": "UNASSESSED",
+                "justification": "The judging model returned no verdict for this element.",
+            })
+    assessments.sort(key=lambda a: a["index"])
+
     satisfied = [a for a in assessments if a["verdict"] == "SATISFIED"]
     unmet = [a for a in assessments if a["verdict"] != "SATISFIED"]
 
-    if assessments and not unmet:
+    if any_verdict and not unmet:
         status = PirStatus.SATISFIED
     elif any(a["verdict"] in ("SATISFIED", "PARTIAL") for a in assessments):
         # A PARTIAL verdict means the collection did answer part of the element.
@@ -529,17 +547,20 @@ async def assess_pir(
 
     # Only move the stored status when there was a real judgement behind it —
     # a failed LLM call must not silently reopen a satisfied requirement.
-    if assessments:
+    if any_verdict:
         pir.status = status
         pir.updated_at = datetime.now(timezone.utc)
         await db.commit()
         await db.refresh(pir)
 
     exhausted = bool(limit) and sources_used >= limit
-    if not assessments:
+    if not any_verdict:
         recommendation = "Assessment unavailable — the judging model returned no verdicts."
     elif status == PirStatus.SATISFIED:
-        recommendation = "Requirement answered across all elements. No further collection needed."
+        recommendation = (
+            f"Requirement answered — all {len(eeis)} element(s) satisfied. "
+            "No further collection needed."
+        )
     elif exhausted:
         recommendation = (
             f"Collection budget exhausted ({sources_used}/{limit} sources) with "

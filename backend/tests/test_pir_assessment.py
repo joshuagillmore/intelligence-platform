@@ -190,3 +190,49 @@ class TestParseVerdicts:
 
     def test_empty_narrative(self):
         assert parse_verdicts("", self.EEIS) == []
+
+
+class TestUnassessedElements:
+    """An element with no verdict has not been shown to be answered.
+
+    A live Arctic run returned one verdict for a five-EEI requirement and the
+    PIR was stored SATISFIED with "Requirement answered across all elements" —
+    four elements were never judged at all.
+    """
+
+    EEIS = ["What was built?", "Where?", "What capability?", "When?", "Why?"]
+
+    @staticmethod
+    def _fill(assessments: list[dict], eeis: list[str]) -> list[dict]:
+        judged = {a["index"] for a in assessments}
+        out = list(assessments)
+        for i, eei in enumerate(eeis):
+            if i not in judged:
+                out.append({"index": i, "eei": eei, "verdict": "UNASSESSED",
+                            "justification": "no verdict"})
+        out.sort(key=lambda a: a["index"])
+        return out
+
+    def test_missing_verdicts_become_unassessed(self):
+        parsed = parse_verdicts("1 | SATISFIED | Bases named.", self.EEIS)
+        filled = self._fill(parsed, self.EEIS)
+        assert len(filled) == 5
+        assert [a["verdict"] for a in filled] == [
+            "SATISFIED", "UNASSESSED", "UNASSESSED", "UNASSESSED", "UNASSESSED",
+        ]
+
+    def test_partial_judging_is_not_satisfied(self):
+        filled = self._fill(parse_verdicts("1 | SATISFIED | Bases named.", self.EEIS), self.EEIS)
+        unmet = [a for a in filled if a["verdict"] != "SATISFIED"]
+        assert unmet, "four unjudged elements must not read as satisfied"
+
+    def test_all_judged_satisfied_is_satisfied(self):
+        narrative = "\n".join(f"{i + 1} | SATISFIED | Answered." for i in range(5))
+        filled = self._fill(parse_verdicts(narrative, self.EEIS), self.EEIS)
+        assert [a["verdict"] for a in filled] == ["SATISFIED"] * 5
+        assert not [a for a in filled if a["verdict"] != "SATISFIED"]
+
+    def test_ordering_follows_the_eei_list(self):
+        narrative = "3 | UNMET | Missing.\n1 | SATISFIED | Found."
+        filled = self._fill(parse_verdicts(narrative, self.EEIS), self.EEIS)
+        assert [a["index"] for a in filled] == [0, 1, 2, 3, 4]
