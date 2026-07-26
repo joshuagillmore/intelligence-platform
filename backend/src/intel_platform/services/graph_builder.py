@@ -96,11 +96,29 @@ _GENERIC_TYPES = frozenset({
 
 _NAME_TYPE_HINTS: tuple[tuple[re.Pattern, str], ...] = (
     # Vessel prefixes: "MV Aurora Trader", "USS Georgia", "FS Provence".
-    (re.compile(r'^(MV|M/V|MT|M/T|SS|S/S|MS|M/S|RFA|FGS|FS|INS|HMAS|HMS|USS|USNS|RV)\s+\S'),
-     "Ship"),
+    # National naval prefixes are included because they are unambiguous and the
+    # model reaches for Custom otherwise — "BRP Cape San Agustin (MRRV-4408)"
+    # landed as Custom on a live South China Sea run.
+    (re.compile(
+        r'^(MV|M/V|MT|M/T|SS|S/S|MS|M/S|RFA|RV|'
+        r'USS|USNS|HMS|HMAS|HMCS|HMNZS|FS|FGS|INS|BRP|KRI|ROKS|JS|ARA|NRP|ITS|'
+        r'ESPS|TCG|BNS|CNS|HTMS|KD|PNS|RSS|SPS)\s+\S'
+    ), "Ship"),
     # UAV designators: "MQ-9 Reaper", "RQ-4 Global Hawk".
     (re.compile(r'^(MQ|RQ)-\d', re.IGNORECASE), "Drone"),
 )
+
+
+def _is_junk_name(name: str) -> bool:
+    """Reject entity names that carry no information.
+
+    Crawled markdown yields heading rules as entities — "###" and "######"
+    landed as `Financial` nodes on a live run, reached the intelligence product,
+    and were reasoned about there as "undisclosed vessel tonnage". Anything with
+    no alphanumeric character at all is markup, not an entity. Deliberately
+    narrow: short real names like "US" and "UK" must survive.
+    """
+    return not any(c.isalnum() for c in (name or ""))
 
 
 def _type_from_name(name: str, current: str) -> str:
@@ -143,6 +161,9 @@ def build_graph_from_extractions(
     for ent_data in entities:
         name = ent_data["name"]
         raw_type = ent_data["entity_type"]
+
+        if _is_junk_name(name):
+            continue
 
         # Check intra-batch cache first
         cache_key = f"{name}::{raw_type}"
