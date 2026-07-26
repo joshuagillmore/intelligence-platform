@@ -905,6 +905,14 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
                 "source": doc_id,
                 "method": "llm",
                 "evidence": _clean_evidence(r.get("evidence", ""), src_name, tgt_name),
+                # Carry the model's polarity through. Without this a denial is
+                # indistinguishable from an assertion by the time it reaches the
+                # graph, and contradicting reporting counts as corroboration.
+                "polarity": (
+                    "denies"
+                    if str(r.get("polarity", "")).strip().lower() in ("denies", "deny", "negated", "false")
+                    else "asserts"
+                ),
             })
 
         _link_event_dates(entities, relationships)

@@ -227,15 +227,37 @@ class GraphStore:
                 if corroborated:
                     sources.append(new_doc)
 
+                # Contradiction. A source that denies what another asserts must not
+                # be absorbed as further agreement — that is how contested
+                # reporting silently becomes settled fact.
+                prior_polarity = str(current.get("polarity") or "asserts").lower()
+                new_polarity = str(props.get("polarity") or "asserts").lower()
+                prior_agreement = str(current.get("corroboration_agreement") or "AGREE").upper()
+                if prior_polarity != new_polarity:
+                    agreement = "CONFLICT"
+                elif prior_agreement == "CONFLICT":
+                    agreement = "CONFLICT"  # once disputed, stays disputed until reviewed
+                else:
+                    agreement = prior_agreement
+
                 update = {
                     "corroboration_count": max(len(sources), 1) if sources else int(current.get("corroboration_count") or 1),
                     "corroboration_sources": sources,
-                    # Keep the strongest assessed confidence.
-                    "confidence": max(float(current.get("confidence") or 0), float(props.get("confidence") or 0)),
+                    "corroboration_agreement": agreement,
+                    # Keep the strongest assessed confidence — except once sources
+                    # disagree, where the prior confidence no longer stands alone.
+                    "confidence": (
+                        min(float(current.get("confidence") or 0), float(props.get("confidence") or 0))
+                        if agreement == "CONFLICT"
+                        else max(float(current.get("confidence") or 0), float(props.get("confidence") or 0))
+                    ),
                     # Keep the first captured sentence; it is the primary reference.
                     "evidence": current.get("evidence") or props.get("evidence", ""),
                     "source_doc_id": current.get("source_doc_id") or new_doc,
                     "last_seen": props.get("last_seen") or current.get("last_seen"),
+                    # The edge keeps the polarity it was first asserted with; the
+                    # disagreement is carried by corroboration_agreement.
+                    "polarity": prior_polarity,
                 }
                 result = session.run(
                     """

@@ -60,11 +60,28 @@ system_prompt: |
         "target_entity": "string — name of target entity",
         "relationship_type": "string — one of the types above",
         "confidence": 0.0-1.0,
-        "evidence": "string — brief quote or paraphrase from the text"
+        "evidence": "string — brief quote or paraphrase from the text",
+        "polarity": "asserts | denies"
       }
     ]
   }
   ```
+
+  ## Polarity — record denials, do not discard them
+
+  Set `polarity` to `denies` when the text states the relationship did NOT hold,
+  and `asserts` otherwise. Default to `asserts`.
+
+  A denial is intelligence, not noise. Reporting that contradicts an earlier claim
+  is how contested attribution surfaces, so extract it as a relationship with
+  `polarity: "denies"` rather than omitting it.
+
+  Examples:
+  - "Ansar Allah claimed responsibility for the attack" -> TARGETS, polarity asserts
+  - "Ansar Allah did not conduct the attack"            -> TARGETS, polarity denies
+  - "Investigators found no link between X and Y"       -> ASSOCIATED_WITH, polarity denies
+  - "Contrary to earlier reporting, pirates -- not the group -- boarded the vessel"
+      -> the group TARGETS vessel, polarity denies; pirates TARGETS vessel, polarity asserts
 
   ## Confidence Calibration
 

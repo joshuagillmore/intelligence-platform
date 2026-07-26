@@ -28,6 +28,10 @@ class Relationship(BaseModel):
     # origin rather than stopping at a floating quotation. Empty for edges built
     # before this was carried through, and for edges with no single source.
     source_doc_id: str = ""
+    # Whether this source asserts the relationship or denies it. A denial is
+    # intelligence: it is what turns corroboration_agreement into CONFLICT rather
+    # than being silently absorbed as further agreement.
+    polarity: str = "asserts"
     first_seen: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_seen: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     admiralty_rating: str = ""

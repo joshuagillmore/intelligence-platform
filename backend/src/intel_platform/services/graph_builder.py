@@ -218,6 +218,9 @@ def build_graph_from_extractions(
             # ...and the document it came from, so the evidence chain can end at
             # a real source instead of an unattributed quotation.
             source_doc_id=rel_data.get("source_doc_id", "") or source_doc_id,
+            # "denies" marks contradicting reporting; the store turns an
+            # assert/deny collision into CONFLICT instead of more agreement.
+            polarity=("denies" if str(rel_data.get("polarity", "")).lower() == "denies" else "asserts"),
         )
         store.create_relationship(rel)
         rels_created += 1
