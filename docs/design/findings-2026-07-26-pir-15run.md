@@ -59,6 +59,40 @@ named, and a recommendation that distinguishes "keep collecting" from "budget
 spent". A failed judging call leaves the stored status untouched rather than
 silently reopening a satisfied requirement.
 
+### Campaign results
+
+All fifteen runs completed: plan, collection, graph, assessment and a written
+product. Every PIR was re-assessed at the end against the final code, so the
+table is one consistent measurement rather than a mix of pre- and post-fix runs.
+
+| # | Domain | Budget | Used | Status | EEIs met | Entities | Product |
+|--:|---|--:|--:|---|--:|--:|--:|
+| 1 | cyber (Ukraine) | 3 | 5 | OPEN | 0/5 | 245 | 7k |
+| 2 | maritime (S China Sea) | 6 | 5 | PARTIAL | 1/4 | 256 | 13k |
+| 3 | cyber (financial) | 4 | 4 | OPEN | 0/3 | 571 | 12k |
+| 4 | sanctions (shadow fleet) | 7 | 5 | PARTIAL | 3/5 | 432 | 8k |
+| 5 | conflict (Sahel) | 5 | 3 | OPEN | 0/4 | 217 | 9k |
+| 6 | cyber (DPRK crypto) | 4 | 5 | PARTIAL | 0/5 | 600 | 10k |
+| 7 | supply chain (Taiwan) | 6 | 5 | PARTIAL | 3/4 | 96 | 8k |
+| 8 | cyber (Iranian OT) | 3 | 4 | OPEN | 0/3 | 167 | 11k |
+| 9 | geopolitics (Arctic) | 5 | 5 | OPEN | 0/5 | 600 | 10k |
+| 10 | cyber (Salt Typhoon) | 4 | 5 | PARTIAL | 1/4 | 600 | 10k |
+| 11 | WMD (Iran) | 6 | 5 | PARTIAL | 0/4 | 380 | 8k |
+| 12 | disinformation (Africa) | 5 | 5 | PARTIAL | 1/5 | 484 | 10k |
+| 13 | cyber (edge devices) | 3 | 3 | OPEN | 0/3 | 504 | 8k |
+| 14 | conflict (Red Sea) | 7 | 5 | PARTIAL | 0/5 | 414 | 7k |
+| 15 | economic (DRC cobalt) | 5 | 4 | PARTIAL | 1/5 | 213 | 8k |
+
+**9 PARTIAL, 6 OPEN, 0 SATISFIED — and that is the honest answer.** Two to five
+web sources do not fully answer requirements written to this standard ("identified
+by IMO numbers", "frequency and duration of each event"). The system's value here
+is that it *says so per element* instead of presenting a document pile as an
+answer. Zero elements were left unjudged after the second-pass fix (§2.6).
+
+Assessments across re-runs vary by roughly ±1 element on the same graph — the
+judge is an LLM at temperature 0.2, and PARTIAL/UNMET is a genuine borderline on
+thin evidence. Worth knowing before treating a single score as authoritative.
+
 ---
 
 ## 2. Defects found and fixed during the campaign
@@ -157,7 +191,19 @@ satisfaction and appear in `unmet_criteria`. Re-run on the same data: a false
 elements. A separate flag preserves the original guarantee that a total judging
 failure leaves the stored status untouched.
 
-### 2.6 PARTIAL progress was stored as OPEN
+### 2.6 The judge skipped elements, so they went unjudged
+
+Separate from §2.5 (which stopped silence reading as success), models routinely
+returned fewer verdicts than there were elements — one of five on the DRC
+requirement. Reporting four elements as `UNASSESSED` is honest but tells the
+analyst nothing about whether collection answered them.
+
+When a first pass judges some but not all elements, the unjudged ones are now
+put to the model again on their own. Verified on that run: 1 of 5 judged became
+5 of 5, each citing collected specifics. Across the final re-assessment of all
+fifteen requirements, **no element was left unjudged**.
+
+### 2.7 PARTIAL progress was stored as OPEN
 
 Only `SATISFIED` counted toward progress, so a PIR with two PARTIAL elements
 was persisted as `OPEN`. That erases the distinction between "we have something
