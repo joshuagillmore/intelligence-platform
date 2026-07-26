@@ -313,7 +313,24 @@ crawled graphs (69 of 168 entities on run 2). §2.3 works around this for the
 assessor only — the graph view, Graph-RAG retrieval, and products all still see
 it. This re-raises finding 2.3 of the previous document with quantified impact.
 
-### 3.6 `ollama_connected` reports false while Ollama is in active use
+### 3.6 Success-shaped zeros hid a broken ATT&CK prerequisite — FIXED
+
+Running ATT&CK mapping against the campaign's cyber projects returned
+`{"mapped": 0, "skipped": 19}`. That is the same shape as a genuine no-match, so
+it read as "the model rejected every candidate". The real cause was that **695
+techniques were loaded in Neo4j and the embeddings table was empty** — the RAG
+mapping had nothing to match against and could never have matched anything.
+
+`/attack/embed` had the mirror problem: HTTP 200 with `{"embedded": 0}` for four
+distinct causes, which reads as "already done". Here it was a trial Cohere key
+rate-limiting a 695-technique batch — retryable, and worth saying.
+
+Both now report a reason. This is the same class as §3.1 (a killed collection
+reporting `running`) and it cost real investigation time twice in one session:
+**an endpoint that returns a plausible-looking zero for a broken precondition is
+worse than one that errors.**
+
+### 3.7 `ollama_connected` reports false while Ollama is in active use
 
 `/health` only probes Ollama when it is the *default* provider. This deployment
 routes **collection** to Ollama and generation to Cohere, so the field reads
