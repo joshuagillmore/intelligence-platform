@@ -608,8 +608,13 @@ async def execute_plan_endpoint(
     if not executable and not file_only:
         warnings.append("No sources are ready for autonomous execution. Add URLs to source configs or upload files manually.")
 
-    # Activate the plan
+    # Activate the plan, recording the collection budget it was given. The PIR
+    # assessor reports "stopped on the source limit", which must rest on what
+    # the run was actually allowed rather than on a number the caller re-supplies
+    # at assessment time.
     plan.status = PlanStatus.ACTIVE
+    if body and body.source_limit:
+        plan.routing_rules = {**(plan.routing_rules or {}), "source_limit": body.source_limit}
     plan.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(plan)

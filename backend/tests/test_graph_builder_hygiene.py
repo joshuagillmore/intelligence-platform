@@ -6,7 +6,11 @@ typed Custom.
 """
 from __future__ import annotations
 
-from intel_platform.services.graph_builder import _is_junk_name, _type_from_name
+from intel_platform.services.graph_builder import (
+    _is_junk_name,
+    _is_web_chrome,
+    _type_from_name,
+)
 
 
 class TestJunkNames:
@@ -53,3 +57,43 @@ class TestPlatformTyping:
 
     def test_unprefixed_name_unchanged(self):
         assert _type_from_name("Stellar Horizon", "Custom") == "Custom"
+
+
+class TestWebChrome:
+    """Share links and embeds scraped off an article are page furniture.
+
+    Measured across the 15-run campaign: URL was the largest entity type at
+    2,531 nodes against 925 Organizations, and 299 were social-platform links —
+    all isolated in the graph.
+    """
+
+    def test_social_urls_and_domains_are_chrome(self):
+        for name in ("https://www.facebook.com/sharer/sharer.php?u=x",
+                     "twitter.com", "www.linkedin.com", "https://youtu.be/abc",
+                     "instagram.com", "reddit.com", "https://t.me/somechannel"):
+            assert _is_web_chrome(name, "URL") or _is_web_chrome(name, "Domain"), name
+
+    def test_reporting_urls_survive(self):
+        """Vendors whose names contain a social host as a substring must survive.
+
+        "x.com" as a substring also matches citrix.com, equinix.com, zerofox.com
+        and nutanix.com — Citrix in particular is core threat-intel content.
+        """
+        for name in ("https://www.reuters.com/world/article",
+                     "amti.csis.org", "https://cloud.google.com/blog/topics/threat-intelligence",
+                     "malicious-c2.example.net",
+                     "citrix.com", "https://www.citrix.com/blog/cve-2023-4966",
+                     "zerofox.com", "equinix.com", "nutanix.com",
+                     "notfacebook.com", "facebook.com.evil.net"):
+            assert not _is_web_chrome(name, "URL"), name
+            assert not _is_web_chrome(name, "Domain"), name
+
+    def test_only_applies_to_url_and_domain_types(self):
+        """An Organization genuinely named Facebook is a real entity."""
+        assert not _is_web_chrome("Facebook", "Organization")
+        assert not _is_web_chrome("Twitter", "Organization")
+        assert not _is_web_chrome("YouTube", "Product")
+
+    def test_empty_name(self):
+        assert not _is_web_chrome("", "URL")
+        assert not _is_web_chrome(None, "Domain")

@@ -137,15 +137,23 @@ async def generate_report(
     # narrating whichever entities happened to be selected.
     requirement = (req.requirement or "").strip()
     if not requirement and req.pir_id:
-        try:
-            from intel_platform.api.routes.collection_plans import _parse_uuid
-            from intel_platform.db.models import Pir
+        from intel_platform.api.routes.collection_plans import _parse_uuid
+        from intel_platform.db.models import Pir
 
-            pir = await session.get(Pir, _parse_uuid(req.pir_id, "pir_id"))
-            if pir:
-                requirement = (pir.refined_text or pir.text or "").strip()
+        # Outside the try: a malformed pir_id is a client error and must surface
+        # as a 400, not silently produce an ungrounded product.
+        pir_uuid = _parse_uuid(req.pir_id, "pir_id")
+        try:
+            pir = await session.get(Pir, pir_uuid)
         except Exception:
-            logger.warning("Could not load PIR %s for report grounding", req.pir_id, exc_info=True)
+            logger.warning("Could not load PIR for report grounding", exc_info=True)
+            pir = None
+        # Scope to the requested project — a PIR from another project must not
+        # become this report's subject and retrieval query.
+        if pir and pir.project_id == req.project_id:
+            requirement = (pir.refined_text or pir.text or "").strip()
+        elif pir:
+            raise HTTPException(400, "pir_id does not belong to project_id")
 
     context = ""
     context_nodes = 0

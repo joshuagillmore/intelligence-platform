@@ -37,6 +37,16 @@ def get_execution_status(plan_id: str) -> dict | None:
     return _running_executions.get(plan_id)
 
 
+def over_source_budget(attempted: int, source_limit: int | None) -> bool:
+    """True when the collection budget is spent and this source must be skipped.
+
+    Shared by both execution paths so the rule is defined once and the tests bind
+    to the shipped predicate rather than to a copy of it. `attempted` counts
+    sources actually collected, so pre-failed sources do not consume budget.
+    """
+    return source_limit is not None and attempted >= source_limit
+
+
 async def execute_plan(
     plan_id: str,
     db_factory: async_sessionmaker[AsyncSession],
@@ -93,7 +103,7 @@ async def execute_plan(
                 # Stop against the collection budget. Recorded as an explicit
                 # event so the plan reports "stopped on budget" rather than
                 # looking as though it simply had fewer sources.
-                if source_limit is not None and attempted >= source_limit:
+                if over_source_budget(attempted, source_limit):
                     status["sources_skipped"] += 1
                     status["stopped_on_source_limit"] = True
                     status["source_results"].append({
@@ -103,8 +113,6 @@ async def execute_plan(
                         "reason": f"source budget of {source_limit} reached",
                     })
                     continue
-
-                attempted += 1
 
                 # Skip file_upload sources (require manual upload)
                 if source.source_type == "file_upload":
@@ -142,6 +150,11 @@ async def execute_plan(
                         db, source, plan, "SKIPPED", error_message="Missing required config",
                     )
                     continue
+
+                # Counted here, not at the top of the loop: budget is spent by
+                # sources actually collected, so a file_upload or misconfigured
+                # source that was skipped above does not consume it.
+                attempted += 1
 
                 # Execute this source
                 result = await _execute_source(

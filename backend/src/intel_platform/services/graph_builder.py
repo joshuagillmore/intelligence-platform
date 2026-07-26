@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import urlsplit
 
 import jellyfish
 
@@ -109,6 +110,51 @@ _NAME_TYPE_HINTS: tuple[tuple[re.Pattern, str], ...] = (
 )
 
 
+# Share buttons and social embeds on a scraped article are page chrome, not
+# reporting. Measured across a 15-run campaign: 299 such nodes, all isolated.
+# Applied only to URL/Domain entities — an Organization genuinely named
+# "Facebook" is a real entity and must survive.
+#
+# Matched on the registrable host, never as a substring: "x.com" as a substring
+# also matches citrix.com, equinix.com, zerofox.com and nutanix.com, which would
+# have silently discarded every Citrix node — about as central a vendor as this
+# domain has.
+_SOCIAL_HOSTS = frozenset({
+    "facebook.com", "fb.com", "twitter.com", "x.com", "linkedin.com",
+    "youtube.com", "youtu.be", "instagram.com", "pinterest.com", "reddit.com",
+    "whatsapp.com", "t.me", "telegram.me", "tiktok.com", "threads.net",
+    "bsky.app", "mastodon.social", "flipboard.com", "tumblr.com",
+})
+
+
+def _host_of(name: str) -> str:
+    """Best-effort registrable host for a URL or bare domain entity name."""
+    raw = (name or "").strip().lower()
+    if not raw:
+        return ""
+    if "//" not in raw:
+        raw = "//" + raw
+    host = urlsplit(raw).netloc or ""
+    host = host.split("@")[-1].split(":")[0]
+    return host[4:] if host.startswith("www.") else host
+
+
+def _is_web_chrome(name: str, entity_type: str) -> bool:
+    """True for link-furniture URLs and domains scraped off a page.
+
+    A crawled article carries share links, embeds and footer links for every
+    major platform. Extracted as `URL`/`Domain` entities they dominate the graph
+    — URL was the single largest entity type across the campaign at 2,531 nodes
+    against 925 Organizations — and none of them answer a requirement.
+    """
+    if entity_type not in ("URL", "Domain"):
+        return False
+    host = _host_of(name)
+    if not host:
+        return False
+    return any(host == s or host.endswith("." + s) for s in _SOCIAL_HOSTS)
+
+
 def _is_junk_name(name: str) -> bool:
     """Reject entity names that carry no information.
 
@@ -171,7 +217,7 @@ def build_graph_from_extractions(
         name = ent_data["name"]
         raw_type = ent_data["entity_type"]
 
-        if _is_junk_name(name):
+        if _is_junk_name(name) or _is_web_chrome(name, raw_type):
             continue
 
         # Check intra-batch cache first

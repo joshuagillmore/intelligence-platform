@@ -166,3 +166,29 @@ def test_degrades_when_pgvector_retrieve_errors(techniques, graph_store):
 
     assert result == {"mapped": 0, "skipped": 1}
     assert _maps_to_llm(driver) == []
+
+
+def test_reports_when_catalogue_is_not_embedded(techniques, graph_store):
+    """An unembedded catalogue must not look like "the model rejected everything".
+
+    Found live: 695 techniques loaded in Neo4j, zero rows in
+    attack_technique_embeddings, and /attack/map returned {"mapped": 0,
+    "skipped": 19} — the same shape as a genuine no-match, so the missing
+    prerequisite was invisible.
+    """
+    driver = techniques
+    graph_store.create_entity(TTP(name="Users received a spoofed email", project_id=PROJECT_ID))
+
+    session = MagicMock()
+    session.execute = AsyncMock(return_value=SimpleNamespace(scalar_one=lambda: 0))
+
+    with _patch_llm('{"matches": []}'):
+        result = _run(mapping.map_project_ttps(
+            session, driver, PROJECT_ID, embedding_provider=_embed_provider(),
+        ))
+
+    assert result["mapped"] == 0
+    assert result["skipped"] == 1
+    assert result["reason"] == "technique_catalogue_not_embedded"
+    assert "attack/embed" in result["detail"]
+    assert _maps_to_llm(driver) == []

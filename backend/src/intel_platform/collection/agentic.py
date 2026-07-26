@@ -23,6 +23,7 @@ from intel_platform.db.models import (
 from intel_platform.models.entities import Document
 from intel_platform.services.graph_builder import build_graph_from_extractions
 from intel_platform.services.ingestion import ingest_text
+from intel_platform.services.plan_executor import over_source_budget
 
 logger = logging.getLogger(__name__)
 
@@ -758,7 +759,7 @@ async def run_agentic_loop(
             # Stop against the collection budget, and say so explicitly — the
             # analyst needs to distinguish "the plan was this small" from "the
             # budget ran out with sources still queued".
-            if source_limit is not None and attempted >= source_limit:
+            if over_source_budget(attempted, source_limit):
                 db.add(CollectionActivity(
                     plan_id=plan.id, source_id=source.id,
                     event="source_skipped",
