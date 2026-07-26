@@ -240,7 +240,11 @@ export default function PirPanel({ projectId }: { projectId: string }) {
                   <Pill label={pir.priority} color={PRIORITY_COLOR[pir.priority] || '#6b7280'} />
                   <span className="text-xs font-semibold text-gray-200 truncate">{pir.title}</span>
                 </div>
-                <p className="text-xs text-gray-300 mt-2 leading-relaxed">{pir.text}</p>
+                {/* An untitled PIR gets its title derived from its own text, so
+                    rendering both would just print the requirement twice. */}
+                {pir.text !== pir.title && (
+                  <p className="text-xs text-gray-300 mt-2 leading-relaxed">{pir.text}</p>
+                )}
                 {pir.refined_text && pir.refined_text !== pir.text && (
                   <p className="text-[11px] mt-1.5" style={{ color: colors.primary }}>
                     Refined: {pir.refined_text}
