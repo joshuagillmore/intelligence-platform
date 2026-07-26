@@ -112,13 +112,22 @@ _NAME_TYPE_HINTS: tuple[tuple[re.Pattern, str], ...] = (
 def _is_junk_name(name: str) -> bool:
     """Reject entity names that carry no information.
 
-    Crawled markdown yields heading rules as entities — "###" and "######"
-    landed as `Financial` nodes on a live run, reached the intelligence product,
-    and were reasoned about there as "undisclosed vessel tonnage". Anything with
-    no alphanumeric character at all is markup, not an entity. Deliberately
-    narrow: short real names like "US" and "UK" must survive.
+    Two artifact classes seen in live crawls, both of which reached the graph
+    and one of which reached a generated intelligence product:
+
+    - Markdown heading rules ("###", "######") stored as `Financial` nodes, then
+      reasoned about in a product as "undisclosed vessel tonnage". Anything with
+      no alphanumeric character at all is markup, not an entity.
+    - Navigation blocks captured whole ("Microsoft Security\\nProtect",
+      "TRENDS & INSIGHTS\\nEnter"), all typed `Organization`. A real entity name
+      does not span lines.
+
+    Deliberately narrow: short real names like "US", "UK" and "G7" must survive.
     """
-    return not any(c.isalnum() for c in (name or ""))
+    name = name or ""
+    if not any(c.isalnum() for c in name):
+        return True
+    return "\n" in name or "\r" in name
 
 
 def _type_from_name(name: str, current: str) -> str:

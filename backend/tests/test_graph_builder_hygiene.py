@@ -19,6 +19,16 @@ class TestJunkNames:
         for name in ("US", "UK", "AI", "G7", "Xi"):
             assert not _is_junk_name(name), name
 
+    def test_multiline_navigation_blocks_are_junk(self):
+        """Observed live, all typed Organization: nav furniture captured whole."""
+        for name in ("Microsoft Security\nProtect", "TRENDS & INSIGHTS\nEnter",
+                     "Threats & Risks\n*", "Some Org\r\nSubscribe"):
+            assert _is_junk_name(name), name
+
+    def test_single_line_names_with_punctuation_survive(self):
+        for name in ("Ansar Allah", "AT&T", "Safe{Wallet}", "BRP Datu Sumakwel (MMOV 3019)"):
+            assert not _is_junk_name(name), name
+
     def test_empty_and_none(self):
         assert _is_junk_name("")
         assert _is_junk_name(None)
