@@ -510,6 +510,30 @@ async def assess_pir(
         narrative = result.content or ""
         model_name = getattr(result, "model", "") or ""
         assessments = parse_verdicts(narrative, eeis)
+
+        # Models routinely return fewer verdicts than there are elements — one
+        # of five on a live DRC run. Those elements are reported UNASSESSED,
+        # which is honest but useless to the analyst, so ask once more for just
+        # the missing ones rather than leaving the requirement half-judged.
+        missing = [i for i in range(len(eeis)) if i not in {a["index"] for a in assessments}]
+        if missing and len(missing) < len(eeis):
+            retry = await provider.generate(
+                messages=[{"role": "user", "content": (
+                    f"COLLECTED INTELLIGENCE:\n{context}\n\n"
+                    "You did not return a verdict for these elements. Judge each one "
+                    "against the collected intelligence above and nothing else:\n"
+                    + "\n".join(f"{i + 1}. {eeis[i]}" for i in missing)
+                    + "\n\nReturn only these lines, one per element:\n"
+                    "N | SATISFIED|PARTIAL|UNMET | one-line justification"
+                )}],
+                system="You are an intelligence collection manager. Return only the verdict lines.",
+                temperature=0.2,
+                max_tokens=800,
+            )
+            extra = [a for a in parse_verdicts(retry.content or "", eeis) if a["index"] in missing]
+            if extra:
+                assessments.extend(extra)
+                narrative += "\n\n[second pass for unjudged elements]\n" + (retry.content or "")
     except Exception:
         logger.warning("PIR assessment failed for %s", pir_id, exc_info=True)
 
