@@ -332,6 +332,55 @@ the next cycle re-collects or refines the requirement.
 
 ---
 
+### 2.14 An assessment contradicted its own probability
+
+**Severity: high — the product disagreed with itself on its central claim.**
+
+`/assess/generate` was uncallable: it reused `CreateAssessmentRequest`, which
+requires `judgment` and `probability` — precisely what the endpoint exists to
+produce. Every caller had to invent the answer in order to ask the question.
+The handler had always treated both as optional, so the model and the code had
+simply drifted.
+
+Once callable, it lied. The prompt asks for `PROBABILITY: 0.78`; the model
+replies:
+
+```
+**PROBABILITY:** **0.70**
+**CONFIDENCE_LABEL:** **Likely**
+```
+
+The pattern could not cross the emphasis markers, so the probability fell back
+to `0.5` and the assessment was stored as **"Roughly Even Chance"** while its own
+narrative read **"Likely"**. The structured field is what the UI renders. For a
+tool whose premise is ICD 203 probability language, that is a judgement error
+rather than a formatting one.
+
+Measured after the fix, on two entities: `0.70 → Likely` and `0.78 → Likely`,
+both of which previously stored `0.5 → Roughly Even Chance`.
+
+### 2.15 The same parsing failure in four more places
+
+Sweeping for it found every site that reads a labelled value back out of a model
+reply by anchoring on the shape the *prompt* requested:
+
+| Site | Pattern | Consequence |
+|---|---|---|
+| `routes/llm.py` | `PROBABILITY:\s*(0\.\d+)` | query response carries no probability |
+| `routes/reports.py` | `PROBABILITY:\s*([01]\.\d+)` | product carries no probability |
+| `collection_planner` ×2 | `^CONFIG:\s*(\{.*\})\s*$` | source stored with an empty config |
+
+Consolidated into `services/llm_output.py`, which treats asterisks, underscores,
+backticks and whitespace as one interchangeable run. **Enumeration is what kept
+failing** — the first fix for the assessment probability covered the form that
+had been seen and missed the next one within the hour.
+
+Stated accurately: the two `PROBABILITY` sites are the live defect above. The
+`CONFIG` sites are latent — 28 of 162 stored sources carry an empty config, but
+the agentic RESOLVE phase fills them in at execution, which is why zero sources
+were ever skipped for missing config. Worth fixing as the same bug; not worth
+claiming as a live failure.
+
 ---
 
 ## 2b. The pattern underneath most of these
@@ -361,8 +410,35 @@ a `reason` field, a declared omission, a count of what was skipped. That is
 cheap to add and it is the difference between an analyst who knows the tool
 found nothing and an analyst who believes there was nothing to find.
 
-Worth a sweep of the remaining surfaces on the same criterion, rather than
-waiting for each to be found by accident.
+### A second pattern: parsing model output by the shape you asked for
+
+Distinct from the above and just as productive to search for deliberately. Seven
+sites, all the same mistake:
+
+> **The prompt specifies a format; the reply decorates it.** A pattern written
+> against the requested shape matches until it silently does not.
+
+`PROBABILITY: 0.78` comes back as `**PROBABILITY:** **0.70**`. `EEI_ASSESSMENT:`
+prefixes every line instead of heading the block. `CONFIG: {…}` arrives bold.
+The section heading gains a number. In each case the parse failed to a default,
+and the default was indistinguishable from a real answer — one of them stored a
+"Likely" assessment as "Roughly Even Chance".
+
+Two lessons worth keeping:
+
+1. **Do not enumerate arrangements.** Each fix that listed the forms it had seen
+   failed on the next one. Treating emphasis characters as a single
+   interchangeable run is the only version that has held.
+2. **A unit test written from the same assumption as the code proves nothing.**
+   These all had passing tests; the tests asserted the requested format. What
+   caught them was reading real output.
+
+Both patterns share a root: the system is built out of components that can fail
+partially and quietly, and the default behaviour on partial failure was to
+return something well-formed. Well-formed is not the same as true.
+
+Worth a sweep of the remaining surfaces on both criteria, rather than waiting
+for each to be found by accident.
 
 ---
 
