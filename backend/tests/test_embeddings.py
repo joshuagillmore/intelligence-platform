@@ -201,6 +201,50 @@ class TestGetEmbeddingProvider:
 
 
 # ---------------------------------------------------------------------------
+# pgvector column width (EMBEDDING_DIMENSIONS)
+# ---------------------------------------------------------------------------
+
+class TestEmbeddingColumnDimension:
+    """The vector columns must be sized from settings, not a hardcoded 1536 —
+    otherwise the 1024-d Cohere and 768-d Ollama providers can't store vectors."""
+
+    def _dims(self, models):
+        return [
+            models.ChunkEmbedding.__table__.c.embedding.type,
+            models.AttackTechniqueEmbedding.__table__.c.embedding.type,
+        ]
+
+    def test_matches_configured_dimensions(self):
+        from intel_platform.config import get_settings
+        from intel_platform.db import models
+
+        expected = get_settings().embedding_dimensions
+        for column_type in self._dims(models):
+            assert getattr(column_type, "dim", expected) == expected
+
+    def test_follows_a_changed_setting(self, monkeypatch):
+        """Re-importing under EMBEDDING_DIMENSIONS=768 (Ollama) must give 768-d
+        columns. Reloaded twice so the rest of the suite sees the original."""
+        import importlib
+
+        from intel_platform.config import get_settings
+        from intel_platform.db import models
+
+        if not hasattr(models.ChunkEmbedding.__table__.c.embedding.type, "dim"):
+            return  # pgvector not installed — Text fallback has no dimension
+
+        monkeypatch.setenv("EMBEDDING_DIMENSIONS", "768")
+        get_settings.cache_clear()
+        try:
+            reloaded = importlib.reload(models)
+            assert [t.dim for t in self._dims(reloaded)] == [768, 768]
+        finally:
+            monkeypatch.undo()
+            get_settings.cache_clear()
+            importlib.reload(models)
+
+
+# ---------------------------------------------------------------------------
 # EmbeddingResult model
 # ---------------------------------------------------------------------------
 
@@ -214,3 +258,25 @@ class TestEmbeddingResult:
     def test_defaults(self):
         r = EmbeddingResult(embeddings=[], model="m")
         assert r.total_tokens == 0
+
+
+class TestTheGuardFollowsTheColumn:
+    """A width guard with its own copy of the number is worse than none.
+
+    The column is sized from EMBEDDING_DIMENSIONS. A guard hardcoded to 1536
+    would reject every query on a deployment that set it to 768 — the column
+    would accept the vector and the guard would not, so semantic search would
+    fail on exactly the local-only setup the setting exists to enable.
+    """
+
+    def test_the_search_guard_and_the_column_are_the_same_number(self):
+        from intel_platform.db import models
+        from intel_platform.services import vector_search
+
+        assert vector_search._EMBEDDING_DIM == models._EMBEDDING_DIM
+
+    def test_both_follow_the_configured_dimension(self):
+        from intel_platform.config import get_settings
+        from intel_platform.services import vector_search
+
+        assert vector_search._EMBEDDING_DIM == get_settings().embedding_dimensions

@@ -27,10 +27,27 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from intel_platform.config import get_settings
+
 try:
     from pgvector.sqlalchemy import Vector
 except ImportError:  # pragma: no cover
     Vector = None  # type: ignore[assignment,misc]
+
+# Width of every pgvector embedding column, from EMBEDDING_DIMENSIONS. It must
+# match the configured embedding provider's output — openai 1536 (default),
+# cohere 1024, ollama/nomic-embed-text 768 — or Postgres rejects the insert.
+# Read once at import because SQLAlchemy needs the width when the class below is
+# defined; changing it takes effect on the next process start.
+#
+# NO MIGRATION: the schema is created by db.engine.init_db() at startup and
+# `create_all` never ALTERs an existing table, so on a database that already has
+# the embedding tables a new value does NOT resize the column — inserts keep
+# failing against the old width. Drop and recreate the embedding tables
+# (`chunk_embeddings`, `attack_technique_embeddings`) to adopt it; their contents
+# have to be re-embedded anyway, since vectors from a different provider are not
+# comparable to the stored ones.
+_EMBEDDING_DIM = get_settings().embedding_dimensions
 
 
 class Base(DeclarativeBase):
@@ -498,7 +515,9 @@ class ChunkEmbedding(Base):
     project_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_text: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding = mapped_column(Vector(1536), nullable=False) if Vector else mapped_column(Text, nullable=False)
+    # Width is EMBEDDING_DIMENSIONS — see _EMBEDDING_DIM above, including why
+    # changing it on an existing database means recreating this table.
+    embedding = mapped_column(Vector(_EMBEDDING_DIM), nullable=False) if Vector else mapped_column(Text, nullable=False)
     embedding_model: Mapped[str] = mapped_column(String(128), nullable=False)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict,
         comment="source_url, chunk_size, etc.")
@@ -515,7 +534,7 @@ class ChunkEmbedding(Base):
 # ATT&CK Technique Embeddings — pgvector index of the global MITRE ATT&CK®
 # technique catalog, for RAG text→technique mapping (Phase 2). Keyed by the
 # canonical technique id (global reference data, not per-project); upserted by
-# POST /attack/embed. Mirrors ChunkEmbedding's Vector(1536) dimension handling.
+# POST /attack/embed. Mirrors ChunkEmbedding's dimension handling (_EMBEDDING_DIM).
 # ---------------------------------------------------------------------------
 
 class AttackTechniqueEmbedding(Base):
@@ -525,7 +544,9 @@ class AttackTechniqueEmbedding(Base):
         comment="Canonical ATT&CK technique id, e.g. T1566 or T1566.001")
     text: Mapped[str] = mapped_column(Text, nullable=False,
         comment="Embedded text: '<name>. <description>'")
-    embedding = mapped_column(Vector(1536), nullable=False) if Vector else mapped_column(Text, nullable=False)
+    # Width is EMBEDDING_DIMENSIONS — see _EMBEDDING_DIM above, including why
+    # changing it on an existing database means recreating this table.
+    embedding = mapped_column(Vector(_EMBEDDING_DIM), nullable=False) if Vector else mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc))
