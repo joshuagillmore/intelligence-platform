@@ -13,12 +13,68 @@ logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
+# Models emphasise the label they are asked to emit: the prompt asks for
+# "PROBABILITY: 0.78" and the reply is "**PROBABILITY:** 0.78". A pattern that
+# cannot cross the emphasis markers silently falls back to the default, so an
+# assessment reading "Likely" was stored at 0.5 — "Roughly Even Chance" — and
+# the structured field the UI shows contradicted the narrative beside it.
+# Emphasis lands anywhere and more than once — "**PROBABILITY:** **0.70**" puts
+# it on both sides of the number. Treat asterisks and whitespace as one
+# interchangeable run rather than trying to enumerate the arrangements.
+_PROBABILITY_LINE = re.compile(
+    r"PROBABILITY[\s*_]*:[\s*_]*(\d?\.\d+|[01](?:\.\d+)?)",
+    re.IGNORECASE,
+)
+
+
+def extract_probability(content: str, fallback: float) -> float:
+    """Read the probability the assessment states, whatever markup surrounds it.
+
+    Falls back only when the reply genuinely carries no probability — a value
+    outside 0..1 is treated as unparseable rather than clamped, since a model
+    writing "PROBABILITY: 78" meant percent and clamping would silently invent
+    a different judgement.
+    """
+    match = _PROBABILITY_LINE.search(content or "")
+    if not match:
+        return fallback
+    try:
+        value = float(match.group(1))
+    except ValueError:
+        return fallback
+    return value if 0.0 < value <= 1.0 else fallback
+
+
 class CreateAssessmentRequest(BaseModel):
+    """An analyst's own assessment. The judgment and probability are theirs."""
+
     entity_id: str
     project_id: str
     judgment: str
     probability: float
     analyst: str = "system"
+    methodology: str = ""
+
+
+class GenerateAssessmentRequest(BaseModel):
+    """Ask the model to produce an assessment from the entity's graph context.
+
+    Separate from `CreateAssessmentRequest`, which this endpoint used to reuse:
+    that model requires `judgment` and `probability`, which are precisely what
+    this endpoint exists to produce, so every caller had to invent the answer in
+    order to ask the question. The handler already treated both as optional —
+    `req.judgment if req.judgment else 'None provided'`, and `req.probability`
+    only as a fallback when the model emits nothing parseable — so the two had
+    simply drifted apart.
+    """
+
+    entity_id: str
+    project_id: str
+    # Optional steer for the model, not the answer.
+    judgment: str = ""
+    # Used only if the generated assessment carries no parseable probability.
+    probability: float = 0.5
+    analyst: str = "llm"
     methodology: str = ""
 
 
@@ -52,7 +108,7 @@ class MultiAssessmentRequest(BaseModel):
 
 
 @router.post("/assess/generate")
-async def generate_assessment(req: CreateAssessmentRequest, store: GraphStore = Depends(get_graph_store)):
+async def generate_assessment(req: GenerateAssessmentRequest, store: GraphStore = Depends(get_graph_store)):
     """Use LLM to generate an assessment for an entity based on graph context."""
     from intel_platform.services.graph_rag import GraphRAGPipeline
 
@@ -105,9 +161,7 @@ CONFIDENCE_LABEL: [Almost No Chance | Very Unlikely | Unlikely | Roughly Even Ch
             max_tokens=4096,
         )
 
-        # Extract probability from LLM response
-        prob_match = re.search(r'PROBABILITY:\s*(0\.\d+)', result.content)
-        probability = float(prob_match.group(1)) if prob_match else req.probability
+        probability = extract_probability(result.content, req.probability)
 
         # Save the assessment
         svc = AssessmentService(store)
