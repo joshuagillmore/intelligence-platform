@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from intel_platform.services.llm_output import labelled_probability
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.db.engine import get_db
 from intel_platform.graph.store import GraphStore
@@ -299,9 +299,12 @@ async def generate_report(
         "evidence": _evidence_from_retrieval(retrieved),
     }
     if req.skill_name in ("threat_assessment", "report_writing"):
-        prob_match = re.search(r'PROBABILITY:\s*([01]\.\d+)', result.content)
-        if prob_match:
-            response["probability"] = float(prob_match.group(1))
+        # Emphasis-tolerant: the model replies "**PROBABILITY:** **0.70**", which
+        # a pattern anchored on the requested shape cannot cross. The sentinel
+        # keeps "not stated" distinct from a real value.
+        stated = labelled_probability(result.content, -1.0)
+        if stated > 0:
+            response["probability"] = stated
     return response
 
 

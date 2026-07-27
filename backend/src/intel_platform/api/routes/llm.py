@@ -1,7 +1,7 @@
-import re
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from intel_platform.services.llm_output import labelled_probability
 from intel_platform.api.deps import verify_api_key
 
 # Provider selection lives in intel_platform.llm.providers (single source of
@@ -69,9 +69,12 @@ async def llm_query(req: LLMQueryRequest):
     }
     # Extract probability for assessment-related skills
     if req.skill_name in ("threat_assessment", "report_writing"):
-        prob_match = re.search(r'PROBABILITY:\s*(0\.\d+)', result.content)
-        if prob_match:
-            response["probability"] = float(prob_match.group(1))
+        # Emphasis-tolerant: the model replies "**PROBABILITY:** **0.70**", which
+        # a pattern anchored on the requested shape cannot cross. The sentinel
+        # keeps "not stated" distinct from a real value.
+        stated = labelled_probability(result.content, -1.0)
+        if stated > 0:
+            response["probability"] = stated
     return response
 
 

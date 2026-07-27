@@ -1,5 +1,12 @@
 from __future__ import annotations
+
 import re
+
+from intel_platform.services.llm_output import labelled_json
+
+# Recognises a CONFIG line whose JSON does not parse, so the line is still
+# consumed rather than being read as the next source in the plan.
+_CONFIG_LINE = re.compile(r"^[\s*_`]*CONFIG[\s*_`]*:", re.IGNORECASE)
 
 
 def _detect_legacy_source_type(desc: str) -> str:
@@ -117,7 +124,6 @@ def parse_plan_sources(plan_text: str) -> list[dict]:
 
     Returns list of {source_type, name, config}, max 7 items.
     """
-    import json as _json
 
     sources = []
     valid_types = {"file_upload", "web_scrape", "api_feed", "database", "rss_feed"}
@@ -140,12 +146,14 @@ def parse_plan_sources(plan_text: str) -> list[dict]:
                 config = {}
                 if i < len(lines):
                     config_line = lines[i].strip()
-                    config_m = re.match(r'^CONFIG:\s*(\{.*\})\s*$', config_line)
-                    if config_m:
-                        try:
-                            config = _json.loads(config_m.group(1))
-                        except _json.JSONDecodeError:
-                            pass
+                    # Emphasis-tolerant: "**CONFIG:** {...}" is as common as the
+                    # requested form, and a miss here leaves the source with an
+                    # empty config. The agentic RESOLVE phase fills those in at
+                    # execution, so this is latent rather than breaking today —
+                    # but 28 of 162 stored sources carry an empty config.
+                    parsed_config = labelled_json(config_line, "CONFIG")
+                    if parsed_config or _CONFIG_LINE.match(config_line):
+                        config = parsed_config
                         i += 1
                 sources.append({"source_type": stype, "name": desc[:256], "config": config})
                 continue
@@ -200,12 +208,11 @@ def parse_plan_sources(plan_text: str) -> list[dict]:
             # Check next line for CONFIG
             if i < len(lines):
                 config_line = lines[i].strip()
-                config_m2 = re.match(r'^CONFIG:\s*(\{.*\})\s*$', config_line)
-                if config_m2:
-                    try:
-                        config = _json.loads(config_m2.group(1))
-                    except _json.JSONDecodeError:
-                        pass
+                parsed_config = labelled_json(config_line, "CONFIG")
+                if parsed_config or _CONFIG_LINE.match(config_line):
+                    # An unparseable CONFIG line is still a CONFIG line: consume
+                    # it so it is not mistaken for the next source.
+                    config = parsed_config or config
                     i += 1
 
             sources.append({"source_type": stype, "name": desc[:256], "config": config})
