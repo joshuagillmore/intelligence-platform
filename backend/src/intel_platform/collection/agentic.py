@@ -590,6 +590,8 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
     total_entities = 0
     total_rels = 0
     total_chars = 0
+    total_chunks_embedded = 0
+    embed_failures = 0
 
     for record in result.records:
         content = record.get("content", "")
@@ -672,6 +674,29 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
             total_entities += build_result.get("entities_created", 0)
             total_rels += build_result.get("relationships_created", 0)
 
+        # Embed the chunks for semantic search. This step existed only on the
+        # plan_executor path, which is not the one collections actually run —
+        # so everything acquired agentically was invisible to semantic search,
+        # to vector-grounded reports and to the vector arm of hybrid retrieval.
+        # Measured before this: 21 chunk embeddings in the whole database after
+        # a fifteen-run campaign, all of them from manual uploads.
+        #
+        # Non-fatal, but never silent: an embedding provider that is down or
+        # rate-limited must not look like a project with nothing to find.
+        try:
+            from intel_platform.services.vector_search import embed_and_store_chunks
+
+            stored = await embed_and_store_chunks(chunks, doc.id, plan.project_id, db)
+            total_chunks_embedded += stored
+            if stored == 0 and chunks:
+                embed_failures += 1
+        except Exception:
+            embed_failures += 1
+            logger.warning(
+                "Chunk embedding failed for %s — document is in the graph but will "
+                "not be findable by semantic search", url or title, exc_info=True,
+            )
+
     # Log acquisition
     acq_log = AcquisitionLog(
         source_id=source.id,
@@ -692,6 +717,8 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
         "total_chars": total_chars,
         "entities_created": total_entities,
         "relationships_created": total_rels,
+        "chunks_embedded": total_chunks_embedded,
+        "embed_failures": embed_failures,
         "records": result.records,  # For evaluate phase
     }
 
@@ -836,10 +863,21 @@ async def run_agentic_loop(
                 rel_count = acquire_result.get("relationships_created", 0)
                 rec_count = acquire_result.get("record_count", 0)
 
+                # Report embeddings in the trail: a document that made it into
+                # the graph but not into the index is findable by name and
+                # invisible to semantic search, and nothing else would say so.
+                embedded = acquire_result.get("chunks_embedded", 0)
+                embed_failed = acquire_result.get("embed_failures", 0)
+                detail = f"Acquired {rec_count} docs, {ent_count} entities, {rel_count} relationships"
+                if embedded:
+                    detail += f", {embedded} chunks indexed"
+                if embed_failed:
+                    detail += f" — {embed_failed} doc(s) NOT indexed for semantic search"
+
                 db.add(CollectionActivity(
                     plan_id=plan.id, source_id=source.id,
                     event="source_acquired",
-                    message=f"Acquired {rec_count} docs, {ent_count} entities, {rel_count} relationships",
+                    message=detail,
                 ))
                 await db.commit()
 
