@@ -242,6 +242,9 @@ function NetworkPageInner() {
   const [histogramBucket, setHistogramBucket] = useState<'day' | 'month' | 'year'>('month');
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
   const [histogramLoading, setHistogramLoading] = useState(false);
+  // True when the backend says the selected project id refers to nothing at all
+  // — distinct from a project that exists and is empty.
+  const [projectMissing, setProjectMissing] = useState(false);
   // Selected edge for detail panel
   const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
   // Undo/redo history stack
@@ -262,6 +265,11 @@ function NetworkPageInner() {
       graphNodesRef.current = nodes;
       setGraphNodes(nodes);
       setGraphEdges(res.data.edges || []);
+      // The selected project is remembered in localStorage, so a project that
+      // has since been deleted stays selected and every view reports "no data".
+      // `project_exists === false` is the backend saying the id refers to
+      // nothing at all, which is a different message entirely.
+      setProjectMissing(res.data.project_exists === false);
     } catch (e) {
       console.error('Failed to load graph', e);
       setGraphError(getErrorMessage(e));
@@ -1936,6 +1944,16 @@ function NetworkPageInner() {
                       communityMap={communityMap}
                       egoHighlightDepth={egoHighlightDepth}
                     />
+                  ) : projectMissing ? (
+                    <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-6">
+                      <p className="text-gray-300">
+                        No project found with the ID <span className="font-mono text-gray-400">{activeProject?.id}</span>.
+                      </p>
+                      <p className="text-xs text-gray-500 max-w-md">
+                        It may have been deleted, or this browser is remembering a project from a
+                        different environment. Pick another project to continue.
+                      </p>
+                    </div>
                   ) : (
                     <div className="flex items-center justify-center h-full text-gray-500">
                       <p>No graph data. Ingest documents to populate the knowledge graph.</p>

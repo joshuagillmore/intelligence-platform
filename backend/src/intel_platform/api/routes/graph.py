@@ -111,7 +111,14 @@ def get_centrality(project_id: str, store: GraphStore = Depends(get_graph_store)
 @router.get("/graph/statistics")
 @cached(ttl=30)
 def get_statistics(project_id: str, store: GraphStore = Depends(get_graph_store)):
-    return compute_all_statistics(store, project_id)
+    # `project_exists` is added only where the response is already an object.
+    # /communities and /graph/centrality return bare lists, and wrapping those
+    # to carry the flag would be the breaking change this approach exists to
+    # avoid — callers can read it from /graph or /graph/statistics instead.
+    return {
+        **compute_all_statistics(store, project_id),
+        "project_exists": project_exists(store, project_id),
+    }
 
 
 @router.get("/graph/structural-holes")
