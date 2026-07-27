@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
@@ -7,6 +9,8 @@ from intel_platform.models.entities import Document
 from intel_platform.services.ingestion import ingest_text, process_file
 from intel_platform.services.extraction import extract_entities_nlp
 from intel_platform.services.graph_builder import build_graph_from_extractions
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -80,17 +84,22 @@ async def ingest_document(
 
     # Embed chunks for vector search (non-fatal if it fails)
     embeddings_stored = 0
+    indexed = True
     try:
         from intel_platform.db.engine import get_session_factory
         from intel_platform.services.vector_search import embed_and_store_chunks
         async with get_session_factory()() as db_session:
             embeddings_stored = await embed_and_store_chunks(chunks, doc.id, project_id, db_session)
             await db_session.commit()
+        indexed = bool(embeddings_stored) or not chunks
     except Exception:
-        import logging
-        logging.getLogger(__name__).warning("Embedding failed for %s — document still ingested", doc.id, exc_info=True)
+        indexed = False
+        logger.warning(
+            "Embedding failed for %s — document is in the graph but will not be "
+            "findable by semantic search", doc.id, exc_info=True,
+        )
 
-    return {"document_id": doc.id, "document_name": source_name, "chunks": len(chunks), "embeddings_stored": embeddings_stored, **result}
+    return {"document_id": doc.id, "document_name": source_name, "chunks": len(chunks), "embeddings_stored": embeddings_stored, "indexed_for_search": indexed, **result}
 
 
 @router.post("/ingest/batch")
@@ -147,22 +156,32 @@ async def ingest_batch(
         total_entities += build_result["entities_created"]
         total_relationships += build_result["relationships_created"]
 
-        # Embed chunks for vector search (non-fatal)
+        # Embed chunks for vector search (non-fatal, but never silent — a
+        # document in the graph and not the index is findable by name and
+        # invisible to meaning, and `embeddings_stored: 0` alone cannot be told
+        # apart from a document that had nothing to embed).
         embeddings_stored = 0
+        indexed = True
         try:
             from intel_platform.db.engine import get_session_factory
             from intel_platform.services.vector_search import embed_and_store_chunks
             async with get_session_factory()() as db_session:
                 embeddings_stored = await embed_and_store_chunks(chunks, doc.id, project_id, db_session)
                 await db_session.commit()
+            indexed = bool(embeddings_stored) or not chunks
         except Exception:
-            pass
+            indexed = False
+            logger.warning(
+                "Embedding failed for %s — document is in the graph but will not be "
+                "findable by semantic search", source_name, exc_info=True,
+            )
 
         results.append({
             "document_id": doc.id,
             "document_name": source_name,
             "chunks": len(chunks),
             "embeddings_stored": embeddings_stored,
+            "indexed_for_search": indexed,
             **build_result,
         })
 

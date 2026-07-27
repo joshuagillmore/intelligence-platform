@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, known_project, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.text_utils import normalize_datetime
 
@@ -24,7 +24,10 @@ _SYSTEM_TYPES = frozenset({"Document", "Topic", "Report", "Collection"})
 
 
 @router.get("/timeline")
-def get_timeline(project_id: str, store: GraphStore = Depends(get_graph_store)):
+def get_timeline(
+    project_id: str = Depends(known_project),
+    store: GraphStore = Depends(get_graph_store),
+):
     """Get a timeline of entities and events, ordered by real event date when known.
 
     Entities with a populated ``event_datetime`` (extraction resolved a real-world
@@ -70,7 +73,7 @@ def _bucket_key(dt: datetime, bucket: str) -> str:
 
 @router.get("/timeline/histogram")
 def get_timeline_histogram(
-    project_id: str,
+    project_id: str = Depends(known_project),
     bucket: str = Query("month", pattern="^(day|month|year)$"),
     limit: int = Query(2000, ge=1, le=10000),
     store: GraphStore = Depends(get_graph_store),
