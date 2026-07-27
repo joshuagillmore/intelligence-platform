@@ -41,6 +41,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
+# A plan silent for longer than this reports "stalled" rather than "running".
+# Extraction now heartbeats every few chunks, so this is several times the
+# expected gap — long enough not to cry wolf on a slow local model, short enough
+# that a dead run surfaces within one analyst's attention span.
+_STALL_AFTER_SECONDS = 600
+
 
 def _split_refinement(content: str, fallback: str) -> tuple[str, str]:
     """Split an LLM refinement into (refined PIR, analysis).
@@ -696,7 +702,13 @@ async def get_execution_status(plan_id: str, db: AsyncSession = Depends(get_db))
     if terminal:
         state = "completed" if terminal.event == "plan_completed" else "failed"
     else:
-        state = "running"
+        # "running" was derived purely from the absence of a terminal event, so
+        # a process killed mid-collection reported running forever — confirmed
+        # by restarting the backend and watching a dead plan keep claiming it.
+        # Now that extraction emits a heartbeat, silence past the threshold is
+        # itself information: the work is not merely slow.
+        age = (datetime.now(timezone.utc) - latest.created_at).total_seconds()
+        state = "stalled" if age > _STALL_AFTER_SECONDS else "running"
     return {
         "plan_id": plan_id,
         "status": state,
@@ -705,6 +717,11 @@ async def get_execution_status(plan_id: str, db: AsyncSession = Depends(get_db))
         "sources_succeeded": sum(1 for e in events if e.event == "source_succeeded"),
         "sources_failed": sum(1 for e in events if e.event == "source_failed"),
         "updated_at": latest.created_at.isoformat(),
+        # How long the plan has been silent, so a caller can judge for itself
+        # rather than inferring liveness from the status string alone.
+        "seconds_since_last_event": int(
+            (datetime.now(timezone.utc) - latest.created_at).total_seconds()
+        ),
     }
 
 

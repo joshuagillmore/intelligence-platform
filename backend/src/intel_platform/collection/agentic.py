@@ -30,6 +30,11 @@ logger = logging.getLogger(__name__)
 # Max follow-up rounds per source in the evaluate phase
 MAX_FOLLOWUP_ROUNDS = 2
 
+# Chunks between extraction heartbeats. A local model takes tens of seconds per
+# chunk, so every fifth is roughly a progress line every few minutes — enough to
+# tell a slow run from a dead one without a database row per chunk.
+_EXTRACT_HEARTBEAT_CHUNKS = 5
+
 # ---------------------------------------------------------------------------
 # LLM Prompts
 # ---------------------------------------------------------------------------
@@ -656,8 +661,22 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
         chunk_overlap = getattr(settings, 'chunk_overlap', 200)
         chunks = ingest_text(content, chunk_size, chunk_overlap)
 
+        # Extraction is the long pole — minutes per document against a local
+        # model — and it emitted nothing, so the last event stayed `url_fetched`
+        # while work continued. An analyst watching the trace could not tell
+        # "extracting" from "dead", and the plan reported `running` either way.
+        # It has cost two measurements in testing alone.
+        doc_label = (title or url or source.name)[:120]
+        db.add(CollectionActivity(
+            plan_id=plan.id, source_id=source.id,
+            event="doc_extracting",
+            message=f"{doc_label} · {len(chunks)} chunks",
+        ))
+        await db.commit()
+
         all_entities = []
         all_rels = []
+        chunks_done = 0
         for chunk in chunks:
             try:
                 ents, rels = await _extract_entities(chunk["content"], doc.id, extraction_mode)
@@ -665,6 +684,29 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
                 all_rels.extend(rels)
             except Exception as e:
                 logger.debug("Extraction failed for chunk: %s", e)
+            chunks_done += 1
+            # A heartbeat often enough that a stalled run is distinguishable
+            # from a slow one, rare enough not to write a row per chunk.
+            if chunks_done % _EXTRACT_HEARTBEAT_CHUNKS == 0 and chunks_done < len(chunks):
+                db.add(CollectionActivity(
+                    plan_id=plan.id, source_id=source.id,
+                    event="doc_extracting",
+                    message=(
+                        f"{doc_label} · {chunks_done}/{len(chunks)} chunks · "
+                        f"{len(all_entities)} entities so far"
+                    ),
+                ))
+                await db.commit()
+
+        db.add(CollectionActivity(
+            plan_id=plan.id, source_id=source.id,
+            event="doc_extracted",
+            message=(
+                f"{doc_label} · {len(all_entities)} entities, "
+                f"{len(all_rels)} relationships from {len(chunks)} chunks"
+            ),
+        ))
+        await db.commit()
 
         if all_entities or all_rels:
             build_result = build_graph_from_extractions(
