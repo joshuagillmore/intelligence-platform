@@ -382,3 +382,48 @@ class TestNumberedSectionHeading:
     def test_parenthesised_abbreviation_is_not_an_eei(self):
         """"(EEIs)" trailing the heading is a label, not a criterion."""
         assert not any("(EEIs)" in g for g in extract_eeis(self.LIVE))
+
+
+class TestCriterionAnnotations:
+    """A note *about* a criterion is not itself a criterion.
+
+    Observed live on a maritime run: the model wrote each EEI followed by a line
+    explaining it, and the explanations were captured as criteria. Collection
+    cannot satisfy "This element focuses on identifying the exact vessel types
+    involved", so the run was scored against three real criteria and three
+    impossible ones and returned 0/6.
+    """
+
+    LIVE = (
+        "### Essential Elements of Information\n"
+        "1. Identify specific types of Chinese maritime militia vessels operating nearby.\n"
+        "2. This element focuses on identifying the exact vessel types involved.\n"
+        "3. Identify specific types of Chinese coast guard vessels operating nearby.\n"
+        "4. This element complements EEI 1 by focusing specifically on coast guard vessels.\n"
+        "5. Document and categorize resupply-interdiction tactics used.\n"
+        "6. This element addresses the specific tactics employed.\n"
+    )
+
+    def test_annotations_are_dropped(self):
+        got = extract_eeis(self.LIVE)
+        assert len(got) == 3, got
+        assert all(not g.lower().startswith("this element") for g in got)
+
+    def test_the_real_criteria_survive_intact(self):
+        got = extract_eeis(self.LIVE)
+        assert got[0].startswith("Identify specific types of Chinese maritime militia")
+        assert got[2].startswith("Document and categorize resupply-interdiction")
+
+    def test_other_annotation_phrasings(self):
+        for line in ("This EEI covers the timeframe of interest.",
+                     "This criterion ensures measurability.",
+                     "This requirement is bounded to the past 12 months.",
+                     "This sub-question narrows the geography."):
+            assert extract_eeis(f"EEIs:\n1. {line}\n") == [], line
+
+    def test_a_criterion_mentioning_the_phrase_mid_sentence_survives(self):
+        """Anchored at the start, so this is a real information need."""
+        analysis = "EEIs:\n1. Which vessels does this element of the fleet comprise?\n"
+        assert extract_eeis(analysis) == [
+            "Which vessels does this element of the fleet comprise?"
+        ]

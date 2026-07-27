@@ -325,6 +325,17 @@ _EEI_META = re.compile(
     re.IGNORECASE,
 )
 
+# Models annotate their own list: every real EEI is followed by a line
+# explaining it. "This element focuses on identifying the exact vessel types
+# involved" is a note about criterion 1, not criterion 2 — but captured as one
+# it is unsatisfiable, and a maritime run was scored against three real criteria
+# and three impossible ones. Matched at the start, so an EEI that legitimately
+# contains the phrase mid-sentence survives.
+_EEI_ANNOTATION = re.compile(
+    r"^\s*this\s+(?:element|eei|criterion|requirement|question|sub-?question)\b",
+    re.IGNORECASE,
+)
+
 
 def _clean_eei(raw: str) -> str:
     """Normalise one captured line into a usable collection criterion.
@@ -340,8 +351,9 @@ def _clean_eei(raw: str) -> str:
     # heading introducing the content below it.
     if not body or body.endswith(":"):
         return ""
-    # Commentary about the refinement is not something collection can answer.
-    if _EEI_META.search(body):
+    # Commentary about the refinement, or about a criterion, is not something
+    # collection can answer — and left in it can never be satisfied.
+    if _EEI_META.search(body) or _EEI_ANNOTATION.match(body):
         return ""
     if len(body) > _EEI_MAX_CHARS:
         body = body[:_EEI_MAX_CHARS].rstrip() + "…"
