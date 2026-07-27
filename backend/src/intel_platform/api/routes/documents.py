@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, project_exists, verify_api_key
 from intel_platform.graph.store import GraphStore
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
@@ -33,7 +33,13 @@ def list_documents(project_id: str, store: GraphStore = Depends(get_graph_store)
                 "created_at": str(props.get("created_at", "")),
                 "summary_json": props.get("summary_json", ""),
             })
-    return {"documents": docs, "count": len(docs)}
+    # Distinguishes "this project holds no documents" from "this is not a
+    # project" — both otherwise return an empty list and a zero.
+    return {
+        "documents": docs,
+        "count": len(docs),
+        "project_exists": project_exists(store, project_id),
+    }
 
 
 @router.get("/documents/{doc_id}")

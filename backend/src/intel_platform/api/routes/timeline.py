@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from intel_platform.api.deps import get_graph_store, known_project, verify_api_key
+from intel_platform.api.deps import get_graph_store, project_exists, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.text_utils import normalize_datetime
 
@@ -24,10 +24,7 @@ _SYSTEM_TYPES = frozenset({"Document", "Topic", "Report", "Collection"})
 
 
 @router.get("/timeline")
-def get_timeline(
-    project_id: str = Depends(known_project),
-    store: GraphStore = Depends(get_graph_store),
-):
+def get_timeline(project_id: str, store: GraphStore = Depends(get_graph_store)):
     """Get a timeline of entities and events, ordered by real event date when known.
 
     Entities with a populated ``event_datetime`` (extraction resolved a real-world
@@ -60,7 +57,13 @@ def get_timeline(
     # Sort by timestamp
     timeline_events.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
 
-    return {"events": timeline_events, "count": len(timeline_events)}
+    return {
+        "events": timeline_events,
+        "count": len(timeline_events),
+        # Lets a caller tell "this project has nothing" from "this project is
+        # not a project" without changing the response shape.
+        "project_exists": project_exists(store, project_id),
+    }
 
 
 def _bucket_key(dt: datetime, bucket: str) -> str:
@@ -73,7 +76,7 @@ def _bucket_key(dt: datetime, bucket: str) -> str:
 
 @router.get("/timeline/histogram")
 def get_timeline_histogram(
-    project_id: str = Depends(known_project),
+    project_id: str,
     bucket: str = Query("month", pattern="^(day|month|year)$"),
     limit: int = Query(2000, ge=1, le=10000),
     store: GraphStore = Depends(get_graph_store),
@@ -131,4 +134,5 @@ def get_timeline_histogram(
         "undated": undated,
         "earliest": earliest.isoformat() if earliest else None,
         "latest": latest.isoformat() if latest else None,
+        "project_exists": project_exists(store, project_id),
     }

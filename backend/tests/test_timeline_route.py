@@ -47,13 +47,28 @@ def test_timeline_shape():
         _clear()
 
 
-def test_unknown_project_is_404_not_an_empty_timeline():
-    """An id with nothing under it must not read as "the collection found nothing"."""
+def test_unknown_project_is_flagged_not_silently_empty():
+    """An id with nothing under it must not read as "the collection found nothing".
+
+    Still 200 with an empty list — that contract is deliberate — but the caller
+    can now tell an unknown project from an empty one.
+    """
     _override()
     try:
         resp = client.get("/api/timeline", params={"project_id": "never-existed"}, headers=headers)
-        assert resp.status_code == 404
-        assert "never-existed" in resp.json()["detail"]
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["count"] == 0
+        assert body["project_exists"] is False
+    finally:
+        _clear()
+
+
+def test_real_project_is_flagged_as_existing():
+    _override()
+    try:
+        body = client.get("/api/timeline", params={"project_id": "real"}, headers=headers).json()
+        assert body["project_exists"] is True
     finally:
         _clear()
 

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from intel_platform.api.cache import cached
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, project_exists, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.enrichment import (
     build_networkx_from_data,
@@ -89,6 +89,7 @@ def get_full_graph(project_id: str, limit: int = 500, min_centrality: float = 0,
             })
 
     return {
+        "project_exists": project_exists(store, project_id),
         "nodes": enriched_nodes,
         "edges": enriched_edges,
         "node_count": len(enriched_nodes),

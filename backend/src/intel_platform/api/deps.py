@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, Query
+from fastapi import Depends
 from neo4j import Driver, GraphDatabase
 
 from intel_platform.config import settings
@@ -24,30 +24,25 @@ def get_graph_store(driver: Driver = Depends(get_neo4j_driver)) -> GraphStore:
     return GraphStore(driver)
 
 
-def known_project(
-    project_id: str = Query(...),
-    store: GraphStore = Depends(get_graph_store),
-) -> str:
-    """Resolve a `project_id` query parameter, 404-ing when it is not a project.
+def project_exists(store: GraphStore, project_id: str) -> bool:
+    """Whether a `project_id` refers to anything at all.
 
     Every project-scoped read returns a well-formed empty result for an id that
     was never created — `{"events": [], "count": 0}`, `{"nodes": 0, "edges": 0}`
     — which is indistinguishable from a project that exists and holds nothing.
     A stale deep link or a deleted project therefore reads to the analyst as
     "the collection produced nothing", which is the most misleading form that
-    answer can take.
+    answer can take. Endpoints report this alongside the (still empty) payload
+    so a caller can tell the two apart without the response shape changing.
 
-    Accepts an id that holds data even without a `Project` node: `/api/ingest`
+    An id holding data counts even without a `Project` node: `/api/ingest`
     creates entities under any `project_id` without requiring the project to be
-    created first, and that ingest-first flow is a real one. The 404 is
-    therefore reserved for an id under which nothing exists at all — which is
-    precisely the case that is meaningless rather than merely empty.
+    created first, and that ingest-first flow is real — there are such ids in
+    this database today.
     """
     if store.get_project(project_id):
-        return project_id
-    if store.search_entities(project_id=project_id, limit=1):
-        return project_id
-    raise HTTPException(404, f"No project or data found for project_id: {project_id}")
+        return True
+    return bool(store.search_entities(project_id=project_id, limit=1))
 
 
 # Keep verify_api_key as alias for backwards compatibility
