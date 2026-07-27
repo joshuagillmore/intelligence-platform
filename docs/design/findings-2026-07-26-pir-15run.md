@@ -239,12 +239,130 @@ parsed from the source text.
 entities. A build that discards a third of its edges previously looked identical
 to one that never produced them, which is precisely how this hid.
 
-### 2.8 PARTIAL progress was stored as OPEN
+### 2.8 Nothing the platform collected was ever indexed
+
+**Severity: the highest of the campaign.** Semantic search returned no results
+for every project, and reported it as "no results". The query path was fine.
+**The agentic collection loop never embedded anything.**
+
+`embed_and_store_chunks` was wired into `ingest.py` (manual upload) and
+`plan_executor.py`. But `run_agentic_loop` is the path every collection
+actually runs, and it went `ingest_text → extract → build_graph` with no
+indexing step at all. Measured after fifteen runs:
+
+| | |
+|---|--:|
+| chunk embeddings in the entire database | **21** |
+| …of those, from agentic collection | **0** |
+
+Everything collected was therefore invisible to semantic search, to the
+`use_vector` grounding in report generation, and to the vector arm of hybrid
+retrieval — half of a hybrid retriever, silently contributing nothing to every
+answer it produced.
+
+What it cost, measured on one question against one graph after the fix:
+
+| | retrieval | answer |
+|---|---|---|
+| `use_vector=true` | hybrid, 20 vector hits | *"Cisco Secure Email Gateway Appliances… CVE-2025-20393… exploited by the China-linked APT group UAT-9686"* |
+| `use_vector=false` | graph only | *"Edge devices/VPNs… exploited by An autonomous AI agent"* |
+
+The graph-only answer is vaguer and misattributes the actor. Before the fix,
+`use_vector=true` returned exactly the second answer, because there was nothing
+to retrieve.
+
+Indexing is now part of the agentic path. Kept non-fatal — an embedding-provider
+outage should not fail an otherwise-good collection — but no longer silent: the
+`source_acquired` event reports "N doc(s) NOT indexed for semantic search". A
+document in the graph but not the index is findable by name and invisible to
+meaning, and nothing else in the system would have said so.
+
+### 2.9 STIX export dropped a third of the graph without saying so
+
+The bundle held 184 objects against a 512-entity graph, and the gap was not
+"STIX cannot represent this": `URL` (175 entities), `EmailAddress` and
+`Software` all have exact STIX 2.1 equivalents and were simply missing from the
+map. To a consumer that reads as an incident with no indicators.
+
+Adding the SCOs also recovered relationships — an edge only emits when both
+endpoints resolved, so edges hanging off a URL were being dropped for having an
+unmapped end. Same graph: **184 objects + 43 relationships → 389 + 90**.
+
+What genuinely has no equivalent is now an explicit list rather than a
+fall-through, reported in `x_sentinel_omitted_entity_types` (a spec-legal custom
+property, so the bundle stays valid).
+
+### 2.10 Login pages were extracted as intelligence
+
+A crawl fetched `iiss.org/login/?redirectUrl=…` — 200 OK, a body of site chrome
+— and the project graph gained six "events" that were the institute's
+conference calendar: *IISS Prague Defence Summit 2026*, *IISS Manama Dialogue
+2026*. Those entities look entirely real to retrieval, to products, and to the
+analyst. Now filtered on URL path and on the phrases such pages use, checked
+against the document head so an article *about* paywalls survives.
+
+### 2.11 One page could stall a whole collection
+
+A crawl returned a **139,391-word** page. The Document stored the first 50k
+chars but extraction chunked the *whole* thing — roughly 660 sequential LLM
+calls — and the run sat at one entity for fifteen minutes while
+`execution-status` reported "running" (§3.1).
+
+Worse than slow: an entity extracted beyond char 50,000 referenced a document
+that no longer contained its evidence, so its provenance was unrecoverable.
+`max_document_chars` now bounds storage and extraction together. Same PIR:
+**14.7 min → 4.4 min**.
+
+### 2.12 Entity resolution merged across incompatible types
+
+Found while verifying the date work, and worse than the thing being verified.
+"MV Northern Star strike" (Event) scores ~0.95 Jaro-Winkler against "MV Northern
+Star" (Ship) on the shared prefix, so the event was merged into the vessel and
+its date destroyed — **two of three dated events lost on a single passage**,
+silently. Any event named after the thing it happened to was being absorbed by
+it. Fuzzy matching now requires a compatible category; "Commander"/"Person"
+still merge, "Event"/"Ship" cannot.
+
+### 2.13 PARTIAL progress was stored as OPEN
 
 Only `SATISFIED` counted toward progress, so a PIR with two PARTIAL elements
 was persisted as `OPEN`. That erases the distinction between "we have something
 on this element" and "we have nothing" — which is exactly what decides whether
 the next cycle re-collects or refines the requirement.
+
+---
+
+---
+
+## 2b. The pattern underneath most of these
+
+Six of the defects above are the same shape, and it is worth naming because it
+predicts where the next one will be:
+
+> **A broken precondition produces a plausible, success-shaped output.**
+
+| Symptom | Actually |
+|---|---|
+| `{"mapped": 0, "skipped": 19}` | the technique catalogue was never embedded |
+| `{"embedded": 0}`, HTTP 200 | the provider rate-limited the request |
+| `{"results": [], "total": 0}` | nothing had ever been indexed |
+| STIX bundle with 184 objects | 175 URLs had no mapping |
+| plan status `running` | the process had been dead for 20 minutes |
+| timeline with 380 events | all of them stamped at ingestion time |
+
+Every one returns HTTP 200. Every one is indistinguishable from the legitimate
+empty case — no matches found, nothing to do, a quiet period. None would fail a
+smoke test that asserts a 2xx, which is exactly why the campaign found them and
+the test suite did not.
+
+**The rule this suggests:** an endpoint that can return "nothing" must be able
+to say *which* nothing. Where a fix was applied above, it took the same form —
+a `reason` field, a declared omission, a count of what was skipped. That is
+cheap to add and it is the difference between an analyst who knows the tool
+found nothing and an analyst who believes there was nothing to find.
+
+Worth a sweep of the remaining surfaces on the same criterion, rather than
+waiting for each to be found by accident.
 
 ---
 
@@ -324,7 +442,7 @@ report "not answerable from the sources planned" separately from "not collected"
 An element no available connector can satisfy is a *collection gap*, not an
 analytic failure, and conflating them makes the system look worse than it is.
 
-### 3.4 Off-topic sources succeed, and nothing notices
+### 3.4 Off-topic sources succeed, and nothing notices — PARTLY FIXED
 
 The failure taxonomy above counts sources that error. A quieter problem is
 sources that fetch cleanly and are simply about something else. The edge-device
@@ -342,7 +460,7 @@ pollutes the graph that later retrieval and products draw on.
 this is the same call, moved earlier and used as a gate), and record rejected
 documents as `source_irrelevant` so the trail shows why the budget was spent.
 
-### 3.5 Entity hygiene, again and at scale
+### 3.5 Entity hygiene, again and at scale — PARTLY FIXED
 
 Confirmed across every run, not just cyber: `URL` and `Domain` nodes dominate
 crawled graphs (69 of 168 entities on run 2). §2.3 works around this for the
