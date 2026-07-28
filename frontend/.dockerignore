@@ -1,0 +1,19 @@
+# Build context for frontend/Dockerfile (context: ./frontend).
+# The Dockerfile does `COPY . .`, so everything not excluded here is baked into
+# the build stage. node_modules is reinstalled by `npm ci` from package-lock.json.
+
+.env
+.env.*
+!.env.example
+
+node_modules
+.next
+out
+
+playwright-report
+test-results
+coverage
+tests/e2e/.auth
+
+.git
+.gitignore

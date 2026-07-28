@@ -1,0 +1,17 @@
+# Build context for backend/Dockerfile (context: ./backend).
+# The Dockerfile copies pyproject.toml, uv.lock and src/ — keep those.
+
+.env
+.env.*
+!.env.example
+
+.venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# Tests are not installed into the image; they are mounted when running the
+# suite against a built image.
+tests

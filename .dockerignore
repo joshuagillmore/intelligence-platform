@@ -1,0 +1,46 @@
+# Build context for the root (Railway) Dockerfile.
+#
+# Docker does NOT read .gitignore, so without this file the whole working tree —
+# frontend/node_modules, frontend/.next, backend/.venv, Playwright artefacts and
+# any local .env — is uploaded as build context on every build.
+#
+# Keep `backend/uv.lock`, `backend/pyproject.toml`, `backend/src/` and the
+# frontend sources: the Dockerfile copies all of them.
+
+# Secrets — never let a local env file reach a layer
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# VCS and tooling
+.git
+.github
+.gitignore
+.claude
+
+# Python
+**/__pycache__
+**/*.py[cod]
+backend/.venv
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+
+# Node / Next.js — reinstalled from package-lock.json inside the image
+frontend/node_modules
+frontend/.next
+frontend/out
+
+# Test output
+frontend/playwright-report
+frontend/test-results
+**/coverage
+
+# Local-only compose layers and docs
+docker-compose.override.yml
+docs
+scratchpad
+*.md
+!README.md
