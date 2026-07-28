@@ -7,12 +7,17 @@
 # Keep `backend/uv.lock`, `backend/pyproject.toml`, `backend/src/` and the
 # frontend sources: the Dockerfile copies all of them.
 
-# Secrets — never let a local env file reach a layer
-.env
-.env.*
-!.env.example
-*.pem
-*.key
+# Secrets — never let a local env file reach a layer.
+# These must be `**/`-prefixed: .dockerignore patterns are anchored at the
+# context root, so a bare `.env` would miss backend/.env and frontend/.env.local
+# entirely. That matters because `COPY frontend/ .` feeds the Next build, and
+# next build inlines NEXT_PUBLIC_* from .env.production.local (which outranks
+# the .env.local the Dockerfile deletes) into .next/static — which does ship.
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
 
 # VCS and tooling
 .git
@@ -24,6 +29,8 @@
 **/__pycache__
 **/*.py[cod]
 backend/.venv
+backend/dist
+**/*.egg-info
 **/.pytest_cache
 **/.ruff_cache
 **/.mypy_cache
@@ -33,9 +40,14 @@ frontend/node_modules
 frontend/.next
 frontend/out
 
-# Test output
+# Test output. tests/e2e/.auth holds a real JWT — it never reaches the final
+# image (only .next/standalone and .next/static are copied out) but it would
+# otherwise sit in an intermediate build layer and the build cache.
 frontend/playwright-report
 frontend/test-results
+frontend/tests/e2e/.auth
+frontend/tests/e2e/screenshots
+frontend/tests/e2e/soak
 **/coverage
 
 # Local-only compose layers and docs
