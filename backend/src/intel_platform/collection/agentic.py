@@ -170,6 +170,48 @@ def _clean_scraped_content(text: str) -> str:
     return '\n'.join(cleaned)
 
 
+async def _is_relevant(content: str, pir: str, label: str, provider) -> bool:
+    """Whether a fetched document bears on the requirement at all.
+
+    Fails open: an unreachable model, an unparseable reply, or anything
+    unexpected keeps the document. Discarding real collection because a
+    relevance check could not run would be a worse failure than the noise this
+    is here to stop.
+
+    Judged on the head of the document — enough to tell a subject from a street
+    index, without paying to send the whole thing.
+    """
+    head = (content or "")[:2500]
+    if len(head) < 200:
+        return True
+    try:
+        result = await provider.generate(
+            messages=[{"role": "user", "content": (
+                f"INTELLIGENCE REQUIREMENT:\n{pir[:800]}\n\n"
+                f"DOCUMENT TITLE: {label[:200]}\n\n"
+                f"DOCUMENT OPENING:\n{head}\n\n"
+                "Could this document contribute any evidence toward the requirement? "
+                "Judge the subject matter only — partial or background relevance counts. "
+                "Answer with one word, RELEVANT or OFFTOPIC."
+            )}],
+            system=(
+                "You screen collected documents before expensive processing. You are "
+                "generous: anything plausibly on-subject is RELEVANT. Reserve OFFTOPIC "
+                "for documents about an unrelated subject entirely — a street map, a "
+                "product catalogue, a site index."
+            ),
+            temperature=0.0,
+            max_tokens=10,
+        )
+    except Exception:
+        logger.debug("Relevance screen unavailable for %s — keeping", label[:80], exc_info=True)
+        return True
+
+    verdict = (result.content or "").strip().upper()
+    # Only an explicit OFFTOPIC discards. Silence or anything unrecognised keeps.
+    return "OFFTOPIC" not in verdict
+
+
 async def _extract_entities(text: str, doc_id: str, mode: str):
     """Run entity extraction in the configured mode."""
     from intel_platform.services.extraction import extract_entities_nlp
@@ -620,6 +662,24 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
         total_chars += len(content)
         title = record.get("title", "")
         url = record.get("url", "")
+
+        # Is this document about the requirement at all? One cheap call before
+        # the expensive part. Measured: a South China Sea requirement collected
+        # "Map of Moscow with street names and house numbers — Yandex Maps",
+        # which consumed the source budget, ran 27 chunks of extraction, and
+        # contributed 925 entities of street names to the graph. An off-topic
+        # source that *succeeds* costs more than one that fails.
+        if provider is not None:
+            pir_text = plan.refined_pir or plan.pir or plan.requirement or ""
+            if pir_text and not await _is_relevant(content, pir_text, title or url, provider):
+                db.add(CollectionActivity(
+                    plan_id=plan.id, source_id=source.id,
+                    event="doc_irrelevant",
+                    message=f"Skipped as off-topic: {(title or url or '')[:100]}",
+                ))
+                await db.commit()
+                logger.info("Skipping off-topic document: %s", (title or url)[:120])
+                continue
 
         # Per-document structured summary (non-fatal): summary/key_facts/sentiment/topics.
         summary_json = ""
