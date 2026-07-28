@@ -19,10 +19,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends nodejs curl && 
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install backend
-COPY backend/pyproject.toml ./
+# Install backend. uv.lock ships with pyproject.toml so the production image
+# installs the exact versions the test suite ran against; without it `uv sync`
+# re-resolves the ranges at build time and the deployed dependency set drifts
+# from the tested one (measured: 67 of 167 packages). --locked makes a stale
+# lock a build failure instead of a silent re-resolve.
+COPY backend/pyproject.toml backend/uv.lock ./
 COPY backend/src/ src/
-RUN uv sync --no-dev
+RUN uv sync --no-dev --locked
+# Must follow `uv sync`, and nothing may sync again after it: the model is
+# installed by URL and is deliberately not in uv.lock, so a later `uv sync`
+# prunes it. start.sh uses `uv run`, which does not prune — verified.
 RUN uv pip install --python .venv/bin/python https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 
 # Copy frontend standalone build
