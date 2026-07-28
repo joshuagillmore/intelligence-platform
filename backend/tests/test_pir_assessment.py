@@ -427,3 +427,57 @@ class TestCriterionAnnotations:
         assert extract_eeis(analysis) == [
             "Which vessels does this element of the fleet comprise?"
         ]
+
+
+class TestVerdictDriftDetection:
+    """A verdict must be anchored to the element it claims to judge.
+
+    Observed live on an Iranian-enrichment run with four pinned, distinct
+    criteria: the verdict numbered 2 ("enrichment levels") justified itself
+    against element 1 ("which facilities are operating"), and 3 justified
+    itself against 2. Semantically adjacent criteria make the numbering drift,
+    and the misattribution lands silently in unmet_criteria.
+    """
+
+    EEIS = [
+        "Which Iranian uranium enrichment facilities are currently operating?",
+        "What enrichment levels are being produced at each facility?",
+        "What centrifuge types and cascade configurations are in use?",
+        "What does recent IAEA reporting say about monitoring access?",
+    ]
+
+    def test_matching_echo_is_kept(self):
+        got = parse_verdicts("2 | enrichment levels | UNMET | Not stated.", self.EEIS)
+        assert len(got) == 1
+        assert got[0]["index"] == 1
+        assert got[0]["verdict"] == "UNMET"
+
+    def test_drifted_echo_is_dropped(self):
+        """The live failure: verdict 2 echoing element 1's subject."""
+        got = parse_verdicts(
+            "2 | which facilities are currently operating | UNMET | Not stated.",
+            self.EEIS,
+        )
+        assert got == [], "a verdict about the wrong element must not be trusted"
+
+    def test_a_dropped_verdict_leaves_the_element_for_the_second_pass(self):
+        narrative = (
+            "1 | which facilities operate | SATISFIED | Natanz, Fordo, Isfahan listed.\n"
+            "2 | which facilities are currently operating | UNMET | Not stated.\n"
+        )
+        got = parse_verdicts(narrative, self.EEIS)
+        assert [g["index"] for g in got] == [0]
+
+    def test_lines_without_an_echo_still_parse(self):
+        """Older and looser replies omit the echo; they must not all be dropped."""
+        got = parse_verdicts("2 | UNMET | Not stated.", self.EEIS)
+        assert len(got) == 1 and got[0]["index"] == 1
+
+    def test_paraphrased_echo_is_accepted(self):
+        """One shared content word is enough — a false drift report is worse."""
+        got = parse_verdicts("3 | centrifuge configurations | UNMET | Not stated.", self.EEIS)
+        assert len(got) == 1 and got[0]["index"] == 2
+
+    def test_echo_of_only_stopwords_is_not_treated_as_drift(self):
+        got = parse_verdicts("4 | what does it say | UNMET | Not stated.", self.EEIS)
+        assert len(got) == 1 and got[0]["index"] == 3

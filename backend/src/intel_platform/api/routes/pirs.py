@@ -403,11 +403,50 @@ def extract_eeis(analysis: str, limit: int = 8) -> list[str]:
 # The justification is optional: requiring it meant "1 | SATISFIED |" parsed as
 # nothing, became UNASSESSED, and blocked SATISFIED on a verdict the model did
 # give.
+# Named groups throughout: the optional echo sits between the number and the
+# verdict, so positional indices would shift depending on whether the model
+# supplied it.
 _VERDICT_LINE = re.compile(
-    r"^\s*\**\s*(?:EEI_ASSESSMENT\s*:)?\s*\**\s*(?:EEI\s*)?(\d+)\s*\|\s*"
-    r"(SATISFIED|PARTIAL|UNMET)\s*\|?\s*(.*?)\s*\**\s*$",
+    r"^\s*\**\s*(?:EEI_ASSESSMENT\s*:)?\s*\**\s*(?:EEI\s*)?(?P<num>\d+)\s*\|\s*"
+    # Optional echo of the element being judged. Present when the model follows
+    # the requested format; absent on looser replies, which still parse.
+    r"(?:(?!SATISFIED|PARTIAL|UNMET)(?P<echo>[^|]{0,120}?)\s*\|\s*)?"
+    r"(?P<verdict>SATISFIED|PARTIAL|UNMET)\s*\|?\s*(?P<why>.*?)\s*\**\s*$",
     re.IGNORECASE,
 )
+
+_STOPWORDS = frozenset({
+    "the", "a", "an", "of", "and", "or", "to", "in", "on", "at", "for", "by",
+    "with", "from", "is", "are", "was", "were", "be", "been", "what", "which",
+    "who", "whom", "whose", "when", "where", "how", "any", "each", "their",
+    "its", "this", "that", "these", "those", "does", "do", "did", "say", "says",
+})
+
+
+def _content_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", (text or "").lower())
+            if len(w) > 2 and w not in _STOPWORDS}
+
+
+def _echo_matches(echo: str, eei: str) -> bool:
+    """Whether a verdict's echoed element plausibly names the EEI it claims.
+
+    Semantically adjacent criteria make the model's numbering drift: on a live
+    Iranian-enrichment run, the verdict numbered 2 ("enrichment levels")
+    justified itself against element 1 ("which facilities are operating"), and
+    3 justified itself against 2. The echo makes that visible; without it the
+    misattribution is silent and lands in `unmet_criteria`.
+
+    Deliberately permissive — one shared content word is enough. The echo is a
+    few words against a full question, so demanding more would reject honest
+    paraphrase, and a false drift report is worse than a missed one.
+    """
+    if not echo:
+        return True  # no echo offered; nothing to check against
+    echo_words = _content_words(echo)
+    if not echo_words:
+        return True
+    return bool(echo_words & _content_words(eei))
 
 
 def parse_verdicts(narrative: str, eeis: list[str]) -> list[dict]:
@@ -416,6 +455,10 @@ def parse_verdicts(narrative: str, eeis: list[str]) -> list[dict]:
     A verdict the parser misses is indistinguishable from an unassessed
     requirement, so this is deliberately permissive about how the line is
     labelled and strict about its three fields.
+
+    A verdict whose echoed element does not match the element it is numbered
+    against is dropped rather than trusted. Those elements then fall through to
+    the second pass, which asks about them one at a time and cannot drift.
     """
     out: list[dict] = []
     seen: set[int] = set()
@@ -423,15 +466,22 @@ def parse_verdicts(narrative: str, eeis: list[str]) -> list[dict]:
         m = _VERDICT_LINE.match(line.strip())
         if not m:
             continue
-        idx = int(m.group(1)) - 1
+        idx = int(m.group("num")) - 1
         if not (0 <= idx < len(eeis)) or idx in seen:
             continue
+        echo = (m.group("echo") or "").strip()
+        if not _echo_matches(echo, eeis[idx]):
+            logger.info(
+                "Dropping verdict %d: echoed element %r does not match %r",
+                idx + 1, echo[:60], eeis[idx][:60],
+            )
+            continue
         seen.add(idx)
-        justification = m.group(3).strip().rstrip("*").strip()
+        justification = (m.group("why") or "").strip().rstrip("*").strip()
         out.append({
             "index": idx,
             "eei": eeis[idx],
-            "verdict": m.group(2).upper(),
+            "verdict": m.group("verdict").upper(),
             "justification": justification or "No justification given.",
         })
     return out
@@ -633,9 +683,11 @@ async def assess_pir(
                 "however well you happen to know the subject.\n\n"
                 f"End with a machine-readable block: exactly {len(eeis)} lines, one per EEI, "
                 f"numbered 1 to {len(eeis)}, no line omitted even when the verdict is UNMET.\n"
+                "Echo the element you are judging in the second field, in a few words, so "
+                "each verdict is anchored to its element:\n"
                 "EEI_ASSESSMENT:\n"
-                "1 | SATISFIED | one-line justification citing the collected evidence\n"
-                "2 | UNMET | one-line statement of what is missing"
+                "1 | which facilities operate | SATISFIED | justification citing the evidence\n"
+                "2 | enrichment levels | UNMET | one-line statement of what is missing"
             )}],
             system=(
                 "You are an intelligence collection manager judging whether a requirement "
