@@ -32,7 +32,7 @@ from intel_platform.db.models import (
     Pir,
     PirStatus,
 )
-from intel_platform.models.requests import CreatePirRequest, UpdatePirRequest
+from intel_platform.models.requests import MAX_EEIS, CreatePirRequest, UpdatePirRequest
 from intel_platform.models.responses import PirPlanLink, PirResponse
 
 logger = logging.getLogger(__name__)
@@ -662,6 +662,19 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
     if not eeis:
         return evidence
 
+    # Defence in depth against unbounded database work. The request models cap
+    # what the API accepts, but EEIs also arrive from the refinement, and one
+    # retrieval per element means an unbounded list is an unbounded number of
+    # sequential pgvector queries. Elements past the cap are reported as
+    # unassessed rather than silently dropped.
+    excluded: list[int] = []
+    if len(eeis) > MAX_EEIS:
+        logger.warning(
+            "Requirement has %d elements; assessing the first %d", len(eeis), MAX_EEIS
+        )
+        excluded = list(range(MAX_EEIS + 1, len(eeis) + 1))
+        eeis = eeis[:MAX_EEIS]
+
     # One embedding call for every element, rather than one per element.
     vectors: list[list[float]] | None = None
     try:
@@ -749,7 +762,16 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
             room = min(allowance, _PASSAGE_CHAR_BUDGET - spent) - overhead
             if room < _MIN_SNIPPET_CHARS:
                 break  # not consumed — a later pass with more room may take it
-            snippet = _scrub_passage(str(hit.get("chunk_text") or "").strip()[:min(_PASSAGE_CHARS, room)])
+            # Scrub BEFORE clipping. Redaction replaces a hostile line with a
+            # longer placeholder, so sizing the raw text and scrubbing after
+            # made the entry overshoot its allowance — and the entry was then
+            # rejected rather than clipped, permanently starving the element
+            # while budget sat unspent and hiding any affordable later hit
+            # behind it. Clipping the scrubbed text bounds the cost by
+            # construction.
+            snippet = _scrub_passage(str(hit.get("chunk_text") or "").strip())[
+                : min(_PASSAGE_CHARS, room)
+            ]
             if not snippet.strip():
                 cursor[element] = cursor.get(element, 0) + 1  # never usable
                 continue
@@ -766,10 +788,14 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
             added += 1
         return added
 
+    def _exhausted(element: int) -> bool:
+        """Every hit consumed — nothing left that budget could have bought."""
+        return cursor.get(element, 0) >= len(hits_by_element.get(element, []))
+
     for i in contenders:
         if _take(i, per_element):
             funded.add(i)
-        else:
+        elif not _exhausted(i):
             starved.append(i)
 
     # Reclaim, breadth first: an equal share too small to fund a passage leaves
@@ -780,6 +806,11 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
     for i in list(starved):
         if _take(i, _entry_overhead(i) + _MIN_SNIPPET_CHARS):
             funded.add(i)
+            starved.remove(i)
+        elif _exhausted(i):
+            # Its hits turned out to be unusable, not unaffordable. Reporting it
+            # as budget-starved would blame the budget for empty content and
+            # raise retrieval_degraded on a run where nothing was degraded.
             starved.remove(i)
 
     # Then depth: anything still unspent goes to elements with more to give.
@@ -793,7 +824,12 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
 
     evidence.elements_with_passages = sorted(funded)
     evidence.budget_starved_elements = starved
-    evidence.elements_without_passages = sorted(set(range(1, len(eeis) + 1)) - funded)
+    # Elements excluded by the cap are named here too: they were never assessed,
+    # and dropping them from the accounting would report a requirement as more
+    # covered than it is.
+    evidence.elements_without_passages = sorted(
+        (set(range(1, len(eeis) + 1)) - funded) | set(excluded)
+    )
     evidence.text = _ENTRY_SEPARATOR.join(blocks)
     evidence.retrieved = len(blocks)
     return evidence
