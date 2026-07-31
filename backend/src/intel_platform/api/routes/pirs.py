@@ -502,6 +502,84 @@ _INJECTION_SHAPED = re.compile(
 _CONTEXT_CHAR_CAP = 60_000
 
 
+# The judge's context is split into an explicit budget per evidence kind. A
+# single cap applied to a concatenated string starves whichever part is appended
+# last: the graph section alone can approach the cap on a large project, so
+# passages tacked on the end would be truncated to nothing without ever showing
+# up as an error.
+_PASSAGE_CHAR_BUDGET = 18_000
+_DATED_CHAR_BUDGET = 6_000
+_GRAPH_CHAR_BUDGET = _CONTEXT_CHAR_CAP - _PASSAGE_CHAR_BUDGET - _DATED_CHAR_BUDGET
+_PASSAGES_PER_EEI = 3
+_PASSAGE_CHARS = 1_200
+
+
+def _dated_lines(entities: list[dict]) -> list[str]:
+    """Render the dates that live as node properties rather than as nodes.
+
+    Dates used to be entities, so they appeared in the name list the judge sees.
+    Absorbing them into properties — so the timeline and histogram could use real
+    intervals instead of point-in-time strings — removed them from the judge's
+    view entirely. Measured on a live run: a graph holding a dated event still
+    had its "on what dates" element scored UNMET, because nothing in the context
+    carried a date. Dates that survive only inside an edge's evidence string were
+    found by accident, not by design.
+    """
+    lines: list[str] = []
+    for ent in entities:
+        date_text = str(ent.get("date_text") or "").strip()
+        if not date_text:
+            continue
+        precision = str(ent.get("date_precision") or "").strip()
+        qualifier = f", {precision}-precision" if precision else ""
+        lines.append(
+            f"{str(ent.get('name', ''))[:120]} "
+            f"[{ent.get('entity_type', '?')}] — {date_text[:60]}{qualifier}"
+        )
+    return lines
+
+
+async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> str:
+    """Retrieve source passages for each element, one retrieval per element.
+
+    The assessor judged from the graph alone — entity names and edge evidence —
+    while report generation drew on the chunk index. The two therefore judged
+    from different evidence, and said so: one run scored "what enrichment levels
+    are produced" UNMET while the product written seconds later stated 60% and
+    20%, because percentages had never become entities.
+
+    Retrieval is per element rather than per requirement so a specific element is
+    matched on its own terms instead of competing with the others for the top
+    hits. Returns "" when the project has no embeddings, which leaves the
+    judge exactly as well informed as it was before.
+    """
+    from intel_platform.services.vector_search import vector_search
+
+    blocks: list[str] = []
+    budget = _PASSAGE_CHAR_BUDGET
+    for i, eei in enumerate(eeis, 1):
+        if budget <= 0:
+            break
+        try:
+            hits = await vector_search(eei, project_id, db, limit=_PASSAGES_PER_EEI)
+        except Exception:
+            # A retrieval failure must not fail the assessment: the graph
+            # evidence is still judgeable, and reporting "no passages" is
+            # honest where reporting an error would lose the whole verdict.
+            logger.warning("Passage retrieval failed for element %d", i, exc_info=True)
+            continue
+        for hit in hits:
+            snippet = str(hit.get("chunk_text") or "").strip()[:_PASSAGE_CHARS]
+            if not snippet:
+                continue
+            entry = f"[element {i} | similarity {hit.get('similarity')}] {snippet}"
+            budget -= len(entry)
+            if budget <= 0:
+                break
+            blocks.append(entry)
+    return "\n\n".join(blocks)
+
+
 def _sanitize_context(text: str) -> str:
     """Strip lines that could be read as instructions or as verdicts.
 
@@ -653,14 +731,31 @@ async def assess_pir(
         key = ent.get("entity_type", "?")
         by_type[key] = by_type.get(key, 0) + 1
 
-    context = _sanitize_context(
+    dated = _dated_lines(entities)
+    graph_section = (
         f"Entity types collected (in a {len(entities)}-entity sample): {by_type}\n\n"
         f"Named entities ({min(len(ranked), 200)} shown of {len(entities)} sampled, "
         "web furniture such as URLs and bare domains omitted):\n"
         + ", ".join(str(e.get("name", ""))[:120] for e in ranked[:200])
         + "\n\nAsserted relationships and their evidence:\n"
         + "\n".join(facts[:200])
-    )
+    )[:_GRAPH_CHAR_BUDGET]
+
+    if dated:
+        graph_section += (
+            f"\n\nDated entities ({len(dated)} of {len(entities)} carry a date):\n"
+            + "\n".join(dated)[:_DATED_CHAR_BUDGET]
+        )
+
+    passages = await _passages_for(eeis, project_id, db)
+    if passages:
+        graph_section += (
+            "\n\nSource passages retrieved for these elements — the text the "
+            "documents actually contain, which the graph may not have captured "
+            "as entities:\n" + passages
+        )
+
+    context = _sanitize_context(graph_section)
 
     assessments: list[dict] = []
     narrative = ""
