@@ -22,6 +22,7 @@ from intel_platform.db.models import (
 )
 from intel_platform.models.entities import Document
 from intel_platform.services.graph_builder import build_graph_from_extractions
+from intel_platform.services.content_quality import is_auth_wall, rejection_reason
 from intel_platform.services.ingestion import ingest_text
 from intel_platform.services.plan_executor import over_source_budget
 
@@ -108,32 +109,14 @@ Should we follow up on any specific leads found in this content?"""
 # Helper: Extract entities from text content
 # ---------------------------------------------------------------------------
 
-_AUTH_WALL_PATH = re.compile(
-    r"/(?:login|signin|sign-in|register|subscribe|paywall|account/login)(?:[/?#]|$)",
-    re.IGNORECASE,
-)
-
-_AUTH_WALL_PHRASES = (
-    "sign in to continue", "subscribe to read", "subscribe to continue",
-    "log in to read", "login to continue", "this content is for subscribers",
-    "create an account to read", "you have reached your article limit",
-    "please sign in to access", "members only",
-)
-
-
 def _is_auth_wall(url: str, content: str) -> bool:
     """True for login and paywall pages, which return 200 and a body of chrome.
 
-    Extracting one produces entities that look entirely real — a live crawl of
-    an institute's login page contributed its conference calendar to the graph
-    as six intelligence "events". Judged on the URL path first, then on the
-    handful of phrases these pages actually use, checked only against the head
-    of the document so an article *about* paywalls is not discarded.
+    The judgement now lives in `services.content_quality` alongside anti-bot
+    interstitials and empty shells, which fail the same way and were not being
+    caught. Kept here as the name the crawl path and its tests already use.
     """
-    if url and _AUTH_WALL_PATH.search(url):
-        return True
-    head = (content or "")[:1500].lower()
-    return any(phrase in head for phrase in _AUTH_WALL_PHRASES)
+    return is_auth_wall(url, content)
 
 
 def _clean_scraped_content(text: str) -> str:
@@ -639,19 +622,30 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
     total_chars = 0
     total_chunks_embedded = 0
     embed_failures = 0
+    # Pages that fetched but carried no usable content, with the reason. A page
+    # dropped without explanation is indistinguishable from one never found.
+    rejected_pages: list[tuple[str, str]] = []
 
     for record in result.records:
         content = record.get("content", "")
         if not content or len(content) < 50:
             continue
 
-        # A login or paywall page still returns 200 and a body full of site
-        # chrome. Measured live: a crawl of iiss.org/login/?redirectUrl=… was
-        # extracted as intelligence, and the analyst's graph gained six "events"
-        # that were the institute's conference calendar. Nothing downstream can
-        # recover from that — the entities look real.
-        if _is_auth_wall(record.get("url", ""), content):
-            logger.info("Skipping auth-wall page: %s", record.get("url", "")[:120])
+        # A login page, a captcha wall or an empty shell still returns 200 with a
+        # body full of site chrome. Measured live: a crawl of
+        # iiss.org/login/?redirectUrl=… was extracted as intelligence and the
+        # analyst's graph gained six "events" that were the institute's
+        # conference calendar. Nothing downstream can recover from that — the
+        # entities look real — and the page has already spent a source from the
+        # budget. Rejected with a reason so the trail says which it was.
+        rejection = rejection_reason(
+            record.get("url", ""), content, record.get("title", ""),
+        )
+        if rejection:
+            logger.info(
+                "Skipping unusable page (%s): %s", rejection, record.get("url", "")[:120]
+            )
+            rejected_pages.append((record.get("url", ""), rejection))
             continue
 
         # Clean scraped content to remove navigation, boilerplate, ads
@@ -821,6 +815,7 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
         "relationships_created": total_rels,
         "chunks_embedded": total_chunks_embedded,
         "embed_failures": embed_failures,
+        "rejected_pages": rejected_pages,
         "records": result.records,  # For evaluate phase
     }
 
@@ -970,6 +965,7 @@ async def run_agentic_loop(
                 # invisible to semantic search, and nothing else would say so.
                 embedded = acquire_result.get("chunks_embedded", 0)
                 embed_failed = acquire_result.get("embed_failures", 0)
+                rejected = acquire_result.get("rejected_pages") or []
                 detail = f"Acquired {rec_count} docs, {ent_count} entities, {rel_count} relationships"
                 if embedded:
                     detail += f", {embedded} chunks indexed"
@@ -981,6 +977,16 @@ async def run_agentic_loop(
                     event="source_acquired",
                     message=detail,
                 ))
+
+                # A page blocked by a captcha and a page that genuinely had
+                # nothing both arrive as "0 documents" without this.
+                if rejected:
+                    reasons = ", ".join(sorted({r for _u, r in rejected}))
+                    db.add(CollectionActivity(
+                        plan_id=plan.id, source_id=source.id,
+                        event="pages_rejected",
+                        message=f"{len(rejected)} page(s) fetched but unusable: {reasons}",
+                    ))
                 await db.commit()
 
                 # Phase 3: Evaluate and follow up
