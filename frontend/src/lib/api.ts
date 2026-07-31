@@ -390,6 +390,27 @@ export interface Pir {
   plans: PirPlanLink[];
 }
 
+export type RequirementStatus = 'pending' | 'satisfied' | 'unmet';
+
+export interface PirRequirementElement {
+  ordinal: number;
+  text: string;
+  status: RequirementStatus;
+  attempts: number;
+  queries_tried: string[];
+  /** What the assessor said is still absent — the analyst-facing gap. */
+  missing: string;
+  confidence: string;
+}
+
+export interface PirRequirements {
+  pir_id: string;
+  project_id: string;
+  total: number;
+  counts: Record<RequirementStatus, number>;
+  elements: PirRequirementElement[];
+}
+
 export const pirsApi = {
   list: (projectId: string, status?: PirStatus) =>
     api.get<Pir[]>('/pirs', { params: { project_id: projectId, status } }),
@@ -403,6 +424,10 @@ export const pirsApi = {
     eeis?: string[]; priority?: string; status?: PirStatus;
   }) => api.put<Pir>(`/pirs/${id}`, data),
   delete: (id: string) => api.delete(`/pirs/${id}`),
+  // Per-element collection state. "unmet" means tried and given up on; it is
+  // deliberately distinct from "pending", which is still open.
+  requirements: (id: string) =>
+    api.get<PirRequirements>(`/pirs/${id}/requirements`),
 };
 
 // Collection Plans — new managed pipeline
