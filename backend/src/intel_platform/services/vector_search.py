@@ -82,20 +82,29 @@ async def vector_search(
     limit: int = 20,
     similarity_threshold: float = 0.3,
     provider: EmbeddingProvider | None = None,
+    query_vector: list[float] | None = None,
 ) -> list[dict]:
     """Embed query and search chunk_embeddings by cosine similarity.
 
     Returns list of {chunk_text, document_id, chunk_index, similarity, metadata}.
-    """
-    if provider is None:
-        provider = get_embedding_provider()
 
-    try:
-        result = await provider.embed([query], input_type="search_query")
-        query_vec = result.embeddings[0]
-    except Exception:
-        logger.warning("Query embedding failed", exc_info=True)
-        return []
+    Pass ``query_vector`` to reuse an embedding already computed elsewhere. A
+    caller searching several related queries at once — the PIR assessor runs one
+    per element of a requirement — can then embed them in a single batched call
+    instead of paying one round trip per query.
+    """
+    if query_vector is not None:
+        query_vec = query_vector
+    else:
+        if provider is None:
+            provider = get_embedding_provider()
+
+        try:
+            result = await provider.embed([query], input_type="search_query")
+            query_vec = result.embeddings[0]
+        except Exception:
+            logger.warning("Query embedding failed", exc_info=True)
+            return []
 
     # pgvector cosine distance: <=> returns distance (0 = identical),
     # similarity = 1 - distance
