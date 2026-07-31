@@ -48,6 +48,37 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 _STALL_AFTER_SECONDS = 600
 
 
+def refinement_system_prompt() -> str:
+    """System prompt for PIR refinement, framed by the active persona.
+
+    The persona reaches the decomposition, not just the prose. Which elements a
+    requirement is split into decides what is collected against it, so a cyber
+    analyst and a maritime analyst should not break the same question into the
+    same elements. Personas previously reached nothing here at all.
+
+    Built as a function rather than inline so the framing is testable without
+    driving the whole from-pir route.
+    """
+    from intel_platform.api.routes.personas import active_persona_brief
+
+    brief = active_persona_brief()
+    return (
+        (brief + "\n\n" if brief else "")
+        + "You are an intelligence analyst. Given a PIR:\n"
+        "1. ASSESS specificity, measurability, and time-bounds\n"
+        "2. IDENTIFY hidden assumptions\n"
+        "3. BREAK DOWN into 3-5 Essential Elements of Information (EEIs).\n"
+        "   Each EEI must be answerable independently and must not overlap "
+        "another: two elements that ask the same thing in different words "
+        "cannot be judged apart, and the second is then scored against "
+        "whatever evidence the first did not use. Observed: 'types of "
+        "anti-ship missiles employed' and 'weapon systems used, including "
+        "capabilities and ranges' are one element, not two.\n"
+        "4. PROPOSE a refined, more actionable PIR\n"
+        "Return the refined PIR on the first line, then your analysis."
+    )
+
+
 def _split_refinement(content: str, fallback: str) -> tuple[str, str]:
     """Split an LLM refinement into (refined PIR, analysis).
 
@@ -445,23 +476,12 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
             from intel_platform.llm.skills.loader import SkillsLoader
             loader = SkillsLoader()
 
+            from intel_platform.api.routes.personas import active_persona_temperature
+
             refine_result = await provider.generate(
                 messages=[{"role": "user", "content": f"Refine this Priority Intelligence Requirement (PIR):\n\n{pir_text}"}],
-                system=(
-                    "You are an intelligence analyst. Given a PIR:\n"
-                    "1. ASSESS specificity, measurability, and time-bounds\n"
-                    "2. IDENTIFY hidden assumptions\n"
-                    "3. BREAK DOWN into 3-5 Essential Elements of Information (EEIs).\n"
-                    "   Each EEI must be answerable independently and must not overlap "
-                    "another: two elements that ask the same thing in different words "
-                    "cannot be judged apart, and the second is then scored against "
-                    "whatever evidence the first did not use. Observed: 'types of "
-                    "anti-ship missiles employed' and 'weapon systems used, including "
-                    "capabilities and ranges' are one element, not two.\n"
-                    "4. PROPOSE a refined, more actionable PIR\n"
-                    "Return the refined PIR on the first line, then your analysis."
-                ),
-                temperature=0.3,
+                system=refinement_system_prompt(),
+                temperature=active_persona_temperature(0.3),
             )
             refined_pir, plan_description = _split_refinement(refine_result.content, pir_text)
         except Exception as e:

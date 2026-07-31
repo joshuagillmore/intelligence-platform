@@ -43,6 +43,45 @@ _personas: dict[str, dict] = {
 _active_persona: str = "allsource"
 
 
+def active_persona() -> dict:
+    """The persona currently driving analytical work."""
+    return _personas.get(_active_persona) or {}
+
+
+def active_persona_brief() -> str:
+    """A short framing line for prompts that decompose or judge a requirement.
+
+    Personas existed here but reached nothing that mattered: they were never
+    consulted when a PIR was broken into elements, so a cyber analyst and a
+    maritime analyst decomposed an identical question identically. Which
+    elements a requirement is split into determines what gets collected, so this
+    is the point where expertise changes the outcome rather than the wording.
+
+    Returns "" when no persona is active, leaving the caller's prompt untouched.
+    """
+    persona = active_persona()
+    if not persona:
+        return ""
+    parts = [f"You are working as the {persona.get('name', 'analyst')}."]
+    if persona.get("description"):
+        parts.append(str(persona["description"]).strip().rstrip(".") + ".")
+    skills = [str(s).replace("_", " ") for s in (persona.get("skills") or [])]
+    if skills:
+        parts.append("Your emphasis: " + ", ".join(skills) + ".")
+    parts.append(
+        "Decompose and judge from that expertise: the sub-questions a specialist "
+        "would insist on are the ones worth collecting against."
+    )
+    return " ".join(parts)
+
+
+def active_persona_temperature(default: float = 0.3) -> float:
+    try:
+        return float(active_persona().get("temperature", default))
+    except (TypeError, ValueError):
+        return default
+
+
 class PersonaRequest(BaseModel):
     id: str
     name: str
