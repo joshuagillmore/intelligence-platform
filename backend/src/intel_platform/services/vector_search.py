@@ -119,6 +119,15 @@ async def vector_search(
         except Exception:
             logger.warning("Query embedding failed", exc_info=True)
             return []
+        # The provider's own output needs the same width check as a supplied
+        # vector: a project indexed at 1536 and later queried through a 1024-dim
+        # provider would otherwise fail inside the database on every search.
+        if len(query_vec) != _EMBEDDING_DIM:
+            logger.warning(
+                "Embedding provider returned a %d-wide vector; chunk_embeddings expects %d",
+                len(query_vec), _EMBEDDING_DIM,
+            )
+            return []
 
     # pgvector cosine distance: <=> returns distance (0 = identical),
     # similarity = 1 - distance

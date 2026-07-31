@@ -237,7 +237,7 @@ class TestPassagesForElements:
 
         assert ev.elements_with_passages == list(range(1, 41))
         assert ev.budget_starved_elements == []
-        assert ev.retrieved == 40
+        assert ev.retrieved >= 40, "every element should hold at least one passage"
         assert len(ev.text) <= pirs._PASSAGE_CHAR_BUDGET
 
     @pytest.mark.parametrize("n", [56, 57, 200])
@@ -258,23 +258,36 @@ class TestPassagesForElements:
         assert len(ev.text) <= pirs._PASSAGE_CHAR_BUDGET
         covered = set(ev.elements_with_passages) | set(ev.elements_without_passages)
         assert covered == set(range(1, n + 1)), "every element must be accounted for"
-        if n > 56:
-            assert ev.budget_starved_elements, "unfunded elements must be named"
-            assert set(ev.budget_starved_elements) <= set(ev.elements_without_passages)
-            assert ev.degraded is True
+        assert set(ev.budget_starved_elements) <= set(ev.elements_without_passages)
 
-    async def test_the_starvation_boundary_is_where_it_is_claimed(self, monkeypatch, embedder):
-        """56 elements are all funded; 57 is where an equal split stops working.
-        Pinned because the comment in the code states this arithmetic."""
+    async def test_budget_is_never_left_unspent_while_an_element_starves(
+        self, monkeypatch, embedder
+    ):
+        """The invariant, rather than a specific element count.
+
+        Exact boundaries depend on the document id width (a real uuid is 36
+        chars, so `_entry_overhead` is a worst case), which makes any hard-coded
+        crossover a test of the fixture rather than of the allocator. What must
+        always hold is that an element is only starved when the budget genuinely
+        cannot carry it.
+        """
+        doc = "f" * 36  # realistic width, as a live document_id would be
+
         async def fake_search(*a, **kw):
-            return [{"chunk_text": "z" * 2_000, "similarity": 0.5, "document_id": "d"}]
+            return [{"chunk_text": "z" * 2_000, "similarity": 0.5, "document_id": doc}]
 
         monkeypatch.setattr("intel_platform.services.vector_search.vector_search", fake_search)
-        at_56 = await pirs._passages_for([f"e{i}?" for i in range(56)], "p1", _FakeSession())
-        at_57 = await pirs._passages_for([f"e{i}?" for i in range(57)], "p1", _FakeSession())
-
-        assert at_56.budget_starved_elements == []
-        assert at_57.budget_starved_elements == [57]
+        for n in (56, 57, 80, 300):
+            ev = await pirs._passages_for([f"e{i}?" for i in range(n)], "p1", _FakeSession())
+            spent = len(ev.text)
+            assert spent <= pirs._PASSAGE_CHAR_BUDGET
+            if ev.budget_starved_elements:
+                headroom = pirs._PASSAGE_CHAR_BUDGET - spent
+                smallest = pirs._entry_overhead(n) + pirs._MIN_SNIPPET_CHARS
+                assert headroom < smallest, (
+                    f"{n} elements: {len(ev.budget_starved_elements)} starved with "
+                    f"{headroom} characters unspent, enough for {headroom // smallest} more"
+                )
 
     async def test_wrong_width_batch_is_a_fault_not_an_evidence_gap(self, monkeypatch):
         """The blocker this round. vector_search refuses a mismatched width and
@@ -302,6 +315,49 @@ class TestPassagesForElements:
         assert ev.degraded is True
         assert ev.elements_without_passages == [1, 2]
         assert ev.failed_elements == [], "this is a configuration fault, not a per-element failure"
+
+    async def test_mixed_width_batch_is_caught_not_just_the_first_vector(self, monkeypatch):
+        """The provider contract is list[list[float]] with no equal-width
+        guarantee, so checking vectors[0] alone let element 2 degrade into an
+        ordinary no-hit while the flags stayed clean."""
+        from types import SimpleNamespace
+
+        class MixedWidth:
+            async def embed(self, texts, input_type=None):
+                return SimpleNamespace(embeddings=[[0.1] * 1536, [0.1] * 1024])
+
+        monkeypatch.setattr(
+            "intel_platform.llm.embeddings.get_embedding_provider", lambda: MixedWidth()
+        )
+
+        async def must_not_run(*a, **kw):
+            raise AssertionError("retrieval must not run with a mixed-width batch")
+
+        monkeypatch.setattr("intel_platform.services.vector_search.vector_search", must_not_run)
+        ev = await pirs._passages_for(["a?", "b?"], "p1", _FakeSession())
+        assert ev.embedding_dim_mismatch is True and ev.unavailable is True
+
+    async def test_unspent_budget_is_reclaimed_by_elements_that_have_evidence(
+        self, monkeypatch, embedder
+    ):
+        """Fundability was decided up front from the element count, so the last
+        element was declared starved even when every earlier element returned
+        nothing and the whole budget was still unspent."""
+        async def only_the_last_has_hits(query, *a, **kw):
+            if query == "e56?":
+                return [{"chunk_text": "z" * 3_000, "similarity": 0.9, "document_id": "d"}]
+            return []
+
+        monkeypatch.setattr(
+            "intel_platform.services.vector_search.vector_search", only_the_last_has_hits
+        )
+        eeis = [f"e{i}?" for i in range(57)]
+        eeis[56] = "e56?"
+        ev = await pirs._passages_for(eeis, "p1", _FakeSession())
+
+        assert ev.elements_with_passages == [57], "the only element with evidence went unfunded"
+        assert ev.budget_starved_elements == []
+        assert ev.retrieved == 1
 
     async def test_no_hits_is_not_reported_as_unavailable(self, monkeypatch, embedder):
         """The counterpart: a genuine evidence gap must not look like a fault."""

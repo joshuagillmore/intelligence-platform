@@ -203,10 +203,26 @@ class TestEvidenceBlock:
     knowing whether the documents were in view.
     """
 
-    def _evidence(self, client, header, pir):
+    def _evidence(self, client, header, pir, passages=None):
+        """Retrieval is stubbed rather than left to the mocked DB session.
+
+        The session is a MagicMock, so a real `vector_search` raises inside it
+        and every element lands in `retrieval_failed_for` — which would make any
+        assertion about the healthy path accidentally test the failure path.
+        """
+        from intel_platform.api.routes import pirs as pirs_routes
+
+        if passages is None:
+            passages = pirs_routes.PassageEvidence(
+                text="[element 1 | doc d | similarity 0.9] evidence",
+                retrieved=1,
+                elements_with_passages=[1],
+                elements_without_passages=[2, 3, 4, 5],
+            )
         verdicts = "\n".join(f"{i + 1} | SATISFIED | Covered." for i in range(5))
-        with _patch_llm(verdicts):
-            r = _assess(client, header, pir.id)
+        with patch.object(pirs_routes, "_passages_for", new=AsyncMock(return_value=passages)):
+            with _patch_llm(verdicts):
+                r = _assess(client, header, pir.id)
         assert r.status_code == 200
         return r.json()["evidence"]
 
@@ -221,16 +237,36 @@ class TestEvidenceBlock:
         ):
             assert key in ev, f"evidence block missing {key}"
 
+    def test_healthy_retrieval_is_not_reported_as_degraded(self, client, analyst_header, fake_pir):
+        ev = self._evidence(client, analyst_header, fake_pir)
+        assert ev["retrieval_degraded"] is False
+        assert ev["retrieval_unavailable"] is False
+
     def test_degraded_is_always_attributable(self, client, analyst_header, fake_pir):
         """retrieval_degraded with no reason set is the complaint the flag
-        exists to answer, so it must never be true on its own."""
-        ev = self._evidence(client, analyst_header, fake_pir)
-        if ev["retrieval_degraded"]:
-            assert (
-                ev["retrieval_failed_for"] or ev["budget_starved_elements"]
-                or ev["embedding_fallback"] or ev["embedding_failed"]
-                or ev["embedding_dim_mismatch"]
-            ), "degraded reported with no attributable cause"
+        exists to answer, so it must never be true on its own.
+
+        The branch is forced. Asserting this conditionally — `if degraded:` —
+        made the test vacuous: a route that always returned degraded=False would
+        have passed it, which is the whole failure mode under test.
+        """
+        from intel_platform.api.routes import pirs as pirs_routes
+
+        ev = self._evidence(
+            client, analyst_header, fake_pir,
+            passages=pirs_routes.PassageEvidence(
+                embedding_dim_mismatch=True, elements_without_passages=[1, 2, 3, 4, 5]
+            ),
+        )
+
+        assert ev["retrieval_degraded"] is True
+        assert ev["retrieval_unavailable"] is True
+        assert ev["embedding_dim_mismatch"] is True
+        assert (
+            ev["retrieval_failed_for"] or ev["budget_starved_elements"]
+            or ev["embedding_fallback"] or ev["embedding_failed"]
+            or ev["embedding_dim_mismatch"]
+        ), "degraded reported with no attributable cause"
 
     def test_substrate_matches_what_was_retrieved(self, client, analyst_header, fake_pir):
         ev = self._evidence(client, analyst_header, fake_pir)

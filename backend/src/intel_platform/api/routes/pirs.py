@@ -677,17 +677,21 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
             )
             vectors = None
             evidence.embedding_fallback = True
-        elif vectors and len(vectors[0]) != _EMBEDDING_DIM:
+        elif any(len(v) != _EMBEDDING_DIM for v in vectors):
             # `vector_search` refuses a mismatched width and returns [], which is
             # indistinguishable from "this element has no evidence". An operator
             # switching embedding_provider to a 1024-dim model would otherwise
             # see every element reported as simply unanswered, with
             # retrieval_degraded false — a systematic misconfiguration wearing
             # the face of a genuine intelligence gap.
+            # Every vector is checked, not just the first: the provider contract
+            # is `list[list[float]]` with no equal-width guarantee, and a batch
+            # of [1536-wide, 1024-wide] would otherwise pass this gate and let
+            # the second element degrade into an ordinary no-hit.
             logger.warning(
-                "Embedding provider returns %d-wide vectors but chunk_embeddings is %d-wide; "
+                "Embedding provider returned widths %s but chunk_embeddings is %d-wide; "
                 "passage retrieval is unavailable until the index is rebuilt",
-                len(vectors[0]), _EMBEDDING_DIM,
+                sorted({len(v) for v in vectors}), _EMBEDDING_DIM,
             )
             evidence.embedding_dim_mismatch = True
             evidence.elements_without_passages = list(range(1, len(eeis) + 1))
@@ -698,34 +702,17 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
         evidence.elements_without_passages = list(range(1, len(eeis) + 1))
         return evidence
 
-    # An equal split alone is not enough: the entry label costs ~78 characters,
-    # so a share sized to the raw snippet funds nothing.
+    # Retrieve for every element BEFORE allocating any budget.
     #
-    # Below the floor, an equal split funds *nobody*: at 57 elements each share
-    # is 315 against ~78 of overhead, leaving 237 — just under the minimum — so
-    # every element starves and all 18,000 characters go unspent. Fund as many
-    # elements as the budget can actually carry at minimum size instead, and
-    # name the rest. Partial evidence for some elements beats none for all.
-    per_element = _PASSAGE_CHAR_BUDGET // len(eeis)
-    fundable = len(eeis)
-    if per_element - _entry_overhead(len(eeis)) < _MIN_SNIPPET_CHARS:
-        fundable = _PASSAGE_CHAR_BUDGET // (_entry_overhead(len(eeis)) + _MIN_SNIPPET_CHARS)
-        per_element = _PASSAGE_CHAR_BUDGET // fundable if fundable else 0
-
-    blocks: list[str] = []
-    spent = 0
-
+    # Deciding fundability up front from the element count skipped elements
+    # before their search ran, so with 57 elements the 57th was declared
+    # "budget-starved" even when the first 56 returned nothing and the entire
+    # 18,000 characters were still unspent. What an element is owed cannot be
+    # known until it is known which elements have anything to say.
+    hits_by_element: dict[int, list[dict]] = {}
     for i, eei in enumerate(eeis, 1):
-        share = min(per_element, _PASSAGE_CHAR_BUDGET - spent)
-        overhead = _entry_overhead(i)
-        if i > fundable or share - overhead < _MIN_SNIPPET_CHARS:
-            evidence.budget_starved_elements.append(i)
-            evidence.elements_without_passages.append(i)
-            continue
-        snippet_cap = min(_PASSAGE_CHARS, share - overhead)
-        got = 0
         try:
-            hits = await vector_search(
+            hits_by_element[i] = await vector_search(
                 eei, project_id, db, limit=_PASSAGES_PER_EEI,
                 query_vector=vectors[i - 1] if vectors else None,
             )
@@ -736,29 +723,77 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
             # than absorbed, so the caller can tell this apart from "no hits".
             logger.warning("Passage retrieval failed for element %d", i, exc_info=True)
             evidence.failed_elements.append(i)
-            evidence.elements_without_passages.append(i)
-            continue
 
-        for hit in hits:
-            snippet = _scrub_passage(str(hit.get("chunk_text") or "").strip()[:snippet_cap])
+    # Share the budget only among elements that actually returned something.
+    contenders = [i for i, hits in hits_by_element.items() if hits]
+    per_element = _PASSAGE_CHAR_BUDGET // len(contenders) if contenders else 0
+
+    blocks: list[str] = []
+    spent = 0
+    funded: set[int] = set()
+    starved: list[int] = []
+
+    # How far into each element's hits we have already got. Allocation runs in
+    # several passes, so without a cursor a later pass would re-emit the hits an
+    # earlier one already spent budget on.
+    cursor: dict[int, int] = {}
+
+    def _take(element: int, allowance: int) -> int:
+        """Spend up to `allowance` on this element's unconsumed hits."""
+        nonlocal spent
+        overhead = _entry_overhead(element)
+        hits = hits_by_element.get(element, [])
+        added = 0
+        while cursor.get(element, 0) < len(hits):
+            hit = hits[cursor.get(element, 0)]
+            room = min(allowance, _PASSAGE_CHAR_BUDGET - spent) - overhead
+            if room < _MIN_SNIPPET_CHARS:
+                break  # not consumed — a later pass with more room may take it
+            snippet = _scrub_passage(str(hit.get("chunk_text") or "").strip()[:min(_PASSAGE_CHARS, room)])
             if not snippet.strip():
+                cursor[element] = cursor.get(element, 0) + 1  # never usable
                 continue
             doc = str(hit.get("document_id") or "?")[:36]
-            entry = f"[element {i} | doc {doc} | similarity {hit.get('similarity')}] {snippet}"
+            entry = f"[element {element} | doc {doc} | similarity {hit.get('similarity')}] {snippet}"
             cost = len(entry) + len(_ENTRY_SEPARATOR)
-            # `<=`, so an entry that exactly fits is kept rather than dropped.
-            if cost > share or spent + cost > _PASSAGE_CHAR_BUDGET:
+            # `>`, so an entry that exactly fits its allowance is kept.
+            if cost > allowance or spent + cost > _PASSAGE_CHAR_BUDGET:
                 break
             blocks.append(entry)
-            share -= cost
+            cursor[element] = cursor.get(element, 0) + 1
+            allowance -= cost
             spent += cost
-            got += 1
+            added += 1
+        return added
 
-        if got:
-            evidence.elements_with_passages.append(i)
+    for i in contenders:
+        if _take(i, per_element):
+            funded.add(i)
         else:
-            evidence.elements_without_passages.append(i)
+            starved.append(i)
 
+    # Reclaim, breadth first: an equal share too small to fund a passage leaves
+    # the budget unspent, so offer each uncovered element the minimum viable
+    # allowance. Offering the whole remainder instead would let the first few
+    # elements take full-size passages and leave the rest with nothing — 14
+    # elements covered where 56 could have been.
+    for i in list(starved):
+        if _take(i, _entry_overhead(i) + _MIN_SNIPPET_CHARS):
+            funded.add(i)
+            starved.remove(i)
+
+    # Then depth: anything still unspent goes to elements with more to give.
+    for i in contenders:
+        if spent >= _PASSAGE_CHAR_BUDGET:
+            break
+        if _take(i, _PASSAGE_CHAR_BUDGET - spent):
+            funded.add(i)
+            if i in starved:
+                starved.remove(i)
+
+    evidence.elements_with_passages = sorted(funded)
+    evidence.budget_starved_elements = starved
+    evidence.elements_without_passages = sorted(set(range(1, len(eeis) + 1)) - funded)
     evidence.text = _ENTRY_SEPARATOR.join(blocks)
     evidence.retrieved = len(blocks)
     return evidence
