@@ -60,6 +60,67 @@ def labelled_probability(content: str, fallback: float) -> float:
     return value if 0.0 < value <= 1.0 else fallback
 
 
+def json_object(content: str, label: str | None = None) -> dict[str, Any]:
+    """The first JSON object in a reply, however the model chose to present it.
+
+    ``labelled_json`` requires the object on the label's own line, which is the
+    shape the prompt asks for and not reliably the shape that comes back: models
+    pretty-print across lines, wrap the object in a ```json fence, or introduce
+    it with a sentence. Reading only the requested shape is the failure this
+    module exists to stop, so this scans for a balanced object anywhere in the
+    reply — preferring one that follows `label` when given.
+
+    Returns ``{}`` when nothing parses.
+    """
+    if not content:
+        return {}
+
+    if label:
+        direct = labelled_json(content, label)
+        if direct:
+            return direct
+        marker = re.search(rf"{re.escape(label)}{_EMPHASIS}:", content, re.IGNORECASE)
+        if marker:
+            found = _first_balanced_object(content[marker.end():])
+            if found:
+                return found
+
+    return _first_balanced_object(content) or {}
+
+
+def _first_balanced_object(text: str) -> dict[str, Any]:
+    """Scan for the first brace-balanced object that parses, ignoring strings."""
+    for start, char in enumerate(text):
+        if char != "{":
+            continue
+        depth = 0
+        in_string = False
+        escaped = False
+        for end in range(start, len(text)):
+            ch = text[end]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        parsed = json.loads(text[start:end + 1])
+                    except json.JSONDecodeError:
+                        break  # this candidate is not JSON; try the next brace
+                    return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
 def labelled_json(line: str, label: str) -> dict[str, Any]:
     """A JSON object on a ``LABEL: {...}`` line, in any emphasis.
 

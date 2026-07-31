@@ -1055,15 +1055,56 @@ async def run_agentic_loop(
 
             await db.commit()
 
+        planned_sources_used = attempted
+
+    # Re-task at whatever the planned sources left unanswered. The source loop
+    # above works a fixed list and stops whatever state the requirement is in;
+    # this is what turns the assessment from a report into a control signal.
+    # Skipped entirely when the plan has no PIR, so plans raised from free text
+    # behave exactly as before.
+    outcome = None
+    try:
+        from intel_platform.collection.requirement_loop import run_requirement_passes
+
+        outcome = await run_requirement_passes(
+            plan_id, db_factory, get_store, provider, acquire_source,
+            source_limit=source_limit,
+            sources_already_used=planned_sources_used,
+            extraction_mode=extraction_mode,
+        )
+    except Exception:
+        # The planned sources are already collected and in the graph; losing
+        # them to a fault in the follow-up loop would be worse than stopping
+        # here with what was gathered.
+        logger.warning("Requirement loop failed for plan %s", plan_id, exc_info=True)
+        async with db_factory() as db:
+            db.add(CollectionActivity(
+                plan_id=plan_id, event="requirement_loop_failed",
+                message="Follow-up collection could not run; planned sources are unaffected",
+            ))
+            await db.commit()
+
+    async with db_factory() as db:
+        plan = await db.get(CollectionPlan, plan_id)
+
         # Final status
         upload_sources = [s for s in (plan.sources or []) if s.source_type == "file_upload" and s.enabled]
         if not upload_sources:
             plan.status = PlanStatus.COMPLETED
 
+        summary = f"Collection complete: {completed} succeeded, {failed} failed"
+        if upload_sources:
+            summary += f", {len(upload_sources)} file uploads pending"
+        if outcome is not None and outcome.passes_run:
+            # Say which stopping condition applied. "Stopped on budget with
+            # elements open" and "every element answered" are different results
+            # and must not read the same.
+            summary += (
+                f" · re-tasking added {outcome.sources_added} source(s) over "
+                f"{outcome.passes_run} pass(es), stopped on {outcome.stopped_on}"
+            )
         db.add(CollectionActivity(
-            plan_id=plan.id, event="plan_completed",
-            message=f"Collection complete: {completed} succeeded, {failed} failed" + (
-                f", {len(upload_sources)} file uploads pending" if upload_sources else ""),
+            plan_id=plan.id, event="plan_completed", message=summary,
         ))
         plan.updated_at = datetime.now(timezone.utc)
         await db.commit()
