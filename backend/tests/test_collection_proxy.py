@@ -147,9 +147,12 @@ def test_web_search_passes_proxy_to_ddgs():
         instance.text.return_value = []
         web_search("q", max_results=5, proxy="socks5h://tor:9050")
 
-    MockDDGS.assert_called_once()
-    _, kwargs = MockDDGS.call_args
-    assert kwargs.get("proxy") == "socks5h://tor:9050"
+    # Search falls through to the next engine when one returns nothing, so DDGS
+    # is constructed once per backend tried. Every one of them must carry the
+    # proxy — a fallback engine that quietly bypassed the tunnel would leak the
+    # collection's egress.
+    assert MockDDGS.call_count >= 1
+    assert {c.kwargs.get("proxy") for c in MockDDGS.call_args_list} == {"socks5h://tor:9050"}
 
 
 def test_web_search_defaults_to_no_proxy():
@@ -160,8 +163,7 @@ def test_web_search_defaults_to_no_proxy():
         instance.text.return_value = []
         web_search("q", max_results=5)
 
-    _, kwargs = MockDDGS.call_args
-    assert kwargs.get("proxy") is None
+    assert {c.kwargs.get("proxy") for c in MockDDGS.call_args_list} == {None}
 
 
 # ---------------------------------------------------------------------------

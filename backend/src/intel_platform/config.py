@@ -88,6 +88,13 @@ class Settings(BaseSettings):
     collection_llm_provider: str = ""
     collection_llm_model: str = ""
 
+    # Search engines to try in order, comma-separated, first non-empty answer
+    # wins. `ddgs` fronts several engines that fail independently — the
+    # duckduckgo backend answers "no results" under light load for queries brave
+    # and bing serve immediately — and a single-engine search starves a
+    # collection run without ever reporting an error. Empty = the default order.
+    search_backends: str = "auto,brave,bing,duckduckgo"
+
     # Cyber enrichment (WHOIS/RDAP, DNS, GeoIP, cert transparency, CISA KEV, NVD).
     # All providers are keyless; the NVD key is OPTIONAL and only raises NVD's
     # rate limit. Auto-enrich of newly-seen cyber nodes is OFF by default and is

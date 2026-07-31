@@ -23,9 +23,11 @@ def test_web_search_max_results_clamped():
         instance = MockDDGS.return_value.__enter__.return_value
         instance.text.return_value = []
         web_search("test", max_results=50)
-        instance.text.assert_called_once()
-        call_kwargs = instance.text.call_args
-        assert call_kwargs[1].get("max_results", call_kwargs[0][1] if len(call_kwargs[0]) > 1 else 20) <= 20
+        # One call per engine tried, since an empty result falls through to the
+        # next backend. The clamp must hold on every one of them.
+        assert instance.text.call_count >= 1
+        for call in instance.text.call_args_list:
+            assert call.kwargs.get("max_results", 20) <= 20
 
 
 def test_web_search_handles_exception():
