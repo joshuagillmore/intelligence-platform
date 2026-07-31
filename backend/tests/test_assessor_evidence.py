@@ -240,21 +240,77 @@ class TestPassagesForElements:
         assert ev.retrieved == 40
         assert len(ev.text) <= pirs._PASSAGE_CHAR_BUDGET
 
-    async def test_beyond_the_floor_some_elements_starve_and_are_named(self, monkeypatch, embedder):
-        """Past roughly 56 elements a share can no longer fund a usable passage.
-        Those elements are named, not silently dropped — an element with no
-        evidence must not look like an element whose evidence said nothing."""
+    @pytest.mark.parametrize("n", [56, 57, 200])
+    async def test_past_the_floor_the_budget_still_funds_what_it_can(self, monkeypatch, embedder, n):
+        """An equal split funded nobody past the floor: at 57 elements each
+        share was 315 against ~78 of overhead, leaving 237 — one character under
+        the minimum — so every element starved and all 18,000 characters went
+        unspent. The budget can carry ~56 entries at minimum size, so it should
+        fund that many and name the rest."""
         async def fake_search(*a, **kw):
             return [{"chunk_text": "z" * 2_000, "similarity": 0.5, "document_id": "d"}]
 
         monkeypatch.setattr("intel_platform.services.vector_search.vector_search", fake_search)
-        ev = await pirs._passages_for([f"e{i}?" for i in range(200)], "p1", _FakeSession())
+        ev = await pirs._passages_for([f"e{i}?" for i in range(n)], "p1", _FakeSession())
 
-        assert ev.budget_starved_elements, "starved elements must be named"
-        assert set(ev.budget_starved_elements) <= set(ev.elements_without_passages)
+        assert ev.retrieved > 0, f"{n} elements funded nothing; budget went unspent"
+        assert ev.elements_with_passages, "some element must receive evidence"
+        assert len(ev.text) <= pirs._PASSAGE_CHAR_BUDGET
         covered = set(ev.elements_with_passages) | set(ev.elements_without_passages)
-        assert covered == set(range(1, 201)), "every element must be accounted for"
+        assert covered == set(range(1, n + 1)), "every element must be accounted for"
+        if n > 56:
+            assert ev.budget_starved_elements, "unfunded elements must be named"
+            assert set(ev.budget_starved_elements) <= set(ev.elements_without_passages)
+            assert ev.degraded is True
+
+    async def test_the_starvation_boundary_is_where_it_is_claimed(self, monkeypatch, embedder):
+        """56 elements are all funded; 57 is where an equal split stops working.
+        Pinned because the comment in the code states this arithmetic."""
+        async def fake_search(*a, **kw):
+            return [{"chunk_text": "z" * 2_000, "similarity": 0.5, "document_id": "d"}]
+
+        monkeypatch.setattr("intel_platform.services.vector_search.vector_search", fake_search)
+        at_56 = await pirs._passages_for([f"e{i}?" for i in range(56)], "p1", _FakeSession())
+        at_57 = await pirs._passages_for([f"e{i}?" for i in range(57)], "p1", _FakeSession())
+
+        assert at_56.budget_starved_elements == []
+        assert at_57.budget_starved_elements == [57]
+
+    async def test_wrong_width_batch_is_a_fault_not_an_evidence_gap(self, monkeypatch):
+        """The blocker this round. vector_search refuses a mismatched width and
+        returns [], which reads identically to 'this element has no evidence'.
+        An operator switching to a 1024-dim model would see every element
+        reported unanswered with retrieval_degraded false."""
+        from types import SimpleNamespace
+
+        class WrongWidth:
+            async def embed(self, texts, input_type=None):
+                return SimpleNamespace(embeddings=[[0.1] * 1024 for _ in texts])
+
+        monkeypatch.setattr(
+            "intel_platform.llm.embeddings.get_embedding_provider", lambda: WrongWidth()
+        )
+
+        async def must_not_run(*a, **kw):
+            raise AssertionError("retrieval must not be attempted with unusable vectors")
+
+        monkeypatch.setattr("intel_platform.services.vector_search.vector_search", must_not_run)
+        ev = await pirs._passages_for(["a?", "b?"], "p1", _FakeSession())
+
+        assert ev.embedding_dim_mismatch is True
+        assert ev.unavailable is True
         assert ev.degraded is True
+        assert ev.elements_without_passages == [1, 2]
+        assert ev.failed_elements == [], "this is a configuration fault, not a per-element failure"
+
+    async def test_no_hits_is_not_reported_as_unavailable(self, monkeypatch, embedder):
+        """The counterpart: a genuine evidence gap must not look like a fault."""
+        async def fake_search(*a, **kw):
+            return []
+
+        monkeypatch.setattr("intel_platform.services.vector_search.vector_search", fake_search)
+        ev = await pirs._passages_for(["a?"], "p1", _FakeSession())
+        assert ev.unavailable is False and ev.degraded is False
 
     async def test_embedding_count_mismatch_is_reported_not_absorbed(self, monkeypatch):
         """A short batch still works — each query embeds itself — but it is no

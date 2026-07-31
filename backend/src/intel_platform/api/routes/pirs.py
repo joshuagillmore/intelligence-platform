@@ -528,6 +528,17 @@ _ENTRY_SEPARATOR = "\n\n"
 # while reporting a perfectly ordinary empty result.
 _MIN_SNIPPET_CHARS = 240
 
+
+def _entry_overhead(element_number: int) -> int:
+    """Characters an entry spends on its own label and separator.
+
+    Sizing a share against the raw snippet length ignores this and funds
+    nothing. The document id is a uuid (36 chars) and the element number widens
+    the label by a character every power of ten, so this is computed rather
+    than assumed.
+    """
+    return len(f"[element {element_number} | doc {'x' * 36} | similarity 0.0000] ") + len(_ENTRY_SEPARATOR)
+
 # Passages are whole scraped document chunks rather than the short edge-evidence
 # snippets this context used to carry, so they are screened with `search` over
 # the whole line instead of the start-anchored match `_INJECTION_SHAPED` applies.
@@ -567,6 +578,10 @@ class PassageEvidence:
     # path that was designed, and a silent fallback is how the previous round's
     # defect got in. Reported rather than absorbed.
     embedding_fallback: bool = False
+    # The provider's vectors are a different width than the chunk index, so no
+    # query can match anything until the index is rebuilt. Distinguished from
+    # "no hits" because it is a configuration fault, not an evidence gap.
+    embedding_dim_mismatch: bool = False
     # Elements whose share of the budget could not fund a usable passage.
     budget_starved_elements: list[int] = field(default_factory=list)
 
@@ -575,10 +590,15 @@ class PassageEvidence:
         return "graph+passages" if self.retrieved else "graph-only"
 
     @property
+    def unavailable(self) -> bool:
+        """Retrieval could not run at all — a fault, not an absence of evidence."""
+        return self.embedding_failed or self.embedding_dim_mismatch
+
+    @property
     def degraded(self) -> bool:
         return bool(
             self.failed_elements
-            or self.embedding_failed
+            or self.unavailable
             or self.embedding_fallback
             or self.budget_starved_elements
         )
@@ -636,7 +656,7 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
     budget let the first elements consume all of it, which is the opposite of
     what per-element retrieval is for.
     """
-    from intel_platform.services.vector_search import vector_search
+    from intel_platform.services.vector_search import _EMBEDDING_DIM, vector_search
 
     evidence = PassageEvidence()
     if not eeis:
@@ -657,24 +677,48 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
             )
             vectors = None
             evidence.embedding_fallback = True
+        elif vectors and len(vectors[0]) != _EMBEDDING_DIM:
+            # `vector_search` refuses a mismatched width and returns [], which is
+            # indistinguishable from "this element has no evidence". An operator
+            # switching embedding_provider to a 1024-dim model would otherwise
+            # see every element reported as simply unanswered, with
+            # retrieval_degraded false — a systematic misconfiguration wearing
+            # the face of a genuine intelligence gap.
+            logger.warning(
+                "Embedding provider returns %d-wide vectors but chunk_embeddings is %d-wide; "
+                "passage retrieval is unavailable until the index is rebuilt",
+                len(vectors[0]), _EMBEDDING_DIM,
+            )
+            evidence.embedding_dim_mismatch = True
+            evidence.elements_without_passages = list(range(1, len(eeis) + 1))
+            return evidence
     except Exception:
         logger.warning("Batched element embedding failed; assessing on graph evidence", exc_info=True)
         evidence.embedding_failed = True
         evidence.elements_without_passages = list(range(1, len(eeis) + 1))
         return evidence
 
-    # An equal split alone is not enough: the entry label costs ~50 characters,
-    # so a share sized to the raw snippet funds nothing. Elements whose share
-    # cannot pay for a usable passage are skipped and named, rather than each
-    # being handed a fragment too short to assert anything.
+    # An equal split alone is not enough: the entry label costs ~78 characters,
+    # so a share sized to the raw snippet funds nothing.
+    #
+    # Below the floor, an equal split funds *nobody*: at 57 elements each share
+    # is 315 against ~78 of overhead, leaving 237 — just under the minimum — so
+    # every element starves and all 18,000 characters go unspent. Fund as many
+    # elements as the budget can actually carry at minimum size instead, and
+    # name the rest. Partial evidence for some elements beats none for all.
     per_element = _PASSAGE_CHAR_BUDGET // len(eeis)
+    fundable = len(eeis)
+    if per_element - _entry_overhead(len(eeis)) < _MIN_SNIPPET_CHARS:
+        fundable = _PASSAGE_CHAR_BUDGET // (_entry_overhead(len(eeis)) + _MIN_SNIPPET_CHARS)
+        per_element = _PASSAGE_CHAR_BUDGET // fundable if fundable else 0
+
     blocks: list[str] = []
     spent = 0
 
     for i, eei in enumerate(eeis, 1):
         share = min(per_element, _PASSAGE_CHAR_BUDGET - spent)
-        overhead = len(f"[element {i} | doc {'x' * 36} | similarity 0.0000] ") + len(_ENTRY_SEPARATOR)
-        if share - overhead < _MIN_SNIPPET_CHARS:
+        overhead = _entry_overhead(i)
+        if i > fundable or share - overhead < _MIN_SNIPPET_CHARS:
             evidence.budget_starved_elements.append(i)
             evidence.elements_without_passages.append(i)
             continue
@@ -1060,6 +1104,12 @@ async def assess_pir(
             "retrieval_failed_for": evidence.failed_elements,
             "budget_starved_elements": evidence.budget_starved_elements,
             "embedding_fallback": evidence.embedding_fallback,
+            "embedding_failed": evidence.embedding_failed,
+            "embedding_dim_mismatch": evidence.embedding_dim_mismatch,
+            # True when retrieval could not run at all. Without this a caller
+            # sees retrieval_degraded with no attributable reason, which is the
+            # complaint the degraded flag exists to answer.
+            "retrieval_unavailable": evidence.unavailable,
             "retrieval_degraded": evidence.degraded,
         },
         "sources_used": sources_used,

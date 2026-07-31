@@ -192,3 +192,52 @@ def test_unknown_pir_is_404(client, analyst_header):
         assert r.status_code == 404
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+class TestEvidenceBlock:
+    """The response must say what the verdicts were judged from.
+
+    Two live runs judged elements UNMET that the collected material answered,
+    because the assessor read the graph while report generation read the chunk
+    index. A caller comparing assessments cannot interpret a UNMET without
+    knowing whether the documents were in view.
+    """
+
+    def _evidence(self, client, header, pir):
+        verdicts = "\n".join(f"{i + 1} | SATISFIED | Covered." for i in range(5))
+        with _patch_llm(verdicts):
+            r = _assess(client, header, pir.id)
+        assert r.status_code == 200
+        return r.json()["evidence"]
+
+    def test_every_degradation_reason_is_reportable(self, client, analyst_header, fake_pir):
+        ev = self._evidence(client, analyst_header, fake_pir)
+        for key in (
+            "substrate", "dated_entities", "passages_retrieved",
+            "elements_with_passages", "elements_without_passages",
+            "retrieval_failed_for", "budget_starved_elements",
+            "embedding_fallback", "embedding_failed", "embedding_dim_mismatch",
+            "retrieval_unavailable", "retrieval_degraded",
+        ):
+            assert key in ev, f"evidence block missing {key}"
+
+    def test_degraded_is_always_attributable(self, client, analyst_header, fake_pir):
+        """retrieval_degraded with no reason set is the complaint the flag
+        exists to answer, so it must never be true on its own."""
+        ev = self._evidence(client, analyst_header, fake_pir)
+        if ev["retrieval_degraded"]:
+            assert (
+                ev["retrieval_failed_for"] or ev["budget_starved_elements"]
+                or ev["embedding_fallback"] or ev["embedding_failed"]
+                or ev["embedding_dim_mismatch"]
+            ), "degraded reported with no attributable cause"
+
+    def test_substrate_matches_what_was_retrieved(self, client, analyst_header, fake_pir):
+        ev = self._evidence(client, analyst_header, fake_pir)
+        expected = "graph+passages" if ev["passages_retrieved"] else "graph-only"
+        assert ev["substrate"] == expected
+
+    def test_every_element_is_accounted_for(self, client, analyst_header, fake_pir):
+        ev = self._evidence(client, analyst_header, fake_pir)
+        covered = set(ev["elements_with_passages"]) | set(ev["elements_without_passages"])
+        assert covered == set(range(1, len(EEIS) + 1))
