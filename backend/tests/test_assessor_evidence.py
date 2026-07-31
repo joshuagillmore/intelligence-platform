@@ -76,7 +76,9 @@ class _FakeEmbeddings:
         self.calls.append(list(texts))
         from types import SimpleNamespace
 
-        return SimpleNamespace(embeddings=[[0.1, 0.2] for _ in texts])
+        # Real width: chunk_embeddings.embedding is Vector(1536), and
+        # vector_search now rejects anything else.
+        return SimpleNamespace(embeddings=[[0.1] * 1536 for _ in texts])
 
 
 @pytest.fixture
@@ -130,7 +132,7 @@ class TestPassagesForElements:
 
         monkeypatch.setattr("intel_platform.services.vector_search.vector_search", fake_search)
         await pirs._passages_for(["a?"], "p1", _FakeSession())
-        assert seen["a?"] == [0.1, 0.2]
+        assert seen["a?"] == [0.1] * 1536
 
     async def test_passage_text_reaches_the_context(self, monkeypatch, embedder, hits):
         """The exact defect: this text existed in the documents while the
@@ -208,14 +210,77 @@ class TestPassagesForElements:
         assert ev.text == "" and ev.elements_without_passages == [1]
 
     async def test_total_passage_text_stays_within_budget(self, monkeypatch, embedder):
-        """Strictly within. The previous form of this assertion allowed
-        BUDGET + _PASSAGE_CHARS, so it would have passed on an overflow."""
+        """Within budget AND non-empty.
+
+        Two earlier versions of this assertion passed for the wrong reason: one
+        allowed BUDGET + _PASSAGE_CHARS of overflow, and the next was satisfied
+        by an empty string — which is exactly what the 40-element case produced,
+        because each share was smaller than the entry label it had to pay for.
+        """
         async def fake_search(*a, **kw):
             return [{"chunk_text": "z" * 5_000, "similarity": 0.5, "document_id": "d"}] * 5
 
         monkeypatch.setattr("intel_platform.services.vector_search.vector_search", fake_search)
         ev = await pirs._passages_for([f"element {i}?" for i in range(40)], "p1", _FakeSession())
         assert len(ev.text) <= pirs._PASSAGE_CHAR_BUDGET
+        assert ev.retrieved > 0, "budget produced no passages at all"
+
+    async def test_forty_elements_all_still_receive_evidence(self, monkeypatch, embedder):
+        """The reported case. Each share is 450 against ~77 of entry overhead,
+        leaving 373 — above the usable floor, so every element is funded rather
+        than every passage being silently dropped."""
+        async def fake_search(*a, **kw):
+            return [{"chunk_text": "z" * 5_000, "similarity": 0.5, "document_id": "d"}] * 3
+
+        monkeypatch.setattr("intel_platform.services.vector_search.vector_search", fake_search)
+        ev = await pirs._passages_for([f"e{i}?" for i in range(40)], "p1", _FakeSession())
+
+        assert ev.elements_with_passages == list(range(1, 41))
+        assert ev.budget_starved_elements == []
+        assert ev.retrieved == 40
+        assert len(ev.text) <= pirs._PASSAGE_CHAR_BUDGET
+
+    async def test_beyond_the_floor_some_elements_starve_and_are_named(self, monkeypatch, embedder):
+        """Past roughly 56 elements a share can no longer fund a usable passage.
+        Those elements are named, not silently dropped — an element with no
+        evidence must not look like an element whose evidence said nothing."""
+        async def fake_search(*a, **kw):
+            return [{"chunk_text": "z" * 2_000, "similarity": 0.5, "document_id": "d"}]
+
+        monkeypatch.setattr("intel_platform.services.vector_search.vector_search", fake_search)
+        ev = await pirs._passages_for([f"e{i}?" for i in range(200)], "p1", _FakeSession())
+
+        assert ev.budget_starved_elements, "starved elements must be named"
+        assert set(ev.budget_starved_elements) <= set(ev.elements_without_passages)
+        covered = set(ev.elements_with_passages) | set(ev.elements_without_passages)
+        assert covered == set(range(1, 201)), "every element must be accounted for"
+        assert ev.degraded is True
+
+    async def test_embedding_count_mismatch_is_reported_not_absorbed(self, monkeypatch):
+        """A short batch still works — each query embeds itself — but it is no
+        longer the designed path, and silence about that is how the previous
+        round's defect got in."""
+        from types import SimpleNamespace
+
+        class ShortBatch:
+            async def embed(self, texts, input_type=None):
+                return SimpleNamespace(embeddings=[[0.1] * 1536])  # one vector, two elements
+
+        monkeypatch.setattr(
+            "intel_platform.llm.embeddings.get_embedding_provider", lambda: ShortBatch()
+        )
+        seen = []
+
+        async def fake_search(query, project_id, session, limit=20, query_vector=None, **kw):
+            seen.append(query_vector)
+            return [{"chunk_text": "evidence text", "similarity": 0.5, "document_id": "d"}]
+
+        monkeypatch.setattr("intel_platform.services.vector_search.vector_search", fake_search)
+        ev = await pirs._passages_for(["a?", "b?"], "p1", _FakeSession())
+
+        assert ev.embedding_fallback is True
+        assert ev.degraded is True
+        assert seen == [None, None], "fallback must let each query embed itself"
 
     async def test_early_elements_do_not_starve_later_ones(self, monkeypatch, embedder):
         """A single global budget let element 1 consume all of it, which defeats
@@ -273,6 +338,35 @@ class TestPassageScrubbing:
         """Over-broad scrubbing would delete legitimate reporting."""
         benign = "Inspectors were satisfied with the level of access granted."
         assert pirs._scrub_passage(benign) == benign
+
+
+class TestQueryVectorGuard:
+    """chunk_embeddings.embedding is Vector(1536) while configured providers
+    advertise 1536, 1024 and 768. A caller-supplied vector of the wrong width
+    would otherwise reach `CAST(:query_vec AS vector)` and fail in the database."""
+
+    async def test_wrong_width_vector_is_refused_before_sql(self):
+        from intel_platform.services import vector_search as vs
+
+        class _Boom:
+            async def execute(self, *a, **kw):
+                raise AssertionError("SQL must not run with a mismatched vector")
+
+        assert await vs.vector_search("q", "p1", _Boom(), query_vector=[0.1] * 768) == []
+
+    async def test_correct_width_vector_reaches_sql(self, monkeypatch):
+        from intel_platform.services import vector_search as vs
+
+        used = {}
+
+        class _Session:
+            async def execute(self, stmt, params):
+                used["vec"] = params["query_vec"]
+                return []
+
+        out = await vs.vector_search("q", "p1", _Session(), query_vector=[0.5] * 1536)
+        assert out == []
+        assert used["vec"].startswith("[0.5")
 
 
 class TestContextBudgets:

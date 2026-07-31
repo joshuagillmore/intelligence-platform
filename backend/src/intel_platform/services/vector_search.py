@@ -14,6 +14,12 @@ logger = logging.getLogger(__name__)
 # Maximum texts per embedding API call (most providers cap at ~96-2048)
 _EMBED_BATCH_SIZE = 96
 
+# chunk_embeddings.embedding is Vector(1536) (db/models.ChunkEmbedding). The
+# configured providers advertise 1536, 1024 and 768, so a caller supplying its
+# own vector can hand pgvector a width the column cannot accept — a database
+# error raised from inside a search, rather than a search that returns nothing.
+_EMBEDDING_DIM = 1536
+
 
 # ---------------------------------------------------------------------------
 # Indexing
@@ -94,6 +100,14 @@ async def vector_search(
     instead of paying one round trip per query.
     """
     if query_vector is not None:
+        if len(query_vector) != _EMBEDDING_DIM:
+            # A vector from a differently-sized model would otherwise reach the
+            # `CAST(:query_vec AS vector)` below and fail in the database.
+            logger.warning(
+                "Ignoring query_vector of width %d; chunk_embeddings expects %d",
+                len(query_vector), _EMBEDDING_DIM,
+            )
+            return []
         query_vec = query_vector
     else:
         if provider is None:

@@ -520,6 +520,13 @@ _GRAPH_CHAR_BUDGET = (
 _PASSAGES_PER_EEI = 3
 _PASSAGE_CHARS = 1_200
 _ENTRY_SEPARATOR = "\n\n"
+# Below this a passage is too clipped to carry an assertion, so a share that
+# cannot fund it is not spent at all. Dividing the budget equally across very
+# many elements otherwise gives every element a fragment shorter than its own
+# label — measured: 40 elements produced a 450-char share against a ~500-char
+# entry, so every passage was dropped and retrieval returned nothing at all
+# while reporting a perfectly ordinary empty result.
+_MIN_SNIPPET_CHARS = 240
 
 # Passages are whole scraped document chunks rather than the short edge-evidence
 # snippets this context used to carry, so they are screened with `search` over
@@ -555,10 +562,26 @@ class PassageEvidence:
     elements_without_passages: list[int] = field(default_factory=list)
     failed_elements: list[int] = field(default_factory=list)
     embedding_failed: bool = False
+    # The batch returned a different number of vectors than elements asked for.
+    # Retrieval still works — each query embeds itself — but it is no longer the
+    # path that was designed, and a silent fallback is how the previous round's
+    # defect got in. Reported rather than absorbed.
+    embedding_fallback: bool = False
+    # Elements whose share of the budget could not fund a usable passage.
+    budget_starved_elements: list[int] = field(default_factory=list)
 
     @property
     def substrate(self) -> str:
         return "graph+passages" if self.retrieved else "graph-only"
+
+    @property
+    def degraded(self) -> bool:
+        return bool(
+            self.failed_elements
+            or self.embedding_failed
+            or self.embedding_fallback
+            or self.budget_starved_elements
+        )
 
 
 def _scrub_passage(text: str) -> str:
@@ -627,20 +650,35 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
         result = await get_embedding_provider().embed(list(eeis), input_type="search_query")
         vectors = list(result.embeddings)
         if len(vectors) != len(eeis):
+            logger.warning(
+                "Batched embedding returned %d vectors for %d elements; "
+                "falling back to per-query embedding",
+                len(vectors), len(eeis),
+            )
             vectors = None
+            evidence.embedding_fallback = True
     except Exception:
         logger.warning("Batched element embedding failed; assessing on graph evidence", exc_info=True)
         evidence.embedding_failed = True
         evidence.elements_without_passages = list(range(1, len(eeis) + 1))
         return evidence
 
-    per_element = max(1, _PASSAGE_CHAR_BUDGET // len(eeis))
-    snippet_cap = min(_PASSAGE_CHARS, per_element)
+    # An equal split alone is not enough: the entry label costs ~50 characters,
+    # so a share sized to the raw snippet funds nothing. Elements whose share
+    # cannot pay for a usable passage are skipped and named, rather than each
+    # being handed a fragment too short to assert anything.
+    per_element = _PASSAGE_CHAR_BUDGET // len(eeis)
     blocks: list[str] = []
     spent = 0
 
     for i, eei in enumerate(eeis, 1):
-        share = per_element
+        share = min(per_element, _PASSAGE_CHAR_BUDGET - spent)
+        overhead = len(f"[element {i} | doc {'x' * 36} | similarity 0.0000] ") + len(_ENTRY_SEPARATOR)
+        if share - overhead < _MIN_SNIPPET_CHARS:
+            evidence.budget_starved_elements.append(i)
+            evidence.elements_without_passages.append(i)
+            continue
+        snippet_cap = min(_PASSAGE_CHARS, share - overhead)
         got = 0
         try:
             hits = await vector_search(
@@ -1020,7 +1058,9 @@ async def assess_pir(
             "elements_with_passages": evidence.elements_with_passages,
             "elements_without_passages": evidence.elements_without_passages,
             "retrieval_failed_for": evidence.failed_elements,
-            "retrieval_degraded": bool(evidence.failed_elements or evidence.embedding_failed),
+            "budget_starved_elements": evidence.budget_starved_elements,
+            "embedding_fallback": evidence.embedding_fallback,
+            "retrieval_degraded": evidence.degraded,
         },
         "sources_used": sources_used,
         "sources_configured": sources_configured,
