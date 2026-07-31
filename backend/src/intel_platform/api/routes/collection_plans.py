@@ -469,6 +469,11 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
 
     refined_pir = pir_text
     plan_description = ""
+    # Why a plan came back thin, in the plan's own words rather than the UI's
+    # guess. Without this the analyst was shown "The LLM may have been
+    # rate-limited" for any failure at all, including ones that were nothing of
+    # the sort.
+    failures: list[str] = []
 
     if provider:
         # Step 2: Refine the PIR
@@ -485,7 +490,12 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
             )
             refined_pir, plan_description = _split_refinement(refine_result.content, pir_text)
         except Exception as e:
-            logger.warning("PIR refinement failed: %s", e)
+            # `%s` alone loses everything when the exception carries no message —
+            # a timeout stringifies to "" and the log line read literally
+            # "PIR refinement failed: ", which is undiagnosable. Record the type
+            # and the traceback, and keep the reason for the response.
+            logger.warning("PIR refinement failed: %s: %s", type(e).__name__, e, exc_info=True)
+            failures.append(f"refinement failed ({type(e).__name__})")
 
         # Step 3: Generate collection plan with sources
         try:
@@ -519,7 +529,8 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
             )
             plan_text = plan_result.content
         except Exception as e:
-            logger.warning("Plan generation failed: %s", e)
+            logger.warning("Plan generation failed: %s: %s", type(e).__name__, e, exc_info=True)
+            failures.append(f"source generation failed ({type(e).__name__})")
             plan_text = ""
     else:
         plan_text = ""
@@ -530,14 +541,29 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
         # does not have to re-derive it on the next run.
         pir_record.refined_text = refined_pir
 
-    if pir_record and plan_description and not pir_record.eeis:
-        # The refinement already decomposes the requirement into EEIs; capturing
-        # them here is what makes satisfaction measurable later (`/pirs/{id}/assess`).
+    if pir_record and not pir_record.eeis:
+        # The refinement is asked to decompose the requirement into EEIs, and
+        # capturing them is what makes satisfaction measurable later
+        # (`/pirs/{id}/assess`) and what the collection loop re-tasks against.
         from intel_platform.api.routes.pirs import extract_eeis
 
-        captured = extract_eeis(plan_description)
+        # Search the whole refinement, not just the analysis half: a model that
+        # puts the EEI list above the split point would otherwise have it
+        # discarded, and the requirement would look undecomposed.
+        captured = extract_eeis(plan_description) or extract_eeis(refined_pir)
         if captured:
             pir_record.eeis = captured
+        else:
+            # Observed live: the model returned a refined PIR plus a "Why this
+            # version works" critique and no EEI section at all, while still
+            # referring to "the EEIs". Every downstream capability that needs
+            # them — assessment, the requirement loop, the gap count — then does
+            # nothing, and reported success while doing it.
+            logger.warning(
+                "No EEIs captured for PIR %s; the refinement produced no "
+                "Essential Elements section", getattr(pir_record, "id", "?"),
+            )
+            failures.append("no essential elements were extracted from the refinement")
 
     plan = CollectionPlan(
         project_id=req.project_id,
@@ -580,6 +606,12 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     result["llm_plan_text"] = plan_text
     result["llm_available"] = llm_available
     result["llm_status"] = llm_status
+    # What went wrong, if anything, in the plan's own words. A caller seeing a
+    # plan with no sources previously had to guess why, and the UI guessed
+    # "the LLM may have been rate-limited" for every cause including the ones
+    # that were nothing of the sort.
+    result["generation_failures"] = failures
+    result["eeis_captured"] = len(getattr(pir_record, "eeis", None) or []) if pir_record else 0
     if not llm_available:
         result["llm_requirements"] = {
             "message": "An LLM provider is required for autonomous plan generation. "

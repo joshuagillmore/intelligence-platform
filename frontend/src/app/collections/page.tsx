@@ -662,8 +662,40 @@ PIR: ${pirText}` }],
 
                   {/* Plan Result - show sources table if plan returned but with no sources */}
                   {activePlan && planItems.length === 0 && (
+                    <div className="bg-amber-500/10 border border-amber-500/20 rounded p-4 space-y-1">
+                      <p className="text-xs text-amber-400">
+                        Plan was created but no collection sources were generated.
+                      </p>
+                      {/* The reason the backend actually recorded, rather than a
+                          guess. This previously read "The LLM may have been
+                          rate-limited" for every cause, including a refinement
+                          that returned no essential elements — which is not a
+                          rate limit and needs a different response. */}
+                      {(activePlan.generation_failures?.length ?? 0) > 0 ? (
+                        <ul className="text-xs text-amber-300/80 list-disc list-inside">
+                          {activePlan.generation_failures!.map((f, i) => <li key={i}>{f}</li>)}
+                        </ul>
+                      ) : (
+                        <p className="text-xs text-amber-300/80">No reason was reported.</p>
+                      )}
+                      <p className="text-xs text-amber-400/70">Try generating again.</p>
+                    </div>
+                  )}
+
+                  {activePlan && (activePlan.eeis_captured ?? 0) === 0 && (
+                    /* Silent until now: with no essential elements the
+                       requirement cannot be assessed and collection cannot
+                       re-task against it, yet every step still reported
+                       success. */
                     <div className="bg-amber-500/10 border border-amber-500/20 rounded p-4">
-                      <p className="text-xs text-amber-400">Plan was created but no collection sources were generated. The LLM may have been rate-limited. Try generating again.</p>
+                      <p className="text-xs text-amber-400">
+                        No essential elements were captured for this requirement.
+                      </p>
+                      <p className="text-xs text-amber-300/80">
+                        Satisfaction cannot be measured and collection cannot re-task
+                        against the gaps until the requirement is decomposed. Refine
+                        again, or add elements to the PIR directly.
+                      </p>
                     </div>
                   )}
 

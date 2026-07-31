@@ -450,6 +450,12 @@ export interface CollectionPlan {
   updated_at: string | null;
   sources: CollectionSourceEntry[];
   source_count: number;
+  /** Why generation produced less than it should have, as recorded by the
+   *  backend. Present on the from-pir response; absent on plain plan reads. */
+  generation_failures?: string[];
+  /** Essential elements captured onto the requirement. Zero means satisfaction
+   *  cannot be measured and collection cannot re-task against the gaps. */
+  eeis_captured?: number;
 }
 
 export interface CollectionSourceEntry {
