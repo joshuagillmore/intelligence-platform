@@ -24,7 +24,7 @@ from intel_platform.models.entities import Document
 from intel_platform.services.graph_builder import build_graph_from_extractions
 from intel_platform.services.content_quality import is_auth_wall, rejection_reason
 from intel_platform.services.ingestion import ingest_text
-from intel_platform.services.plan_executor import over_source_budget
+from intel_platform.services.plan_executor import over_source_budget, planned_source_budget
 
 logger = logging.getLogger(__name__)
 
@@ -925,6 +925,21 @@ async def run_agentic_loop(
         from intel_platform.config import settings
         extraction_mode = (plan.routing_rules or {}).get("extraction_mode") or settings.extraction_mode
 
+        # Hold part of the budget back for follow-up collection. The planned
+        # list is a guess made before any evidence; re-tasking knows which
+        # elements are still open. Sizing the planned pass to the whole budget
+        # left the loop with nothing and it did zero passes every run.
+        planned_budget = planned_source_budget(source_limit)
+        if planned_budget is not None and source_limit is not None and planned_budget < source_limit:
+            db.add(CollectionActivity(
+                plan_id=plan.id, event="budget_reserved",
+                message=(
+                    f"{planned_budget} of {source_limit} source(s) for the planned list; "
+                    f"{source_limit - planned_budget} held for follow-up collection"
+                ),
+            ))
+            await db.commit()
+
         attempted = 0
         for source in sources:
             if source.collection_status == "failed":
@@ -934,11 +949,15 @@ async def run_agentic_loop(
             # Stop against the collection budget, and say so explicitly — the
             # analyst needs to distinguish "the plan was this small" from "the
             # budget ran out with sources still queued".
-            if over_source_budget(attempted, source_limit):
+            if over_source_budget(attempted, planned_budget):
                 db.add(CollectionActivity(
                     plan_id=plan.id, source_id=source.id,
                     event="source_skipped",
-                    message=f"Source budget of {source_limit} reached — not collected",
+                    message=(
+                        f"Planned-source budget of {planned_budget} reached "
+                        f"(of {source_limit} total, the remainder held for "
+                        "follow-up collection) — not collected"
+                    ),
                 ))
                 await db.commit()
                 continue

@@ -47,6 +47,30 @@ def over_source_budget(attempted: int, source_limit: int | None) -> bool:
     return source_limit is not None and attempted >= source_limit
 
 
+# Share of the budget kept back for follow-up collection.
+#
+# The planned sources are a guess made before any evidence exists; re-tasking is
+# informed by what was actually gathered and by which elements are still open.
+# Letting the uninformed half spend the whole budget is the worse allocation,
+# and it is what happened by default: a planner sizes its list to the budget, so
+# the follow-up loop opened with nothing left and did zero passes every time.
+_RETASK_RESERVE = 0.3
+
+
+def planned_source_budget(source_limit: int | None) -> int | None:
+    """How many sources the *planned* pass may spend.
+
+    The analyst's number remains the total ceiling — this only stops the first
+    phase consuming all of it. Budgets too small to split (0 or 1) are left
+    whole, since reserving from them would leave the planned pass unable to
+    collect anything at all.
+    """
+    if source_limit is None or source_limit <= 1:
+        return source_limit
+    reserve = max(1, int(source_limit * _RETASK_RESERVE))
+    return max(1, source_limit - reserve)
+
+
 async def execute_plan(
     plan_id: str,
     db_factory: async_sessionmaker[AsyncSession],

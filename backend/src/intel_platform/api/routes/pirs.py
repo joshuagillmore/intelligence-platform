@@ -58,8 +58,18 @@ def _validate_priority(priority: str) -> str:
 
 
 def derive_title(text: str) -> str:
-    """A short label for a PIR that the analyst did not title."""
+    """A short label for a PIR that the analyst did not title.
+
+    Markdown is stripped here as well as at the point the refinement is split.
+    A requirement that arrives already carrying emphasis produced titles like
+    "(Actionable, Specific, Measurable, Time-bounded)** > **", which is what an
+    analyst then had to pick their requirement out of in every list.
+    """
     cleaned = " ".join((text or "").split())
+    cleaned = re.sub(r"^\s*>+\s*", "", cleaned)
+    cleaned = re.sub(r"^#{1,6}\s*", "", cleaned)
+    cleaned = cleaned.replace("**", "").replace("__", "")
+    cleaned = cleaned.strip().strip('"').strip("*_ ").strip()
     if len(cleaned) <= 120:
         return cleaned
     return cleaned[:117].rstrip() + "..."

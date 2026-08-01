@@ -79,56 +79,89 @@ def refinement_system_prompt() -> str:
     )
 
 
+# A line carrying no words — just markdown punctuation. Models emit these
+# constantly ("**" alone on a line, a stray ">", a rule). The old scan treated
+# the first *non-empty* line as the requirement, so a bare "**" was accepted,
+# stripped to "", and the entire response including the model's own critique was
+# stored as the requirement instead.
+_MD_NOISE = re.compile(r"^[\s*_>#\-–—`~|=+.]*$")
+
+# The label the requirement hides behind. "Refined PIR" is the form the prompt
+# asks for; models also answer with "Priority Intelligence Requirement (PIR)"
+# and variations, and the requirement is then further down the reply than the
+# first line of prose.
+_PIR_LABEL = (
+    r"(?:refined\s+)?(?:priority\s+intelligence\s+requirement|pir)"
+    r"(?:\s*\(\s*pir\s*\))?"
+)
+_LABEL_ONLY = re.compile(rf"^[\s*_#>\-]*{_PIR_LABEL}[\s*_]*[:\-–]?[\s*_]*$", re.IGNORECASE)
+_LABEL_INLINE = re.compile(
+    rf"^[\s*_#>\-]*{_PIR_LABEL}[\s*_]*[:\-–][\s*_]*(?P<body>.+)$", re.IGNORECASE
+)
+
+
+def _clean_line(line: str) -> str:
+    """Strip the markdown a model wraps a requirement in, leaving the words.
+
+    Blockquote markers, headings, bullets and emphasis all reached the stored
+    requirement and from there into PIR titles, plan names, and — the damaging
+    part — the text the source resolver searches against. A requirement reading
+    "(Actionable, Specific, Measurable, Time-bounded)** > **" sent collection
+    after intelligence-doctrine PDFs instead of the subject.
+    """
+    s = (line or "").strip()
+    s = re.sub(r"^\s*>+\s*", "", s)          # blockquote
+    s = re.sub(r"^#{1,6}\s*", "", s)         # heading
+    s = re.sub(r"^[-*+]\s+", "", s)          # bullet
+    s = s.replace("**", "").replace("__", "")
+    return s.strip().strip('"').strip("*_ ").strip()
+
+
 def _split_refinement(content: str, fallback: str) -> tuple[str, str]:
     """Split an LLM refinement into (refined PIR, analysis).
 
-    The prompt asks for the refined PIR on the first line, but models routinely
-    emit a label first ("Refined PIR:", "**Refined PIR**") and put the text on
-    the next line. Taking line 0 verbatim captured the label and pushed the real
-    requirement into the description, leaving refined_pir 12 characters long.
+    The prompt asks for the refined PIR on the first line. Replies routinely
+    arrive as a markdown-only line, then a blockquoted label, then the
+    requirement in italics, then a critique of the rewrite — so both "take line
+    0" and "take the first non-empty line" capture something that is not the
+    requirement.
+
+    The label is searched for across the whole reply before falling back to the
+    first line with words in it: a stray fragment above the label must not win
+    simply by appearing first.
     """
     text = (content or "").strip()
     if not text:
         return fallback, ""
 
     lines = text.split("\n")
-    # Trailing markdown matters too — "**Refined PIR**" is as common as "Refined PIR:".
-    label = re.compile(r'^\s*[*_#>\-\s]*refined\s*pir\s*[*_]*\s*[:\-–]?\s*[*_]*\s*$', re.IGNORECASE)
-    inline = re.compile(
-        r'^\s*[*_#>\-\s]*refined\s*pir\s*[*_]*\s*[:\-–]\s*(?P<body>.+)$', re.IGNORECASE
-    )
 
+    def _substantive_from(start: int) -> tuple[str, str] | None:
+        for j in range(start, len(lines)):
+            cleaned = _clean_line(lines[j])
+            if cleaned and not _MD_NOISE.match(lines[j].strip()):
+                return cleaned, "\n".join(lines[j + 1:]).strip()
+        return None
+
+    # Pass 1: the labelled requirement, wherever it sits in the reply.
     for i, raw in enumerate(lines):
         line = raw.strip()
         if not line:
             continue
-        m = inline.match(line)
-        if m:
-            # "Refined PIR: <text>" on one line. Clean first, then check — for
-            # "**Refined PIR:**" the capture is just the closing "**", which is
-            # truthy but empty once stripped, and the real text is the next line.
-            body = m.group("body").strip().strip('"').strip("*").strip()
+        inline = _LABEL_INLINE.match(line)
+        if inline:
+            body = _clean_line(inline.group("body"))
             if body:
                 return body, "\n".join(lines[i + 1:]).strip()
-            for j in range(i + 1, len(lines)):
-                nxt = lines[j].strip()
-                if nxt:
-                    return nxt.strip('"').strip("*").strip(), "\n".join(lines[j + 1:]).strip()
-            return fallback, ""
-        if label.match(line):
-            # Label alone — the requirement is the next non-empty line.
-            for j in range(i + 1, len(lines)):
-                nxt = lines[j].strip()
-                if nxt:
-                    return (
-                        nxt.strip('"').strip("*").strip(),
-                        "\n".join(lines[j + 1:]).strip(),
-                    )
-            return fallback, ""
-        # First substantive line, no label in sight.
-        return line.strip('"').strip("*").strip(), "\n".join(lines[i + 1:]).strip()
+            found = _substantive_from(i + 1)
+            return found if found else (fallback, "")
+        if _LABEL_ONLY.match(line):
+            found = _substantive_from(i + 1)
+            return found if found else (fallback, "")
 
-    return fallback, ""
+    # Pass 2: no label anywhere — the first line that actually carries words.
+    found = _substantive_from(0)
+    return found if found else (fallback, "")
 
 
 def _parse_uuid(value: str, label: str = "ID") -> uuid.UUID:
