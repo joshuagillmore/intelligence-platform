@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { projectsApi, watchlistApi, type Project } from '@/lib/api';
 import { useProject } from '@/lib/ProjectContext';
+import { orderProjects, type SortDir, type SortKey } from '@/lib/projectOrder';
 import { useNotifications } from '@/components/NotificationProvider';
 
 function useHydrated() {
@@ -32,8 +33,6 @@ function formatDate(dateStr?: string): string {
   }
 }
 
-type SortKey = 'name' | 'created' | 'modified' | 'priority';
-type SortDir = 'asc' | 'desc';
 type ViewMode = 'grid' | 'list';
 
 export default function ProjectsPage() {
@@ -56,6 +55,10 @@ export default function ProjectsPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [sortBy, setSortBy] = useState<SortKey>('modified');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  // Whether the analyst has chosen a sort themselves. Until they do, the list
+  // leads with projects that have content; after, their choice wins outright.
+  const [sortChosen, setSortChosen] = useState(false);
+  const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
 
   useEffect(() => {
     // Check auth before loading — redirect to login if no token
@@ -109,7 +112,11 @@ export default function ProjectsPage() {
   async function createProject() {
     if (!newName) return;
     try {
-      await projectsApi.create({ name: newName, description: newDesc });
+      const res = await projectsApi.create({ name: newName, description: newDesc });
+      // A new project is empty, and empty projects sort last — so the thing the
+      // analyst just made landed at the bottom of a long list. Pin it until they
+      // navigate away.
+      setJustCreatedId(String(res.data.id));
       setNewName('');
       setNewDesc('');
       setShowCreate(false);
@@ -191,31 +198,13 @@ export default function ProjectsPage() {
     router.push(`/project/${project.id}`);
   }
 
-  const sortedProjects = useMemo(() => {
-    const sorted = [...projects].sort((a, b) => {
-      switch (sortBy) {
-        case 'name':
-          return a.name.localeCompare(b.name);
-        case 'priority': {
-          const order: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-          return (order[a.priority] ?? 99) - (order[b.priority] ?? 99);
-        }
-        case 'created':
-          return (a.created_at || '').localeCompare(b.created_at || '');
-        case 'modified':
-          return (a.updated_at || a.created_at || '').localeCompare(b.updated_at || b.created_at || '');
-        default:
-          return 0;
-      }
-    });
-    const ordered = sortDir === 'desc' ? sorted.reverse() : sorted;
-    // Keep populated projects ahead of empty ones regardless of the sort key, so the
-    // landing always leads with real work instead of a wall of empty placeholders.
-    const hasContent = (p: Project) => p.entity_count > 0 || p.document_count > 0;
-    return [...ordered.filter(hasContent), ...ordered.filter(p => !hasContent(p))];
-  }, [projects, sortBy, sortDir]);
+  const sortedProjects = useMemo(
+    () => orderProjects(projects, { sortBy, sortDir, sortChosen, pinnedId: justCreatedId }),
+    [projects, sortBy, sortDir, sortChosen, justCreatedId],
+  );
 
   function handleColumnSort(key: SortKey) {
+    setSortChosen(true);
     if (sortBy === key) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     } else {
@@ -301,7 +290,7 @@ export default function ProjectsPage() {
             <label className="text-xs text-gray-500">Sort by:</label>
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortKey)}
+              onChange={(e) => { setSortChosen(true); setSortBy(e.target.value as SortKey); }}
               className="bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs text-gray-300 focus:outline-none focus:border-accent-blue"
             >
               <option value="name">Alphabetical</option>
@@ -311,7 +300,7 @@ export default function ProjectsPage() {
             </select>
             {/* Sort direction toggle */}
             <button
-              onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+              onClick={() => { setSortChosen(true); setSortDir(d => d === 'asc' ? 'desc' : 'asc'); }}
               className="bg-navy-700 border border-navy-600 rounded px-2 py-1 text-xs text-gray-400 hover:text-gray-200 transition-colors"
               title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
             >
