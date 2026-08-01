@@ -8,8 +8,8 @@ by semantic similarity we first index every ``AttackTechnique`` node's
 is opt-in rather than folded into ingest. Re-running upserts in place.
 
 Mirrors the ``services/vector_search`` embedding pattern (batched calls via the
-:class:`EmbeddingProvider` orchestrator) and ``ChunkEmbedding``'s Vector(1536)
-dimension handling.
+:class:`EmbeddingProvider` orchestrator) and ``ChunkEmbedding``'s
+``EMBEDDING_DIMENSIONS``-driven vector width.
 """
 from __future__ import annotations
 

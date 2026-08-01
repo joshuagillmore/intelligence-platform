@@ -6,7 +6,7 @@ import logging
 from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from intel_platform.db.models import ChunkEmbedding
+from intel_platform.db.models import _EMBEDDING_DIM as _COLUMN_WIDTH, ChunkEmbedding
 from intel_platform.llm.embeddings import EmbeddingProvider, get_embedding_provider
 
 logger = logging.getLogger(__name__)
@@ -14,11 +14,16 @@ logger = logging.getLogger(__name__)
 # Maximum texts per embedding API call (most providers cap at ~96-2048)
 _EMBED_BATCH_SIZE = 96
 
-# chunk_embeddings.embedding is Vector(1536) (db/models.ChunkEmbedding). The
-# configured providers advertise 1536, 1024 and 768, so a caller supplying its
-# own vector can hand pgvector a width the column cannot accept — a database
-# error raised from inside a search, rather than a search that returns nothing.
-_EMBEDDING_DIM = 1536
+# The width chunk_embeddings.embedding was actually created with. The configured
+# providers advertise 1536, 1024 and 768, so a caller supplying its own vector
+# can hand pgvector a width the column cannot accept — a database error raised
+# from inside a search, rather than a search that returns nothing.
+#
+# Taken from the model rather than repeated: the column is now sized from
+# EMBEDDING_DIMENSIONS, and a guard with its own copy of the number would reject
+# every query on any deployment that changed it — the column would be 768 wide
+# and the guard would still be demanding 1536.
+_EMBEDDING_DIM = _COLUMN_WIDTH
 
 
 # ---------------------------------------------------------------------------

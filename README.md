@@ -179,13 +179,14 @@ to change this; see [Security](#configuration--security)). The backend API and
 its interactive OpenAPI docs are at **http://localhost:8000/docs**.
 
 With `EXTRACTION_MODE=hybrid` and the in-stack Ollama wired up, collection,
-extraction, and graph analysis all work with **no cloud API keys**. One feature
-is the exception: **semantic / vector search needs an `OPENAI_API_KEY`**;
-embeddings are 1536-dimensional to match the Postgres vector column, and only
-OpenAI produces that size today (see [Status](#status--limitations)). Without a
-key the app still runs; ingestion just stores documents without vectors and
-hybrid retrieval falls back to graph-only. Add other cloud keys in `.env` only
-if you want a cloud LLM.
+extraction, and graph analysis all work with **no cloud API keys**. Semantic /
+vector search is included: it defaults to OpenAI, but point it at the local
+Ollama with `EMBEDDING_PROVIDER=ollama` and `EMBEDDING_DIMENSIONS=768` — the
+Postgres vector column is sized from `EMBEDDING_DIMENSIONS`, so it must match
+the provider you choose (see [Status](#status--limitations)). Without any
+embedding provider the app still runs; ingestion just stores documents without
+vectors and hybrid retrieval falls back to graph-only. Add other cloud keys in
+`.env` only if you want a cloud LLM.
 
 Running the halves individually (for development):
 
@@ -244,12 +245,15 @@ Honest scope, so there are no surprises:
   there.
 - **Migrations.** Postgres schema is created at startup; there's no Alembic
   migration flow yet.
-- **Embeddings are OpenAI-only for now.** The Postgres vector column is fixed at
-  1536 dimensions, so semantic/vector search requires an `OPENAI_API_KEY`. The
-  code ships Ollama (`nomic-embed-text`, 768-d) and Cohere (1024-d) embedding
-  providers, but their vectors don't fit the current column; using them needs a
-  configurable column dimension (a planned follow-up). Everything else runs fully
-  local; retrieval degrades to graph-only when no embeddings are available.
+- **Embedding dimension is config, not a migration.** Semantic/vector search
+  works with any of the three shipped providers — OpenAI (1536-d, the default),
+  Cohere (1024-d), or local Ollama `nomic-embed-text` (768-d) — because the
+  Postgres vector column is sized from `EMBEDDING_DIMENSIONS`, which must be set
+  to match the chosen provider. Since there is no migration flow, that value is
+  applied when the tables are created: changing it on an existing database means
+  dropping and recreating `chunk_embeddings` and `attack_technique_embeddings`
+  (their vectors have to be re-embedded under the new provider anyway).
+  Retrieval degrades to graph-only when no embeddings are available.
 
 For the full self-commissioned audit and the fixes it drove, see
 [`docs/code-review-2026-03-22.md`](docs/code-review-2026-03-22.md).
