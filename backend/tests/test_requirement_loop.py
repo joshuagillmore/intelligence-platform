@@ -461,3 +461,71 @@ class TestTerminalStateNamesWhatHappened:
         assert out.satisfied == ["a?"] and out.retired == ["b?"]
         assert out.stopped_on == "elements_retired"
         assert out.answered_everything is False
+
+
+class TestRetaskedSourceOutcomeIsRecorded:
+    """A collected source must not still say "pending / 0 records".
+
+    Observed live: the four re-tasked sources sat at pending with zero records
+    while their content was demonstrably in the graph — 20 entities including
+    "BCS East-West Interlink cable damage" and "EE-S1", extracted from exactly
+    the pages the loop had fetched. The plan under-reported what it held, the
+    dashboard counts were wrong, and a later run would fetch the same pages
+    again.
+    """
+
+    @pytest.fixture
+    def wired(self, monkeypatch):
+        from types import SimpleNamespace
+
+        def fake_search(query, max_results=3, proxy=None):
+            return [{"url": "https://example.com/a", "title": "A", "snippet": ""}]
+
+        monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
+        monkeypatch.setattr(
+            "intel_platform.collection.proxy.get_active_proxy_config",
+            lambda: SimpleNamespace(get_proxy_url=lambda: None),
+        )
+
+    async def test_a_collected_source_is_marked_succeeded(self, wired):
+        captured = {}
+
+        async def acquire(source, plan, db, store, mode, provider=None, max_results=3):
+            captured["source"] = source
+            return {"record_count": 2, "entities_created": 17}
+
+        db = _FkEnforcingDB([], plan=_plan(), pir=_pir(["a?"]))
+        added = await rl._collect_for_element(
+            db, _plan(), _requirement(0, "a?"), ["q"], None, object(), acquire, "nlp", None,
+        )
+
+        src = captured["source"]
+        assert added == 1
+        assert src.collection_status == "succeeded", "a collected source must not stay pending"
+        assert src.total_records_acquired == 2
+        assert src.last_success_at is not None
+
+    async def test_a_failed_source_is_marked_failed(self, wired):
+        captured = {}
+
+        async def boom(source, plan, db, store, mode, provider=None, max_results=3):
+            captured["source"] = source
+            raise RuntimeError("fetch failed")
+
+        db = _FkEnforcingDB([], plan=_plan(), pir=_pir(["a?"]))
+        added = await rl._collect_for_element(
+            db, _plan(), _requirement(0, "a?"), ["q"], None, object(), boom, "nlp", None,
+        )
+        assert added == 0
+        assert captured["source"].collection_status == "failed"
+
+    async def test_record_count_survives_a_result_without_one(self, wired):
+        """acquire_source returning None or a bare dict must not crash the pass."""
+        async def acquire(source, plan, db, store, mode, provider=None, max_results=3):
+            return None
+
+        db = _FkEnforcingDB([], plan=_plan(), pir=_pir(["a?"]))
+        added = await rl._collect_for_element(
+            db, _plan(), _requirement(0, "a?"), ["q"], None, object(), acquire, "nlp", None,
+        )
+        assert added == 1

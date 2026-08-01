@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -330,10 +331,26 @@ async def _collect_for_element(
             await db.commit()
 
             try:
-                await acquire_source(
+                source.collection_status = "collecting"
+                result = await acquire_source(
                     source, plan, db, store, extraction_mode,
                     provider=provider, max_results=RESULTS_PER_QUERY,
                 )
+                # Record the outcome the way the planned pass does. Without
+                # this a re-tasked source sat at "pending / 0 records" forever
+                # while its content was demonstrably in the graph — the plan
+                # under-reported what it had collected, the dashboard counts
+                # were wrong, and a later run would fetch the same page again.
+                source.collection_status = "succeeded"
+                source.last_success_at = datetime.now(timezone.utc)
+                source.total_records_acquired = (
+                    source.total_records_acquired or 0
+                ) + (result or {}).get("record_count", 0)
+                _log(db, plan.id, "requirement_source_acquired",
+                     f"Re-tasked source collected: {(result or {}).get('record_count', 0)} "
+                     f"record(s), {(result or {}).get('entities_created', 0)} entities "
+                     f"— {url[:140]}", source_id=source.id)
+                await db.commit()
                 added += 1
             except Exception:
                 logger.warning("Re-tasked acquisition failed for %s", url[:120], exc_info=True)
