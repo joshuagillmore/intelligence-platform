@@ -119,3 +119,50 @@ class TestEntityNamesAreNormalised:
         from intel_platform.services.graph_builder import _clean_entity_name
 
         assert _clean_entity_name("**Yi Peng 3**") == _clean_entity_name("Yi Peng 3")
+
+
+class TestMarkdownLinksInNames:
+    """Link syntax the extractor cut in half.
+
+    Measured on one BBC article collected 2026-08-01: 453 entities, including
+    Organizations named "Europe]", "Germany]", "British Broadcasting
+    Corporation]" and "BBC News Mundo (Spanish)](https://www.bbc.com/mundo".
+    The model was handed markdown and returned a span of it, so the name is the
+    link text plus whatever punctuation the span happened to include.
+    """
+
+    @pytest.mark.parametrize("raw,expected", [
+        # Truncated at the closing bracket.
+        ("Europe]", "Europe"),
+        ("Germany]", "Germany"),
+        ("British Broadcasting Corporation]", "British Broadcasting Corporation"),
+        # Truncated inside the URL.
+        ("BBC News Mundo (Spanish)](https://www.bbc.com/mundo", "BBC News Mundo (Spanish)"),
+        ("Chinese)](https://www.bbc.com/zhongwen", "Chinese"),
+        # A whole link: keep what it says, drop where it points.
+        ("[BBC News Brasil](https://www.bbc.com/portuguese)", "BBC News Brasil"),
+        ("[Yi Peng 3", "Yi Peng 3"),
+    ])
+    def test_link_syntax_is_stripped(self, raw, expected):
+        from intel_platform.services.graph_builder import _clean_entity_name
+
+        assert _clean_entity_name(raw) == expected
+
+    @pytest.mark.parametrize("name", [
+        # A balanced bracketed prefix is meaningful — ingestion adds it.
+        "[Collection] Germany suspects sabotage over severed undersea cables",
+        # Parentheses are part of plenty of real names.
+        "Bosch (Germany)",
+        "Nord Stream 2 AG (Switzerland)",
+    ])
+    def test_balanced_punctuation_is_left_alone(self, name):
+        from intel_platform.services.graph_builder import _clean_entity_name
+
+        assert _clean_entity_name(name) == name
+
+    def test_a_truncated_link_can_now_match_the_plain_name(self):
+        """The point of stripping rather than rejecting: "Germany]" and
+        "Germany" are the same country and must resolve to one node."""
+        from intel_platform.services.graph_builder import _clean_entity_name
+
+        assert _clean_entity_name("Germany]") == _clean_entity_name("Germany")
