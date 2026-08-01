@@ -262,6 +262,9 @@ def _is_junk_name(name: str) -> bool:
 
 _MD_PREFIX = re.compile(r"^\s*(?:#{1,6}\s*|>+\s*|[-*+]\s+|\d+[.)]\s+)+")
 
+# A complete markdown link: keep what it says, drop where it points.
+_MD_LINK = re.compile(r"\[([^\]]*)\]\((?:[^)]*)\)")
+
 
 def _clean_entity_name(name: str) -> str:
     """Strip the markdown an extractor carried in with the name.
@@ -278,6 +281,25 @@ def _clean_entity_name(name: str) -> str:
     """
     cleaned = _MD_PREFIX.sub("", name or "")
     cleaned = cleaned.replace("**", "").replace("__", "")
+    cleaned = _MD_LINK.sub(r"\1", cleaned)
+
+    # Link syntax the extractor cut in half. One BBC article produced 453
+    # entities including Organizations named "Europe]", "Germany]" and
+    # "BBC News Mundo (Spanish)](https://www.bbc.com/mundo" — the model was
+    # given markdown and returned a span of it. Take the link text and discard
+    # the URL tail; an entity is what the link says, not where it points.
+    if "](" in cleaned:
+        cleaned = cleaned.split("](", 1)[0]
+        if cleaned.endswith(")") and "(" not in cleaned:
+            cleaned = cleaned[:-1]
+
+    # Unbalanced brackets are the other half of the same cut. Balanced ones stay
+    # — "[Collection] Germany suspects sabotage" carries a real prefix.
+    if cleaned.endswith("]") and "[" not in cleaned:
+        cleaned = cleaned[:-1]
+    if cleaned.startswith("[") and "]" not in cleaned:
+        cleaned = cleaned[1:]
+
     return cleaned.strip().strip('"').strip("*_ ").strip()
 
 
