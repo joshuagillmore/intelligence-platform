@@ -297,6 +297,14 @@ async def _collect_for_element(
                 collection_status="pending",
             )
             db.add(source)
+            # Flush before logging against it. collection_activity.source_id is
+            # a foreign key, and SQLAlchemy does not know the activity row
+            # depends on this insert, so without an explicit flush the two go
+            # out in whatever order the unit of work chooses — and when the
+            # activity lands first Postgres rejects it, taking the whole
+            # re-tasking pass down. Live symptom: `requirement_pass` followed
+            # five seconds later by `requirement_loop_failed`.
+            await db.flush()
             _log(db, plan.id, "requirement_source_added",
                  f"Re-tasked for element {row.ordinal + 1}: {url[:200]}", source_id=source.id)
             await db.commit()

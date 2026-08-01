@@ -256,3 +256,79 @@ class TestSyncRequirements:
         db = _FakeDB([])
         rows = await rl.sync_requirements(db, _pir(["a?", "  ", ""]))
         assert len(rows) == 1
+
+
+class _FkEnforcingDB(_FakeDB):
+    """A fake that models the one thing the plain fake cannot: the foreign key.
+
+    `collection_activity.source_id` references `collection_sources.id`. The
+    original fake accepted any insert in any order, so a pass that logged an
+    activity against a source it had not yet flushed looked fine in tests and
+    died in Postgres:
+
+        ForeignKeyViolationError: insert or update on table
+        "collection_activity" violates foreign key constraint
+        "collection_activity_source_id_fkey"
+
+    Live symptom: `requirement_pass` followed five seconds later by
+    `requirement_loop_failed`, and no re-tasking at all.
+    """
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.visible_source_ids: set = set()
+        self._unflushed: list = []
+
+    def add(self, obj):
+        name = type(obj).__name__
+        if name == "CollectionSource":
+            self._unflushed.append(obj)
+        elif name == "CollectionActivity":
+            sid = getattr(obj, "source_id", None)
+            if sid is not None and sid not in self.visible_source_ids:
+                raise RuntimeError(
+                    "FOREIGN KEY VIOLATION: collection_activity.source_id "
+                    f"{sid} is not present in collection_sources"
+                )
+        super().add(obj)
+
+    async def flush(self):
+        for src in self._unflushed:
+            self.visible_source_ids.add(src.id)
+        self._unflushed.clear()
+
+    async def commit(self):
+        await self.flush()
+        self.commits += 1
+
+
+class TestRetaskedSourcesAreFlushedBeforeBeingLogged:
+    async def test_a_retasked_source_exists_before_activity_references_it(self, monkeypatch):
+        """Regression: the source must be flushed before the activity row that
+        carries its id, or the FK rejects the insert and the pass dies."""
+        from types import SimpleNamespace
+
+        def fake_search(query, max_results=3, proxy=None):
+            return [{"url": "https://example.com/a", "title": "A", "snippet": ""}]
+
+        monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
+        monkeypatch.setattr(
+            "intel_platform.collection.proxy.get_active_proxy_config",
+            lambda: SimpleNamespace(get_proxy_url=lambda: None),
+        )
+
+        acquired = []
+
+        async def fake_acquire(source, plan, db, store, mode, provider=None, max_results=3):
+            acquired.append(source.name)
+
+        db = _FkEnforcingDB([], plan=_plan(), pir=_pir(["a?"]))
+        row = _requirement(0, "a?")
+
+        added = await rl._collect_for_element(
+            db, _plan(), row, ["baltic cable damage"], None, object(),
+            fake_acquire, "nlp", None,
+        )
+
+        assert added == 1, "the re-tasked source should have been acquired"
+        assert acquired, "acquire_source was never called"
