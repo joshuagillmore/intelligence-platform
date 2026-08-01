@@ -614,3 +614,55 @@ class TestScrubExpansionAndCaps:
         )
         assert ev.budget_starved_elements == []
         assert len(ev.elements_with_passages) == pirs.MAX_EEIS
+
+
+class TestExcludedElementsSurviveFaultPaths:
+    """Elements dropped by the cap must be reported on every exit, not just the
+    normal one.
+
+    The two embedding faults return early and bypass the closing accounting, so
+    elements above the cap vanished from the report entirely and the requirement
+    read as better covered than it was.
+    """
+
+    @pytest.fixture
+    def oversized(self):
+        return [f"element {i}?" for i in range(pirs.MAX_EEIS + 4)]
+
+    async def test_dimension_mismatch_still_reports_excluded_elements(
+        self, monkeypatch, oversized
+    ):
+        from types import SimpleNamespace
+
+        class WrongWidth:
+            async def embed(self, texts, input_type=None):
+                return SimpleNamespace(embeddings=[[0.1] * 1024 for _ in texts])
+
+        monkeypatch.setattr(
+            "intel_platform.llm.embeddings.get_embedding_provider", lambda: WrongWidth()
+        )
+        ev = await pirs._passages_for(oversized, "p1", _FakeSession())
+
+        assert ev.embedding_dim_mismatch is True
+        for excluded in range(pirs.MAX_EEIS + 1, len(oversized) + 1):
+            assert excluded in ev.elements_without_passages
+        assert len(ev.elements_without_passages) == len(oversized)
+
+    async def test_embedding_outage_still_reports_excluded_elements(
+        self, monkeypatch, oversized
+    ):
+        fake = _FakeEmbeddings(fail=True)
+        monkeypatch.setattr("intel_platform.llm.embeddings.get_embedding_provider", lambda: fake)
+        ev = await pirs._passages_for(oversized, "p1", _FakeSession())
+
+        assert ev.embedding_failed is True
+        for excluded in range(pirs.MAX_EEIS + 1, len(oversized) + 1):
+            assert excluded in ev.elements_without_passages
+        assert len(ev.elements_without_passages) == len(oversized)
+
+    async def test_every_element_is_accounted_for_on_a_fault(self, monkeypatch, oversized):
+        fake = _FakeEmbeddings(fail=True)
+        monkeypatch.setattr("intel_platform.llm.embeddings.get_embedding_provider", lambda: fake)
+        ev = await pirs._passages_for(oversized, "p1", _FakeSession())
+        covered = set(ev.elements_with_passages) | set(ev.elements_without_passages)
+        assert covered == set(range(1, len(oversized) + 1))

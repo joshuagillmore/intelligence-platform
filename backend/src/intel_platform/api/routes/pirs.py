@@ -665,8 +665,12 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
     # Defence in depth against unbounded database work. The request models cap
     # what the API accepts, but EEIs also arrive from the refinement, and one
     # retrieval per element means an unbounded list is an unbounded number of
-    # sequential pgvector queries. Elements past the cap are reported as
-    # unassessed rather than silently dropped.
+    # sequential pgvector queries.
+    #
+    # Elements past the cap are still *judged* — the prompt carries the full
+    # element list, so they are assessed against the graph evidence. What they
+    # lose is a retrieved passage, which is why they are reported in
+    # `elements_without_passages` rather than described as unassessed.
     excluded: list[int] = []
     if len(eeis) > MAX_EEIS:
         logger.warning(
@@ -707,12 +711,15 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
                 sorted({len(v) for v in vectors}), _EMBEDDING_DIM,
             )
             evidence.embedding_dim_mismatch = True
-            evidence.elements_without_passages = list(range(1, len(eeis) + 1))
+            # `excluded` too: these early returns bypass the closing accounting,
+            # so elements dropped by the cap vanished from the report entirely
+            # and the requirement read as better covered than it was.
+            evidence.elements_without_passages = list(range(1, len(eeis) + 1)) + excluded
             return evidence
     except Exception:
         logger.warning("Batched element embedding failed; assessing on graph evidence", exc_info=True)
         evidence.embedding_failed = True
-        evidence.elements_without_passages = list(range(1, len(eeis) + 1))
+        evidence.elements_without_passages = list(range(1, len(eeis) + 1)) + excluded
         return evidence
 
     # Retrieve for every element BEFORE allocating any budget.
