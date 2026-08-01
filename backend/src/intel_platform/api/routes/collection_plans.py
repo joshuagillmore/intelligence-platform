@@ -46,6 +46,73 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 # expected gap — long enough not to cry wolf on a slow local model, short enough
 # that a dead run surfaces within one analyst's attention span.
 _STALL_AFTER_SECONDS = 600
+_TERMINAL_EVENTS = ("plan_completed", "plan_failed")
+
+
+def run_state_from_events(events) -> str:
+    """Whether a collection run is actually in flight: idle|running|stalled|completed|failed.
+
+    Derived from the activity trail rather than `plan.status`, because the two
+    mean different things and only this one is evidence. `status` is also a
+    lifecycle flag an analyst sets by hand, so it says nothing reliable about
+    whether work is happening right now. Events must be ordered oldest-first.
+    """
+    if not events:
+        return "idle"
+    latest = events[-1]
+    # Only the *last* event decides. Searching backwards for any terminal event
+    # would report a re-run of a finished plan as "completed" while it is
+    # collecting — which would also let the execute guard start a second
+    # concurrent run. Both terminal events are the final write of their run
+    # (agentic.py:892, :1132), so anything after one belongs to a later run.
+    if latest.event in _TERMINAL_EVENTS:
+        return "completed" if latest.event == "plan_completed" else "failed"
+    age = (datetime.now(timezone.utc) - latest.created_at).total_seconds()
+    return "stalled" if age > _STALL_AFTER_SECONDS else "running"
+
+
+def current_run_events(events: list) -> list:
+    """The events belonging to the most recent run only.
+
+    Progress counts were summed over the whole activity trail, so a plan run
+    twice reported the first run's successes and failures alongside the
+    second's — "2 succeeded, 2 failed" for a run that collected one source.
+    Harmless while a plan could only ever be executed once; now that a finished
+    plan can be run again, the trail routinely holds several runs.
+    """
+    terminals = [i for i, e in enumerate(events) if e.event in _TERMINAL_EVENTS]
+    if not terminals:
+        return events
+    if terminals[-1] == len(events) - 1:
+        # The trail ends on a finished run: it began after the one before it.
+        return events[(terminals[-2] + 1) if len(terminals) > 1 else 0:]
+    return events[terminals[-1] + 1:]
+
+
+async def current_run_state(db: AsyncSession, plan_id: uuid.UUID) -> str:
+    """The state of a plan's most recent run, from the same evidence the
+    execution-status endpoint reports.
+
+    Two execution paths record progress differently: plan_executor keeps an
+    in-memory tracker, the agentic loop writes CollectionActivity. Consulting
+    them in the same order as the status endpoint keeps what the analyst is
+    shown and what the API enforces from disagreeing.
+    """
+    from intel_platform.services.plan_executor import get_execution_status as _mem_status
+
+    mem = _mem_status(str(plan_id))
+    if mem:
+        return mem.get("status") or "idle"
+    latest = (await db.execute(
+        select(CollectionActivity)
+        .where(CollectionActivity.plan_id == plan_id)
+        .order_by(CollectionActivity.created_at.desc())
+        .limit(1)
+    )).scalars().first()
+    # run_state_from_events reads only the newest event, so one row is enough —
+    # and a plan with thousands of activity rows should not be loaded whole just
+    # to answer "is something running?".
+    return run_state_from_events([latest] if latest else [])
 
 
 def refinement_system_prompt() -> str:
@@ -686,8 +753,20 @@ async def execute_plan_endpoint(
     if not plan:
         raise HTTPException(404, "Collection plan not found")
 
-    if plan.status not in (PlanStatus.DRAFT, PlanStatus.PAUSED):
-        raise HTTPException(400, f"Cannot execute plan in {plan.status} status")
+    # Refuse only when a run is genuinely in flight, not because of a status
+    # flag. The old guard allowed DRAFT and PAUSED only, which made "Activate" —
+    # the button an analyst naturally presses before running something — set
+    # ACTIVE and thereby make the plan unrunnable, recoverable only by pressing
+    # Pause. It also stranded any plan whose run died: execution sets ACTIVE, so
+    # a crashed run left the plan permanently unexecutable.
+    if plan.status == PlanStatus.ARCHIVED:
+        raise HTTPException(400, "Cannot execute an archived plan")
+
+    if await current_run_state(db, plan.id) == "running":
+        # A stalled run is deliberately not blocking: past the silence
+        # threshold the previous attempt is presumed dead, and refusing forever
+        # is how the old guard stranded plans.
+        raise HTTPException(409, "A collection run is already in flight for this plan")
 
     # Check source readiness
     sources = plan.sources or []
@@ -783,24 +862,24 @@ async def get_execution_status(plan_id: str, db: AsyncSession = Depends(get_db))
         return {"plan_id": plan_id, "status": "idle", "message": "No active execution"}
 
     latest = events[-1]
-    terminal = next((e for e in reversed(events) if e.event in ("plan_completed", "plan_failed")), None)
-    if terminal:
-        state = "completed" if terminal.event == "plan_completed" else "failed"
-    else:
-        # "running" was derived purely from the absence of a terminal event, so
-        # a process killed mid-collection reported running forever — confirmed
-        # by restarting the backend and watching a dead plan keep claiming it.
-        # Now that extraction emits a heartbeat, silence past the threshold is
-        # itself information: the work is not merely slow.
-        age = (datetime.now(timezone.utc) - latest.created_at).total_seconds()
-        state = "stalled" if age > _STALL_AFTER_SECONDS else "running"
+    # Shared with the execute guard, so what the analyst is shown and what the
+    # API enforces cannot disagree about whether a run is in flight.
+    #
+    # "running" was once derived purely from the absence of a terminal event, so
+    # a process killed mid-collection reported running forever — confirmed by
+    # restarting the backend and watching a dead plan keep claiming it. Now that
+    # extraction emits a heartbeat, silence past the threshold is itself
+    # information: the work is not merely slow.
+    state = run_state_from_events(events)
+    # Counts are for the current run only — see current_run_events.
+    this_run = current_run_events(events)
     return {
         "plan_id": plan_id,
         "status": state,
         "message": latest.message,
         "last_event": latest.event,
-        "sources_succeeded": sum(1 for e in events if e.event == "source_succeeded"),
-        "sources_failed": sum(1 for e in events if e.event == "source_failed"),
+        "sources_succeeded": sum(1 for e in this_run if e.event == "source_succeeded"),
+        "sources_failed": sum(1 for e in this_run if e.event == "source_failed"),
         "updated_at": latest.created_at.isoformat(),
         # How long the plan has been silent, so a caller can judge for itself
         # rather than inferring liveness from the status string alone.

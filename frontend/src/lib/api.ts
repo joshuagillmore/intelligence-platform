@@ -458,6 +458,23 @@ export interface CollectionPlan {
   eeis_captured?: number;
 }
 
+/** Whether a collection run is actually in flight, from the activity trail —
+ *  distinct from `CollectionPlan.status`, which is a lifecycle flag an analyst
+ *  sets by hand and says nothing about whether work is happening now. */
+export interface PlanExecutionStatus {
+  plan_id: string;
+  /** idle | running | stalled | completed | failed | error */
+  status: string;
+  message?: string;
+  last_event?: string;
+  sources_succeeded?: number;
+  sources_failed?: number;
+  updated_at?: string;
+  /** How long the plan has been silent. `stalled` means past the backend's
+   *  threshold, i.e. presumed dead rather than merely slow. */
+  seconds_since_last_event?: number;
+}
+
 export interface CollectionSourceEntry {
   id: string;
   plan_id: string;
@@ -536,7 +553,7 @@ export const collectionPlansApi = {
 
   // Execution
   executionStatus: (planId: string) =>
-    api.get(`/collection-plans/${planId}/execution-status`),
+    api.get<PlanExecutionStatus>(`/collection-plans/${planId}/execution-status`),
 
   // Sources
   addSource: (planId: string, data: { name: string; source_type: string; config?: object; schedule_cron?: string; enabled?: boolean }) =>
