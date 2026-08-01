@@ -26,6 +26,21 @@ from intel_platform.api.routes.collection_plans import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _process_started_long_ago(monkeypatch):
+    """Pin process start far enough back that the "died with the previous
+    process" rule does not decide these outcomes.
+
+    Without this the tests below would pass for the wrong reason: every
+    timestamp built from `now - n` predates the import that stamps
+    _PROCESS_STARTED_AT, so everything would read stalled regardless of the
+    threshold logic under test. TestRunsLostToARestart sets its own value.
+    """
+    from intel_platform.api.routes import collection_plans as cp
+
+    monkeypatch.setattr(cp, "_PROCESS_STARTED_AT", datetime.now(timezone.utc) - timedelta(days=1))
+
+
 def ev(event: str, ago_seconds: int = 0):
     return SimpleNamespace(
         event=event,
@@ -194,3 +209,113 @@ class TestPerRunCounts:
         events = [ev("source_failed", 900), ev("plan_failed", 890), ev("source_succeeded", 30)]
         got = current_run_events(events)
         assert [e.event for e in got] == ["source_succeeded"]
+
+
+class TestInterruptedExecution:
+    """A cancelled run must not leave the tracker claiming "running".
+
+    CancelledError is a BaseException, so it escapes `except Exception` — the
+    in-memory entry would say "running" for the life of the process, and the
+    execute guard reads that as a run in flight. The plan would be permanently
+    unexecutable: the same trap the status-flag guard created.
+    """
+
+    async def test_cancellation_clears_the_running_state(self):
+        import asyncio
+        from intel_platform.services import plan_executor
+
+        plan_id = "11111111-2222-3333-4444-555555555555"
+
+        async def _never_returns(*_a, **_kw):
+            await asyncio.sleep(3600)
+
+        class _Factory:
+            def __call__(self):
+                return self
+
+            async def __aenter__(self):
+                await _never_returns()
+
+            async def __aexit__(self, *_):
+                return False
+
+        task = asyncio.create_task(
+            plan_executor.execute_plan(plan_id, _Factory(), None, None)
+        )
+        try:
+            await asyncio.sleep(0.05)
+            assert plan_executor._running_executions[plan_id]["status"] == "running"
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            state = plan_executor._running_executions[plan_id]["status"]
+            assert state != "running", "a cancelled run would block execution forever"
+            assert state == "interrupted"
+        finally:
+            plan_executor._running_executions.pop(plan_id, None)
+
+
+class TestRunsLostToARestart:
+    """A run that died with the previous process must not block for the full
+    stall window.
+
+    Agentic runs are asyncio tasks inside the API process, so a restart kills
+    them — but the trail's last event can still be seconds old, which read as
+    "running" and refused a re-run for ten minutes. Seen live: restarting the
+    backend mid-collection and being refused with 409 immediately afterwards.
+    """
+
+    def test_activity_older_than_this_process_is_stalled(self, monkeypatch):
+        from intel_platform.api.routes import collection_plans as cp
+
+        # The process restarted 30 seconds ago; the run last wrote 60 seconds
+        # ago — recent in wall-clock terms, but by a process that is gone.
+        monkeypatch.setattr(cp, "_PROCESS_STARTED_AT", datetime.now(timezone.utc) - timedelta(seconds=30))
+        assert cp.run_state_from_events([ev("url_fetching", 60)]) == "stalled"
+
+    def test_activity_since_this_process_started_still_runs(self, monkeypatch):
+        from intel_platform.api.routes import collection_plans as cp
+
+        monkeypatch.setattr(cp, "_PROCESS_STARTED_AT", datetime.now(timezone.utc) - timedelta(seconds=120))
+        assert cp.run_state_from_events([ev("url_fetching", 60)]) == "running"
+
+
+class TestLiveTaskRegistry:
+    """Whether a run is in flight is answered by looking at the task, not by
+    inferring from timestamps."""
+
+    async def test_a_live_task_blocks_and_a_finished_one_does_not(self):
+        import asyncio
+        import uuid
+        from intel_platform.api.routes import collection_plans as cp
+
+        pid = uuid.uuid4()
+        assert cp.has_live_run(pid) is False
+
+        gate = asyncio.Event()
+        task = asyncio.create_task(gate.wait())
+        cp.register_run(pid, task)
+        try:
+            assert cp.has_live_run(pid) is True
+            # Blocks even though the trail says the last run finished.
+            assert await cp.current_run_state(_Db(ev("plan_completed", 900)), pid) == "running"
+
+            gate.set()
+            await task
+            await asyncio.sleep(0)  # let the done-callback run
+            assert cp.has_live_run(pid) is False
+        finally:
+            cp._inflight_runs.pop(pid, None)
+
+    async def test_the_registry_does_not_leak_finished_runs(self):
+        import asyncio
+        import uuid
+        from intel_platform.api.routes import collection_plans as cp
+
+        pid = uuid.uuid4()
+        task = asyncio.create_task(asyncio.sleep(0))
+        cp.register_run(pid, task)
+        await task
+        await asyncio.sleep(0)
+        assert pid not in cp._inflight_runs

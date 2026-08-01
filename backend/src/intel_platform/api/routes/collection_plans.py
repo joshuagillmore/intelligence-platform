@@ -5,6 +5,7 @@ through the collection pipeline, acquisition logging, and a status dashboard.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -48,6 +49,29 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 _STALL_AFTER_SECONDS = 600
 _TERMINAL_EVENTS = ("plan_completed", "plan_failed")
 
+# When this process started. Activity written before it belongs to a run this
+# process cannot still be executing — agentic runs are asyncio tasks in the API
+# process (see execute_plan_endpoint), so a restart kills them. Without this a
+# plan whose run died in a restart stayed "running" for the full stall window,
+# and the execute guard refused it for ten minutes.
+_PROCESS_STARTED_AT = datetime.now(timezone.utc)
+
+# Agentic runs this process launched, so "is it running?" can be answered by
+# looking rather than inferring. Also keeps a strong reference to the task:
+# asyncio.create_task alone does not, and a garbage-collected task cancels the
+# run mid-collection.
+_inflight_runs: dict[uuid.UUID, "asyncio.Task"] = {}
+
+
+def register_run(plan_id: uuid.UUID, task) -> None:
+    _inflight_runs[plan_id] = task
+    task.add_done_callback(lambda _t, pid=plan_id: _inflight_runs.pop(pid, None))
+
+
+def has_live_run(plan_id: uuid.UUID) -> bool:
+    task = _inflight_runs.get(plan_id)
+    return task is not None and not task.done()
+
 
 def run_state_from_events(events) -> str:
     """Whether a collection run is actually in flight: idle|running|stalled|completed|failed.
@@ -67,6 +91,10 @@ def run_state_from_events(events) -> str:
     # (agentic.py:892, :1132), so anything after one belongs to a later run.
     if latest.event in _TERMINAL_EVENTS:
         return "completed" if latest.event == "plan_completed" else "failed"
+    if latest.created_at < _PROCESS_STARTED_AT:
+        # Nothing has been written since this process started, and the run was
+        # an asyncio task inside the previous one. It is not slow, it is gone.
+        return "stalled"
     age = (datetime.now(timezone.utc) - latest.created_at).total_seconds()
     return "stalled" if age > _STALL_AFTER_SECONDS else "running"
 
@@ -100,6 +128,8 @@ async def current_run_state(db: AsyncSession, plan_id: uuid.UUID) -> str:
     """
     from intel_platform.services.plan_executor import get_execution_status as _mem_status
 
+    if has_live_run(plan_id):
+        return "running"
     mem = _mem_status(str(plan_id))
     if mem:
         return mem.get("status") or "idle"
@@ -799,7 +829,6 @@ async def execute_plan_endpoint(
     # Phase 1: LLM resolves configs for sources missing URLs
     # Phase 2: Connectors acquire content and run ingestion pipeline
     # Phase 3: LLM evaluates results and follows up on leads
-    import asyncio
     from intel_platform.db.engine import get_session_factory
     from intel_platform.collection.agentic import run_agentic_loop
     from intel_platform.api.routes.llm import _get_collection_provider
@@ -809,7 +838,7 @@ async def execute_plan_endpoint(
     if all_auto:
         session_factory = get_session_factory()
         max_results = max(1, min(25, body.max_results_per_source if body else 10))
-        asyncio.create_task(
+        register_run(plan.id, asyncio.create_task(
             run_agentic_loop(
                 plan_id=plan.id,
                 db_factory=session_factory,
@@ -820,7 +849,7 @@ async def execute_plan_endpoint(
                 max_results_per_source=max_results,
                 source_limit=source_limit,
             )
-        )
+        ))
 
     return {
         **_plan_to_dict(plan),
