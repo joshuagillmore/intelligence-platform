@@ -1,4 +1,8 @@
+import logging
+
 from neo4j import Driver
+
+logger = logging.getLogger(__name__)
 
 CONSTRAINTS = [
     "CREATE CONSTRAINT entity_id IF NOT EXISTS FOR (n:Person) REQUIRE n.id IS UNIQUE",
@@ -41,23 +45,82 @@ INDEXES = [
     "CREATE INDEX doc_project IF NOT EXISTS FOR (n:Document) ON (n.project_id)",
 ]
 
-# NOTE: adding a label here does NOT retrofit an existing index — CREATE ... IF
-# NOT EXISTS is a no-op once entity_name_search exists. On a DB created before
-# URL/EmailAddress were added, drop and recreate the index so those labels are
-# indexed; otherwise cross-document dedup can't find URL/EmailAddress candidates
-# (search_entity_by_name short-circuits on fulltext hits before the CONTAINS
-# fallback) and duplicate nodes accumulate.
+# Labels `entity_name_search` must cover: every type extraction can produce.
+#
+# A label missing here is invisible to cross-document deduplication, because
+# search_entity_by_name short-circuits on fulltext hits, so every extraction
+# mints another node. Measured on a live graph: 86 duplicated (name, type)
+# pairs and 192 redundant rows — about a tenth of the graph — and every one of
+# them was in an unindexed label. "Newnew Polar Bear" existed five times as a
+# Document while the lookup happily returned an unrelated Organization.
+#
+# Project, User, Snapshot, Collection and Date are deliberately absent: they are
+# not analyst-facing entities and resolution should never merge against them.
+# The MITRE reference labels (Attack*, Cwe) are absent for the same reason —
+# they are shared reference data, not per-project entities, and indexing them
+# would let one project's resolution match another's catalogue.
+ENTITY_NAME_LABELS = [
+    "Person", "Organization", "ThreatActor", "Domain", "IPAddress", "URL",
+    "EmailAddress", "Malware", "Campaign", "Location", "Event", "Hash",
+    "Vulnerability", "TTP", "Topic", "Report", "Assessment",
+    # Added after the duplicate measurement above — all were unindexed.
+    "Document", "Custom", "Ship", "Financial", "Quantity", "Infrastructure",
+    "Product", "Software", "Technology", "Aircraft", "Drone", "Radar",
+    "Submarine", "Weapon",
+]
+
+ENTITY_NAME_INDEX = "entity_name_search"
+
 FULLTEXT_INDEXES = [
-    """CREATE FULLTEXT INDEX entity_name_search IF NOT EXISTS
-       FOR (n:Person|Organization|ThreatActor|Domain|IPAddress|URL|EmailAddress|Malware|Campaign|Location|Event|Hash|Vulnerability|TTP|Topic|Report|Assessment)
+    f"""CREATE FULLTEXT INDEX {ENTITY_NAME_INDEX} IF NOT EXISTS
+       FOR (n:{'|'.join(ENTITY_NAME_LABELS)})
        ON EACH [n.name]""",
 ]
+
+
+def _sync_entity_name_index(session) -> None:
+    """Recreate the name index when its labels no longer match the code.
+
+    `CREATE FULLTEXT INDEX ... IF NOT EXISTS` is a no-op once the index exists,
+    so adding a label to ENTITY_NAME_LABELS silently does nothing on any
+    database that already ran. Every deployment therefore kept whatever label
+    set it was first created with, and entities of the newer types accumulated
+    duplicates for as long as the database lived. The existing code comment
+    warned about this and asked a human to drop the index by hand; nobody did.
+    """
+    try:
+        existing = session.run(
+            "SHOW INDEXES YIELD name, labelsOrTypes WHERE name = $n RETURN labelsOrTypes",
+            parameters={"n": ENTITY_NAME_INDEX},
+        ).single()
+    except Exception:
+        logger.debug("Could not read index metadata; leaving %s alone", ENTITY_NAME_INDEX)
+        return
+
+    if existing is None:
+        return  # not created yet — the CREATE below makes it
+
+    current = set(existing["labelsOrTypes"] or [])
+    if current == set(ENTITY_NAME_LABELS):
+        return
+
+    added = sorted(set(ENTITY_NAME_LABELS) - current)
+    logger.info(
+        "Rebuilding %s: %d label(s) missing from the index (%s). Entities of "
+        "those types could not be deduplicated across documents.",
+        ENTITY_NAME_INDEX, len(added), ", ".join(added) or "none",
+    )
+    session.run(f"DROP INDEX {ENTITY_NAME_INDEX} IF EXISTS")
 
 
 def initialize_schema(driver: Driver) -> None:
     with driver.session() as session:
         for stmt in CONSTRAINTS + INDEXES:
             session.run(stmt)
+        try:
+            _sync_entity_name_index(session)
+        except Exception:
+            logger.warning("Entity name index sync skipped", exc_info=True)
         for stmt in FULLTEXT_INDEXES:
             try:
                 session.run(stmt)
