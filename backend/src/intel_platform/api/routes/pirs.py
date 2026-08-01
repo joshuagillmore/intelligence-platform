@@ -848,6 +848,11 @@ async def _passages_for(eeis: list[str], project_id: str, db: AsyncSession) -> P
                 continue
             doc = str(hit.get("document_id") or "?")[:36]
             entry = f"[element {element} | doc {doc} | similarity {hit.get('similarity')}] {snippet}"
+            # Every entry is charged for a separator although joining N entries
+            # uses N-1, so the accounting runs two characters heavy overall.
+            # Deliberate: the error is conservative, and the alternative —
+            # charging the separator only from the second entry — makes the cost
+            # of an entry depend on how many came before it.
             cost = len(entry) + len(_ENTRY_SEPARATOR)
             # `>`, so an entry that exactly fits its allowance is kept.
             if cost > allowance or spent + cost > _PASSAGE_CHAR_BUDGET:

@@ -290,17 +290,24 @@ class TestPassagesForElements:
             return [{"chunk_text": "z" * 2_000, "similarity": 0.5, "document_id": doc}]
 
         monkeypatch.setattr("intel_platform.services.vector_search.vector_search", fake_search)
+        starvation_seen = False
         for n in (56, 57, 80, 300):
             ev = await pirs._passages_for([f"e{i}?" for i in range(n)], "p1", _FakeSession())
             spent = len(ev.text)
             assert spent <= pirs._PASSAGE_CHAR_BUDGET
             if ev.budget_starved_elements:
+                starvation_seen = True
                 headroom = pirs._PASSAGE_CHAR_BUDGET - spent
                 smallest = pirs._entry_overhead(n) + pirs._MIN_SNIPPET_CHARS
                 assert headroom < smallest, (
                     f"{n} elements: {len(ev.budget_starved_elements)} starved with "
                     f"{headroom} characters unspent, enough for {headroom // smallest} more"
                 )
+        # Without this the loop above passes vacuously: if nothing ever starves,
+        # the invariant is never actually checked and a broken allocator that
+        # simply never reports starvation would look correct. 300 elements
+        # against an 18,000-character budget cannot all be funded.
+        assert starvation_seen, "no element starved at any tested count — the invariant went unchecked"
 
     async def test_wrong_width_batch_is_a_fault_not_an_evidence_gap(self, monkeypatch):
         """The blocker this round. vector_search refuses a mismatched width and
@@ -666,3 +673,28 @@ class TestExcludedElementsSurviveFaultPaths:
         ev = await pirs._passages_for(oversized, "p1", _FakeSession())
         covered = set(ev.elements_with_passages) | set(ev.elements_without_passages)
         assert covered == set(range(1, len(oversized) + 1))
+
+
+class TestTheProductionSplitIsAlwaysViable:
+    """Why the breadth-reclaim pass never fires in production.
+
+    Recorded as "unreachable allocator" debt; it is reachable — the uncapped
+    tests above exercise it — but only above the element cap the API enforces.
+    Within the cap the equal share is always larger than a minimum viable entry,
+    so the first pass funds anything the reclaim pass could have. That is a
+    relationship between three constants, not a fact about the code, and it
+    stops holding the moment one of them moves.
+    """
+
+    def test_an_equal_share_at_the_cap_still_funds_a_passage(self):
+        from intel_platform.models.requests import MAX_EEIS
+
+        share = pirs._PASSAGE_CHAR_BUDGET // MAX_EEIS
+        smallest = pirs._entry_overhead(MAX_EEIS) + pirs._MIN_SNIPPET_CHARS
+        assert share >= smallest, (
+            f"a requirement with {MAX_EEIS} elements gives each {share} characters, "
+            f"below the {smallest} a passage needs. Every element would starve on "
+            "the equal split and coverage would depend on the reclaim pass — which "
+            "is fine, but it means that pass is now load-bearing in production and "
+            "needs to be treated as such."
+        )

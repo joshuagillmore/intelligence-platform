@@ -104,6 +104,34 @@ Collection is driven by the requirement, not just by the planner's source list.
   `collection_plans.refinement_system_prompt()`. Which elements a requirement is
   split into decides what gets collected, so that is where expertise applies.
 
+### "Is a run in flight?"
+
+Never answer this from `CollectionPlan.status`. That is a lifecycle flag an
+analyst sets by hand, and reading liveness off it is what made **Activate** lock
+a plan out of execution: execution itself sets `ACTIVE`, so the old guard
+(`DRAFT`/`PAUSED` only) stranded every activated plan and every plan whose run
+died. Use `collection_plans.current_run_state()`, which both the execute guard
+and `/execution-status` go through so they cannot disagree. It reports
+`idle | running | stalled | completed | failed`, and only `running` blocks a new
+run (409); `ARCHIVED` is refused separately.
+
+It answers by looking, in this order:
+
+1. `_inflight_runs` — agentic runs are `asyncio` tasks in the API process, so
+   the task itself is the evidence. `register_run()` also holds the strong
+   reference `asyncio.create_task` does not: a garbage-collected task cancels a
+   live collection.
+2. `plan_executor`'s in-memory tracker, for the synchronous path.
+3. The `CollectionActivity` trail. Activity older than `_PROCESS_STARTED_AT`
+   belongs to a run a restart killed, so it reports `stalled` immediately rather
+   than waiting out `_STALL_AFTER_SECONDS`.
+
+`stalled` deliberately does **not** block: past that point the previous attempt
+is presumed dead, and refusing forever is the trap the flag-based guard set.
+Progress counts come from `current_run_events()` — the trail holds every run a
+plan has ever had, and summing all of them reported the last run's results on a
+fresh one.
+
 ## LLM providers
 
 Provider-agnostic. Pick via config (`default_llm_provider`, `default_llm_model`;
