@@ -260,6 +260,27 @@ def _is_junk_name(name: str) -> bool:
     return "\n" in name or "\r" in name
 
 
+_MD_PREFIX = re.compile(r"^\s*(?:#{1,6}\s*|>+\s*|[-*+]\s+|\d+[.)]\s+)+")
+
+
+def _clean_entity_name(name: str) -> str:
+    """Strip the markdown an extractor carried in with the name.
+
+    Observed in a live graph: "## disruptions" stored as a Financial entity, and
+    names arriving with emphasis still attached. Stripping rather than rejecting
+    is deliberate — the name underneath is usually real, and "**Yi Peng 3**"
+    sitting beside "Yi Peng 3" as a separate node is a resolution failure as
+    well as a display one.
+
+    Same defect as the refinement markdown leak in collection_plans, reached by
+    a different route: model output is markdown, and anything that treats it as
+    plain text carries the punctuation downstream.
+    """
+    cleaned = _MD_PREFIX.sub("", name or "")
+    cleaned = cleaned.replace("**", "").replace("__", "")
+    return cleaned.strip().strip('"').strip("*_ ").strip()
+
+
 def _type_from_name(name: str, current: str) -> str:
     """Re-type an entity whose name follows an unambiguous naming convention.
 
@@ -302,7 +323,11 @@ def build_graph_from_extractions(
     batch_name_to_type: dict[str, str] = {}
 
     for ent_data in entities:
-        name = ent_data["name"]
+        # Normalise before anything reads the name: the junk check, resolution
+        # and the stored node must all see the same string, or "**Yi Peng 3**"
+        # resolves against nothing and lands beside the real node.
+        name = _clean_entity_name(ent_data["name"])
+        ent_data = {**ent_data, "name": name}
         raw_type = ent_data["entity_type"]
 
         if (

@@ -76,3 +76,46 @@ class TestRealSourcesSurvive:
         """The filter only judges URL and Domain nodes."""
         assert dropped("Yi Peng 3", "Ship") is False
         assert dropped("cdn.i-scmp.com", "Organization") is False
+
+
+class TestEntityNamesAreNormalised:
+    """Markdown carried in with an entity name is stripped, not rejected.
+
+    Observed live: "## disruptions" stored as a Financial entity. The name
+    underneath is usually real, and a "**Yi Peng 3**" node sitting beside a
+    "Yi Peng 3" node is a resolution failure as much as a display one — they
+    can never merge while the punctuation is part of the name.
+    """
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("## disruptions", "disruptions"),
+        ("### Background", "Background"),
+        ("**Yi Peng 3**", "Yi Peng 3"),
+        ("- Finland", "Finland"),
+        ("> Estlink 2", "Estlink 2"),
+        ("1. Estlink 2", "Estlink 2"),
+        ('"Newnew Polar Bear"', "Newnew Polar Bear"),
+    ])
+    def test_markdown_is_stripped(self, raw, expected):
+        from intel_platform.services.graph_builder import _clean_entity_name
+
+        assert _clean_entity_name(raw) == expected
+
+    @pytest.mark.parametrize("name", ["Yi Peng 3", "US", "G7", "C-Lion1", "EE-S1"])
+    def test_real_names_are_untouched(self, name):
+        from intel_platform.services.graph_builder import _clean_entity_name
+
+        assert _clean_entity_name(name) == name
+
+    @pytest.mark.parametrize("markup", ["###", "**", "- ", ">"])
+    def test_pure_markup_cleans_to_nothing_and_is_then_junk(self, markup):
+        """The junk filter runs on the cleaned name, so markup-only entities are
+        dropped rather than stored as empty nodes."""
+        from intel_platform.services.graph_builder import _clean_entity_name, _is_junk_name
+
+        assert _is_junk_name(_clean_entity_name(markup)) is True
+
+    def test_an_emphasised_name_can_now_match_its_plain_twin(self):
+        from intel_platform.services.graph_builder import _clean_entity_name
+
+        assert _clean_entity_name("**Yi Peng 3**") == _clean_entity_name("Yi Peng 3")
