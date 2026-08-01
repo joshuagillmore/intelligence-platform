@@ -161,7 +161,9 @@ async def run_requirement_passes(
             )).scalars().all()
 
             if not open_rows:
-                outcome.stopped_on = "all_elements_resolved"
+                # Left for the closing block to name: "nothing pending" means
+                # answered *or* retired, and those are different outcomes.
+                outcome.stopped_on = "nothing_to_do"
                 break
 
             if source_limit is not None and used >= source_limit:
@@ -237,7 +239,19 @@ async def run_requirement_passes(
         )).scalars().all()
         outcome.still_open = [r.text for r in rows if r.status == "pending"]
         if outcome.stopped_on == "nothing_to_do":
-            outcome.stopped_on = "pass_budget" if outcome.still_open else "all_elements_resolved"
+            if outcome.still_open:
+                outcome.stopped_on = "pass_budget"
+            elif any(r.status == "unmet" for r in rows):
+                # Nothing is pending, but that is because elements were retired
+                # after exhausting their attempts — not because they were
+                # answered. Calling this "all_elements_resolved" produced the
+                # line "0/3 element(s) answered ... stopped on
+                # all_elements_resolved", which reads as success for a run that
+                # answered nothing. An exhausted run must never be reported as
+                # a satisfied one, and that includes its label.
+                outcome.stopped_on = "elements_retired"
+            else:
+                outcome.stopped_on = "all_elements_answered"
 
         _log(db, plan_id, "requirement_loop_done",
              f"{len([r for r in rows if r.status == 'satisfied'])}/{len(rows)} element(s) "
@@ -291,7 +305,13 @@ async def _collect_for_element(
             source = CollectionSource(
                 id=uuid.uuid4(), plan_id=plan.id,
                 name=(result.get("title") or url)[:200],
-                source_type="web",
+                # Must be a key in connectors.base.CONNECTOR_REGISTRY. "web" is
+                # not one: every re-tasked source raised "Unknown source type:
+                # web" and the whole follow-up pass acquired nothing while the
+                # gap queries themselves were working perfectly.
+                source_type="web_scrape",
+                # web_scrape takes a single `url`, not a list (see
+                # connectors/web_scrape.py::validate_config).
                 config={"url": url, "query": query},
                 enabled=True,
                 collection_status="pending",

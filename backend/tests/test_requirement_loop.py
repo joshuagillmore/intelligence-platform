@@ -129,7 +129,7 @@ class TestStoppingConditions:
         )
         assert sorted(out.satisfied) == ["a?", "b?"]
         assert out.retired == [] and out.still_open == []
-        assert out.stopped_on == "all_elements_resolved"
+        assert out.stopped_on == "all_elements_answered"
         assert out.answered_everything is True
 
     async def test_stubborn_element_is_retired_not_left_pending(self, monkeypatch, no_collection):
@@ -332,3 +332,132 @@ class TestRetaskedSourcesAreFlushedBeforeBeingLogged:
 
         assert added == 1, "the re-tasked source should have been acquired"
         assert acquired, "acquire_source was never called"
+
+
+class TestRetaskedSourceIsAcquirable:
+    """The re-tasked source must be something the acquisition path can actually use.
+
+    Both of these were wrong in the shipped version, and both were invisible to
+    a suite that stubs acquire_source: the type was "web", which is not in the
+    connector registry, so every re-tasked source raised
+
+        ValueError: Unknown source type: web.
+        Available: ['file_upload', 'web_scrape', 'rss_feed', 'database', 'api_feed']
+
+    while the gap queries feeding it were finding exactly the right pages.
+    """
+
+    async def test_source_type_is_a_registered_connector(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from intel_platform.connectors.base import CONNECTOR_REGISTRY
+
+        def fake_search(query, max_results=3, proxy=None):
+            return [{"url": "https://example.com/a", "title": "A", "snippet": ""}]
+
+        monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
+        monkeypatch.setattr(
+            "intel_platform.collection.proxy.get_active_proxy_config",
+            lambda: SimpleNamespace(get_proxy_url=lambda: None),
+        )
+
+        seen = {}
+
+        async def capture(source, plan, db, store, mode, provider=None, max_results=3):
+            seen["type"] = source.source_type
+            seen["config"] = dict(source.config or {})
+
+        db = _FkEnforcingDB([], plan=_plan(), pir=_pir(["a?"]))
+        await rl._collect_for_element(
+            db, _plan(), _requirement(0, "a?"), ["q"], None, object(), capture, "nlp", None,
+        )
+
+        assert seen["type"] in CONNECTOR_REGISTRY, (
+            f"{seen['type']!r} is not an acquirable source type; "
+            f"registry has {sorted(CONNECTOR_REGISTRY)}"
+        )
+
+    async def test_source_config_satisfies_the_connector(self, monkeypatch):
+        """The config must pass the connector's own configure(), not merely look right."""
+        from types import SimpleNamespace
+
+        from intel_platform.connectors.base import get_connector
+
+        def fake_search(query, max_results=3, proxy=None):
+            return [{"url": "https://example.com/a", "title": "A", "snippet": ""}]
+
+        monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
+        monkeypatch.setattr(
+            "intel_platform.collection.proxy.get_active_proxy_config",
+            lambda: SimpleNamespace(get_proxy_url=lambda: None),
+        )
+
+        captured = {}
+
+        async def capture(source, plan, db, store, mode, provider=None, max_results=3):
+            captured["source"] = source
+
+        db = _FkEnforcingDB([], plan=_plan(), pir=_pir(["a?"]))
+        await rl._collect_for_element(
+            db, _plan(), _requirement(0, "a?"), ["q"], None, object(), capture, "nlp", None,
+        )
+
+        src = captured["source"]
+        connector = get_connector(src.source_type)
+        validated = connector.configure(dict(src.config))
+        assert validated["url"] == "https://example.com/a"
+
+
+class TestTerminalStateNamesWhatHappened:
+    """A run that answered nothing must not be labelled as resolved.
+
+    Observed live:
+
+        0/3 element(s) answered after 2 pass(es); 0 source(s) added;
+        stopped on all_elements_resolved
+
+    Both remaining elements had been *retired* after exhausting their attempts.
+    Nothing was pending, so the old logic called that "all_elements_resolved" —
+    which reads as success for a run that answered nothing, and breaks the rule
+    this module states in its own docstring.
+    """
+
+    async def test_retired_elements_are_not_called_resolved(self, monkeypatch, no_collection):
+        rows = [_requirement(0, "a?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?"]))
+        monkeypatch.setattr(rl, "assess_requirement", _assessor([(False, ["q"])] * 6))
+
+        out = await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None,
+            attempts_per_element=1, max_passes=3,
+        )
+        assert out.retired == ["a?"]
+        assert out.stopped_on == "elements_retired"
+        assert out.stopped_on != "all_elements_resolved"
+        assert out.answered_everything is False
+
+    async def test_genuinely_answered_elements_say_so(self, monkeypatch, no_collection):
+        rows = [_requirement(0, "a?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?"]))
+        monkeypatch.setattr(rl, "assess_requirement", _assessor([(True, [])]))
+
+        out = await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None,
+        )
+        assert out.satisfied == ["a?"]
+        assert out.stopped_on == "all_elements_answered"
+        assert out.answered_everything is True
+
+    async def test_a_mix_of_answered_and_retired_reports_retired(self, monkeypatch, no_collection):
+        """One answered and one given up on is not a fully answered run."""
+        rows = [_requirement(0, "a?"), _requirement(1, "b?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?", "b?"]))
+        monkeypatch.setattr(rl, "assess_requirement", _assessor([(True, []), (False, ["q"])] ))
+
+        out = await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None,
+            attempts_per_element=1, max_passes=3,
+        )
+        assert out.satisfied == ["a?"] and out.retired == ["b?"]
+        assert out.stopped_on == "elements_retired"
+        assert out.answered_everything is False
