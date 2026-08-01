@@ -170,20 +170,73 @@ def _host_of(name: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+# Hosts that only ever serve a page's own furniture. A CDN or asset host is
+# never the answer to an intelligence requirement, in a cyber project or any
+# other — unlike a general URL, which can be genuine infrastructure evidence.
+_ASSET_HOST_PREFIXES = (
+    "cdn.", "cdn-", "assets.", "assets-", "asset.", "asset-",
+    "static.", "static-", "img.", "img-", "images.", "media.", "cache.",
+    "thumbs.", "video.", "player.", "fonts.", "analytics.", "tracking.",
+    "pixel.", "ads.",
+)
+
+
+def _is_malformed_host(name: str, entity_type: str) -> bool:
+    """True for domain names the regex sweep produced that are not domains.
+
+    Observed in a live graph: ".gov" (a bare suffix), "a.org", and
+    "2fen.wikipedia.org" / "2fwww.atlanticcouncil.org" — the tail of a
+    percent-encoded URL ("%2F") captured as though it were a hostname. All were
+    stored as first-class `Domain` nodes an analyst could click.
+    """
+    if entity_type not in ("URL", "Domain"):
+        return False
+    raw = (name or "").strip().lower()
+    if raw.startswith("http"):
+        return False
+    if raw.startswith("."):
+        return True  # a bare suffix, not a host
+    labels = raw.split(".")
+    if len(labels) < 2 or not labels[0]:
+        return True
+    # "%2f", "%3a" and friends decode into a leading hex pair on the first label.
+    if re.match(r"^(?:2f|3a|3d|25|20)[a-z0-9-]*$", labels[0]) and len(labels) > 2:
+        return True
+    # A one-character second-level label is a fragment, not a registrable name.
+    return len(labels[0]) < 2
+
+# Files a page loads, as opposed to documents a page cites.
+_ASSET_SUFFIXES = (
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".bmp",
+    ".css", ".js", ".mjs", ".map", ".woff", ".woff2", ".ttf", ".eot",
+    ".mp4", ".webm", ".mp3", ".m3u8",
+)
+
+
 def _is_web_chrome(name: str, entity_type: str) -> bool:
     """True for link-furniture URLs and domains scraped off a page.
 
-    A crawled article carries share links, embeds and footer links for every
-    major platform. Extracted as `URL`/`Domain` entities they dominate the graph
-    — URL was the single largest entity type across the campaign at 2,531 nodes
-    against 925 Organizations — and none of them answer a requirement.
+    A crawled article carries share links, embeds, citation links, CDN assets
+    and footer links. Extracted as `URL`/`Domain` entities they dominate the
+    graph — URL was the single largest entity type across the campaign at 2,531
+    nodes against 925 Organizations, and 22% of a later project's graph was
+    URL-shaped — and none of them answer a requirement.
+
+    Social hosts alone were far too narrow a filter: the bulk of the noise is
+    the page's own asset and CDN links, which the earlier rule kept.
     """
     if entity_type not in ("URL", "Domain"):
         return False
     host = _host_of(name)
     if not host:
         return False
-    return any(host == s or host.endswith("." + s) for s in _SOCIAL_HOSTS)
+    if any(host == s or host.endswith("." + s) for s in _SOCIAL_HOSTS):
+        return True
+    if any(host.startswith(p) for p in _ASSET_HOST_PREFIXES):
+        return True
+    # Path-based assets: the extension is on the URL, not the host.
+    path = (name or "").strip().lower().split("?", 1)[0].split("#", 1)[0]
+    return path.endswith(_ASSET_SUFFIXES)
 
 
 def _is_junk_name(name: str) -> bool:
@@ -252,7 +305,11 @@ def build_graph_from_extractions(
         name = ent_data["name"]
         raw_type = ent_data["entity_type"]
 
-        if _is_junk_name(name) or _is_web_chrome(name, raw_type):
+        if (
+            _is_junk_name(name)
+            or _is_web_chrome(name, raw_type)
+            or _is_malformed_host(name, raw_type)
+        ):
             entities_filtered += 1
             continue
 
