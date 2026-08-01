@@ -7,6 +7,7 @@ and the default looked like a real answer.
 from __future__ import annotations
 
 from intel_platform.services.llm_output import (
+    json_object,
     labelled_json,
     labelled_probability,
     labelled_value,
@@ -134,3 +135,57 @@ class TestPlanSourceConfigs:
             '2. [rss_feed] Reuters world news feed\n'
         )
         assert len(got) == 2 and got[0]["config"] == {}
+
+
+class TestJsonObject:
+    """Reading a JSON reply however the model chose to present it.
+
+    `labelled_json` requires the object on the label's own line — the shape the
+    prompt asks for, and not reliably the shape that comes back. Reading only
+    the requested shape is the defect this module exists to stop, so the
+    tolerant reader is tested against the forms models actually emit.
+    """
+
+    def test_one_line_labelled_object(self):
+        assert json_object('ASSESSMENT: {"satisfied": true}', "ASSESSMENT") == {"satisfied": True}
+
+    def test_pretty_printed_across_lines(self):
+        content = 'ASSESSMENT:\n{\n  "satisfied": false,\n  "missing": "dates"\n}'
+        assert json_object(content, "ASSESSMENT")["missing"] == "dates"
+
+    def test_fenced_block(self):
+        content = 'Here you go:\n```json\n{"satisfied": true, "confidence": "high"}\n```'
+        assert json_object(content, "ASSESSMENT")["confidence"] == "high"
+
+    def test_prose_before_and_after(self):
+        content = 'I assessed it.\n{"satisfied": true}\nHope that helps.'
+        assert json_object(content) == {"satisfied": True}
+
+    def test_nested_objects_are_kept_whole(self):
+        content = '{"a": {"b": {"c": 1}}, "d": 2}'
+        assert json_object(content) == {"a": {"b": {"c": 1}}, "d": 2}
+
+    def test_braces_inside_strings_do_not_end_the_object(self):
+        content = '{"missing": "a } brace in prose", "satisfied": false}'
+        assert json_object(content)["missing"] == "a } brace in prose"
+
+    def test_escaped_quote_inside_a_string(self):
+        content = r'{"missing": "he said \"no\"", "satisfied": false}'
+        assert json_object(content)["missing"] == 'he said "no"'
+
+    def test_label_is_preferred_over_an_earlier_object(self):
+        content = '{"decoy": true}\nASSESSMENT: {"satisfied": true}'
+        assert json_object(content, "ASSESSMENT") == {"satisfied": True}
+
+    def test_malformed_candidate_does_not_stop_the_scan(self):
+        content = "{not json at all}\n{\"satisfied\": true}"
+        assert json_object(content) == {"satisfied": True}
+
+    def test_no_object_returns_empty(self):
+        assert json_object("no json here", "ASSESSMENT") == {}
+
+    def test_empty_input_returns_empty(self):
+        assert json_object("", "ASSESSMENT") == {}
+
+    def test_a_json_array_is_not_an_object(self):
+        assert json_object('[1, 2, 3]') == {}

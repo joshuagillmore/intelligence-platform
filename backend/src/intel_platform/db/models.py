@@ -200,6 +200,59 @@ class Pir(Base):
     )
 
 
+# Requirement state, one row per EEI.
+#
+# `Pir.eeis` is a list of strings, which is enough to *display* the criteria and
+# enough to judge them once at the end — but not enough to collect against them.
+# Driving collection needs somewhere to record, per element, whether it is
+# answered yet, how many times it has been tried, what the assessor said was
+# missing, and which queries to run next. Without that the assessment is a
+# report: a live run ended "3 element(s) still unanswered and collection budget
+# remains — continue collection" and nothing continued it, because there was no
+# per-element state for a loop to iterate over.
+#
+# `eeis` stays the source of truth for the criteria *text* (every existing
+# consumer reads it); these rows carry the state that text acquires.
+
+REQUIREMENT_STATUSES = ("pending", "satisfied", "unmet")
+
+
+class PirRequirement(Base):
+    __tablename__ = "pir_requirements"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    pir_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    project_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False, default=0,
+        comment="Position in Pir.eeis — the element this row carries state for")
+    text: Mapped[str] = mapped_column(Text, default="",
+        comment="The EEI as written, copied from Pir.eeis so a renamed element is detectable")
+
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True,
+        comment="pending | satisfied | unmet — unmet means tried and given up on, not untried")
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False,
+        comment="Collection attempts spent. The circuit breaker: an element still "
+                "unanswered after the cap is marked unmet and the run moves on.")
+    next_queries: Mapped[list] = mapped_column(JSONB, default=list,
+        comment="Search queries the assessor proposed for the gap, used by the next pass")
+
+    assessment_missing: Mapped[str] = mapped_column(Text, default="",
+        comment="What the assessor said is still absent — the analyst-facing gap")
+    assessment_confidence: Mapped[str] = mapped_column(String(16), default="",
+        comment="high | medium | low | unknown")
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_pir_requirements_pir_status", "pir_id", "status"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Collection Plan — the nerve center
 # ---------------------------------------------------------------------------

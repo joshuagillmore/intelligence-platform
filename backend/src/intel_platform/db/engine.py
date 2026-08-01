@@ -45,6 +45,18 @@ _ADDITIVE_COLUMNS = (
     "CREATE INDEX IF NOT EXISTS ix_collection_plans_pir_id ON collection_plans (pir_id)",
 )
 
+# Data repairs. Same rules as above — idempotent, and safe to run on every boot.
+#
+# The requirement loop briefly wrote re-tasked sources with source_type="web",
+# which is not in CONNECTOR_REGISTRY. Those rows are permanent members of their
+# plan and fail on every subsequent run with "Unknown source type: web", so
+# fixing the code does not recover them. They carry a valid single-URL config,
+# which is exactly what web_scrape expects, so retyping restores them rather
+# than discarding real collected leads.
+_DATA_REPAIRS = (
+    "UPDATE collection_sources SET source_type = 'web_scrape' WHERE source_type = 'web'",
+)
+
 
 async def init_db():
     """Create all tables. Called once at startup."""
@@ -67,3 +79,14 @@ async def init_db():
                 await conn.execute(text(statement))
         except Exception as exc:
             logger.warning("Additive migration skipped (%s): %s", statement, exc)
+
+    for statement in _DATA_REPAIRS:
+        try:
+            async with get_engine().begin() as conn:
+                result = await conn.execute(text(statement))
+                if result.rowcount:
+                    # Worth a line: a silent repair leaves no way to tell whether
+                    # the damage was ever there.
+                    logger.info("Data repair applied to %d row(s): %s", result.rowcount, statement)
+        except Exception as exc:
+            logger.warning("Data repair skipped (%s): %s", statement, exc)

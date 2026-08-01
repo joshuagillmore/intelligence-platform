@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { pirsApi, type Pir, type PirStatus } from '@/lib/api';
+import {
+  pirsApi,
+  type Pir,
+  type PirRequirements,
+  type PirStatus,
+  type RequirementStatus,
+} from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 
 const colors = {
@@ -30,6 +36,93 @@ const PRIORITY_COLOR: Record<string, string> = {
   medium: colors.primary,
   low: '#6b7280',
 };
+
+const ELEMENT_COLOR: Record<RequirementStatus, string> = {
+  satisfied: colors.green,
+  // Tried and given up on. Deliberately a different colour from "open": an
+  // analyst deciding whether to collect more needs to tell them apart.
+  unmet: colors.tertiary,
+  pending: '#6b7280',
+};
+
+const ELEMENT_LABEL: Record<RequirementStatus, string> = {
+  satisfied: 'answered',
+  unmet: 'gave up',
+  pending: 'open',
+};
+
+/** Per-element collection state, replacing a flat list of criteria.
+ *
+ * The assessor's reasoning about *why* a requirement is unfinished used to be
+ * computed and discarded. Collection now acts on these rows, so the panel shows
+ * what was answered, what was tried and abandoned, and what each gap is still
+ * missing. Falls back to the plain list when the state cannot be loaded — a
+ * requirement's criteria should still be readable if the endpoint is down.
+ */
+function RequirementMatrix({ pirId, eeis }: { pirId: string; eeis: string[] }) {
+  const [data, setData] = useState<PirRequirements | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    pirsApi
+      .requirements(pirId)
+      .then(res => { if (!cancelled) setData(res.data); })
+      .catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; };
+  }, [pirId]);
+
+  if (failed || !data || data.elements.length === 0) {
+    return (
+      <ul className="mt-2 space-y-0.5">
+        {eeis.map((eei, i) => (
+          <li key={i} className="text-[11px] text-gray-400">• {eei}</li>
+        ))}
+      </ul>
+    );
+  }
+
+  const { satisfied = 0, unmet = 0, pending = 0 } = data.counts;
+
+  return (
+    <div className="mt-2 space-y-1">
+      <div className="text-[10px] uppercase tracking-wider text-gray-500">
+        {satisfied}/{data.total} answered
+        {unmet > 0 && <span style={{ color: colors.tertiary }}> · {unmet} gave up</span>}
+        {pending > 0 && <span className="text-gray-500"> · {pending} open</span>}
+      </div>
+      <ul className="space-y-1">
+        {data.elements.map(element => (
+          <li key={element.ordinal} className="text-[11px] text-gray-400">
+            <span className="flex items-start gap-1.5">
+              <span
+                className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ backgroundColor: ELEMENT_COLOR[element.status] }}
+                aria-hidden="true"
+              />
+              <span className="flex-1">
+                {element.text}
+                <span
+                  className="ml-1.5 text-[10px] uppercase tracking-wider"
+                  style={{ color: ELEMENT_COLOR[element.status] }}
+                >
+                  {ELEMENT_LABEL[element.status]}
+                  {element.attempts > 0 && element.status !== 'satisfied' &&
+                    ` after ${element.attempts}`}
+                </span>
+                {element.missing && element.status !== 'satisfied' && (
+                  <span className="block text-[10px] text-gray-500">
+                    missing: {element.missing}
+                  </span>
+                )}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function Pill({ label, color }: { label: string; color: string }) {
   return (
@@ -251,11 +344,7 @@ export default function PirPanel({ projectId }: { projectId: string }) {
                   </p>
                 )}
                 {pir.eeis.length > 0 && (
-                  <ul className="mt-2 space-y-0.5">
-                    {pir.eeis.map((eei, i) => (
-                      <li key={i} className="text-[11px] text-gray-400">• {eei}</li>
-                    ))}
-                  </ul>
+                  <RequirementMatrix pirId={pir.id} eeis={pir.eeis} />
                 )}
               </div>
               <div className="flex flex-col items-end gap-1.5 shrink-0">
