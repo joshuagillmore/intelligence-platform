@@ -27,9 +27,15 @@ uv pip install "https://github.com/explosion/spacy-models/releases/download/en_c
 Tests live in `backend/tests/` (`testpaths=["tests"]`, `asyncio_mode = "auto"` —
 just write `async def test_...`, no decorator needed).
 
-**`uv run pytest` needs a live Neo4j.** ~50 graph tests connect to
-`bolt://localhost:7687` (`neo4j`/`changeme` — see `tests/conftest.py`); they
-error, not skip, when it is down. Bring it up with `docker compose up neo4j`
+**`uv run pytest` needs a live Neo4j, and exclusive use of it.** ~50 graph tests
+connect to `bolt://localhost:7687` (`neo4j`/`changeme` — see `tests/conftest.py`);
+they error, not skip, when it is down. The teardown runs
+`MATCH (n) WHERE n.project_id STARTS WITH 'test-' DETACH DELETE n`, which deletes
+**every** test project, not just the one the test made — so two pytest processes
+against the same database delete each other's fixtures mid-test and fail in
+unrelated files. A "flaky" graph or route test is nearly always this: check
+whether another run (or CI against the same instance) is in flight before
+chasing it. Bring it up with `docker compose up neo4j`
 (APOC is required — `graph/store.py` uses `apoc.create.relationship`) and
 initialize the schema once against a fresh DB:
 
