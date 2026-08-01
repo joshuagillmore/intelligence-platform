@@ -208,6 +208,15 @@ async def execute_plan(
         logger.exception("Plan execution failed for %s", plan_id)
         _running_executions[plan_id]["status"] = "error"
         _running_executions[plan_id]["errors"].append(str(e))
+    finally:
+        # A cancelled task raises CancelledError, which is a BaseException and
+        # so escapes the handler above — leaving the tracker saying "running"
+        # for the life of the process. Callers now treat that as a run in
+        # flight, so a cancellation would make the plan permanently
+        # unexecutable: exactly the trap this guard replaced.
+        if _running_executions.get(plan_id, {}).get("status") == "running":
+            _running_executions[plan_id]["status"] = "interrupted"
+            _running_executions[plan_id]["errors"].append("Execution was interrupted")
 
     return _running_executions[plan_id]
 

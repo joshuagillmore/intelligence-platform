@@ -1,11 +1,11 @@
 'use client';
-import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { collectionsApi, collectionPlansApi, ingestApi, llmApi, pirsApi, CollectionPlan, CollectionActivityEntry, Pir } from '@/lib/api';
+import { collectionsApi, collectionPlansApi, ingestApi, llmApi, pirsApi, CollectionPlan, CollectionActivityEntry, PlanExecutionStatus, Pir } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 
 interface Collection {
@@ -103,6 +103,11 @@ function CollectionsWorkflow() {
   // Activity log
   const [activityLogs, setActivityLogs] = useState<Record<string, CollectionActivityEntry[]>>({});
 
+  // Whether each plan has a run in flight right now. Kept separate from
+  // plan.status: that is a lifecycle flag an analyst sets by hand, and reading
+  // liveness off it is what made "Activate" look like it started collection.
+  const [runStates, setRunStates] = useState<Record<string, PlanExecutionStatus>>({});
+
   // File upload state
   const [fileUploadOpen, setFileUploadOpen] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -189,21 +194,36 @@ function CollectionsWorkflow() {
     return () => clearInterval(interval);
   }, [collections]);
 
-  // Poll active plans for status updates
+  // Poll plans that might have a run in flight.
+  //
+  // The set was `status === 'ACTIVE'`, which both over- and under-covers: a plan
+  // an analyst activated by hand is polled forever although nothing is running,
+  // while a DRAFT plan that is actually collecting is never polled at all.
+  //
+  // Watched ids are memoized to a stable string so that a poll updating
+  // runStates does not itself tear down and restart the interval.
+  const watchedIds = useMemo(() => plans
+    .filter(p => p.status === 'ACTIVE' || runStates[String(p.id)]?.status === 'running')
+    .map(p => String(p.id))
+    .sort()
+    .join(','), [plans, runStates]);
+
   useEffect(() => {
-    const activePlans = plans.filter(p => p.status === 'ACTIVE');
-    if (activePlans.length === 0) return;
+    if (!watchedIds) return;
+    const ids = watchedIds.split(',');
     const interval = setInterval(async () => {
       loadPlans();
-      for (const p of activePlans) {
+      for (const id of ids) {
+        loadRunState(id);
         try {
-          const res = await collectionPlansApi.activity(String(p.id));
-          setActivityLogs(prev => ({ ...prev, [String(p.id)]: res.data }));
+          const res = await collectionPlansApi.activity(id);
+          setActivityLogs(prev => ({ ...prev, [id]: res.data }));
         } catch { /* ignore */ }
       }
     }, 3000);
     return () => clearInterval(interval);
-  }, [plans, loadPlans]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedIds, loadPlans]);
 
   // Fetch activity when expanding a plan
   async function loadActivity(planId: string) {
@@ -211,6 +231,14 @@ function CollectionsWorkflow() {
       const res = await collectionPlansApi.activity(planId);
       setActivityLogs(prev => ({ ...prev, [planId]: res.data }));
     } catch { /* ignore */ }
+  }
+
+  async function loadRunState(planId: string) {
+    try {
+      const res = await collectionPlansApi.executionStatus(planId);
+      setRunStates(prev => ({ ...prev, [planId]: res.data }));
+    } catch { /* a failed poll is not evidence the run stopped — leave the last
+                 known state rather than reporting idle */ }
   }
 
   function toggleExpanded(id: string) {
@@ -913,9 +941,11 @@ PIR: ${pirText}` }],
                   : plan.status === 'PAUSED' ? 'bg-amber-500/20 text-amber-400'
                   : 'bg-gray-600/20 text-gray-500';
                 const isExpanded = expandedIds.has(String(plan.id));
+                const run = runStates[String(plan.id)];
+                const isRunning = run?.status === 'running';
                 return (
                   <div key={plan.id} className="bg-navy-800 border border-[#252a39] rounded overflow-hidden">
-                    <div className="p-4 cursor-pointer hover:bg-[#1e2436] transition-colors" onClick={() => { toggleExpanded(String(plan.id)); loadActivity(String(plan.id)); }}>
+                    <div className="p-4 cursor-pointer hover:bg-[#1e2436] transition-colors" onClick={() => { toggleExpanded(String(plan.id)); loadActivity(String(plan.id)); loadRunState(String(plan.id)); }}>
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-gray-300 truncate">{plan.pir || plan.name}</p>
@@ -928,6 +958,23 @@ PIR: ${pirText}` }],
                           </div>
                         </div>
                         <div className="flex items-center gap-2 ml-3 flex-none">
+                          {/* Whether work is happening now, which the lifecycle
+                              status cannot tell you. Without it a run in flight
+                              and a plan someone activated by hand look alike. */}
+                          {isRunning && (
+                            <span className="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider bg-accent-periwinkle/20 text-accent-periwinkle flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[12px] animate-spin">sync</span>
+                              Collecting
+                            </span>
+                          )}
+                          {run?.status === 'stalled' && (
+                            <span
+                              className="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400"
+                              title={`Silent for ${Math.round((run.seconds_since_last_event || 0) / 60)} min — the run is presumed dead. Running again is safe.`}
+                            >
+                              Stalled
+                            </span>
+                          )}
                           <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${statusColor}`}>
                             {plan.status}
                           </span>
@@ -1018,13 +1065,27 @@ PIR: ${pirText}` }],
                           </div>
                         )}
 
-                        {plan.status === 'DRAFT' && (
+                        {/* Offered whenever a run is not in flight, not only for
+                            DRAFT. Execution sets the plan ACTIVE, so gating on
+                            DRAFT hid the button the moment a plan was activated
+                            or a run died — leaving no way to run it again. */}
+                        {plan.status !== 'ARCHIVED' && (
                           <div className="flex gap-2 pt-2">
                             <button
-                              onClick={async () => { await collectionPlansApi.execute(String(plan.id)); loadPlans(); loadActivity(String(plan.id)); }}
-                              className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-4 py-2 rounded text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-900/30 transition-all"
+                              disabled={isRunning}
+                              onClick={async () => {
+                                try {
+                                  await collectionPlansApi.execute(String(plan.id));
+                                } catch (e) {
+                                  setError(getErrorMessage(e));
+                                }
+                                loadPlans(); loadActivity(String(plan.id)); loadRunState(String(plan.id));
+                              }}
+                              className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-4 py-2 rounded text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-900/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                              Approve & Execute
+                              {isRunning ? 'Collecting…'
+                                : plan.status === 'DRAFT' ? 'Approve & Execute'
+                                : 'Run Again'}
                             </button>
                             <button
                               onClick={async () => { await collectionPlansApi.delete(String(plan.id)); loadPlans(); }}
