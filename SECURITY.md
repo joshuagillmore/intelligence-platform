@@ -5,7 +5,7 @@
 **Please do not report security vulnerabilities through public GitHub issues.**
 
 Report privately through GitHub's
-[private vulnerability reporting](https://github.com/OrangeAgente/intelligence-platform/security/advisories/new)
+[private vulnerability reporting](https://github.com/joshuagillmore/intelligence-platform/security/advisories/new)
 (the **Security** tab → **Report a vulnerability**). We aim to acknowledge a
 report within a few days and will keep you updated as we work on a fix.
 
