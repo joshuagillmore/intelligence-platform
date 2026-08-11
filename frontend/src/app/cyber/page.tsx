@@ -70,19 +70,29 @@ function SeverityStatCard({ label, count, color, subtitle, trending, progressPer
   trending?: string;
   progressPercent?: number;
 }) {
+  // A tile reading zero is saying "nothing here", and eight tiles shouting it
+  // in severity colours drowns the one that is not. On this project seven of
+  // eight read 0 or 0%, so the single live figure — 54 unrated, needing triage
+  // — was styled exactly like the seven that need nothing. Empty tiles keep
+  // their number and lose their colour, so colour marks severity that is
+  // actually present rather than severity the dashboard can display.
+  const isEmpty = count === 0 || count === '0%' || count === '0';
+  const accent = isEmpty ? '#313849' : color;
+  const numberColor = isEmpty ? '#6b7280' : color;
+
   return (
-    <div className="rounded-lg p-4 flex flex-col min-w-[130px] flex-1" style={{ backgroundColor: '#1a1f2e', borderLeft: `3px solid ${color}` }}>
+    <div className="rounded-lg p-4 flex flex-col min-w-[130px] flex-1" style={{ backgroundColor: '#1a1f2e', borderLeft: `3px solid ${accent}` }}>
       <span className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1">{label}</span>
       <div className="flex items-end gap-2">
-        <span className="text-2xl font-bold" style={{ color }}>{count}</span>
+        <span className="text-2xl font-bold" style={{ color: numberColor }}>{count}</span>
         {trending && (
-          <span className="text-[11px] font-medium mb-1" style={{ color }}>{trending}</span>
+          <span className="text-[11px] font-medium mb-1" style={{ color: numberColor }}>{trending}</span>
         )}
       </div>
       {subtitle && <span className="text-[10px] text-gray-500 mt-1">{subtitle}</span>}
       {progressPercent !== undefined && (
         <div className="mt-2 w-full h-1.5 rounded-full" style={{ backgroundColor: '#313849' }}>
-          <div className="h-1.5 rounded-full" style={{ width: `${progressPercent}%`, backgroundColor: color }} />
+          <div className="h-1.5 rounded-full" style={{ width: `${progressPercent}%`, backgroundColor: numberColor }} />
         </div>
       )}
     </div>

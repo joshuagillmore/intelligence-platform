@@ -9,6 +9,39 @@ DEFAULT_TTL = 30  # seconds
 _CACHE_MAX_SIZE = 500  # PERF: cap to prevent unbounded growth
 
 
+def _key_part(value: Any) -> str:
+    """How one argument contributes to a cache key.
+
+    Only values that identify the *request* may appear verbatim. FastAPI passes
+    dependency-injected services as arguments too — `get_graph_store` returns a
+    new `GraphStore(driver)` per request — and their default repr carries the
+    object's memory address. Including that made every key unique, so the cache
+    stored a copy of every response and never once returned one: `/api/topics`
+    took ~20s on all three of three back-to-back calls with `@cached(ttl=60)`
+    applied.
+
+    It hid because an address is reused as often as not when the object is
+    freed immediately, so a naive check does see hits.
+
+    Non-primitives contribute their type name: two endpoints with different
+    service signatures stay distinct, without the identity churn.
+    """
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return repr(value)
+    if isinstance(value, (list, tuple)):
+        return "[" + ",".join(_key_part(v) for v in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(f"{k}:{_key_part(v)}" for k, v in sorted(value.items())) + "}"
+    return f"<{type(value).__name__}>"
+
+
+def _make_key(func, args: tuple, kwargs: dict) -> str:
+    parts = [func.__module__, func.__qualname__]
+    parts += [_key_part(a) for a in args]
+    parts += [f"{k}={_key_part(v)}" for k, v in sorted(kwargs.items())]
+    return "|".join(parts)
+
+
 def _evict_stale(ttl: int) -> None:
     """Evict expired entries when cache grows large."""
     now = time.time()
@@ -27,7 +60,7 @@ def cached(ttl: int = DEFAULT_TTL):
         if asyncio.iscoroutinefunction(func):
             @wraps(func)
             async def async_wrapper(*args, **kwargs):
-                key = f"{func.__name__}:{str(args)}:{str(sorted(kwargs.items()))}"
+                key = _make_key(func, args, kwargs)
                 now = time.time()
                 if key in _cache:
                     cached_time, cached_value = _cache[key]
@@ -41,7 +74,7 @@ def cached(ttl: int = DEFAULT_TTL):
         else:
             @wraps(func)
             def wrapper(*args, **kwargs):
-                key = f"{func.__name__}:{str(args)}:{str(sorted(kwargs.items()))}"
+                key = _make_key(func, args, kwargs)
                 now = time.time()
                 if key in _cache:
                     cached_time, cached_value = _cache[key]

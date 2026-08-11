@@ -16,10 +16,13 @@ npm run dev      # http://localhost:3000 (expects the backend on :8000)
 npm run lint     # eslint (next lint)
 npm run build    # production build
 npm run start    # serve the production build
+npm run test     # vitest — unit + component tests (tests/unit/)
+npm run e2e      # playwright — authenticated smoke across the views (tests/e2e/)
 ```
 
-There is no test runner configured yet — **`npm run lint` and `npm run build`
-are the gate** for "done".
+**`npm run lint` and `npm run build` are the gate** for "done". `npm run test`
+runs standalone; `npm run e2e` needs the full stack up and the demo project
+seeded (`backend/scripts/seed_demo.py`).
 
 For the full stack (backend, Neo4j, Postgres, Redis, Ollama) run
 `docker compose up` from the repo root instead. See the root

@@ -130,8 +130,26 @@ test('products-intsum', async ({ page }) => {
   }
   await page.waitForTimeout(3000);
   // Scroll the rendered product into view so the body, not the generator, leads.
-  await page.getByText(/Generated Report|Saved:/i).first().scrollIntoViewIfNeeded().catch(() => {});
+  //
+  // The timeout is the point. Without it this action inherits the 45s test
+  // timeout (playwright.config sets no actionTimeout), so when the text was
+  // absent it consumed the entire budget and the run failed on the *next*
+  // line — `waitForTimeout(800)` reported as "Target page has been closed",
+  // one line after the actual cause. The trailing .catch() made the call look
+  // optional while it was in fact the longest wait in the test.
+  await page.getByText(/Generated Report|Saved:/i).first()
+    .scrollIntoViewIfNeeded({ timeout: 5000 })
+    .catch(() => {});
   await page.waitForTimeout(800);
+
+  // Say so if there is no rendered product. This shot goes into the README, and
+  // a bounded wait alone would have turned the failure into a green run that
+  // silently replaced a real product with a screenshot of an empty form.
+  await expect(
+    page.getByText(/Generated Report|Saved:/i).first(),
+    'no rendered product to capture — does seed_demo.py still create the Report node?',
+  ).toBeVisible();
+
   await page.screenshot({ path: path.join(OUT, 'products-intsum.png') });
 });
 

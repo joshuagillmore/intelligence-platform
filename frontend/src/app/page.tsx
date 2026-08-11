@@ -373,9 +373,16 @@ export default function ProjectsPage() {
                       }`}>
                         {project.priority}
                       </span>
-                      <span className="text-xs px-2 py-0.5 rounded bg-green-900/30 text-green-400">
-                        {project.status}
-                      </span>
+                      {/* Only when it says something. Every project on this
+                          instance is 'active' (187 of 187), so a green pill on
+                          every card was decoration — and it made the one pill
+                          that would matter, an archived or paused project,
+                          indistinguishable from the wallpaper. */}
+                      {project.status && project.status !== 'active' && (
+                        <span className="text-xs px-2 py-0.5 rounded bg-amber-900/30 text-amber-400">
+                          {project.status}
+                        </span>
+                      )}
                       <button
                         onClick={() => selectProject(project)}
                         className="ml-auto bg-accent-blue hover:bg-blue-600 text-white px-3 py-1 rounded text-xs font-medium transition-colors"
@@ -497,9 +504,15 @@ export default function ProjectsPage() {
                         </span>
                       </td>
                       <td className="px-3 py-2">
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-green-900/30 text-green-400">
-                          {project.status}
-                        </span>
+                        {/* See the grid view: 'active' on every row is noise;
+                            anything else is the exception worth spotting. */}
+                        {project.status && project.status !== 'active' ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-amber-900/30 text-amber-400">
+                            {project.status}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-gray-600">—</span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right text-xs text-gray-400">{project.entity_count}</td>
                       <td className="px-3 py-2 text-right text-xs text-gray-400">{project.relationship_count}</td>

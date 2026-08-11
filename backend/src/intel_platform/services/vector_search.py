@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from intel_platform.db.models import _EMBEDDING_DIM as _COLUMN_WIDTH, ChunkEmbedding
 from intel_platform.llm.embeddings import EmbeddingProvider, get_embedding_provider
+from intel_platform.services.text_utils import strip_markup
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,10 @@ async def vector_search(
         if sim < similarity_threshold:
             continue
         results.append({
-            "chunk_text": row.chunk_text,
+            # Also stripped here, not only at ingestion, because chunks stored
+            # before that fix keep their markdown and are what a live corpus is
+            # made of. Idempotent on text that is already clean.
+            "chunk_text": strip_markup(row.chunk_text),
             "document_id": row.document_id,
             "chunk_index": row.chunk_index,
             "similarity": round(sim, 4),

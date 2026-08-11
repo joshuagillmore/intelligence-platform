@@ -50,8 +50,9 @@ implementation of that idea, not a mock-up.
 ### Agentic collection
 Give it an objective and it plans sources, runs real web search (ddgs), and
 crawls candidate pages (crawl4ai), feeding results straight into extraction.
-Collection plans are persisted and executed asynchronously via Celery. The
-scraper validates URL scheme and host before every fetch (SSRF guardrail), and
+Collection plans are persisted and executed asynchronously via Celery. A shared
+SSRF guard validates scheme and host before every outbound fetch — every crawl
+path calls it, so it cannot be sidestepped by a lower-level helper — and
 collection egress can optionally be routed through a VPN or Tor proxy chosen from
 the admin UI, while LLM/cloud calls always stay direct.
 
@@ -217,8 +218,9 @@ All configuration lives in [`.env.example`](.env.example). Copy it to `.env`
 >   place, so an insecure instance fails loudly instead of going live quietly.
 > - **Change every default datastore credential** (Neo4j, Postgres, Redis) from
 >   the compose/dev values.
-> - Keep the collection scraper's URL validation and the enrichment/collection
->   egress-proxy options in mind for anything that fetches from the open web.
+> - Keep the shared SSRF guard (`backend/src/intel_platform/collection/url_guard.py`)
+>   and the enrichment/collection egress-proxy options in mind for anything that
+>   fetches from the open web.
 >
 > Never commit `.env` or real keys. The auth model is intentionally lightweight
 > (single-analyst; see [Status](#status--limitations)).
@@ -239,10 +241,13 @@ Honest scope, so there are no surprises:
   Neo4j and survive restarts (collection-plan state lives in Postgres). The one
   remaining in-memory item is the admin LLM provider/model override
   (`_llm_override` in `admin_config`), which resets on restart.
-- **Testing.** The backend has a substantial pytest suite (70 test files, 579
+- **Testing.** The backend has a substantial pytest suite (120 test files, 1,379
   tests across routes, services, collection, enrichment, and geo). The frontend
-  has **no test runner yet**; `npm run lint` and `npm run build` are the gate
-  there.
+  runs Vitest for unit and component tests (17 files, 152 tests) and Playwright
+  for an authenticated end-to-end smoke across the views (6 specs); `npm run
+  lint` and `npm run build` complete the gate there. The pytest suite needs a
+  live Neo4j and exclusive use of it — its teardown deletes every `test-*`
+  project, so two concurrent runs delete each other's fixtures.
 - **Migrations.** Postgres schema is created at startup; there's no Alembic
   migration flow yet.
 - **Embedding dimension is config, not a migration.** Semantic/vector search
@@ -267,4 +272,4 @@ For the full self-commissioned audit and the fixes it drove, see
 
 ## License
 
-[MIT](LICENSE) © 2026 OrangeAgente
+[MIT](LICENSE) © 2026 Joshua Gillmore

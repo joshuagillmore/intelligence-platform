@@ -291,3 +291,59 @@ def test_analysis_endpoints_require_auth():
     for path in ("/api/analysis/gaps", "/api/analysis/source-evaluation", "/api/analysis/hypotheses"):
         resp = client.post(path, json={"project_id": PROJECT, "question": "x"})
         assert resp.status_code in (401, 403)
+
+
+class TestDegradationNamesItsCause:
+    """Why there is no narrative, not a guess at why.
+
+    `_generate` returned model "none" for both "no provider configured" and
+    "the provider failed", and every fallback asserted the first. With a Cohere
+    key rate-limited at 20 calls/minute the analyst was told "No LLM provider is
+    configured" while the provider was configured and reachable — which sends
+    someone to check settings that are correct.
+    """
+
+    def test_a_missing_provider_still_says_so(self, seeded_project, no_provider):
+        resp = client.post("/api/analysis/gaps", json={"project_id": PROJECT}, headers=headers)
+        assert resp.status_code == 200
+        assert "No LLM provider is configured" in resp.json()["analysis"]
+
+    def test_a_failing_provider_is_not_called_a_missing_one(self, seeded_project, monkeypatch):
+        class _Failing(FakeLLMProvider):
+            async def generate(self, messages, system="", temperature=0.3, max_tokens=4096):
+                raise RuntimeError("status_code: 429, rate limited")
+
+        _patch_provider(monkeypatch, _Failing())
+        body = client.post(
+            "/api/analysis/gaps", json={"project_id": PROJECT}, headers=headers,
+        ).json()["analysis"]
+
+        assert "No LLM provider is configured" not in body
+        assert "did not return a narrative" in body
+
+    def test_the_measured_gaps_survive_either_way(self, seeded_project, monkeypatch):
+        """The deterministic half is the point of the fallback."""
+        class _Failing(FakeLLMProvider):
+            async def generate(self, messages, system="", temperature=0.3, max_tokens=4096):
+                raise RuntimeError("boom")
+
+        _patch_provider(monkeypatch, _Failing())
+        data = client.post(
+            "/api/analysis/gaps", json={"project_id": PROJECT}, headers=headers,
+        ).json()
+        assert data["coverage"]["documents"] >= 1
+        assert any(g["kind"] == "connection" for g in data["structural_gaps"])
+
+    def test_hypotheses_report_the_real_cause_too(self, seeded_project, monkeypatch):
+        class _Failing(FakeLLMProvider):
+            async def generate(self, messages, system="", temperature=0.3, max_tokens=4096):
+                raise RuntimeError("status_code: 429")
+
+        _patch_provider(monkeypatch, _Failing())
+        body = client.post(
+            "/api/analysis/hypotheses",
+            json={"project_id": PROJECT, "question": "Who cut the cable?"},
+            headers=headers,
+        ).json()["analysis"]
+        assert "No LLM provider is configured" not in body
+        assert "did not return a narrative" in body

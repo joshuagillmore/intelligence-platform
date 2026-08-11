@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from intel_platform.services.text_utils import strip_markup
+
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
 
 
@@ -70,7 +72,15 @@ def chunk_text(text: str, chunk_size: int = 1200, overlap: int = 200) -> list[st
 
 
 def ingest_text(text: str, chunk_size: int = 1200, overlap: int = 200, source_url: str = "") -> list[dict]:
-    chunks = chunk_text(text, chunk_size=chunk_size, overlap=overlap)
+    """Chunk text for storage and embedding.
+
+    Markup is stripped before chunking, not after: the chunk boundaries, the
+    embeddings and the stored text all then describe prose rather than link
+    syntax. Collected pages arrive as markdown, and 36% of the characters in a
+    retrieved chunk were `[text](url)` and `[[27]](url)` machinery — context
+    budget spent on URLs, and embeddings partly driven by URL tokens.
+    """
+    chunks = chunk_text(strip_markup(text), chunk_size=chunk_size, overlap=overlap)
     return [
         {"content": chunk, "chunk_index": i, "total_chunks": len(chunks), "source_url": source_url}
         for i, chunk in enumerate(chunks)

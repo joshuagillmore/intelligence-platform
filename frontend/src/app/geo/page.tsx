@@ -23,6 +23,10 @@ interface GeoLocation {
   geo_source?: string;
   geo_confidence?: string;
   mgrs?: string;
+  /** What the API actually sends. The page read `connections`, which no
+   *  response has ever carried, so the header counted 0 while the map drew
+   *  the connections in front of it. */
+  connection_count?: number;
   connections?: number;
   entity_type?: string;
   properties?: Record<string, unknown>;
@@ -159,7 +163,10 @@ export default function GeoPage() {
       }
     } catch {
       try {
-        const res = await entitiesApi.search(activeProject.id, undefined, 'Location');
+        // Explicit limit: the server defaults to 50, and this fallback draws
+        // the map. Silently plotting 50 of 398 locations would look like a
+        // sparse area of interest rather than a truncated fetch.
+        const res = await entitiesApi.search(activeProject.id, undefined, 'Location', 2000);
         const entities = res.data || [];
         setLocations(entities.map((e: { id: string; name: string; properties?: Record<string, unknown> }) => ({
           id: e.id,
@@ -244,7 +251,13 @@ export default function GeoPage() {
     });
   }
 
-  const totalConnections = locations.reduce((sum, l) => sum + (l.connections || 0), 0);
+  // `connection_count` is the field the API sends; `connections` is kept only
+  // for the fallback path below, which builds locations itself. Reading the
+  // wrong name summed a field that was never present, and `|| 0` turned that
+  // into a confident "0 Connections" beside a map drawing 128 of them.
+  const totalConnections = locations.reduce(
+    (sum, l) => sum + (l.connection_count ?? l.connections ?? 0), 0,
+  );
   const geocodedCount = locations.filter(l => isGeocoded(l)).length;
 
   /* ── derive related locations from relationships ── */

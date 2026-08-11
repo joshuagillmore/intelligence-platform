@@ -34,6 +34,9 @@ are especially valuable:
 This project ships with **default development credentials** and a placeholder
 `JWT_SECRET`. Before exposing any instance beyond `localhost`:
 
+- set `REQUIRE_SECURE_AUTH=true` — the app then refuses to start while any
+  built-in default secret, API key or admin password is still in place, so the
+  three items below fail loudly rather than silently,
 - set strong, non-default admin credentials,
 - set a real, high-entropy `JWT_SECRET`,
 - provide real datastore passwords (never the `.env.example` placeholders), and

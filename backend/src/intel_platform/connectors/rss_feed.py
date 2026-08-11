@@ -27,6 +27,11 @@ class RSSFeedConnector(SourceConnector):
     """Fetch and parse RSS/Atom feeds for intelligence collection."""
 
     source_type = "rss_feed"
+    config_keys = ("feed_url",)
+    capability_note = (
+        "Fetches a public RSS/Atom feed. Needs the feed URL itself, not the site "
+        "homepage."
+    )
 
     def configure(self, config: dict) -> dict:
         feed_url = config.get("feed_url", "").strip()

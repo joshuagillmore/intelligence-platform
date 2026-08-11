@@ -37,6 +37,12 @@ class DatabaseConnector(SourceConnector):
     """
 
     source_type = "database"
+    config_keys = ("urls",)
+    capability_note = (
+        "Fetches public registry or lookup pages over HTTP — WHOIS, company and "
+        "vessel registries. It is a web fetch, not a database connection: there is "
+        "no credentialed database access."
+    )
 
     def configure(self, config: dict[str, Any]) -> dict[str, Any]:
         urls = config.get("urls", [])

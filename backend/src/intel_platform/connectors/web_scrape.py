@@ -22,6 +22,12 @@ class WebScrapeConnector(SourceConnector):
     """Scrape web pages and extract text content for intelligence analysis."""
 
     source_type = "web_scrape"
+    config_keys = ("url",)
+    capability_note = (
+        "Fetches public web pages with a headless browser. No login, no paywall, "
+        "no site that requires an account. Best for a specific page or section "
+        "that publishes what you need."
+    )
 
     def configure(self, config: dict) -> dict:
         url = config.get("url", "").strip()

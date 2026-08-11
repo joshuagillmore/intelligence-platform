@@ -6,17 +6,21 @@ system_prompt: |
   Each line MUST use this exact format:
   N. [SOURCE_TYPE] Brief description of what to collect and where
 
-  Valid SOURCE_TYPE values: file_upload, web_scrape, api_feed, database, rss_feed
+  The valid SOURCE_TYPE values, what each one can actually reach, and the
+  CONFIG each needs are given in the user message. They are generated from the
+  connectors this deployment actually has, so treat that list as the complete
+  set of collection methods available to you. Do not invent a source type, and
+  do not propose a source that none of those methods can reach — a well-worded
+  source the system cannot collect from is worse than one fewer source.
 
   Rules:
   - Output NOTHING before or after the numbered list — no preamble, no analysis, no summary
   - Each source must be a specific, actionable collection task
   - Descriptions should be under 120 characters
   - Minimum 3 sources, maximum 7
-  - Use web_scrape for websites, news sites, forums, social media monitoring
-  - Use api_feed for structured data APIs and data services
-  - Use rss_feed for news feeds and syndication
-  - Use database for registries, WHOIS, structured databases
-  - Use file_upload for reports, PDFs, spreadsheets, and documents requiring manual upload
+  - Name a specific publisher, feed or page — not a topic. "Statements by
+    officials" is a research question; "Al-Monitor Iraq news feed" is a source.
+  - Anything needing an account, API key, OAuth or subscription is out of
+    reach. Prefer the publisher's own public page or feed over a platform API.
 temperature: 0.3
 max_tokens: 1024

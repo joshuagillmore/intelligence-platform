@@ -11,7 +11,9 @@ from intel_platform.services.text_utils import normalize_datetime
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
-def _compute_location_edges(locations: list[dict], store: GraphStore) -> list[dict]:
+def _compute_location_edges(
+    locations: list[dict], store: GraphStore, rels_by_id: dict[str, list[dict]] | None = None,
+) -> list[dict]:
     """Compute edges between locations based on shared non-location entities.
 
     If entity X is connected to both Location A and Location B,
@@ -32,11 +34,17 @@ def _compute_location_edges(locations: list[dict], store: GraphStore) -> list[di
     # Also track entity names for tooltip info
     entity_names: dict[str, str] = {}
 
+    # Reuse the caller's fetch when it has one. The endpoint already reads
+    # every location's relationships to enrich the markers, and this walked the
+    # same ground a second time — 796 queries for 398 locations.
+    if rels_by_id is None:
+        rels_by_id = store.get_relationships_bulk([loc["id"] for loc in locations if loc.get("id")])
+
     for loc in locations:
         lid = loc.get("id")
         if not lid:
             continue
-        rels = store.get_relationships(lid)
+        rels = rels_by_id.get(lid, [])
         for rel in rels:
             target_id = rel.get("target_id", "")
             target_name = rel.get("target_name", "")
@@ -81,10 +89,15 @@ def get_geo_locations(project_id: str, store: GraphStore = Depends(get_graph_sto
     """Get all geolocatable entities (places + IP/WHOIS geo) with relationships and edges."""
     locations = geolocate_entities(store, project_id)
 
+    # One round trip for every location's relationships, shared with the edge
+    # computation below. Fetching them per location, twice over, was 10.2s of
+    # an 11.2s response on a project with 398 locations.
+    rels_by_id = store.get_relationships_bulk([loc["id"] for loc in locations if loc.get("id")])
+
     # Enrich with relationships
     for loc in locations:
         if loc.get("id"):
-            rels = store.get_relationships(loc["id"])
+            rels = rels_by_id.get(loc["id"], [])
             loc["relationships"] = [
                 {"target_name": r.get("target_name"), "rel_type": r.get("rel_type"),
                  "target_id": r.get("target_id", ""),
@@ -97,7 +110,7 @@ def get_geo_locations(project_id: str, store: GraphStore = Depends(get_graph_sto
     # markers but excluded here — edges are geographic (place↔place), not the
     # co-occurrence noise IP↔place would add.
     place_locations = [loc for loc in locations if loc.get("entity_type") != "IPAddress"]
-    geo_edges = _compute_location_edges(place_locations, store)
+    geo_edges = _compute_location_edges(place_locations, store, rels_by_id)
 
     return {
         "locations": locations,

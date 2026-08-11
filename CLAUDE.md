@@ -25,8 +25,8 @@ Claude Code *online* branches alike. Read it first. `backend/CLAUDE.md` and
 ```
 
 - **backend/** — Python 3.11, `uv`-managed. Package `intel_platform` (`api/`,
-  `services/`, `collection/`, `llm/`, `graph/`, `db/`, `models/`, `mcp/`).
-  Details → `backend/CLAUDE.md`.
+  `services/`, `collection/`, `enrichment/`, `llm/`, `graph/`, `db/`, `models/`,
+  `connectors/`, `mcp/`). Details → `backend/CLAUDE.md`.
 - **frontend/** — Next.js 14 App Router, TypeScript, npm. Details →
   `frontend/CLAUDE.md`.
 - **Dual datastore:** Neo4j is the knowledge graph (entities + relationships);
@@ -104,15 +104,19 @@ docker compose up            # neo4j:7474/7687 · postgres:5432 · redis:6379
 
 ## Known issues / watch-outs
 
-- **Auth:** ships with default development credentials — any real deployment
-  must set strong, non-default admin credentials and a real `JWT_SECRET` (never
-  the `.env.example` placeholder).
+- **Auth:** ships with default development credentials. Set
+  `REQUIRE_SECURE_AUTH=true` on any public or deployed instance — the app then
+  refuses to start on the built-in `JWT_SECRET`, `API_KEY` or admin password
+  instead of trusting the operator to have replaced them.
 - **Watchlists and snapshots are persisted to Neo4j** (`Watchlist` / `Snapshot`
   nodes) and survive restarts. The remaining in-memory state is the admin
   `_llm_override` (provider/model override in `admin_config`), which resets on
   restart — persist it if that matters.
-- **Collection scraper** validates URL scheme/host before fetching — preserve
-  that validation when editing `collection/scraper.py`.
+- **SSRF guard lives in `collection/url_guard.py`**, not in any one fetcher. It
+  rejects non-HTTP(S) schemes, internal hostnames, and hosts resolving to
+  private/reserved IPs (DNS-rebinding defence). Four paths call it — `scraper`,
+  `crawler`, `proxy`, and `agentic._validate_urls` — so preserve it there rather
+  than in a caller, and route any new fetch path through it.
 - **Neo4j on Railway** — connection binding (IPv6) has bitten deploys before;
   verify the bolt URI/host when changing DB or deploy config.
 

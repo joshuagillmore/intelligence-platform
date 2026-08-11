@@ -42,7 +42,7 @@ of the state.
 
 | Package | Responsibility |
 |---------|----------------|
-| `api/` | FastAPI app (`api.app:app`) and `routes/` — 24 routers (auth, documents, entities, graph, collections, collection_plans, query, assess, topics, reports, geo, timeline, search, watchlist, personas, snapshots, admin_config, llm, ingest, export, notebook, projects, health). Middleware handles rate-limiting, request-logging, and security headers. |
+| `api/` | FastAPI app (`api.app:app`) and `routes/` — 27 routers (auth, documents, entities, graph, collections, collection_plans, pirs, query, assess, analysis, topics, reports, geo, timeline, search, watchlist, personas, snapshots, admin_config, llm, ingest, export, notebook, projects, health, enrichment, attack). Middleware handles rate-limiting, request-logging, and security headers. |
 | `services/` | Business logic: extraction, enrichment, ingestion, graph_builder, graph_rag, hybrid_retrieval, vector_search, document_clustering, topics, assessment, summarization, geocoding, collection_planner, plan_executor, reports, mindmap_export, graph_cache, text_utils. |
 | `collection/` | Agentic web collection: `search` (ddgs) → `crawler`/`scraper` (crawl4ai) → `runner`/`executor` (CollectionRunner) → ingest. `agentic.py` is the LLM-driven planner; `tasks.py` runs Celery jobs. |
 | `llm/` | Multi-provider layer: `anthropic`, `openai_provider`, `cohere_provider`, `ollama`, plus `embeddings`, the analytic-tradecraft `skills/`, and the **`orchestrator`** — the single source of truth for provider selection. |
@@ -94,8 +94,12 @@ which provider and model to use.
   gap analysis, threat assessment, report writing, plus extraction, topic
   naming/summarization, and collection planning. These give the model an analyst
   frame rather than ad-hoc prompts scattered through the code.
-- **Embeddings** default to OpenAI (1536-dim), with Cohere and Ollama as
-  alternatives.
+- **Embeddings** default to OpenAI (1536-dim), with Cohere (1024) and Ollama
+  `nomic-embed-text` (768) as alternatives. The pgvector columns and
+  `vector_search`'s width guard both take their size from
+  `EMBEDDING_DIMENSIONS`, so it must match the provider in use; with no
+  migration flow, changing it on an existing database means dropping and
+  recreating the embedding tables.
 
 ## Collection & egress
 
@@ -103,9 +107,12 @@ Collection is agentic: given an objective, `collection/agentic.py` plans sources
 `search` (ddgs) finds candidates, and `crawler`/`scraper` (crawl4ai) fetch them,
 feeding the extraction pipeline. Two properties matter for a public repo:
 
-- **SSRF guardrail.** `collection/scraper.py` validates URL scheme and host
-  before fetching. This check is intentional and must be preserved when editing
-  the scraper.
+- **SSRF guardrail.** `collection/url_guard.py` rejects non-HTTP(S) schemes,
+  internal service hostnames, and hosts that resolve to private or reserved IPs
+  (a DNS-rebinding defence). It is deliberately one shared validator rather than
+  a check inside each fetcher, so it cannot be bypassed by calling a lower-level
+  helper: `scraper`, `crawler`, `proxy` and `agentic._validate_urls` all go
+  through it. Preserve it, and route any new outbound fetch through it.
 - **Optional egress proxy.** Web-collection and cyber-enrichment egress (crawl4ai,
   ddgs, and the httpx-based connectors) can be routed through a selectable proxy
   — Off / VPN / Tor — chosen at runtime from the admin API and persisted in

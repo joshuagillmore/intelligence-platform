@@ -8,7 +8,7 @@ import TemporalHistogram, { HistogramData } from '@/components/TemporalHistogram
 import { useProject } from '@/lib/ProjectContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { entitiesApi, graphApi, queryApi, llmApi, assessApi, analysisApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi, timelineApi, entityFields } from '@/lib/api';
+import { totalFrom, entitiesApi, graphApi, queryApi, llmApi, assessApi, analysisApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi, timelineApi, entityFields } from '@/lib/api';
 import { useAssistant } from '@/lib/AssistantContext';
 import { TYPE_COLOR_CLASS as TYPE_COLORS } from '@/lib/entityStyles';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
@@ -86,6 +86,12 @@ interface GraphStats {
 
 const ENTITY_TYPES = ['All', 'Person', 'Organization', 'Location', 'ThreatActor', 'Document', 'IPAddress', 'Domain', 'Event', 'Hash', 'Vulnerability'];
 
+// How many entities the browse panel loads. Higher than the server's default of
+// 50 — which is what made the panel group 50 of 5,486 under headings that read
+// as totals — but still a page, because this is a scrollable browse list and
+// putting 5,486 buttons in the DOM helps nobody. The panel now says which it is.
+const ENTITY_PANEL_LIMIT = 500;
+
 const TYPE_LABELS: Record<string, string> = {
   TTP: 'Tactics, Techniques & Procedures',
   IPAddress: 'IP Address',
@@ -152,6 +158,8 @@ function NetworkPageInner() {
   const { activeProject } = useProject();
   const { addNotification, updateNotification } = useNotifications();
   const [entities, setEntities] = useState<Entity[]>([]);
+  // How many match in full, so the panel can say when it is showing a page.
+  const [entityTotal, setEntityTotal] = useState(0);
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
@@ -284,9 +292,14 @@ function NetworkPageInner() {
       const res = await entitiesApi.search(
         activeProject.id,
         searchQuery || undefined,
-        typeFilter === 'All' ? undefined : typeFilter
+        typeFilter === 'All' ? undefined : typeFilter,
+        ENTITY_PANEL_LIMIT,
       );
       setEntities(res.data);
+      // The panel groups what it received under type headings, and those counts
+      // read as totals. On a 5,486-entity project it was grouping the first 50
+      // and captioning them "Organization (6)" beside a graph holding 156.
+      setEntityTotal(totalFrom(res));
     } catch (e) {
       console.error('Failed to load entities', e);
     }
@@ -1573,7 +1586,18 @@ function NetworkPageInner() {
                       return <p className="text-xs text-gray-500 p-3">No entities found.</p>;
                     }
 
-                    return sortedTypes.map(type => {
+                    const truncated = entityTotal > entities.length;
+
+                    return [
+                      // Say so when this is a page rather than the whole set —
+                      // the per-type counts below are counts of what loaded.
+                      truncated ? (
+                        <p key="__truncated" className="text-[10px] text-amber-400/80 px-3 py-2 border-b border-navy-700">
+                          Showing {entities.length.toLocaleString()} of {entityTotal.toLocaleString()} entities.
+                          {' '}Search or filter by type to narrow.
+                        </p>
+                      ) : null,
+                      ...sortedTypes.map(type => {
                       const typeEntities = grouped[type];
                       const isExpanded = expandedEntityTypes.has(type);
                       return (
@@ -1620,7 +1644,8 @@ function NetworkPageInner() {
                           ))}
                         </div>
                       );
-                    });
+                    }),
+                    ];
                   })()}
                 </div>
                 {/* Snapshots (Bins) + Mass Select Section */}

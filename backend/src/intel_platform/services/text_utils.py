@@ -101,3 +101,61 @@ def normalize_datetime(val: Any) -> str:
         except (TypeError, ValueError):
             return ""
     return str(val)
+
+
+# ---------------------------------------------------------------------------
+# Markup stripping
+# ---------------------------------------------------------------------------
+
+# A wiki citation marker: "[[27]](https://...#cite_note-eju-27)". Removed
+# whole — the number refers to a reference list that is not in the chunk, so it
+# carries nothing for either the model or the reader.
+_CITATION = re.compile(r"\[\[\d+\]\]\([^)]*\)")
+# Section-edit affordances scraped from wiki pages. They appear wrapped in a
+# second pair of brackets — "[[edit](https://...)]" — so the wrapper goes too;
+# stripping only the inner link leaves a stray "[]" behind.
+_EDIT_LINK = re.compile(r"\[?\[\s*edit\s*\]\([^)]*\)\]?", re.I)
+# A markdown link or image: keep what it says, drop where it points.
+_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+# A link whose closing paren was lost to chunking: "[NATO](https://en.wiki
+_TRUNCATED_LINK = re.compile(r"!?\[([^\]]*)\]\([^)\s]*$", re.M)
+# Leading heading hashes and blockquote markers; the text after them is content.
+_HEADING = re.compile(r"^[ \t]*(?:#{1,6}|>+)[ \t]*", re.M)
+_EMPHASIS = re.compile(r"\*\*|__")
+# Single-underscore italics — "_Yi Peng 3_". Bounded so snake_case identifiers
+# and mid-word underscores are left alone.
+_ITALIC = re.compile(r"(?<![A-Za-z0-9_])_([^_\n]{1,80})_(?![A-Za-z0-9_])")
+# A chunk that begins inside a URL, because chunking split a markdown link:
+# "://en.wikipedia.org/wiki/Baltic_Sea \"Baltic Sea\"). The incidents...".
+# Only matched at the very start of the text, where it cannot be prose.
+_ORPHAN_URL_HEAD = re.compile(r'^://\S*(?:\s+"[^"]*")?\)?[.,;:]?[ \t]*')
+_BLANK_RUN = re.compile(r"\n{3,}")
+
+
+def strip_markup(text: str) -> str:
+    """Remove markdown syntax, keeping the words.
+
+    Collected pages arrive as markdown, and 36% of the characters in a
+    retrieved chunk were link and citation syntax rather than prose. That is
+    context budget spent on URLs, embeddings partly driven by URL tokens, and
+    evidence panels showing an analyst `[[27]](https://en.wikipedia.org/...)`
+    mid-sentence.
+
+    Deliberately conservative: link *text* survives, because "[NATO](url)"
+    means NATO. Only the machinery goes.
+    """
+    if not text:
+        return ""
+    out = _CITATION.sub("", text)
+    out = _EDIT_LINK.sub("", out)
+    out = _LINK.sub(r"\1", out)
+    out = _TRUNCATED_LINK.sub(r"\1", out)
+    out = _HEADING.sub("", out)
+    out = _EMPHASIS.sub("", out)
+    out = _ITALIC.sub(r"\1", out)
+    out = _ORPHAN_URL_HEAD.sub("", out)
+    # Collapse the whitespace the removals leave behind, without joining
+    # paragraphs that were always separate.
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    out = _BLANK_RUN.sub("\n\n", out)
+    return out.strip()

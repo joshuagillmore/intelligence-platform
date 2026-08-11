@@ -2,6 +2,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import * as d3 from 'd3';
 import { TYPE_COLOR_HEX as TYPE_COLORS } from '@/lib/entityStyles';
+import { labelledNodeIds } from '@/lib/graphLabels';
 
 interface GraphNode extends d3.SimulationNodeDatum {
   id: string;
@@ -78,6 +79,9 @@ export default function GraphVisualization({
   const nodeSelRef = useRef<d3.Selection<SVGCircleElement, GraphNode, SVGGElement, unknown> | null>(null);
   const linkSelRef = useRef<d3.Selection<SVGLineElement, GraphEdge, SVGGElement, unknown> | null>(null);
   const labelSelRef = useRef<d3.Selection<SVGTextElement, GraphNode, SVGGElement, unknown> | null>(null);
+  // Which ids the last render gave a label to, so the selection effect can add
+  // the selected node without recomputing the ranking.
+  const labelledRef = useRef<Set<string>>(new Set());
   const colorFnRef = useRef<(d: GraphNode) => string>(() => '#78716c');
   const adjacencyRef = useRef<Record<string, string[]>>({});
 
@@ -255,8 +259,21 @@ export default function GraphVisualization({
     } else {
       sim
         .force('link', d3.forceLink<GraphNode, GraphEdge>(simEdges).id(d => d.id).distance(80))
-        .force('charge', d3.forceManyBody().strength(-200))
+        // Repulsion is capped by distance so it stays a local separating force.
+        // Uncapped, every node pushes every other node forever, and with ~440
+        // of 500 nodes carrying no edge to hold them, the whole cloud expands
+        // until it meets the clamp below.
+        .force('charge', d3.forceManyBody().strength(-200).distanceMax(400))
         .force('center', d3.forceCenter(width / 2, height / 2))
+        // The restoring force the layout was missing. forceCenter only shifts
+        // the mean position — it pulls on nothing individually — so nothing
+        // opposed the outward drift and the clamp became the only thing
+        // stopping it. A clamp with no counter-force does not contain nodes,
+        // it collects them: each one that reaches the edge stays exactly on
+        // it, which is why the graph rendered as a hollow rectangle with the
+        // connected core marooned inside.
+        .force('x', d3.forceX(width / 2).strength(0.06))
+        .force('y', d3.forceY(height / 2).strength(0.06))
         .force('collide', d3.forceCollide<GraphNode>().radius(d => radius(d) + 5));
     }
 
@@ -376,19 +393,31 @@ export default function GraphVisualization({
     // Store ref for selection effect
     nodeSelRef.current = node as unknown as d3.Selection<SVGCircleElement, GraphNode, SVGGElement, unknown>;
 
-    // Node labels
+    // Node labels — only for the nodes that earn one. See lib/graphLabels:
+    // labelling all 500 rendered text over text and left none of it readable.
+    const labelled = labelledNodeIds(simNodes, deg);
+
     const label = g.append('g')
       .selectAll<SVGTextElement, GraphNode>('text')
       .data(simNodes)
       .join('text')
       .text(d => d.name.length > 32 ? d.name.slice(0, 29) + '…' : d.name)
-      .attr('font-size', '9px')
-      .attr('fill', d => hasHighlights && !isHighlighted(d.id) ? '#4b5563' : '#d1d5db')
+      .attr('display', d => labelled.has(d.id) ? null : 'none')
+      .attr('font-size', '10px')
+      .attr('fill', d => hasHighlights && !isHighlighted(d.id) ? '#4b5563' : '#e5e7eb')
+      // A dark halo painted behind the glyphs. Labels sit over edges and other
+      // nodes, and 10px grey on a navy canvas crossed by a link is the case
+      // where it stops being readable.
+      .attr('stroke', '#0f172a')
+      .attr('stroke-width', 3)
+      .attr('paint-order', 'stroke')
+      .attr('stroke-linejoin', 'round')
       .attr('text-anchor', 'middle')
       .attr('dy', d => -(radius(d) + 3))
       .attr('pointer-events', 'none');
 
     labelSelRef.current = label as unknown as d3.Selection<SVGTextElement, GraphNode, SVGGElement, unknown>;
+    labelledRef.current = labelled;
 
     // Legend
     const usedTypes = Array.from(new Set(simNodes.map(n => n.entity_type))).sort();
@@ -408,13 +437,18 @@ export default function GraphVisualization({
     sim.on('tick', () => {
       tickCount++;
 
-      // Keep free (non-pinned) nodes inside the viewport so a drifting node's
-      // centered label doesn't clip at the container edge. Pinned layouts
-      // (radial/hierarchical set fx/fy) are deliberate and left alone.
-      const padX = 50;
+      // A backstop against a node escaping entirely, not the thing that shapes
+      // the layout — forceX/forceY above do that now. Deliberately outside the
+      // viewport: a bound drawn at the visible edge is one nodes come to rest
+      // against, and a row of nodes resting on a straight line reads as a
+      // border the data does not have. Pinned layouts (radial/hierarchical set
+      // fx/fy) are left alone.
+      const escapeMargin = 400;
+      const minX = -escapeMargin, maxX = width + escapeMargin;
+      const minY = -escapeMargin, maxY = height + escapeMargin;
       for (const d of simNodes) {
-        if (d.fx == null && d.x != null) d.x = Math.max(padX, Math.min(width - padX, d.x));
-        if (d.fy == null && d.y != null) d.y = Math.max(radius(d) + 16, Math.min(height - radius(d) - 8, d.y));
+        if (d.fx == null && d.x != null) d.x = Math.max(minX, Math.min(maxX, d.x));
+        if (d.fy == null && d.y != null) d.y = Math.max(minY, Math.min(maxY, d.y));
       }
 
       const getX = (d: GraphNode | string) => typeof d === 'string' ? 0 : (d.x || 0);
@@ -527,9 +561,13 @@ export default function GraphVisualization({
         return 0.6;
       });
 
-    // Update label visuals
+    // Update label visuals. A selected node is always named, budget or not —
+    // clicking a node to find out what it is and getting no name back would
+    // make the unlabelled majority a dead end rather than a hover away.
     labelSel
-      .attr('fill', d => hasEgo && !egoSet.has(d.id) ? '#374151' : '#d1d5db')
+      .attr('display', d =>
+        d.id === selectedNodeId || labelledRef.current.has(d.id) ? null : 'none')
+      .attr('fill', d => hasEgo && !egoSet.has(d.id) ? '#374151' : '#e5e7eb')
       .attr('font-weight', d => d.id === selectedNodeId ? 'bold' : 'normal');
   }, [selectedNodeId, egoHighlightDepth]);
 

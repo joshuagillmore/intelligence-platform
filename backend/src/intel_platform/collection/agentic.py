@@ -596,6 +596,15 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
     connector = get_connector(source.source_type)
     config = source.config or {}
 
+    # An api_feed resolved here carries "urls" (see _resolve_sources), but its
+    # connector requires "base_url" and would raise on configure. Take the
+    # first resolved URL as the base so the source is executable instead of
+    # failing on a key mismatch between the two halves of this module.
+    if source.source_type == "api_feed" and not config.get("base_url"):
+        urls = config.get("urls")
+        if isinstance(urls, list) and urls:
+            config = {**config, "base_url": urls[0]}
+
     # Handle multi-URL for web_scrape/database: upstream connector takes single "url",
     # but agentic resolve generates "urls" list. Fetch them with bounded concurrency.
     if source.source_type in ("web_scrape", "database") and "urls" in config and isinstance(config["urls"], list):

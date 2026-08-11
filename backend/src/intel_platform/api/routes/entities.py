@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
@@ -19,14 +19,30 @@ def get_entity_type_hierarchy():
 
 @router.get("/entities")
 def search_entities(
+    response: Response,
     project_id: str, query: str = "", entity_type: str | None = None,
     limit: int = 50, offset: int = 0,
     store: GraphStore = Depends(get_graph_store),
 ):
-    return store.search_entities(
+    """Entities matching the filters, capped at `limit`.
+
+    `X-Total-Count` reports how many match in full, so a caller can tell a
+    complete list from a truncated one. Nothing said so before, and every
+    consumer takes the default 50: the geo map plotted 50 of 398 locations and
+    the network sidebar grouped 50 of 5,486 entities under type headings that
+    read as totals. A header keeps the body a bare list, which every existing
+    caller already parses as one.
+    """
+    results = store.search_entities(
         project_id=project_id, query=query, entity_type=entity_type,
         limit=limit, offset=offset,
     )
+    total = store.count_entities(project_id=project_id, query=query, entity_type=entity_type)
+    response.headers["X-Total-Count"] = str(total)
+    # Browsers hide non-safelisted headers from cross-origin JS unless exposed,
+    # and the analyst UI is served from a different origin in development.
+    response.headers["Access-Control-Expose-Headers"] = "X-Total-Count"
+    return results
 
 
 @router.get("/entities/{entity_id}")

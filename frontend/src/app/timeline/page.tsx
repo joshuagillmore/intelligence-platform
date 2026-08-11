@@ -109,6 +109,11 @@ export default function TimelinePage() {
   const { addNotification } = useNotifications();
   const router = useRouter();
   const [events, setEvents] = useState<TimelineEvent[]>([]);
+  // Most entities in a project are organizations and locations, which have no
+  // date of their own; their timestamp is when collection added them. On a
+  // 500-event project only 5 carried an extracted date, so the default view is
+  // a collection log, and nothing said which it was.
+  const [datedOnly, setDatedOnly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [enabledTypes, setEnabledTypes] = useState<Set<string>>(new Set(ENTITY_TYPES));
 
@@ -143,7 +148,15 @@ export default function TimelinePage() {
     });
   }
 
-  const filtered = events.filter(e => enabledTypes.has(e.entity_type));
+  // The same signal the row label already uses ('Occurred' vs 'Added to
+  // graph'), so the filter and the label can never disagree. On this project
+  // event_type is 'event' for exactly the 5 entries carrying an extracted date
+  // and 'entity_created' for the other 495.
+  const isDated = (e: TimelineEvent) => e.event_type === 'event';
+  const datedCount = events.filter(isDated).length;
+  const filtered = events
+    .filter(e => enabledTypes.has(e.entity_type))
+    .filter(e => !datedOnly || isDated(e));
   const grouped = groupByDate(filtered);
 
   if (!activeProject) {
@@ -168,7 +181,15 @@ export default function TimelinePage() {
         <div className="flex-none px-6 py-4 border-b border-navy-600 bg-navy-800 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold">Timeline</h2>
-            <p className="text-xs text-gray-400 mt-1">{filtered.length} events</p>
+            <p className="text-xs text-gray-400 mt-1">
+              {filtered.length} events
+              {/* Say what the dates mean. Without this the view reads as a
+                  chronology of what happened, when almost all of it is a
+                  chronology of when collection ran. */}
+              <span className="text-gray-500">
+                {' · '}{datedCount} dated, {events.length - datedCount} timestamped on ingest
+              </span>
+            </p>
           </div>
           <button
             onClick={loadTimeline}
@@ -182,6 +203,17 @@ export default function TimelinePage() {
         <div className="flex-1 flex overflow-hidden">
           {/* Filter sidebar */}
           <div className="w-56 flex-none bg-navy-800 border-r border-navy-600 p-4 overflow-y-auto">
+            {/* The chronology an analyst usually wants: entries whose date came
+                from the source, not from when collection happened to run. */}
+            <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer mb-4 pb-4 border-b border-navy-600">
+              <input
+                type="checkbox"
+                checked={datedOnly}
+                onChange={(e) => setDatedOnly(e.target.checked)}
+                className="accent-accent-blue"
+              />
+              <span>Dated events only <span className="text-gray-500">({datedCount})</span></span>
+            </label>
             <h3 className="text-sm font-semibold text-gray-400 mb-3">Filter by Type</h3>
             <div className="space-y-2">
               {ENTITY_TYPES.map(t => (

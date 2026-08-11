@@ -51,6 +51,23 @@ class SourceConnector(abc.ABC):
     # Subclasses set this
     source_type: str = ""
 
+    # --- Capability metadata -------------------------------------------------
+    # What this connector can actually reach, declared next to the code that
+    # does the reaching. The collection planner is prompted from this rather
+    # than from a hand-maintained list, because the two drifted: the planner
+    # was offering source types with rules of thumb about when to choose them
+    # and nothing about what the system can obtain, so it proposed a Twitter
+    # API feed and a "weekly report" upload as if both were collection the
+    # system would perform.
+
+    #: Config keys the planner must supply for this type to be executable.
+    config_keys: tuple[str, ...] = ()
+    #: False when producing data needs a person — the planner should propose
+    #: these only as an explicit request to the analyst, never as collection.
+    unattended: bool = True
+    #: Written for the planner: what this type can and cannot reach.
+    capability_note: str = ""
+
     @abc.abstractmethod
     def configure(self, config: dict[str, Any]) -> dict[str, Any]:
         """Validate and normalize configuration. Returns validated config.
@@ -99,6 +116,37 @@ def register_connector(cls: type[SourceConnector]) -> type[SourceConnector]:
     if cls.source_type:
         CONNECTOR_REGISTRY[cls.source_type] = cls
     return cls
+
+
+def unattended_source_types() -> list[str]:
+    """Types the system can collect without a person doing something first."""
+    return sorted(t for t, c in CONNECTOR_REGISTRY.items() if c.unattended)
+
+
+def describe_collection_capabilities() -> str:
+    """What this deployment can actually collect, written for the planner.
+
+    Derived from the connector registry so it cannot drift from the code. It
+    drifted twice already: the planning skill's system prompt and the prompt
+    built at the call site listed different type sets (one had `database`, the
+    other did not) and disagreed about config keys, and neither said anything
+    about what the connectors can reach. A planner told only that `api_feed`
+    means "structured data APIs" will propose a Twitter API feed, which this
+    system has no way to authenticate to.
+    """
+    lines: list[str] = []
+    for source_type in sorted(CONNECTOR_REGISTRY):
+        cls = CONNECTOR_REGISTRY[source_type]
+        if cls.config_keys:
+            keys = ", ".join(f'"{k}": "..."' for k in cls.config_keys)
+            config = f'CONFIG must include {{{keys}}}'
+        else:
+            config = "no CONFIG"
+        marker = "" if cls.unattended else "  [ANALYST ACTION, NOT COLLECTION]"
+        lines.append(f"- {source_type}: {config}{marker}")
+        if cls.capability_note:
+            lines.append(f"    {cls.capability_note}")
+    return "\n".join(lines)
 
 
 def get_connector(source_type: str) -> SourceConnector:

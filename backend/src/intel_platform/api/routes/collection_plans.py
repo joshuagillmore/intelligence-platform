@@ -19,7 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.config import settings
-from intel_platform.connectors.base import get_connector, CONNECTOR_REGISTRY
+from intel_platform.connectors.base import (
+    CONNECTOR_REGISTRY,
+    describe_collection_capabilities,
+    get_connector,
+)
 from intel_platform.connectors.flat_file import detect_format, SUPPORTED_FORMATS
 from intel_platform.db.engine import get_db
 from intel_platform.db.models import (
@@ -641,11 +645,13 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
                     "For each source, output a numbered list item in EXACTLY this format:\n"
                     'N. [SOURCE_TYPE] Description of what to collect\n'
                     '   CONFIG: {"key": "value"}\n\n'
-                    "Valid SOURCE_TYPE values and their CONFIG keys:\n"
-                    '- web_scrape: CONFIG must include {"url": "https://..."}\n'
-                    '- rss_feed: CONFIG must include {"feed_url": "https://..."}\n'
-                    '- api_feed: CONFIG must include {"base_url": "https://..."}\n'
-                    "- file_upload: no CONFIG needed (analyst uploads manually)\n\n"
+                    "These are the ONLY collection methods this system has. "
+                    "Propose a source only if one of them can actually reach it:\n"
+                    f"{describe_collection_capabilities()}\n\n"
+                    "A plan is judged on what it collects, not on how complete it "
+                    "looks. Every source you list that this system cannot reach is a "
+                    "row the analyst has to work out is dead. Prefer four sources that "
+                    "will return data to seven that read well.\n\n"
                     "Include 3-7 concrete, actionable sources with REAL URLs.\n"
                     "Focus on publicly accessible sources relevant to the PIR.\n"
                     "Examples of the FORMAT only — pick sources for the actual subject, not these:\n"

@@ -7,6 +7,21 @@ from neo4j import Driver
 from intel_platform.models.entities import Entity
 
 
+# Enough terms for any real query. A bound exists because each term becomes
+# another CONTAINS clause, and a pasted paragraph would otherwise build a
+# Cypher statement with hundreds of them.
+_MAX_SEARCH_TERMS = 12
+
+
+def _search_terms(query: str) -> list[str]:
+    """The words a search must match, lowercased.
+
+    Whitespace-only input yields no terms rather than a filter on " ", which
+    would quietly restrict results to names that happen to contain a space.
+    """
+    return [t for t in (query or "").lower().split() if t][:_MAX_SEARCH_TERMS]
+
+
 def _validate_label(label: str) -> str:
     """Validate entity label. Must be alphanumeric (Neo4j label requirement)."""
     if not label or not re.match(r'^[A-Za-z][A-Za-z0-9_]*$', label):
@@ -132,6 +147,35 @@ class GraphStore:
             record = session.run(cypher, **params).single()
             return dict(record["n"]) if record else None
 
+    def _entity_filter(self, project_id: str, query: str, entity_type: str | None) -> tuple[str, dict]:
+        """The WHERE clause shared by searching and counting.
+
+        Built once so a total can never describe a different set than the page
+        it accompanies — the count is what tells the analyst the list is
+        truncated, and a count of something else would be worse than none.
+        """
+        cypher = "MATCH (n) WHERE n.project_id = $project_id"
+        params: dict = {"project_id": project_id}
+        if entity_type:
+            cypher += " AND n.entity_type = $entity_type"
+            params["entity_type"] = entity_type
+        for i, term in enumerate(_search_terms(query)):
+            cypher += f" AND toLower(n.name) CONTAINS $q{i}"
+            params[f"q{i}"] = term
+        return cypher, params
+
+    def count_entities(self, project_id: str, query: str = "", entity_type: str | None = None) -> int:
+        """How many entities match, ignoring the page size.
+
+        Every list view showed the first 50 with nothing to say so: the geo map
+        plotted 50 of 398 locations, and the network sidebar grouped 50 of
+        5,486 entities into type headings that read as totals. ~0.015s warm.
+        """
+        cypher, params = self._entity_filter(project_id, query, entity_type)
+        with self._driver.session() as session:
+            record = session.run(cypher + " RETURN count(n) AS total", parameters=params).single()
+            return record["total"] if record else 0
+
     def search_entities(
         self, project_id: str, query: str = "", entity_type: str | None = None,
         limit: int = 50, offset: int = 0,
@@ -141,9 +185,17 @@ class GraphStore:
         if entity_type:
             cypher += " AND n.entity_type = $entity_type"
             params["entity_type"] = entity_type
-        if query:
-            cypher += " AND toLower(n.name) CONTAINS toLower($query)"
-            params["query"] = query
+        # Every term must appear somewhere in the name, in any order.
+        #
+        # This matched the whole query as one literal substring, so any search
+        # of more than one word returned nothing: on a 5,486-entity project
+        # about Baltic cable sabotage, "Baltic" and "cable" each returned
+        # results and "Baltic cable" returned zero — no entity is named that
+        # exactly. An analyst typing a phrase, which is how anyone uses a
+        # search box, got a well-formed empty page.
+        for i, term in enumerate(_search_terms(query)):
+            cypher += f" AND toLower(n.name) CONTAINS $q{i}"
+            params[f"q{i}"] = term
         cypher += " RETURN n ORDER BY n.name SKIP $offset LIMIT $limit"
         with self._driver.session() as session:
             result = session.run(cypher, parameters=params)
@@ -314,6 +366,40 @@ class GraphStore:
                 for record in result
             ]
 
+    def get_relationships_bulk(self, entity_ids: list[str]) -> dict[str, list[dict]]:
+        """Relationships for many entities in one round trip.
+
+        Same per-entity shape as `get_relationships`, keyed by entity id. The
+        geo view called that once per location and then a second time to build
+        location-to-location edges: 796 queries for 398 locations, 10.2s of an
+        11.2s response.
+
+        Entities with no relationships are absent from the mapping, so callers
+        should use `.get(id, [])` — an absent key is "none", not "unknown".
+        """
+        if not entity_ids:
+            return {}
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (n)-[r]-(m)
+                WHERE n.id IN $ids
+                RETURN n.id as key, type(r) as rel_type, properties(r) as props,
+                       n.id as source_id, n.name as source_name,
+                       m.id as target_id, m.name as target_name
+                """,
+                ids=list(entity_ids),
+            )
+            out: dict[str, list[dict]] = {}
+            for record in result:
+                out.setdefault(record["key"], []).append({
+                    "rel_type": record["rel_type"], "target_id": record["target_id"],
+                    "target_name": record["target_name"],
+                    "source_id": record["source_id"], "source_name": record["source_name"],
+                    **record["props"],
+                })
+            return out
+
     def get_subgraph(self, entity_id: str, hops: int = 1) -> dict:
         with self._driver.session() as session:
             result = session.run(
@@ -357,21 +443,52 @@ class GraphStore:
         return stripped
 
     def get_full_graph(self, project_id: str, limit: int = 500) -> dict:
+        """The project subgraph, most-connected first.
+
+        `limit` is a display budget, not a filter: this project holds 5,486
+        entities and the view shows 500. Selection was `MATCH (n) ... LIMIT`
+        with no ordering, so which 500 an analyst saw was whatever order the
+        scan happened to produce — and since URL nodes outnumber everything
+        else, the Network Analysis view rendered 500 nodes joined by 82 edges,
+        439 of them isolated dots. 211 were URLs.
+
+        Spending the budget on the connected core instead turns the same view
+        into 500 nodes and 500 edges of Organizations, Campaigns, Locations,
+        Events and People. Isolated nodes still appear, but only once the
+        connected ones have had their turn — an entity with no links is a
+        finding worth seeing, just not ahead of the graph itself.
+
+        Costs ~2.1s cold against ~0.25s before: ranking needs the relationship
+        counts, and an unlabeled `project_id` match cannot use a label index.
+        The route caches for 30s, so only the first caller pays it.
+        """
         with self._driver.session() as session:
             nodes_result = session.run(
-                "MATCH (n) WHERE n.project_id = $project_id RETURN properties(n) as props LIMIT $limit",
+                """
+                MATCH (n) WHERE n.project_id = $project_id
+                OPTIONAL MATCH (n)-[r]-()
+                WITH n, count(r) AS degree
+                ORDER BY degree DESC
+                LIMIT $limit
+                RETURN properties(n) as props
+                """,
                 project_id=project_id, limit=limit,
             )
             nodes = [self._strip_heavy_props(record["props"]) for record in nodes_result]
+            node_ids = [n.get("id") for n in nodes if n.get("id")]
+            # Restricted to the nodes actually returned. The edge query used to
+            # run its own independent LIMIT over the whole project, so nothing
+            # stopped it describing nodes the caller never received; that it
+            # never did was luck of the scan order, not a guarantee.
             edges_result = session.run(
                 """
                 MATCH (a)-[r]->(b)
-                WHERE a.project_id = $project_id
+                WHERE a.id IN $node_ids AND b.id IN $node_ids
                 RETURN type(r) as rel_type, startNode(r).id as source_id,
                        endNode(r).id as target_id, properties(r) as props
                 LIMIT $limit
                 """,
-                project_id=project_id, limit=limit,
+                node_ids=node_ids, limit=limit,
             )
             edges = [
                 {"rel_type": r["rel_type"], "source_id": r["source_id"],

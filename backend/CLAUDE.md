@@ -143,8 +143,15 @@ fresh one.
 Provider-agnostic. Pick via config (`default_llm_provider`, `default_llm_model`;
 `.env.example` ships Ollama + `qwen2.5:14b` for local, code default is
 `anthropic`). **Always go through `llm/orchestrator.py`** — do not re-add
-per-module provider selection. Embeddings default to OpenAI (1536-dim), also
-Cohere/Ollama.
+per-module provider selection.
+
+**Embeddings**: OpenAI (1536), Cohere (1024) or Ollama `nomic-embed-text` (768).
+`EMBEDDING_DIMENSIONS` must match the provider you pick — both pgvector columns
+and `vector_search`'s width guard read it, so a mismatch is rejected rather than
+stored wrong. There is no migration flow, so the value is applied when the
+tables are created: changing it on an existing database means dropping and
+recreating `chunk_embeddings` and `attack_technique_embeddings` (their vectors
+need re-embedding under the new provider anyway).
 
 High-volume **collection** work (source resolution + per-doc summaries) can route
 to a dedicated provider so it won't drain a rate-limited cloud key — see
@@ -159,8 +166,10 @@ to a dedicated provider so it won't drain a rate-limited cloud key — see
   read `os.environ` ad hoc in business logic.
 - Don't leak internal error detail to API clients (past review finding);
   log server-side, return clean errors.
-- Watch the collection scraper's SSRF guard — keep URL scheme/host validation
-  when editing `collection/scraper.py`.
+- The SSRF guard is `collection/url_guard.py`, not any one fetcher. `scraper`,
+  `crawler`, `proxy` and `agentic._validate_urls` all call it, so it cannot be
+  bypassed by reaching for a lower-level fetch helper — keep it that way, and
+  route any new outbound fetch through it.
 
 ## Definition of done
 

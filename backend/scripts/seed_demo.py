@@ -39,6 +39,31 @@ _NODES = [
     ("Vulnerability", "d-v1", "CVE-2024-3400", "Cyber", {"cwe_ids": ["CWE-78"], "cvss_score": 10.0, "severity": "critical"}),
     ("ThreatActor", "d-ta1", "APT-Demo", "Campaign", {}),
     ("Malware", "d-mw1", "DemoRAT", "Cyber", {}),
+    # A saved intelligence product. The Products view lists these by querying
+    # entity_type="Report" (services/reports.list_reports), and the docs-capture
+    # E2E spec opens one to screenshot a rendered product rather than an empty
+    # generator form. Without it that capture had nothing to open, waited for
+    # text that would never appear, and timed out — CI's only red test.
+    ("Report", "d-rep1", "INTSUM — Nord Industrial Group procurement network", "Analysis", {
+        "report_type": "INTSUM",
+        "status": "final",
+        "content": (
+            "## Summary\n\n"
+            "Nord Industrial Group is assessed to be acting as a procurement "
+            "front for APT-Demo, on the basis of shared infrastructure and "
+            "overlapping personnel.\n\n"
+            "## Key Judgements\n\n"
+            "- **Likely** that nord-industrial.example is operated on behalf of "
+            "APT-Demo. The domain resolves to 198.51.100.24, which DemoRAT uses "
+            "for command and control.\n"
+            "- **Highly likely** that Yevgeny Volkov is the procurement lead. He "
+            "is named as registrant contact and appears in shipping records.\n\n"
+            "## Intelligence Gaps\n\n"
+            "- No visibility of payment routing.\n"
+            "- Maria Santos' role is unconfirmed beyond logistics coordination.\n"
+        ),
+        "entity_ids": ["d-o1", "d-ta1", "d-p1", "d-dom1"],
+    }),
 ]
 
 # (source_id, REL_TYPE, target_id)

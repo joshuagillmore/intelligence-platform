@@ -1,7 +1,7 @@
 # Porting Quarry's collection loop into Sentinel
 
 **Date:** 2026-07-31
-**Source:** `C:\Users\user\Claude\crawl4ai-quarry` (Flask, SQLite, single-user)
+**Source:** `C:\Users\joshu\Claude\crawl4ai-quarry` (Flask, SQLite, single-user)
 **Merged to `main`:** `b7310568`, `28e59116`, `b6377d22`, `01802555`, `49fbb7a5`
 
 ## The one difference that mattered

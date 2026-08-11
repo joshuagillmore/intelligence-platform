@@ -42,6 +42,30 @@ _FALLBACK_TLDS = "com|org|net|io|gov|mil|edu|info|onion|ru|uk|de|nl|fr|ua|cn"
 _domain_pattern_cache = None
 
 
+# A percent-encoded separator leaves its hex pair attached to whatever follows.
+# Share links carry a whole encoded URL in a query parameter —
+# "linkedin.com/shareArticle?url=https%3A%2F%2Fcybelangel.com%2Fblog" — and the
+# word boundary before "2F" lets it start a domain label, so the graph gained
+# Domain nodes named "2fcybelangel.com", "2fwww.facebook.com" and
+# "252fwww.faa.gov" (that one doubly encoded). Measured on a live graph: 31 of
+# 1,483 domains. They then appeared in the Cyber view's IOC table as indicators.
+_PERCENT_PREFIX = re.compile(r"^(?:25)*[0-9a-f]{2}(?=[a-z])", re.I)
+
+
+def _strip_percent_prefix(domain: str, text: str, start: int) -> str:
+    """Recover the real host from a match that began inside a %XX sequence.
+
+    Only applies when the character immediately before the match is "%", so a
+    domain legitimately starting with hex-looking characters ("2fa.example.com"
+    written as itself) is untouched.
+    """
+    if start == 0 or text[start - 1] != "%":
+        return domain
+    stripped = _PERCENT_PREFIX.sub("", domain)
+    # A label of nothing but the encoding is not a domain.
+    return stripped if "." in stripped else ""
+
+
 def _get_domain_pattern() -> re.Pattern:
     """Build domain regex from YAML TLD list (cached)."""
     global _domain_pattern_cache
@@ -603,8 +627,8 @@ def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
             })
 
     for match in _get_domain_pattern().finditer(text):
-        domain = match.group().lower()
-        if domain not in seen and "." in domain:
+        domain = _strip_percent_prefix(match.group().lower(), text, match.start())
+        if domain and domain not in seen and "." in domain:
             seen.add(domain)
             cyber_entities.append({
                 "name": domain, "entity_type": "Domain",

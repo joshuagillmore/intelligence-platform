@@ -26,6 +26,12 @@ class APIFeedConnector(SourceConnector):
     """Fetch structured data from HTTP JSON APIs."""
 
     source_type = "api_feed"
+    config_keys = ("base_url",)
+    capability_note = (
+        "Fetches public JSON over HTTP. There is no credential store, so anything "
+        "requiring a key, token, OAuth or a paid plan CANNOT be collected — do not "
+        "propose Twitter/X, Meta, LinkedIn or similar commercial APIs."
+    )
 
     def configure(self, config: dict) -> dict:
         base_url = config.get("base_url", "").strip()

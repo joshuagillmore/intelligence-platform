@@ -63,9 +63,24 @@ export const projectsApi = {
   activity: (id: string, limit?: number) => api.get(`/projects/${id}/activity`, { params: { limit } }),
 };
 
+/** How many rows matched in full, from `X-Total-Count`.
+ *
+ *  Falls back to the page length when the header is absent, so a caller that
+ *  cannot read it under-reports rather than inventing a number. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function totalFrom(res: { headers?: any; data?: unknown }): number {
+  const raw = res.headers?.['x-total-count'] ?? res.headers?.['X-Total-Count'];
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : (Array.isArray(res.data) ? res.data.length : 0);
+}
+
 export const entitiesApi = {
-  search: (projectId: string, query?: string, entityType?: string) =>
-    api.get('/entities', { params: { project_id: projectId, query, entity_type: entityType } }),
+  /** Entities matching the filters. `limit` defaults to 50 on the server, so a
+   *  view that means to show everything must say so. Read the true total from
+   *  the `X-Total-Count` response header (see `totalFrom`) rather than assuming
+   *  the array is complete. */
+  search: (projectId: string, query?: string, entityType?: string, limit?: number) =>
+    api.get('/entities', { params: { project_id: projectId, query, entity_type: entityType, limit } }),
   get: (id: string) => api.get(`/entities/${id}`),
   subgraph: (id: string, hops?: number) => api.get(`/subgraph/${id}`, { params: { hops } }),
   shortestPath: (id1: string, id2: string) => api.get(`/paths/${id1}/${id2}`),

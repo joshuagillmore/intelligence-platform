@@ -420,6 +420,21 @@ export default function DataSourcesPage() {
       <Sidebar />
       <main className="md:ml-56 flex-1 flex flex-col pt-16 pb-24 md:pt-0 md:pb-0" style={{ height: 'calc(100vh - 28px)' }}>
 
+        {/* The page announces itself, as every other view does. With a project
+            selected this rendered straight into the "Topic Mind Map" section
+            heading, so navigating to Data Sources landed on a screen titled
+            something else — the one view where the nav label and the first
+            heading disagreed. Hidden in focus mode, which exists to give the
+            canvas the whole pane. */}
+        {!focusMode && (
+          <div className="flex-none px-4 pt-4">
+            <h2 className="text-xl font-bold">Data Sources</h2>
+            <p className="text-xs text-gray-400 mt-1">
+              What this project has collected, clustered into topics.
+            </p>
+          </div>
+        )}
+
         {/* -- Mind Map Section ----------------------------------------- */}
         <div className={`flex flex-col ${focusMode ? 'flex-1' : ''}`} style={focusMode ? {} : { height: '60%', minHeight: '300px' }}>
           {/* Header + Controls */}

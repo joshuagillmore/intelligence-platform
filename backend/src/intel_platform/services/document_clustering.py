@@ -752,6 +752,22 @@ def _build_semantic_tree(
 # LLM-based topic label refinement
 # ---------------------------------------------------------------------------
 
+def _is_rate_limited(exc: Exception) -> bool:
+    """Whether a provider refused because of rate limiting.
+
+    Kept provider-agnostic on purpose: each SDK raises its own class
+    (cohere.TooManyRequestsError, anthropic.RateLimitError, openai.RateLimitError),
+    and importing all of them to catch them would couple this module to every
+    provider. The status code and the class name are what they agree on.
+    """
+    if getattr(exc, "status_code", None) == 429:
+        return True
+    name = type(exc).__name__.lower()
+    if "toomanyrequests" in name or "ratelimit" in name:
+        return True
+    return "429" in str(exc)[:200]
+
+
 async def refine_labels_with_llm(
     tree_node: dict,
     doc_pairs: list[tuple[str, str]],
@@ -770,6 +786,12 @@ async def refine_labels_with_llm(
 
     provider = _cloud_provider_from_env()
     if not provider:
+        # Keyword labels are a legitimate result, but they must be
+        # distinguishable from refined ones: an analyst reading "vessel cable
+        # baltic" as a topic name should be able to tell that is what the
+        # keywords say, not what a model concluded.
+        logger.info("No cloud provider configured; keeping keyword topic labels")
+        tree_node["label_source"] = "keywords"
         return tree_node
 
     from intel_platform.llm.skills.loader import SkillsLoader
@@ -782,8 +804,12 @@ async def refine_labels_with_llm(
     # Bound concurrent LLM round-trips so a "detailed" tree with dozens of
     # nodes doesn't fan out unbounded requests against a rate-limited provider.
     sem = asyncio.Semaphore(5)
+    refined: list[str] = []
+    failed: list[str] = []
+    rate_limited = False
 
     async def _refine_node(node: dict) -> None:
+        nonlocal rate_limited
         """Refine a single node's label via LLM. Only mutates this node."""
         if node.get("entity_type") != "topic":
             return
@@ -811,6 +837,19 @@ async def refine_labels_with_llm(
 
         try:
             async with sem:
+                # Checked here, after acquiring the semaphore, rather than on
+                # entry: asyncio.gather starts every coroutine at once, so they
+                # would all pass an entry check before the first refusal came
+                # back. Waiting for a slot is what puts them behind it — of 31
+                # nodes, an entry check skipped 3 and this skips the rest.
+                #
+                # The provider has already refused; the remaining nodes will be
+                # refused too. Measured on a Cohere trial key (20 calls/minute
+                # against a 31-node tree): every call returned 429 and the
+                # endpoint spent 19.3s of a 20.6s response failing.
+                if rate_limited:
+                    failed.append(node.get("id"))
+                    return
                 result = await provider.generate(
                     messages=[{"role": "user", "content": user_msg}],
                     system=system,
@@ -833,9 +872,20 @@ async def refine_labels_with_llm(
                 node["name"] = llm_name
             if llm_summary:
                 node["summary"] = llm_summary
-        except Exception:
-            # Keep original keyword label on any failure
-            pass
+            refined.append(node.get("id"))
+        except Exception as exc:
+            # Keep the keyword label, but say so — a swallowed exception here
+            # produced a tree indistinguishable from a successfully refined one.
+            if _is_rate_limited(exc):
+                if not rate_limited:
+                    logger.warning(
+                        "LLM provider rate-limited; abandoning topic label refinement "
+                        "for the rest of the tree and keeping keyword labels"
+                    )
+                rate_limited = True
+            else:
+                logger.warning("Topic label refinement failed for node %s", node.get("id"), exc_info=True)
+            failed.append(node.get("id"))
 
     def _flatten(node: dict) -> list[dict]:
         """Collect every node in the tree (pre-order) so refines can run as one batch.
@@ -851,4 +901,20 @@ async def refine_labels_with_llm(
         return nodes
 
     await asyncio.gather(*(_refine_node(n) for n in _flatten(tree_node)), return_exceptions=True)
+
+    # What the labels actually are. "partial" is the case worth naming: some
+    # nodes carry model labels and others carry keywords, and nothing in the
+    # tree itself distinguishes them.
+    if failed and refined:
+        tree_node["label_source"] = "partial"
+    elif failed:
+        tree_node["label_source"] = "keywords"
+    else:
+        tree_node["label_source"] = "llm"
+    tree_node["labels_refined"] = len(refined)
+    tree_node["labels_failed"] = len(failed)
+    if failed:
+        logger.warning(
+            "Topic labels: %d refined, %d fell back to keywords", len(refined), len(failed)
+        )
     return tree_node

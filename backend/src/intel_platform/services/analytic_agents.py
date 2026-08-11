@@ -58,6 +58,22 @@ def _find_rating(content: str, document_id: str) -> str:
     return f"{match.group(1).upper()}{match.group(2)}" if match else ""
 
 
+
+def _degraded_because(reason: str) -> str:
+    """One sentence naming why there is no model narrative.
+
+    "No provider configured" and "the provider refused or failed" need
+    different responses from whoever reads it, and only one of them is about
+    configuration.
+    """
+    if reason == "generation_failed":
+        return (
+            "The configured LLM provider did not return a narrative (it failed or "
+            "refused the request — a rate limit will do this)."
+        )
+    return "No LLM provider is configured."
+
+
 class AnalyticAgentService:
     """Evidence-grounded runners for the three structured analytic techniques."""
 
@@ -71,10 +87,17 @@ class AnalyticAgentService:
     ) -> dict:
         """Run a skill prompt through the orchestrator's provider selection.
 
-        Returns ``{"content", "model", "tokens_used", "degraded"}``. ``degraded``
-        is True when no provider is configured or generation failed — callers
-        fall back to their deterministic output instead of surfacing an error
-        string as if it were analysis.
+        Returns ``{"content", "model", "tokens_used", "degraded", "reason"}``.
+        ``degraded`` is True when no provider is configured or generation
+        failed — callers fall back to their deterministic output instead of
+        surfacing an error string as if it were analysis.
+
+        ``reason`` distinguishes the two, because they call for different
+        actions and the fallback text used to assert the wrong one: with a
+        Cohere key rate-limited at 20 calls/minute, every technique told the
+        analyst "No LLM provider is configured" while the provider was
+        configured and reachable. That sends someone to check settings that
+        are correct.
         """
         # Imported at call time so tests can patch the single provider seam,
         # matching assess.py / reports.py.
@@ -82,7 +105,8 @@ class AnalyticAgentService:
 
         provider = await _get_provider()
         if not provider:
-            return {"content": "", "model": "none", "tokens_used": 0, "degraded": True}
+            return {"content": "", "model": "none", "tokens_used": 0,
+                    "degraded": True, "reason": "no_provider"}
 
         from intel_platform.llm.skills.loader import SkillsLoader
 
@@ -97,12 +121,14 @@ class AnalyticAgentService:
         except Exception:
             # SECURITY: never leak provider/internal detail to the client.
             logger.exception("LLM generation failed for analytic skill %s", skill_name)
-            return {"content": "", "model": "none", "tokens_used": 0, "degraded": True}
+            return {"content": "", "model": "none", "tokens_used": 0,
+                    "degraded": True, "reason": "generation_failed"}
         return {
             "content": result.content,
             "model": result.model,
             "tokens_used": result.total_tokens,
             "degraded": False,
+            "reason": "",
         }
 
     # ── source evaluation ──────────────────────────────────────────────────
@@ -182,11 +208,11 @@ class AnalyticAgentService:
         return "\n".join(lines)
 
     @staticmethod
-    def _source_fallback_markdown(metrics: list[dict]) -> str:
+    def _source_fallback_markdown(metrics: list[dict], reason: str = "") -> str:
         lines = [
             "# Source Evaluation — measured signals only",
             "",
-            "No LLM provider is configured, so no Admiralty rating has been assigned. "
+            f"{_degraded_because(reason)} No Admiralty rating has been assigned. "
             "The provenance signals below are measured directly from the project's "
             "holdings and are what a rating would be based on.",
             "",
@@ -239,7 +265,7 @@ class AnalyticAgentService:
         )
 
         gen = await self._generate("source_evaluation", prompt, temperature=0.3, max_tokens=4096)
-        analysis = gen["content"] or self._source_fallback_markdown(metrics)
+        analysis = gen["content"] or self._source_fallback_markdown(metrics, gen.get("reason", ""))
 
         parsed: dict[str, str] = {}
         for m in metrics:
@@ -422,7 +448,7 @@ class AnalyticAgentService:
         if gen["degraded"]:
             analysis = (
                 "# Analysis of Competing Hypotheses — not generated\n\n"
-                "No LLM provider is configured, so no hypotheses were generated. "
+                f"{_degraded_because(gen.get('reason', ''))} No hypotheses were generated. "
                 f"The retrieval below is real and ready for an analyst to work manually.\n\n"
                 f"**Question:** {question}\n\n"
                 f"Retrieved {nodes} graph entities, {edges} relationships"
@@ -654,12 +680,12 @@ class AnalyticAgentService:
         return "\n".join(lines)
 
     @staticmethod
-    def _gap_fallback_markdown(coverage: dict, gaps: list[dict]) -> str:
+    def _gap_fallback_markdown(coverage: dict, gaps: list[dict], reason: str = "") -> str:
         lines = [
             "# Intelligence Gap Analysis — measured gaps only",
             "",
-            "No LLM provider is configured, so there is no narrative. The gaps below "
-            "are computed directly from the knowledge graph and are actionable as-is.",
+            f"{_degraded_because(reason)} There is no narrative; the gaps below are "
+            "computed directly from the knowledge graph and are actionable as-is.",
             "",
             f"**Coverage:** {coverage['entities']} entities · {coverage['relationships']} "
             f"relationships · {coverage['documents']} documents",
@@ -712,7 +738,7 @@ class AnalyticAgentService:
         )
 
         gen = await self._generate("gap_analysis", prompt, temperature=0.3, max_tokens=4096)
-        analysis = gen["content"] or self._gap_fallback_markdown(coverage, gaps)
+        analysis = gen["content"] or self._gap_fallback_markdown(coverage, gaps, gen.get("reason", ""))
 
         return {
             "analysis": analysis,

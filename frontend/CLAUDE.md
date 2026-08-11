@@ -25,20 +25,20 @@ assertions, in `tests/e2e/`; needs the stack up + `backend/scripts/seed_demo.py`
 
 | Path | What |
 |------|------|
-| `app/` | App Router pages — one folder per view: `page.tsx` (dashboard), `collections`, `collection-plans`, `data-sources`, `network` (graph), `geo`, `timeline`, `search`, `watchlist`, `analysis` (structured analytic techniques), `products`, `cyber`, `llm-hub`, `admin`, `login`. `layout.tsx` is the shell. |
-| `components/` | Shared UI: `GraphVisualization`, `GeoMap`, `TopicMindMap`, `TemporalSlider`, `Sidebar`, `StatusBar`, `MobileHeader`/`MobileBottomNav`, `NotificationProvider`, `KeyboardShortcuts`, `HighlightedExcerpt`, `MindMapControls`, `LoadingSpinner`. |
-| `stores/` | **Currently empty** — no global store library (the dead `graphStore.ts` and the `zustand`/`zundo` deps were removed; the network page hand-rolls its own local undo). |
-| `lib/` | `api.ts` (axios client → backend), `ProjectContext.tsx`, `branding.ts` (app name/version), `entityStyles.ts` (entity-color SSOT), `graphLayout.ts`, `errorMessages.ts`. |
+| `app/` | App Router pages — one folder per view: `page.tsx` (dashboard), `collections`, `collection-plans`, `data-sources`, `network` (graph), `geo`, `timeline`, `search`, `watchlist`, `analysis` (structured analytic techniques), `products`, `cyber`, `llm-hub`, `admin`, `login`, plus the dynamic routes `documents/[id]` and `project/[id]`. `layout.tsx` is the shell. |
+| `components/` | Shared UI: `GraphVisualization`, `GeoMap`, `TopicMindMap`, `TemporalSlider`/`TemporalHistogram`, `Sidebar`, `StatusBar`, `MobileHeader`/`MobileBottomNav`, `NotificationProvider`, `KeyboardShortcuts`, `HighlightedExcerpt`, `MindMapControls`, `LoadingSpinner`, `Markdown`, `SelectProjectPrompt`. Feature panels: `AssistantPanel`/`AssistantCitations`, `AttackMatrix`/`AttackAttribution`, `EnrichmentPanel`, `EvidenceChain`, `PirPanel`, `PrintableProduct`. |
+| `lib/` | `api.ts` (axios client → backend), `ProjectContext.tsx` and `AssistantContext.tsx` (the two React contexts), `assistantGrounding.ts`, `branding.ts` (app name/version), `entityStyles.ts` (entity-color SSOT), `graphLayout.ts`, `projectOrder.ts` (dashboard ordering), `reportExport.ts`, `format.ts`, `errorMessages.ts`. |
 
 ## Stack conventions
 
 - **App Router:** be deliberate about server vs client components. Anything using
   hooks, d3, or leaflet is a client component (`"use client"`).
-- **State:** cross-view state flows through React context (`lib/ProjectContext.tsx`)
-  and local component state; don't scatter global state. There is no global store
-  library (the old zundo-based `graphStore` and both `zustand`/`zundo` deps were
-  removed) — the network page hand-rolls its own local undo/redo, so leave that
-  as-is.
+- **State:** cross-view state flows through React context — `lib/ProjectContext.tsx`
+  for the active project, `lib/AssistantContext.tsx` for the assistant — plus
+  local component state; don't scatter global state. There is no global store
+  library and no `src/stores/` directory: the old zundo-based `graphStore` and
+  both `zustand`/`zundo` deps were removed, and the network page hand-rolls its
+  own local undo/redo, so leave that as-is.
 - **API:** all backend calls go through `lib/api.ts` (axios). Don't hardcode base
   URLs or an API key in components (a hardcoded fallback key was a past finding).
 - **Visualization:** graph = d3 (`GraphVisualization`, `graphLayout.ts`); maps =

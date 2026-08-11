@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import hashlib
+import logging
 import time
 from collections import defaultdict
 import networkx as nx
@@ -8,6 +9,8 @@ from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import SYSTEM_ENTITY_TYPES
 from intel_platform.services.document_clustering import cluster_documents
 from intel_platform.services.text_utils import extract_relevant_passages, count_keyword_matches
+
+logger = logging.getLogger(__name__)
 
 # Module-level caches — survive across per-request TopicTreeService instances
 _cluster_doc_map: dict[str, dict[str, list[str]]] = {}
@@ -52,6 +55,11 @@ class TopicTreeService:
         topic_branch = await self._build_topic_branch(full_docs, project_id, method=method, granularity=granularity)
         if topic_branch and topic_branch.get("children"):
             tree["children"].extend(topic_branch.get("children", []))
+            # Surfaced at the root because that is what a caller reads. Topic
+            # names drive what an analyst clicks into; whether they came from a
+            # model or from raw keyword extraction is part of the answer.
+            for field in ("label_source", "labels_refined", "labels_failed"):
+                tree[field] = topic_branch.get(field)
 
         # Entity-based branches — only shown when enough content entities exist
         MIN_ENTITY_BRANCH_SIZE = 3
@@ -137,24 +145,34 @@ class TopicTreeService:
         if tree_node is None:
             return None
 
-        # Refine topic labels with LLM (falls back gracefully if no provider)
+        # Refine topic labels with an LLM. This is the bulk of the build —
+        # measured at 19.3s of a 20.6s cold response — so a failure here is
+        # both the most likely and the least visible: the tree comes back
+        # looking the same, with keyword labels the analyst cannot distinguish
+        # from model-generated ones.
         try:
             from intel_platform.services.document_clustering import refine_labels_with_llm
             await refine_labels_with_llm(tree_node, doc_pairs)
         except Exception:
-            pass  # Keep keyword labels on any failure
+            logger.warning("Topic label refinement failed; keeping keyword labels", exc_info=True)
+            tree_node["label_source"] = "keywords"
 
         # Update module-level caches
         _cluster_doc_map.update(doc_map)
         _cluster_keywords.update(kw_map)
 
-        # Wrap in branch node
+        # Wrap in branch node, carrying the label provenance up with it —
+        # refinement records it on the refined node, and this wrapper is what
+        # the caller sees.
         branch = {
             "name": "Topics",
             "id": "branch-themes",
             "entity_type": "branch",
             "children": tree_node.get("children", []) if tree_node.get("children") else [tree_node],
             "count": tree_node.get("count", 0),
+            "label_source": tree_node.get("label_source", "keywords"),
+            "labels_refined": tree_node.get("labels_refined", 0),
+            "labels_failed": tree_node.get("labels_failed", 0),
         }
         return branch
 

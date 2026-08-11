@@ -6,6 +6,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
 import { collectionPlansApi, pirsApi, CollectionPlan, AcquisitionLogEntry, Pir } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
+import { planTitle } from '@/lib/planTitle';
 import { humanize } from '@/lib/format';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -25,7 +26,12 @@ const SOURCE_TYPE_ICONS: Record<string, string> = {
   watched_dir: 'folder_open',
 };
 
-const SUPPORTED_FILE_EXTENSIONS = ['.csv', '.tsv', '.xlsx', '.xls', '.json', '.jsonl'];
+// Mirrors SUPPORTED_FORMATS in connectors/flat_file.py. The picker filters on
+// this, so a format the backend accepts but this list omits cannot be selected
+// at all — the file dialogue simply greys it out with nothing to explain why.
+const SUPPORTED_FILE_EXTENSIONS = [
+  '.csv', '.tsv', '.xlsx', '.xls', '.json', '.jsonl', '.xml', '.kml', '.geojson',
+];
 
 interface DashboardData {
   plan_counts: Record<string, number>;
@@ -352,8 +358,12 @@ export default function CollectionPlansPage() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="text-sm font-medium text-white truncate">{plan.name}</div>
-                        {plan.requirement && <div className="text-[11px] text-gray-400 mt-0.5 line-clamp-2">{plan.requirement}</div>}
+                        <div className="text-sm font-medium text-white truncate">{planTitle(plan.name)}</div>
+                        {/* Same stored markdown as the title above it, so the
+                            same treatment — cleaning only the title left the
+                            raw `** > **Refined PIR:**` sitting directly
+                            underneath it. */}
+                        {plan.requirement && <div className="text-[11px] text-gray-400 mt-0.5 line-clamp-2">{planTitle(plan.requirement, '')}</div>}
                       </div>
                       <span className={`px-1.5 py-0.5 text-[9px] rounded border whitespace-nowrap ${STATUS_COLORS[plan.status] || 'text-gray-400'}`}>
                         {plan.status}

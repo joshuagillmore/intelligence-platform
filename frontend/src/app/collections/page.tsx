@@ -7,6 +7,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
 import { collectionsApi, collectionPlansApi, ingestApi, llmApi, pirsApi, CollectionPlan, CollectionActivityEntry, PlanExecutionStatus, Pir } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
+import { planTitle } from '@/lib/planTitle';
 
 interface Collection {
   id: string;
@@ -898,7 +899,7 @@ PIR: ${pirText}` }],
                     <div className="relative z-10 flex flex-col h-full justify-between gap-6">
                       <div className="flex justify-between items-start">
                         <div>
-                          <h3 className="text-sm font-bold text-gray-200">{col.pir.substring(0, 60)}{col.pir.length > 60 ? '...' : ''}</h3>
+                          <h3 className="text-sm font-bold text-gray-200">{planTitle(col.pir).substring(0, 60)}{planTitle(col.pir).length > 60 ? '...' : ''}</h3>
                           <p className="text-[10px] text-gray-500 font-mono mt-1">ID: {col.id.substring(0, 16)}</p>
                         </div>
                         <span className="text-xs font-black text-accent-periwinkle">{progress}%</span>
@@ -948,9 +949,9 @@ PIR: ${pirText}` }],
                     <div className="p-4 cursor-pointer hover:bg-[#1e2436] transition-colors" onClick={() => { toggleExpanded(String(plan.id)); loadActivity(String(plan.id)); loadRunState(String(plan.id)); }}>
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-300 truncate">{plan.pir || plan.name}</p>
+                          <p className="text-sm text-gray-300 truncate">{planTitle(plan.pir || plan.name)}</p>
                           {plan.refined_pir && plan.refined_pir !== plan.pir && (
-                            <p className="text-[10px] text-accent-periwinkle mt-1 truncate">Refined: {plan.refined_pir}</p>
+                            <p className="text-[10px] text-accent-periwinkle mt-1 truncate">Refined: {planTitle(plan.refined_pir, '')}</p>
                           )}
                           <div className="flex items-center gap-3 mt-2">
                             <span className="text-[10px] text-gray-500 font-mono">{plan.created_at ? new Date(plan.created_at).toLocaleString() : ''}</span>
@@ -1258,9 +1259,9 @@ PIR: ${pirText}` }],
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-300 truncate">{col.pir}</p>
+                          <p className="text-sm text-gray-300 truncate">{planTitle(col.pir)}</p>
                           {col.refined_pir && (
-                            <p className="text-[10px] text-accent-periwinkle mt-1 truncate">Refined: {col.refined_pir}</p>
+                            <p className="text-[10px] text-accent-periwinkle mt-1 truncate">Refined: {planTitle(col.refined_pir, '')}</p>
                           )}
                           <div className="flex items-center gap-3 mt-2">
                             {col.created_at && (
