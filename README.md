@@ -138,11 +138,14 @@ rationale, LLM orchestration, egress proxy, and request flow), see
 
 <!-- Add screenshots to docs/screenshots/ and they'll render below. -->
 
-<!-- SCREENSHOT: /network: the knowledge-graph hero shot (d3 force graph, an entity selected) -->
-![Knowledge graph: the /network view](docs/screenshots/network-graph.png)
+<!-- SCREENSHOT: /network: shortest path between two entities, the evidence behind one
+     edge (claim, confidence, corroboration, source grade, method, basis), and the
+     Graph-RAG assistant answering a question grounded in that subgraph -->
+![Knowledge graph: a path between two entities, the graded evidence behind an edge, and a Graph-RAG answer](docs/screenshots/network-graph.png)
 
-<!-- SCREENSHOT: /geo: geolocated entities and their connections, with the AOI query and layer controls -->
-![Geo / GEOINT: geolocated entities and connections across a collection](docs/screenshots/geo-aoi.png)
+<!-- SCREENSHOT: /geo: geolocated entities and their connections, layer + temporal
+     controls, and the Graph-RAG assistant answering about an incident on the map -->
+![Geo / GEOINT: geolocated entities and connections, with a Graph-RAG answer about an incident](docs/screenshots/geo-aoi.png)
 
 <!-- SCREENSHOT: /cyber: the EnrichmentPanel showing an investigated observable -->
 ![Cyber-observable enrichment panel](docs/screenshots/cyber-enrichment.png)
