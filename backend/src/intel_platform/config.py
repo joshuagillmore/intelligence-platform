@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     # summarization), which is high-volume and would exhaust a rate-limited cloud
     # key. Empty = use the default provider (preserves prior behavior, e.g. on
     # deployments without a local Ollama). Set to "ollama" to offload locally.
+    # Topic-label refinement is one LLM call per cluster node, so it drains a
+    # rate-limited cloud key fastest. Set to "ollama" to run it locally.
+    topics_llm_provider: str = ""
+    topics_llm_model: str = ""
     collection_llm_provider: str = ""
     collection_llm_model: str = ""
 

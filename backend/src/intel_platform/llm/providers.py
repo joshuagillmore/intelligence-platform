@@ -70,6 +70,34 @@ async def _get_collection_provider():
     return await _get_provider()
 
 
+def _get_topics_provider():
+    """Provider for topic-label refinement, or None to keep keyword labels.
+
+    Refinement is one call per node — 31 for a thirty-child tree — which is the
+    same shape as collection work: high volume, low value per call, and the
+    first thing to exhaust a rate-limited cloud key. On a live run every one of
+    31 refinements failed with HTTP 429 from a Cohere trial key (20/min), the
+    endpoint spent 19.3s of a 20.6s response failing, and the analyst saw topics
+    named "wikipedia / wiki / org" — raw TF-IDF keywords off URL fragments.
+
+    Setting ``topics_llm_provider=ollama`` routes it to the local model instead,
+    where there is no quota to exhaust. Unset, behaviour is unchanged: the cloud
+    provider if a key exists, otherwise None so the caller keeps keyword labels
+    and reports ``label_source`` accordingly.
+
+    Sync, unlike its collection and extraction siblings, because the one caller
+    resolves its provider outside the async refinement path.
+    """
+    from intel_platform.config import settings
+
+    prov = (getattr(settings, "topics_llm_provider", "") or "").strip().lower()
+    if prov == "ollama":
+        from intel_platform.llm.ollama import OllamaProvider
+        model = (getattr(settings, "topics_llm_model", "") or "").strip() or "qwen2.5:14b"
+        return OllamaProvider(base_url=settings.ollama_base_url, model=model)
+    return _cloud_provider_from_env()
+
+
 async def _get_extraction_provider():
     """Provider for LLM/hybrid entity+relationship extraction.
 

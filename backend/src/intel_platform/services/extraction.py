@@ -604,11 +604,80 @@ def _has_hash_context(text: str, match_start: int, match_end: int) -> bool:
     return bool(HASH_CONTEXT_KEYWORDS.search(window))
 
 
-def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
-    """Extract cyber-specific entities using regex patterns."""
+#: Tokens carrying a defang marker: ``evil[.]com``, ``hxxp://x.com``,
+#: ``a[at]b.com``, ``10[.]0[.]0[.]1``. Deliberately loose — it only has to
+#: find the token, which is then refanged and normalised.
+_DEFANGED_TOKEN = re.compile(
+    r"""(?:hxxps?://\S+)|(?:[A-Za-z0-9.\-]+(?:\[\.\]|\(\.\)|\[dot\]|\[at\])[A-Za-z0-9.\-\[\]()]*)""",
+    re.IGNORECASE,
+)
+
+
+def _defanged_values(raw_text: str) -> set[str]:
+    """Values the author defanged, refanged and normalised for comparison.
+
+    Returns both full URLs and bare hosts, so a host defanged only inside a URL
+    (``hxxps://evil[.]com/gate.php``) still counts as asserted.
+    """
+    found: set[str] = set()
+    for match in _DEFANGED_TOKEN.finditer(raw_text or ""):
+        value = refang(match.group()).rstrip(".,;:!?)]}'\"").lower()
+        if not value:
+            continue
+        found.add(value)
+        # Also record the bare host, so the Domain check can see the assertion
+        # that was made about a URL.
+        host = value.split("://", 1)[-1].split("/", 1)[0].split("@")[-1]
+        if "." in host:
+            found.add(host)
+    return found
+
+
+def _is_sourcing_not_content(name: str, start: int, url_spans: list[tuple[int, int]],
+                             defanged: set[str]) -> bool:
+    """Whether this host is where the document came from rather than what it is about.
+
+    A hostname inside a hyperlink is provenance: the citation, the nav bar, the
+    cookie banner, the "share on" link. Minting an entity for it is what filled
+    one project with 2,653 URL nodes — 98% of them isolated — and put bbc.com
+    and apps.apple.com in a threat-indicator table.
+
+    A hostname standing alone in prose is the opposite: something the author
+    wrote out because the document is *about* it. Every Domain in the labelled
+    fixtures is of this kind — all 8 standalone, none inside a URL — so this
+    distinction costs no recall on the cases we have ground truth for.
+
+    Defanging overrides both: an author who writes ``evil[.]com`` has asserted
+    that it is an indicator, wherever it appears.
+    """
+    if name in defanged:
+        return False
+    return any(s <= start < e for s, e in url_spans)
+
+
+def _extract_cyber_entities(text: str, doc_id: str, raw_text: str | None = None) -> list[dict]:
+    """Extract cyber-specific entities using regex patterns.
+
+    ``raw_text`` is the text before refang, when the caller has it.
+    ``extract_entities_nlp`` refangs up front so spaCy and the relationship
+    matcher see canonical text, which erases the defang markers this function
+    needs; it therefore passes the original. Callers that hand over untouched
+    text can omit it.
+    """
+    # Which values the author deliberately obfuscated, captured *before* refang
+    # destroys the evidence. Defanging is a positive assertion that a value is
+    # an indicator, and it is the only such signal the text carries.
+    deliberately_defanged = _defanged_values(raw_text if raw_text is not None else text)
+
     # Reverse common defang notation (evil[.]com, hxxp://, a[at]b[.]com) first so
     # the patterns below catch IOCs that threat-intel text deliberately obfuscates.
     text = refang(text)
+
+    # Where the document cites its sources. A host inside a hyperlink is how the
+    # document was assembled, not something it is reporting on — see
+    # _is_sourcing_not_content below.
+    url_spans = [m.span() for m in URL_PATTERN.finditer(text)]
+
     cyber_entities = []
     seen = set()
 
@@ -628,21 +697,33 @@ def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
 
     for match in _get_domain_pattern().finditer(text):
         domain = _strip_percent_prefix(match.group().lower(), text, match.start())
-        if domain and domain not in seen and "." in domain:
-            seen.add(domain)
-            cyber_entities.append({
-                "name": domain, "entity_type": "Domain",
-                "source": doc_id, "method": "regex", "confidence": 0.9,
-            })
+        if not domain or domain in seen or "." not in domain:
+            continue
+        if _is_sourcing_not_content(domain, match.start(), url_spans, deliberately_defanged):
+            continue
+        seen.add(domain)
+        cyber_entities.append({
+            "name": domain, "entity_type": "Domain",
+            "source": doc_id, "method": "regex",
+            # A defanged host was asserted to be an indicator; a bare one in
+            # prose is inferred to be. Say which, rather than calling both 0.9.
+            "confidence": 0.95 if domain in deliberately_defanged else 0.9,
+        })
 
+    # URLs are minted only when defanged. An ordinary http(s) link is where the
+    # document came from — a citation, a footer, a "read more" — and the labelled
+    # fixtures agree: across all twelve, the expected URL count is zero. A
+    # defanged one (hxxps://evil[.]com/gate.php) is the exception, because
+    # writing it that way is an assertion that it is an indicator.
     for match in URL_PATTERN.finditer(text):
         url = match.group().rstrip('.,;:!?)]}\'"')
-        if url and url not in seen:
-            seen.add(url)
-            cyber_entities.append({
-                "name": url, "entity_type": "URL",
-                "source": doc_id, "method": "regex", "confidence": 0.9,
-            })
+        if not url or url in seen or url.lower() not in deliberately_defanged:
+            continue
+        seen.add(url)
+        cyber_entities.append({
+            "name": url, "entity_type": "URL",
+            "source": doc_id, "method": "regex", "confidence": 0.95,
+        })
 
     for match in EMAIL_PATTERN.finditer(text):
         email = match.group().lower()
@@ -933,6 +1014,11 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
     # _extract_cyber_entities left spaCy tagging the raw literal as a junk node and
     # orphaned the IOC from relationships (its refanged name was not a substring of
     # the raw sentence text). refang is idempotent, so the inner call is harmless.
+    #
+    # Keep the original, though: whether a value was defanged is the one signal
+    # the text carries that it is an indicator rather than a citation, and
+    # refang is precisely the operation that erases it.
+    raw_text = text
     text = refang(text)
 
     nlp = _get_nlp()
@@ -942,7 +1028,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
     entities = []
 
     # 1. Extract cyber entities via regex first
-    cyber_entities = _extract_cyber_entities(text, doc_id)
+    cyber_entities = _extract_cyber_entities(text, doc_id, raw_text=raw_text)
     for ce in cyber_entities:
         if ce["name"] not in seen_names:
             seen_names[ce["name"]] = ce

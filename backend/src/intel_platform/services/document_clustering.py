@@ -782,15 +782,18 @@ async def refine_labels_with_llm(
     # Shared, env-based cloud-provider selection (cohere → anthropic → openai).
     # Returns None when no cloud key is configured, in which case we keep the
     # existing keyword labels rather than refine.
-    from intel_platform.llm.providers import _cloud_provider_from_env
+    from intel_platform.llm.providers import _get_topics_provider
 
-    provider = _cloud_provider_from_env()
+    # Honours topics_llm_provider, so a deployment whose cloud key is
+    # rate-limited can point refinement at local Ollama instead of silently
+    # serving keyword labels. Returns None when neither is available.
+    provider = _get_topics_provider()
     if not provider:
         # Keyword labels are a legitimate result, but they must be
         # distinguishable from refined ones: an analyst reading "vessel cable
         # baltic" as a topic name should be able to tell that is what the
         # keywords say, not what a model concluded.
-        logger.info("No cloud provider configured; keeping keyword topic labels")
+        logger.info("No topics provider configured; keeping keyword topic labels")
         tree_node["label_source"] = "keywords"
         return tree_node
 

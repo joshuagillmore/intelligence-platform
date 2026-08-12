@@ -21,16 +21,23 @@ def domains(text: str) -> list[str]:
 
 
 class TestRecovery:
-    def test_the_real_host_is_recovered_not_discarded(self):
-        """The encoded URL names a genuine domain; the encoding is the only
-        thing wrong with it."""
-        got = domains("https://www.linkedin.com/shareArticle?url=https%3A%2F%2Fcybelangel.com%2Fblog")
-        assert "cybelangel.com" in got
-        assert not any(d.startswith("2f") for d in got)
+    def test_no_mangled_host_survives_a_share_link(self):
+        """The original complaint, and it is now answered twice over.
 
-    def test_the_containing_site_is_still_extracted(self):
+        This module was written when the fix was to *recover* cybelangel.com
+        from the encoding. Since then hosts inside a hyperlink are treated as
+        the document's sourcing rather than its content (see
+        test_observable_vs_provenance), so a share link now yields nothing at
+        all — the mangled name and the clean one alike. What must never happen
+        either way is a "2f..." node reaching the IOC table."""
+        got = domains("https://www.linkedin.com/shareArticle?url=https%3A%2F%2Fcybelangel.com%2Fblog")
+        assert not any(d.startswith(("2f", "252f")) for d in got), got
+        assert got == [], "a share link is provenance; nothing in it is an indicator"
+
+    def test_the_containing_site_is_also_sourcing(self):
+        """linkedin.com is where the link lives, not something being reported."""
         got = domains("https://www.linkedin.com/shareArticle?url=https%3A%2F%2Fcybelangel.com")
-        assert "www.linkedin.com" in got
+        assert "www.linkedin.com" not in got
 
     def test_double_encoding_is_handled(self):
         """Seen live as "252fwww.faa.gov" — %252F is an encoded %2F."""
@@ -54,8 +61,11 @@ class TestNothingElseChanges:
         immediately after a "%" is treated as encoding debris."""
         assert "2fa.example.com" in domains("our portal 2fa.example.com requires MFA")
 
-    def test_a_url_without_encoding_is_unaffected(self):
-        assert "www.bbc.com" in domains("https://www.bbc.com/news/articles/abc123")
+    def test_a_url_without_encoding_is_still_only_sourcing(self):
+        """Nothing about the percent-encoding rule promotes a cited host. A
+        plain news link is the clearest case of a document naming where it came
+        from."""
+        assert domains("https://www.bbc.com/news/articles/abc123") == []
 
     def test_no_domain_is_invented_from_pure_encoding(self):
         """If nothing but the encoding remains, that is not a domain."""
