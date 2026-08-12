@@ -49,21 +49,44 @@ test('network-graph', async ({ page }) => {
   await settle(page, 8000);
   await page.waitForTimeout(3000);
 
-  // Raise the island/degree filter so the crawled single-link URL leaves drop
-  // out and the connected analytic core is legible. React owns the input, so
-  // set through the native setter and fire a real input event.
-  const island = Number(process.env.CAPTURE_ISLAND_DEGREE || 2);
-  await page.evaluate((deg) => {
-    const ranges = Array.from(document.querySelectorAll('input[type=range]')) as HTMLInputElement[];
-    const el = ranges.find((r) => r.max === '5');
-    if (!el) return;
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-    setter?.call(el, String(deg));
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  }, island);
+  // Two sliders decide whether this reads as a network or as a starfield:
+  //
+  //   Island (degree) drops nodes below a degree threshold. This project is
+  //   4,858 isolated nodes out of 5,486 — mostly URLs the crawler lifted from
+  //   page furniture — so at 0 the view is overwhelmingly unconnected dots.
+  //
+  //   Ego Highlight dims everything outside N hops of the selected entity,
+  //   edges included. At 1 hop a fully connected 500-node graph renders as a
+  //   handful of lit nodes in a grey field: the graph looked empty because it
+  //   was faded, not because it was sparse.
+  //
+  // Selecting them by `max` was the original bug — it looked for max === '5'
+  // and no slider has that (Confidence is 1, Ego is 4, Island's max is the
+  // graph's own maximum degree). The lookup missed, returned undefined, and
+  // the early return made a no-op look like a successful filter. Address them
+  // by their label instead, and fail loudly if one cannot be found.
+  const setSliderByLabel = async (label: string, value: number) => {
+    const ok = await page.evaluate(([text, val]) => {
+      const labels = Array.from(document.querySelectorAll('label'));
+      const match = labels.find((l) => l.textContent?.trim().startsWith(text as string));
+      const input = match?.closest('div')?.parentElement?.querySelector('input[type=range]')
+        ?? match?.parentElement?.parentElement?.querySelector('input[type=range]');
+      if (!(input instanceof HTMLInputElement)) return false;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(input, String(val));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }, [label, value] as [string, number]);
+    expect(ok, `could not find the "${label}" slider — has the network control panel changed?`).toBe(true);
+  };
 
-  await page.waitForTimeout(5000); // force simulation re-settles after filtering
+  // Light the whole connected component rather than one hop of it, so the
+  // selected entity still drives the detail panel without blacking out the graph.
+  await setSliderByLabel('Ego Highlight', Number(process.env.CAPTURE_EGO_HOPS || 4));
+  await setSliderByLabel('Island', Number(process.env.CAPTURE_ISLAND_DEGREE || 1));
+
+  await page.waitForTimeout(6000); // force simulation re-settles after filtering
   await page.screenshot({ path: path.join(OUT, 'network-graph.png') });
 });
 
@@ -163,10 +186,26 @@ test('topic-mindmap', async ({ page }) => {
 test('collection-plan', async ({ page }) => {
   await page.goto('/collection-plans', { waitUntil: 'domcontentloaded' });
   await settle(page);
-  // Open the PIR-derived plan to show objective → sources → run status.
-  const plan = page.getByText(/PIR:/i).first();
+
+  // Open a named plan rather than whichever happens to sort first. "First" is
+  // not a property of the plan worth photographing: several plans on this
+  // project carry titles the refiner left as raw markdown ("PIR: (Actionable,
+  // Specific, Measurable, Time-bounded)**  >"), and one of those leading is how
+  // a shot of the collection story becomes a shot of a formatting bug.
+  const wanted = process.env.CAPTURE_PLAN;
+  const plan = wanted
+    ? page.getByText(new RegExp(wanted, 'i')).first()
+    : page.getByText(/PIR:/i).first();
   if (await plan.count()) await plan.click({ force: true }).catch(() => {});
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(2500);
+
+  // A plan that never opened leaves the list view, which looks enough like a
+  // successful capture to ship. Require the detail to be on screen.
+  await expect(
+    page.getByText(/Sources|Objective|Requirement/i).first(),
+    `plan detail did not open${wanted ? ` for /${wanted}/i` : ''} — has the plan list changed?`,
+  ).toBeVisible();
+
   await page.screenshot({ path: path.join(OUT, 'collection-plan.png') });
 });
 

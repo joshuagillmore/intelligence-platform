@@ -7,6 +7,7 @@ import { useProject } from '@/lib/ProjectContext';
 import { collectionPlansApi, pirsApi, CollectionPlan, AcquisitionLogEntry, Pir } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { planTitle } from '@/lib/planTitle';
+import Markdown from '@/components/Markdown';
 import { humanize } from '@/lib/format';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -391,7 +392,7 @@ export default function CollectionPlansPage() {
                 <div className="bg-navy-800 rounded p-4">
                   <div className="flex items-start justify-between">
                     <div>
-                      <h3 className="text-lg font-bold text-white">{selectedPlan.name}</h3>
+                      <h3 className="text-lg font-bold text-white">{planTitle(selectedPlan.name)}</h3>
                       {/* Which requirement this plan answers to — the spine, visible
                           from the collection side of the cycle too. */}
                       {selectedPlan.pir_id && (
@@ -405,8 +406,23 @@ export default function CollectionPlansPage() {
                       {selectedPlan.requirement && (
                         <p className="text-sm text-gray-300 mt-1">{selectedPlan.requirement}</p>
                       )}
+                      {/* The refiner's working — why it judged the requirement
+                          vague, the hidden assumptions, the EEIs it split out.
+                          It is markdown, and it was being printed as one
+                          2,400-character run of literal `###` and `**`, which
+                          buried the reasoning that is the most useful thing on
+                          this screen. Collapsed by default because it is
+                          analysis behind the plan, not the plan. */}
                       {selectedPlan.description && (
-                        <p className="text-xs text-gray-500 mt-1">{selectedPlan.description}</p>
+                        <details className="mt-2 group">
+                          <summary className="text-[10px] uppercase tracking-widest font-bold text-gray-500 cursor-pointer hover:text-gray-300 select-none marker:content-['']">
+                            <span className="inline-block transition-transform group-open:rotate-90">▸</span>{' '}
+                            Refinement analysis
+                          </summary>
+                          <div className="mt-2 pl-3 border-l border-navy-600 max-h-72 overflow-y-auto pr-2">
+                            <Markdown content={selectedPlan.description} className="text-xs" />
+                          </div>
+                        </details>
                       )}
                     </div>
                     <span className={`px-2 py-1 text-[10px] rounded border font-bold ${STATUS_COLORS[selectedPlan.status] || 'text-gray-400'}`}>

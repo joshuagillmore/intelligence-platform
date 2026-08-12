@@ -1,5 +1,11 @@
 {
   "compilerOptions": {
+    // Without this, tsc falls back to ES5 while `lib` says esnext, so iterating
+    // a Set or Map is an error under `tsc --noEmit` even though the Next build
+    // compiles it fine through SWC. The gate is lint+build, so the mismatch was
+    // invisible until someone type-checked directly. ES2017 is what
+    // create-next-app sets for this version.
+    "target": "ES2017",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
