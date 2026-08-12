@@ -241,13 +241,13 @@ Honest scope, so there are no surprises:
   Neo4j and survive restarts (collection-plan state lives in Postgres). The one
   remaining in-memory item is the admin LLM provider/model override
   (`_llm_override` in `admin_config`), which resets on restart.
-- **Testing.** The backend has a substantial pytest suite (120 test files, 1,379
-  tests across routes, services, collection, enrichment, and geo). The frontend
-  runs Vitest for unit and component tests (17 files, 152 tests) and Playwright
-  for an authenticated end-to-end smoke across the views (6 specs); `npm run
-  lint` and `npm run build` complete the gate there. The pytest suite needs a
-  live Neo4j and exclusive use of it — its teardown deletes every `test-*`
-  project, so two concurrent runs delete each other's fixtures.
+- **Testing.** The backend has a substantial pytest suite — 1,400+ tests across
+  routes, services, collection, enrichment, and geo. The frontend runs Vitest
+  for unit and component tests (170+) and Playwright for an authenticated
+  end-to-end smoke across the views; `npm run lint` and `npm run build`
+  complete the gate there. The pytest suite needs a live Neo4j and exclusive
+  use of it — its teardown deletes every `test-*` project, so two concurrent
+  runs delete each other's fixtures.
 - **Migrations.** Postgres schema is created at startup; there's no Alembic
   migration flow yet.
 - **Embedding dimension is config, not a migration.** Semantic/vector search

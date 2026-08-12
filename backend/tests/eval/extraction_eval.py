@@ -227,13 +227,33 @@ def compute_type_accuracy(
 
 # ── Report generation ────────────────────────────────────────────────────────
 
+FIXTURE_MARKER = "--- BEGIN FIXTURE ---"
+
+
+def strip_fixture_notice(text: str) -> str:
+    """Drop the leading "this is synthetic" notice, if present.
+
+    The fixtures imitate real intelligence products closely enough to carry
+    fake control markings, so each one says in its own first lines that it is
+    fabricated — that has to be legible to anyone who opens the file, not
+    buried in a sidecar. The extractor must not see it, though: it is prose
+    naming no real entity, and feeding it in would cost precision against a
+    gold set that rightly does not mention it.
+
+    A file without the marker is returned unchanged, so an unmarked or
+    externally-supplied fixture still loads.
+    """
+    _, sep, body = text.partition(FIXTURE_MARKER)
+    return body.lstrip("\n") if sep else text
+
+
 def load_fixture(name: str) -> tuple[str, dict]:
     """Load a test document and its expected output."""
     fixtures_dir = Path(__file__).parent.parent / "fixtures" / "extraction"
     text_path = fixtures_dir / f"{name}.txt"
     expected_path = fixtures_dir / f"{name}_expected.json"
 
-    text = text_path.read_text(encoding="utf-8")
+    text = strip_fixture_notice(text_path.read_text(encoding="utf-8"))
     with open(expected_path, encoding="utf-8") as f:
         expected = json.load(f)
 
