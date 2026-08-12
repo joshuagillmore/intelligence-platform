@@ -35,6 +35,7 @@ from tests.eval.extraction_eval import (
     compute_entity_metrics,
     compute_relationship_metrics,
     compute_type_accuracy,
+    strip_fixture_notice,
 )
 
 HOLDOUT_DIR = Path(__file__).parent.parent / "fixtures" / "extraction_holdout"
@@ -46,7 +47,7 @@ def load_holdout_fixture(name: str) -> tuple[str, dict]:
     text_path = HOLDOUT_DIR / f"{name}.txt"
     expected_path = HOLDOUT_DIR / f"{name}_expected.json"
 
-    text = text_path.read_text(encoding="utf-8")
+    text = strip_fixture_notice(text_path.read_text(encoding="utf-8"))
     with open(expected_path, encoding="utf-8") as f:
         expected = json.load(f)
 

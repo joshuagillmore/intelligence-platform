@@ -86,7 +86,7 @@ def test_tfidf_single_doc():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /c/Users/joshu/intelligence-platform/backend && uv run pytest tests/test_document_clustering.py -v`
+Run: `cd backend && uv run pytest tests/test_document_clustering.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'intel_platform.services.document_clustering'`
 
 - [ ] **Step 3: Implement TF-IDF**
@@ -204,13 +204,13 @@ def build_tfidf(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /c/Users/joshu/intelligence-platform/backend && uv run pytest tests/test_document_clustering.py -v`
+Run: `cd backend && uv run pytest tests/test_document_clustering.py -v`
 Expected: 4 PASSED
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /c/Users/joshu/intelligence-platform
+cd "$(git rev-parse --show-toplevel)"
 git add backend/src/intel_platform/services/document_clustering.py backend/tests/test_document_clustering.py
 git commit -m "feat: add TF-IDF vectorization for document clustering"
 ```
@@ -262,7 +262,7 @@ def test_kmeans_single_cluster():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /c/Users/joshu/intelligence-platform/backend && uv run pytest tests/test_document_clustering.py::test_kmeans_two_clusters -v`
+Run: `cd backend && uv run pytest tests/test_document_clustering.py::test_kmeans_two_clusters -v`
 Expected: FAIL — `ImportError: cannot import name 'kmeans'`
 
 - [ ] **Step 3: Implement K-Means**
@@ -341,13 +341,13 @@ def kmeans(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /c/Users/joshu/intelligence-platform/backend && uv run pytest tests/test_document_clustering.py -v`
+Run: `cd backend && uv run pytest tests/test_document_clustering.py -v`
 Expected: 6 PASSED
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /c/Users/joshu/intelligence-platform
+cd "$(git rev-parse --show-toplevel)"
 git add backend/src/intel_platform/services/document_clustering.py backend/tests/test_document_clustering.py
 git commit -m "feat: add K-Means clustering with K-Means++ init"
 ```
@@ -419,7 +419,7 @@ def test_cluster_labels_contain_terms():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /c/Users/joshu/intelligence-platform/backend && uv run pytest tests/test_document_clustering.py::test_cluster_documents_produces_tree -v`
+Run: `cd backend && uv run pytest tests/test_document_clustering.py::test_cluster_documents_produces_tree -v`
 Expected: FAIL — `ImportError: cannot import name 'cluster_documents'`
 
 - [ ] **Step 3: Implement recursive clustering and labeling**
@@ -687,13 +687,13 @@ def cluster_documents(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /c/Users/joshu/intelligence-platform/backend && uv run pytest tests/test_document_clustering.py -v`
+Run: `cd backend && uv run pytest tests/test_document_clustering.py -v`
 Expected: 10 PASSED
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /c/Users/joshu/intelligence-platform
+cd "$(git rev-parse --show-toplevel)"
 git add backend/src/intel_platform/services/document_clustering.py backend/tests/test_document_clustering.py
 git commit -m "feat: add recursive document clustering with keyword labeling"
 ```
@@ -909,13 +909,13 @@ def test_topic_context_returns_documents(graph_store):
 
 - [ ] **Step 6: Run all topic tests**
 
-Run: `cd /c/Users/joshu/intelligence-platform/backend && uv run pytest tests/test_topics_route.py -v`
+Run: `cd backend && uv run pytest tests/test_topics_route.py -v`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /c/Users/joshu/intelligence-platform
+cd "$(git rev-parse --show-toplevel)"
 git add backend/src/intel_platform/services/topics.py backend/src/intel_platform/api/routes/topics.py backend/tests/test_topics_route.py
 git commit -m "feat: integrate document clustering as primary topic tree branch"
 ```
@@ -1012,13 +1012,13 @@ function getBranchColor(node: any): string {
 
 - [ ] **Step 5: Verify build succeeds**
 
-Run: `cd /c/Users/joshu/intelligence-platform/frontend && npm run build`
+Run: `cd frontend && npm run build`
 Expected: Build succeeds with no errors
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /c/Users/joshu/intelligence-platform
+cd "$(git rev-parse --show-toplevel)"
 git add frontend/src/app/data-sources/page.tsx frontend/src/components/TopicMindMap.tsx
 git commit -m "feat: add keyword tags, topic-aware panels, topic node coloring"
 ```
@@ -1032,7 +1032,7 @@ git commit -m "feat: add keyword tags, topic-aware panels, topic node coloring"
 - [ ] **Step 1: Rebuild and start local Docker containers**
 
 ```bash
-cd /c/Users/joshu/intelligence-platform
+cd "$(git rev-parse --show-toplevel)"
 docker compose down && docker compose up --build -d
 ```
 
@@ -1063,7 +1063,7 @@ Expected: Response with `documents`, `keywords`, `connected_entities`
 - [ ] **Step 4: Push to GitHub for Railway deployment**
 
 ```bash
-cd /c/Users/joshu/intelligence-platform
+cd "$(git rev-parse --show-toplevel)"
 git push origin main
 ```
 

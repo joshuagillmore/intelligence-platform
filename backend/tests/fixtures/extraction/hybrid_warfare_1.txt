@@ -1,3 +1,9 @@
+SYNTHETIC TEST FIXTURE — NOT A REAL INTELLIGENCE PRODUCT.
+Fabricated content, written to exercise entity extraction. Every entity,
+event, date and classification marking below is invented — the control
+markings are part of the imitation and carry no handling requirement.
+--- BEGIN FIXTURE ---
+
 INTELLIGENCE ASSESSMENT: RUSSIAN HYBRID WARFARE OPERATIONS TARGETING THE BALTIC STATES
 
 Report ID: EUR-HW-2026-0033

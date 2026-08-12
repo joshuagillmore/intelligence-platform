@@ -1,3 +1,9 @@
+SYNTHETIC TEST FIXTURE — NOT A REAL INTELLIGENCE PRODUCT.
+Fabricated content, written to exercise entity extraction. Every entity,
+event, date and classification marking below is invented — the control
+markings are part of the imitation and carry no handling requirement.
+--- BEGIN FIXTURE ---
+
 CYBER THREAT INTELLIGENCE REPORT: MIDNIGHT BLIZZARD CAMPAIGN
 
 Date: 15 March 2026
