@@ -141,8 +141,8 @@ rationale, LLM orchestration, egress proxy, and request flow), see
 <!-- SCREENSHOT: /network: the knowledge-graph hero shot (d3 force graph, an entity selected) -->
 ![Knowledge graph: the /network view](docs/screenshots/network-graph.png)
 
-<!-- SCREENSHOT: /geo: satellite basemap with an area-of-interest box and geolocated entities -->
-![Geo / GEOINT: satellite basemap with an AOI query](docs/screenshots/geo-aoi.png)
+<!-- SCREENSHOT: /geo: geolocated entities and their connections, with the AOI query and layer controls -->
+![Geo / GEOINT: geolocated entities and connections across a collection](docs/screenshots/geo-aoi.png)
 
 <!-- SCREENSHOT: /cyber: the EnrichmentPanel showing an investigated observable -->
 ![Cyber-observable enrichment panel](docs/screenshots/cyber-enrichment.png)
