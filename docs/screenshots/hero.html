@@ -1,0 +1,183 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  :root {
+    --navy-900: #0f1219;
+    --navy-800: #1a1f2e;
+    --navy-600: #313849;
+    --periwinkle: #adc6ff;
+    --cyan: #06b6d4;
+    --ink: #f3f6ff;
+    --muted: #7c869c;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body { width: 2400px; height: 840px; }
+
+  body {
+    background: var(--navy-900);
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    color: var(--ink);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Plotting-paper grid. The domain is charts, maps and coordinates, so the
+     ground is ruled rather than gradient-washed. Kept near-invisible. */
+  .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(173, 198, 255, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(173, 198, 255, 0.045) 1px, transparent 1px);
+    background-size: 48px 48px;
+    -webkit-mask-image: radial-gradient(ellipse 70% 90% at 22% 50%, #000 30%, transparent 78%);
+  }
+
+  .stage { position: relative; height: 100%; display: flex; align-items: center; }
+
+  /* ── Left: the claim the product makes about itself ─────────────── */
+  .copy { width: 1230px; padding-left: 132px; flex: none; z-index: 2; }
+
+  .eyebrow {
+    display: flex; align-items: center; gap: 18px;
+    font-family: 'JetBrains Mono', Consolas, monospace;
+    font-size: 19px; letter-spacing: 0.34em; text-transform: uppercase;
+    color: var(--periwinkle); margin-bottom: 30px;
+  }
+  .eyebrow .rule { width: 76px; height: 2px; background: var(--periwinkle); opacity: 0.65; }
+  .eyebrow .ver { color: var(--muted); letter-spacing: 0.18em; }
+
+  h1 {
+    font-size: 150px; font-weight: 700; line-height: 0.9;
+    letter-spacing: -0.035em; margin-bottom: 26px;
+  }
+
+  /* Sized to hold on one line at this column width. At 38px it wrapped and
+     left "interrogate." orphaned, which reads as a mistake rather than a
+     line break. `nowrap` makes any future copy change fail visibly instead
+     of silently re-wrapping. */
+  .tagline {
+    font-size: 34px; font-weight: 400; color: #aab3c7;
+    letter-spacing: -0.012em; margin-bottom: 52px; white-space: nowrap;
+  }
+
+  /* The cycle is the product. Shown as a sequence because it is one. */
+  .cycle {
+    display: flex; align-items: center; gap: 20px;
+    font-family: 'JetBrains Mono', Consolas, monospace;
+    font-size: 21px; letter-spacing: 0.2em; text-transform: uppercase;
+    margin-bottom: 54px;
+  }
+  .cycle b { font-weight: 500; color: var(--periwinkle); }
+  .cycle span { color: #49536b; }
+
+  /* An actual graded claim from the graph. This is the tradecraft the tool is
+     built around, and nothing generic can imitate it. */
+  .claim {
+    display: inline-flex; flex-direction: column; gap: 16px;
+    border: 1px solid var(--navy-600); border-left: 3px solid var(--periwinkle);
+    background: rgba(26, 31, 46, 0.72);
+    padding: 26px 34px; border-radius: 4px; margin-bottom: 54px;
+  }
+  .claim .label {
+    font-family: 'JetBrains Mono', Consolas, monospace;
+    font-size: 15px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--muted);
+  }
+  .claim .body { font-size: 30px; letter-spacing: -0.01em; }
+  .claim .body code {
+    font-family: 'JetBrains Mono', Consolas, monospace;
+    font-size: 25px; color: var(--periwinkle); padding: 0 6px;
+  }
+  .claim .meta {
+    display: flex; gap: 30px; align-items: center;
+    font-family: 'JetBrains Mono', Consolas, monospace; font-size: 18px;
+  }
+  .claim .meta .ok { color: #4ade80; }
+  .claim .meta .sep { color: #3a4256; }
+  .claim .meta .dim { color: var(--muted); }
+
+  /* The README leads with this and it is a genuine differentiator, so it gets
+     its own line above the stack rather than being buried in it. */
+  .local {
+    display: inline-flex; align-items: center; gap: 12px;
+    font-size: 21px; color: var(--periwinkle); margin-bottom: 18px;
+  }
+  .local::before {
+    content: ''; width: 9px; height: 9px; border-radius: 50%;
+    background: #4ade80; box-shadow: 0 0 12px rgba(74, 222, 128, 0.85);
+  }
+
+  .stack {
+    font-family: 'JetBrains Mono', Consolas, monospace;
+    font-size: 19px; letter-spacing: 0.13em; color: #5d6780;
+  }
+  .stack em { font-style: normal; color: #8d97ad; }
+
+  /* ── The workbench as ground, not as an inset panel ──────────────
+     A 1716x1340 app window is portrait; this banner is 2.9:1. Any crop
+     that removes the sidebar makes it *more* portrait, which is how the
+     first attempt ended up framing the nav list instead of the graph.
+     Full-bleed sidesteps the mismatch: the graph becomes the texture of
+     the right-hand side and the copy sits on a scrim over it. */
+  .shot { position: absolute; inset: 0; z-index: 0; }
+  .shot img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    /* Framed on the force graph and its gold path, below the toolbars. */
+    object-position: OBJ_POS;
+    opacity: 0.8;
+  }
+  /* Three scrims, each doing a specific job.
+     Left  — legibility for the copy.
+     Right — buries the app's side panels. `cover` always fits the full width
+             of a 1714px window into 2400px, so no object-position can frame
+             them out; without this the banner's brightest text reads
+             "No clusters found. No relationships found."
+     Top/bottom — stops the crop edges reading as seams. */
+  .shot::after {
+    content: ''; position: absolute; inset: 0;
+    background:
+      linear-gradient(90deg, #0f1219 0%, #0f1219 30%, rgba(15,18,25,0.82) 42%, rgba(15,18,25,0.30) 58%),
+      linear-gradient(270deg, #0f1219 0%, #0f1219 25%, rgba(15,18,25,0.72) 33%, rgba(15,18,25,0) 44%),
+      linear-gradient(180deg, rgba(15,18,25,0.80) 0%, rgba(15,18,25,0) 20%, rgba(15,18,25,0) 72%, rgba(15,18,25,0.92) 100%);
+  }
+</style>
+
+<div class="grid"></div>
+
+<div class="shot"><img src="SHOT_PATH" alt=""></div>
+
+<div class="stage">
+  <div class="copy">
+    <div class="eyebrow">
+      <span class="rule"></span>
+      <span>Open-source OSINT</span>
+      <span class="ver">v2.4-alpha</span>
+    </div>
+
+    <h1>SENTINEL</h1>
+    <p class="tagline">Turns the open web into a knowledge graph an analyst can interrogate.</p>
+
+    <div class="cycle">
+      <b>Collect</b><span>&rarr;</span><b>Extract</b><span>&rarr;</span><b>Graph</b><span>&rarr;</span><b>Analyze</b>
+    </div>
+
+    <div class="claim">
+      <div class="label">Evidence</div>
+      <div class="body">Estonia <code>ASSOCIATED_WITH</code> Nato</div>
+      <div class="meta">
+        <span class="ok">Almost certain &middot; 90%</span>
+        <span class="sep">|</span>
+        <span class="dim">Single source</span>
+        <span class="sep">|</span>
+        <span class="dim">Source grade C3</span>
+      </div>
+    </div>
+
+    <div class="local">Runs fully local &mdash; no cloud API keys required</div>
+    <div class="stack">
+      <em>FastAPI</em> &middot; <em>Neo4j</em> &middot; <em>pgvector</em> &middot; <em>Celery</em> &middot; <em>Next.js 14</em>
+    </div>
+  </div>
+
+</div>

@@ -5,6 +5,7 @@ two places, and it matters which:
 
 | Filename | View | Captured | What it shows |
 |----------|------|----------|---------------|
+| `hero.png` | — | generated | README banner, 2400x840. Built from `hero.html` over the geo map; regenerate with `node docs/screenshots/make-hero.js` |
 | `network-graph.png` | `/network` | by hand | Shortest path between two entities, the evidence behind one edge — claim, confidence, corroboration, source grade, method, basis — and the Graph-RAG assistant answering *why* a vessel behaved as it did |
 | `geo-aoi.png` | `/geo` | by hand | 398 locations / 53 geocoded / 279 connections, layer and temporal controls, and a Graph-RAG answer about an incident on the map |
 | `collection-plan.png` | `/collection-plans` | by hand | PIR-derived plan: refined requirement → assigned sources → per-source run status, successes and failures both |
@@ -12,8 +13,32 @@ two places, and it matters which:
 | `products-intsum.png` | `/products` | Playwright | Generated INTSUM with Bottom Line, calibrated probability language, Markdown/PDF export |
 | `topic-mindmap.png` | Data Sources | Playwright | Radial mind-map over 5,258 entities in 612 thematic clusters |
 
-**The first three are hand-captured and are not reproducible from a clean
-clone.** They show live Graph-RAG answers and an interactively-found path, which
+## The hero banner
+
+`hero.png` is generated, not photographed:
+
+```bash
+node docs/screenshots/make-hero.js                 # uses geo-aoi.png as backdrop
+HERO_SHOT=docs/screenshots/network-graph.png \
+HERO_POS="62% 78%" node docs/screenshots/make-hero.js   # swap the backdrop
+```
+
+It composes `hero.html` — wordmark, the collect→extract→graph→analyze cycle, a
+graded evidence claim, and the local-first line — over a darkened screenshot.
+Editing the copy means editing `hero.html` and re-running; the copy is not
+duplicated anywhere else. Colours come from the app's own Tailwind tokens
+(`navy-900`, `accent-periwinkle`) so the banner cannot drift from the product.
+
+The backdrop defaults to the geo map for a compositional reason worth keeping:
+the banner is 2.9:1 and an app window is portrait, so any crop that removes the
+sidebar makes it *more* portrait. A world map is landscape already. The right
+edge carries a hard scrim because `object-fit: cover` always fits the full
+1714px window width into 2400px — no `object-position` can frame the side panels
+out, and without the scrim the brightest text on the banner reads "No clusters
+found. No relationships found."
+
+**Of the six view screenshots, the first three are hand-captured and are not
+reproducible from a clean clone.** They show live Graph-RAG answers and an interactively-found path, which
 depend on a project that has really collected and on a working LLM provider.
 Nothing in this repo regenerates them; treat them as artefacts, and recapture by
 hand if the UI changes enough to make them wrong.
