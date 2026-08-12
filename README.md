@@ -1,5 +1,7 @@
 # SENTINEL
 
+![SENTINEL — turns the open web into a knowledge graph an analyst can interrogate](docs/screenshots/hero.png)
+
 **An AI-powered intelligence-analyst workbench.** Point it at the open web and it
 collects sources, pulls out the people, places, and things and how they connect,
 builds a knowledge graph, and lets an analyst work that graph visually, on a
