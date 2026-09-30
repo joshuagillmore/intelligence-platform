@@ -27,3 +27,52 @@ def test_save_and_list_reports():
 def test_report_not_found():
     resp = client.get("/api/reports/nonexistent", headers=headers)
     assert resp.status_code == 404
+
+
+class TestDeleteIsScopedToReports:
+    """Low -> R: `DELETE /reports/{id}` deleted any node by id — an entity, a
+    Document, another project's report — and answered "deleted" either way."""
+
+    @staticmethod
+    def _seed(graph_store):
+        import uuid
+
+        from intel_platform.models.entities import Organization
+        from intel_platform.services.reports import ReportService
+
+        pid = f"test-reports-{uuid.uuid4().hex[:8]}"
+        report_id = ReportService(graph_store).save_report(
+            project_id=pid, title="INTSUM", content="c", report_type="INTSUM",
+        )["report_id"]
+        org = Organization(name="Not a report", project_id=pid)
+        graph_store.create_entity(org)
+        return pid, report_id, org.id
+
+    @staticmethod
+    def _delete(graph_store, node_id, **params):
+        from intel_platform.api.deps import get_graph_store
+
+        app.dependency_overrides[get_graph_store] = lambda: graph_store
+        try:
+            return client.delete(f"/api/reports/{node_id}", params=params, headers=headers)
+        finally:
+            app.dependency_overrides.pop(get_graph_store, None)
+
+    def test_a_non_report_node_is_not_deleted(self, graph_store):
+        _pid, _report_id, org_id = self._seed(graph_store)
+        assert self._delete(graph_store, org_id).status_code == 404
+        assert graph_store.get_entity(org_id) is not None
+
+    def test_another_projects_report_is_not_deleted(self, graph_store):
+        _pid, report_id, _org = self._seed(graph_store)
+        assert self._delete(graph_store, report_id, project_id="test-someone-else").status_code == 404
+        assert graph_store.get_entity(report_id) is not None
+
+    def test_a_report_in_its_project_is_deleted(self, graph_store):
+        pid, report_id, _org = self._seed(graph_store)
+        resp = self._delete(graph_store, report_id, project_id=pid)
+        assert resp.status_code == 200 and resp.json() == {"status": "deleted"}
+        assert graph_store.get_entity(report_id) is None
+
+    def test_an_unknown_id_is_404_not_deleted(self, graph_store):
+        assert self._delete(graph_store, "no-such-report").status_code == 404

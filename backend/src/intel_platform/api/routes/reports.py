@@ -311,7 +311,17 @@ def get_report(report_id: str, store: GraphStore = Depends(get_graph_store)):
 
 
 @router.delete("/reports/{report_id}")
-def delete_report(report_id: str, store: GraphStore = Depends(get_graph_store)):
+def delete_report(
+    report_id: str,
+    project_id: str | None = None,
+    store: GraphStore = Depends(get_graph_store),
+):
+    """Delete a saved report. Only a Report node, and only in `project_id` when given.
+
+    `project_id` is optional so existing clients keep working; pass it and a
+    report from another project is refused rather than deleted.
+    """
     svc = ReportService(store)
-    svc.delete_report(report_id)
+    if not svc.delete_report(report_id, project_id=project_id):
+        raise HTTPException(status_code=404, detail="Report not found")
     return {"status": "deleted"}
