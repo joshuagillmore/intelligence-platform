@@ -72,6 +72,68 @@ async def test_grounded_resolution_returns_none_without_search_results():
     assert cfg is None
 
 
+class _Db:
+    def __init__(self):
+        self.added = []
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def commit(self):
+        pass
+
+
+def _model_that_follows_the_prompt(reply: dict):
+    """A _structured_generate stand-in that behaves like the real one: the model
+    answers in the shape the prompt asked for, and the call fails when that
+    shape lacks a key the caller requires."""
+    async def fake(provider, messages, system, expected_keys=None, max_retries=3):
+        if expected_keys and any(k not in reply for k in expected_keys):
+            return None
+        return dict(reply)
+
+    return fake
+
+
+async def test_api_feed_resolution_accepts_the_shape_its_prompt_asks_for():
+    """RESOLVE_SYSTEM asks an api_feed for {"base_url": ...}; the parser required
+    "urls", so every LLM-resolved api_feed failed three times and was dropped."""
+    source = SimpleNamespace(
+        id="s1", name="Sanctions API", source_type="api_feed", config={},
+        collection_status="pending", last_error="",
+    )
+    plan = SimpleNamespace(id="p1", refined_pir="", pir="Who is sanctioned?", requirement="")
+
+    async def no_search(*a, **kw):
+        return None
+
+    reply = {"base_url": "https://api.example.org", "endpoint": "v1/sanctions", "response_path": "data"}
+    with patch.object(agentic, "_resolve_via_search", new=no_search), \
+         patch.object(agentic, "_structured_generate", new=_model_that_follows_the_prompt(reply)):
+        await agentic.resolve_sources(plan, [source], _Db(), provider=None)
+
+    assert source.collection_status == "queued", source.last_error
+    assert source.config["base_url"] == "https://api.example.org"
+
+
+async def test_api_feed_base_url_is_filtered_like_any_other_url():
+    source = SimpleNamespace(
+        id="s1", name="Internal API", source_type="api_feed", config={},
+        collection_status="pending", last_error="",
+    )
+    plan = SimpleNamespace(id="p1", refined_pir="", pir="x", requirement="")
+
+    async def no_search(*a, **kw):
+        return None
+
+    reply = {"base_url": "http://169.254.169.254/latest", "endpoint": ""}
+    with patch.object(agentic, "_resolve_via_search", new=no_search), \
+         patch.object(agentic, "_structured_generate", new=_model_that_follows_the_prompt(reply)):
+        await agentic.resolve_sources(plan, [source], _Db(), provider=None)
+
+    assert source.config.get("base_url", "") == ""
+
+
 def test_validate_urls_rejects_all_private_ranges():
     """SSRF defense-in-depth: every private/loopback/link-local range is filtered,
     including 172.16/12 (which the old string-prefix check missed)."""

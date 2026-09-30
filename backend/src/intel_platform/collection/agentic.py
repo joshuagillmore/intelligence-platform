@@ -486,8 +486,15 @@ async def resolve_sources(plan, sources, db, provider, max_results: int = 10):
         await db.commit()
 
         try:
-            # Determine expected keys based on source type
-            expected = ["urls"] if source.source_type in ("web_scrape", "database", "api_feed") else ["feed_url"]
+            # The keys RESOLVE_SYSTEM asks each type for. api_feed is asked for
+            # base_url; requiring "urls" instead failed every LLM-resolved API
+            # source three times over.
+            if source.source_type == "api_feed":
+                expected = ["base_url"]
+            elif source.source_type in ("web_scrape", "database"):
+                expected = ["urls"]
+            else:
+                expected = ["feed_url"]
 
             # Ground resolution in real web search first; fall back to LLM URL
             # generation only when search returns nothing.
@@ -508,10 +515,9 @@ async def resolve_sources(plan, sources, db, provider, max_results: int = 10):
             # Validate URLs — filter out obviously bad ones
             if "urls" in config and isinstance(config["urls"], list):
                 config["urls"] = _validate_urls(config["urls"])
-            if "feed_url" in config:
-                valid = _validate_urls([config["feed_url"]])
-                if not valid:
-                    config["feed_url"] = ""
+            for key in ("feed_url", "base_url"):
+                if key in config and not _validate_urls([config[key]]):
+                    config[key] = ""
 
             # Merge into existing config (preserve any user-set values)
             source.config = {**(source.config or {}), **config}
@@ -587,6 +593,35 @@ async def _acquire_urls_concurrent(connector, config, urls, *, db, plan, source,
     return all_records, errors
 
 
+def _with_structured_records_as_text(records: list[dict], source, config: dict) -> list[dict]:
+    """Fold field-only records (JSON API rows) into one text record.
+
+    An API returns rows of fields, not a `content` string, and every such row
+    used to be skipped as empty: an api_feed source reported "Acquired 20 docs,
+    0 entities" having kept nothing. The rows are rendered the way the
+    plan-executor path renders them and stored as one Document for the fetch,
+    so a 20-row response costs one relevance check and one summary, not 20.
+    """
+    from intel_platform.services.plan_executor import _records_to_text
+
+    structured: list[dict] = []
+    others: list[dict] = []
+    for r in records:
+        is_row = not r.get("content") and any(not str(k).startswith("_") for k in r)
+        (structured if is_row else others).append(r)
+    if not structured:
+        return records
+    url = (
+        structured[0].get("_source_url") or config.get("base_url") or ""
+    )
+    folded = {
+        "url": url,
+        "title": f"{source.name} — {len(structured)} API record(s)",
+        "content": _records_to_text(structured, source),
+    }
+    return others + [folded]
+
+
 async def acquire_source(source, plan, db, store, extraction_mode="nlp", provider=None, max_results=10):
     """Fetch content from a source and run it through the ingestion pipeline.
 
@@ -627,6 +662,8 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
     if not result.success and result.record_count == 0:
         raise RuntimeError(result.error or "Acquisition returned no data")
 
+    records = _with_structured_records_as_text(result.records, source, config)
+
     total_entities = 0
     total_rels = 0
     total_chars = 0
@@ -640,7 +677,7 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
     # dropped without explanation is indistinguishable from one never found.
     rejected_pages: list[tuple[str, str]] = []
 
-    for record in result.records:
+    for record in records:
         content = record.get("content", "")
         if not content or len(content) < 50:
             rejected_pages.append((record.get("url", ""), "too little text"))

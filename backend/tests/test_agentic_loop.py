@@ -278,6 +278,28 @@ class TestAcquireSourceCountsWhatItKept:
         assert stored == []
         assert out["rejected_pages"] == [("https://example.org/login", "login or paywall page")]
 
+    async def test_structured_api_records_become_a_document(self, monkeypatch, quiet):
+        """JSON API records carry fields, not `content`. They were skipped as
+        empty, so an api_feed reported "Acquired 20 docs, 0 entities"."""
+        records = [
+            {"name": "Atomic Energy Organization of Iran", "type": "Organization", "country": "Iran",
+             "_source_url": "https://api.example.org/v1/orgs"},
+            {"name": "Fordow Fuel Enrichment Plant", "type": "Facility", "country": "Iran",
+             "_source_url": "https://api.example.org/v1/orgs"},
+        ]
+        monkeypatch.setattr(agentic, "get_connector", lambda t: self._connector(records))
+        monkeypatch.setattr(agentic, "rejection_reason", lambda url, content, title="": "")
+        stored = []
+        store = SimpleNamespace(create_entity=lambda e: stored.append(e))
+        source = _source("api_feed", {"base_url": "https://api.example.org/v1/orgs"}, name="Org registry")
+
+        out = await agentic.acquire_source(source, _plan([source]), FakeSession(None), store)
+
+        assert out["accepted_count"] == 1
+        [doc] = stored
+        assert "Fordow Fuel Enrichment Plant" in doc.content
+        assert "_source_url" not in doc.content
+
     async def test_a_kept_page_is_accepted(self, monkeypatch, quiet):
         text = "The Fordow facility is operated by the Atomic Energy Organization of Iran. " * 5
         page = {"url": "https://example.org/report", "title": "Report", "content": text}
