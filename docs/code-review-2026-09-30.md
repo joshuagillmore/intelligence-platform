@@ -13,6 +13,35 @@ question; every one held. Reviewers did not modify files and did not run
 all of `frontend/src` (~20k lines), Dockerfile/compose/Railway/CI, lockfiles,
 `.env.example`, and a read of the test suite (124 files, 1,299 test functions).
 
+## Remediation status (2026-09-30, branch `fix/code-review-2026-09-30`)
+
+Every finding below was worked through the plan in
+`docs/design/plans/2026-09-30-code-review-remediation.md` (nine packages, one
+per file-ownership area, each TDD'd against the finding's failure scenario).
+Unless listed here, a finding's status is **Fixed** on that branch.
+
+| Finding | Status | Note |
+|---|---|---|
+| P-18 (backend half) | Not a bug | `/geo` already returned `edge_count`; a test now pins it. The UI half was the real defect and is fixed. |
+| I-5 (Next.js) | Deferred | axios updated and `images.unoptimized` set; the Next 14 → 15 migration is a separate branch. Two `next`/bundled-postcss advisories remain until then. |
+| I-6 (GitHub settings) | Reported | `.github/dependabot.yml` added. Private vulnerability reporting, secret scanning + push protection, Dependabot alerts/updates and a `main` protection rule are repository settings for the owner to enable. |
+| P-5 | Mitigated | Evidence loop now runs 6-wide with a request token; a dedicated `GET /entities/{id}/documents` endpoint is still the right fix. |
+| Low → A (personas) | Partial | Admin-only mutations and 409 on built-in ids are fixed; personas are still held in memory (root `CLAUDE.md` still says so). |
+| Low → G (entity check-then-create race) | Deferred | The relationship upsert is now one locked MERGE; concurrent *entity* creation can still duplicate a node. |
+| C-13 (URL dedupe) | Partial | Documents now record their `url`; URL-level dedupe needs a product decision (section pages change daily). |
+| E-7 residual | Partial | Mapped TTPs are no longer re-sent; TTPs the model keeps rejecting still are, and more than 200 of them can starve later ones. |
+| C-1/C-5 residual | Accepted risk | With Tor/VPN active, names resolve at the proxy (by design); in direct mode a rebinding host can be *read by page JavaScript* before the page is rejected, though it never becomes a Document. Closing that needs Chromium behind a pinned local proxy. |
+| Low → R (`GET /reports/{id}`) | Open | Only `DELETE` was scoped to Report nodes in the project; `GET` still returns any node by id. |
+| `/assess/generate` | Observation | Still makes a full extra LLM call via GraphRAG just to obtain context. |
+| Railway environment | Operator task | `REQUIRE_SECURE_AUTH`, `JWT_SECRET`, `ENCRYPTION_KEY`, `MCP_ENABLED` and the admin password on the live instance were not verified from this repo. The managed Redis service there can be deleted. |
+| `docs/screenshots/hero.png` | Stale | Its source no longer says "Celery"; the PNG needs regenerating. |
+
+Verification on the integrated branch: backend `ruff` clean and the full suite
+green against a dedicated Neo4j; frontend lint with zero warnings, vitest and
+`next build` green; the production image builds with Chromium present.
+Dependency advisories: backend 252 → 1 (a transitive nltk issue with no fix),
+frontend production 6 → 2 (both the deferred Next line).
+
 ## Check results
 
 | Check | Result |
