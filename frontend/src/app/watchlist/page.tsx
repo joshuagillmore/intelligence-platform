@@ -3,16 +3,10 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { useProject } from '@/lib/ProjectContext';
-import { watchlistApi } from '@/lib/api';
+import { watchlistApi, readWatchlist, type WatchedEntity } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errorMessages';
 import { TYPE_COLOR_CLASS as TYPE_COLORS } from '@/lib/entityStyles';
 import { useNotifications } from '@/components/NotificationProvider';
-
-interface WatchedEntity {
-  id: string;
-  name: string;
-  entity_type: string;
-  relationship_count?: number;
-}
 
 // TYPE_COLORS imported from '@/lib/entityStyles' (single source of truth)
 
@@ -21,34 +15,24 @@ export default function WatchlistPage() {
   const { addNotification } = useNotifications();
   const [entities, setEntities] = useState<WatchedEntity[]>([]);
   const [loading, setLoading] = useState(false);
+  // A failed load is not "no watched entities": say it failed.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const router = useRouter();
 
   const loadWatchlist = useCallback(async () => {
     if (!activeProject) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await watchlistApi.list(activeProject.id);
-      const data = res.data;
-      if (Array.isArray(data)) {
-        setEntities(data);
-      } else if (data && Array.isArray(data.entities)) {
-        setEntities(data.entities);
-      } else if (data && Array.isArray(data.watchlist)) {
-        setEntities(data.watchlist);
-      } else {
-        setEntities([]);
-      }
-    } catch {
-      console.error('Failed to load watchlist');
-      addNotification({
-        title: 'Failed to load watchlist',
-        message: 'Could not load watched entities for this project. Please try again.',
-        type: 'error',
-      });
+      setEntities(readWatchlist(res.data));
+    } catch (e) {
+      setEntities([]);
+      setLoadError(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
-  }, [activeProject, addNotification]);
+  }, [activeProject]);
 
   useEffect(() => {
     loadWatchlist();
@@ -90,11 +74,24 @@ export default function WatchlistPage() {
       <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold">Watchlist</h2>
-          <span className="text-sm text-gray-400">{entities.length} watched entities</span>
+          {!loading && !loadError && (
+            <span className="text-sm text-gray-400">{entities.length} watched entities</span>
+          )}
         </div>
 
         {loading ? (
           <div className="text-gray-500 text-center py-8">Loading watchlist...</div>
+        ) : loadError ? (
+          <div className="bg-navy-800 border border-red-700/50 rounded-lg p-8 text-center">
+            <p className="text-lg mb-2 text-red-300">Could not load the watchlist</p>
+            <p className="text-sm text-gray-400 mb-4">{loadError}</p>
+            <button
+              onClick={loadWatchlist}
+              className="text-xs px-3 py-1.5 rounded bg-navy-700 text-accent-blue hover:bg-navy-600 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
         ) : entities.length === 0 ? (
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-8 text-center text-gray-500">
             <p className="text-lg mb-2">No Watched Entities</p>

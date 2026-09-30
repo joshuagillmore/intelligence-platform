@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
-import { collectionsApi, watchlistApi, healthApi, clearSession } from '@/lib/api';
+import { collectionsApi, watchlistApi, healthApi, clearSession, readWatchlist } from '@/lib/api';
 import { useNotifications, useNotificationCount } from '@/components/NotificationProvider';
 import { APP_NAME, APP_VERSION } from '@/lib/branding';
 import { readHealth, type HealthLevel } from '@/lib/health';
@@ -111,9 +111,14 @@ export default function Sidebar() {
       if (activeProject) {
         try {
           const wRes = await watchlistApi.list(activeProject.id);
-          const items = wRes.data?.items || wRes.data || [];
-          setWatchlistCount(Array.isArray(items) ? items.length : 0);
-        } catch { /* ignore */ }
+          setWatchlistCount(readWatchlist(wRes.data).length);
+        } catch {
+          // Hide the badge (it only renders above 0) rather than keep a count
+          // that may belong to the previous project.
+          setWatchlistCount(0);
+        }
+      } else {
+        setWatchlistCount(0);
       }
     }
     fetchBadges();

@@ -951,11 +951,43 @@ export const adminApi = {
   listEnrichmentProviders: () => api.get('/enrichment/providers'),
 };
 
+export interface WatchedEntity {
+  id: string;
+  name: string;
+  entity_type: string;
+  relationship_count?: number;
+}
+
+export interface WatchlistResponse {
+  watched_entities: WatchedEntity[];
+  count: number;
+}
+
+/**
+ * The watched entities in a `GET /watchlist` body (`{watched_entities, count}`).
+ *
+ * Throws on any other shape: consumers used to guess (`entities`, `watchlist`,
+ * a bare array, `.items`), found nothing, and showed an always-empty watchlist
+ * and a badge stuck at 0. A wrong shape is an error to show, not an empty list.
+ */
+export function readWatchlist(data: unknown): WatchedEntity[] {
+  const rows =
+    data && typeof data === 'object' && !Array.isArray(data)
+      ? (data as { watched_entities?: unknown }).watched_entities
+      : undefined;
+  if (!Array.isArray(rows)) throw new Error('Unexpected watchlist response shape.');
+  return rows.filter(
+    (r): r is WatchedEntity => !!r && typeof r === 'object' && typeof (r as WatchedEntity).id === 'string',
+  );
+}
+
 export const watchlistApi = {
   add: (projectId: string, entityId: string) =>
     api.post('/watchlist/add', { project_id: projectId, entity_id: entityId }),
   remove: (projectId: string, entityId: string) =>
     api.post('/watchlist/remove', { project_id: projectId, entity_id: entityId }),
+  /** The body is a `WatchlistResponse`; read it with `readWatchlist`. Left
+   *  untyped so existing callers that index it loosely still compile. */
   list: (projectId: string) => api.get('/watchlist', { params: { project_id: projectId } }),
 };
 
