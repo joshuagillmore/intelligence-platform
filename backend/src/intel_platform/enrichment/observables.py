@@ -17,10 +17,14 @@ import re
 
 # hxxp / hXXp / HXXP -> http (the trailing "s" of hxxps survives -> https).
 _HXXP_RE = re.compile(r"h[x]{2}p", re.IGNORECASE)
-# Bracketed/parenthesized/braced dot:  [.]  (.)  {.}  [dot]  (dot)
-_DOT_RE = re.compile(r"[\[\(\{]\s*(?:\.|dot)\s*[\]\)\}]", re.IGNORECASE)
-# Bracketed at:  [at]  (at)  [@]
-_AT_RE = re.compile(r"[\[\(\{]\s*(?:@|at)\s*[\]\)\}]", re.IGNORECASE)
+# A bracketed symbol is unambiguous wherever it appears:  [.]  (.)  {.}  [@]
+_DOT_SYMBOL_RE = re.compile(r"[\[\(\{]\s*\.\s*[\]\)\}]")
+_AT_SYMBOL_RE = re.compile(r"[\[\(\{]\s*@\s*[\]\)\}]")
+# A bracketed *word* is only a marker inside a token — "evil(dot)com",
+# "user[at]host" — never between words: "Department of Transportation (DOT)
+# issued" and "Austria (AT)" are prose, and this runs over whole documents.
+_DOT_WORD_RE = re.compile(r"(?<=[A-Za-z0-9])[\[\(\{]\s*dot\s*[\]\)\}](?=[A-Za-z0-9])", re.IGNORECASE)
+_AT_WORD_RE = re.compile(r"(?<=[A-Za-z0-9])[\[\(\{]\s*at\s*[\]\)\}](?=[A-Za-z0-9])", re.IGNORECASE)
 # Bracketed colon:  [:]  (:)  — covers [://] via the colon plus surviving //.
 _COLON_RE = re.compile(r"[\[\(\{]\s*:\s*[\]\)\}]")
 
@@ -28,14 +32,17 @@ _COLON_RE = re.compile(r"[\[\(\{]\s*:\s*[\]\)\}]")
 def refang(text: str) -> str:
     """Reverse common defang notation so real IOC values are recoverable.
 
-    Only well-known, unambiguous markers are touched (``[.]``, ``hxxp``,
-    ``[at]``, ``[:]``), so ordinary prose is left intact.
+    Only well-known markers are touched (``[.]``, ``hxxp``, ``[@]``, ``[:]``
+    anywhere; ``(dot)``/``[at]`` only inside a token), so ordinary prose such
+    as "(DOT)" or "Austria (AT)" is left intact.
     """
     if not text:
         return text
     text = _HXXP_RE.sub("http", text)
-    text = _DOT_RE.sub(".", text)
-    text = _AT_RE.sub("@", text)
+    text = _DOT_SYMBOL_RE.sub(".", text)
+    text = _DOT_WORD_RE.sub(".", text)
+    text = _AT_SYMBOL_RE.sub("@", text)
+    text = _AT_WORD_RE.sub("@", text)
     text = _COLON_RE.sub(":", text)
     return text
 
