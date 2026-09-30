@@ -1,5 +1,4 @@
 import logging
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -14,7 +13,12 @@ from intel_platform.graph.schema import initialize_schema
 
 logger = logging.getLogger(__name__)
 
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
+
+def _parse_origins(value: str) -> list[str]:
+    return [origin.strip() for origin in value.split(",") if origin.strip()]
+
+
+CORS_ORIGINS = _parse_origins(settings.cors_origins)
 
 
 def _secret_problems() -> list[str]:

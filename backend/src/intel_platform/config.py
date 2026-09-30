@@ -1,4 +1,11 @@
-from pydantic_settings import BaseSettings
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# backend/src/intel_platform/config.py -> the repository root. The .env lives
+# there (it also feeds docker compose), and a bare ".env" resolved against the
+# working directory, so `cd backend && uv run uvicorn ...` never read it.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Settings(BaseSettings):
@@ -19,6 +26,8 @@ class Settings(BaseSettings):
     # Fernet key for API keys stored in Postgres. Blank = stored in plaintext
     # (dev only); REQUIRE_SECURE_AUTH refuses to boot without a valid key.
     encryption_key: str = ""
+    # Browser origins allowed to call the API with credentials, comma-separated.
+    cors_origins: str = "http://localhost:3000,http://localhost:8000"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     # Per-client request/minute cap. High by default for the single-user
@@ -101,6 +110,13 @@ class Settings(BaseSettings):
     topics_llm_model: str = ""
     collection_llm_provider: str = ""
     collection_llm_model: str = ""
+    # Which provider bulk collection work prefers when collection_llm_provider
+    # is empty: "cloud-first" (a configured cloud key, else Ollama) or
+    # "local-first". Read by llm/providers.py.
+    collection_llm_preference: str = "cloud-first"
+    # Largest response body, in bytes, a collection or enrichment fetch will
+    # buffer before giving up on it.
+    max_fetch_bytes: int = 10_000_000
 
     # Search engines to try in order, comma-separated, first non-empty answer
     # wins. `ddgs` fronts several engines that fail independently — the
@@ -161,6 +177,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     cohere_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434"
+    # Context window requested from Ollama. Its own default (2048 tokens)
+    # silently truncates extraction and report prompts.
+    ollama_num_ctx: int = 16384
     default_llm_provider: str = "anthropic"
     default_llm_model: str = ""
 
@@ -171,7 +190,12 @@ class Settings(BaseSettings):
     vector_search_limit: int = 20
     hybrid_graph_weight: float = 0.4  # weight for graph results in hybrid scoring
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # extra="ignore": the same .env carries keys for docker compose and the VPN
+    # sidecar (SURFSHARK_*, ...) that are not settings; forbidding them made a
+    # copy of .env.example fail to load at all.
+    model_config = SettingsConfigDict(
+        env_file=str(_REPO_ROOT / ".env"), env_file_encoding="utf-8", extra="ignore",
+    )
 
 
 from functools import lru_cache  # noqa: E402
