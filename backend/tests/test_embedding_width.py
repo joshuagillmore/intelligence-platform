@@ -102,6 +102,26 @@ class TestCohereReturnsTheWidthItDeclares:
             await p.embed(["x"])
         assert client.embed.call_args.kwargs["output_dimension"] == p.dimension() == 1024
 
+    async def test_embed_v4_follows_a_configured_width_it_supports(self):
+        """cohere + EMBEDDING_DIMENSIONS=1536 worked before (embed-v4's default
+        is 1536); asking for the declared 1024 must not break that deployment."""
+        p = _factory(embedding_provider="cohere", cohere_api_key="k", embedding_dimensions=1536)
+        assert p.dimension() == 1536
+        p._client.embed = AsyncMock(return_value=MagicMock(
+            embeddings=MagicMock(float_=[[0.0] * 1536]), meta=None,
+        ))
+        await p.embed(["x"])
+        assert p._client.embed.call_args.kwargs["output_dimension"] == 1536
+
+    def test_embed_v4_refuses_a_width_it_cannot_produce(self):
+        with pytest.raises(EmbeddingConfigError):
+            _factory(embedding_provider="cohere", cohere_api_key="k", embedding_dimensions=768)
+
+    def test_a_v3_model_is_held_to_its_native_width(self):
+        with pytest.raises(EmbeddingConfigError):
+            _factory(embedding_provider="cohere", cohere_api_key="k",
+                     embedding_model="embed-english-v3.0", embedding_dimensions=1536)
+
     async def test_v3_models_are_not_sent_a_dimension(self):
         """output_dimension is embed-v4 only; v3 models reject it."""
         with patch("cohere.AsyncClientV2") as client_cls:

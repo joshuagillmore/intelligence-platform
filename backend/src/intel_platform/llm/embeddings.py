@@ -89,19 +89,28 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 # Cohere
 # ---------------------------------------------------------------------------
 
+#: Output widths embed-v4 can be asked for (``output_dimension``).
+_COHERE_V4_WIDTHS = (256, 512, 1024, 1536)
+
+
 class CohereEmbeddingProvider(EmbeddingProvider):
-    def __init__(self, api_key: str, model: str = "embed-v4.0"):
+    def __init__(self, api_key: str, model: str = "embed-v4.0", dimension: int | None = None):
         import cohere
         self._client = cohere.AsyncClientV2(api_key=api_key)
         self._model = model
-        self._dim = _width(model, 1024)
+        # embed-v4 produces whichever supported width it is asked for, so it
+        # takes the configured one; v3 models have one native width.
+        if model.startswith("embed-v4") and dimension in _COHERE_V4_WIDTHS:
+            self._dim = dimension
+        else:
+            self._dim = _width(model, 1024)
 
     async def embed(self, texts: list[str], *, input_type: str = "search_document") -> EmbeddingResult:
         kwargs: dict = {}
         # embed-v4 returns 1536 dimensions unless told otherwise, while this
-        # provider declares 1024 — so every vector was wider than the column
-        # sized from that declaration. Ask for the declared width. v3 models are
-        # natively 1024 and reject the parameter.
+        # provider declared 1024 — so with EMBEDDING_DIMENSIONS=1024 every vector
+        # was wider than the column. Always ask for the declared width. v3
+        # models are natively 1024 (light: 384) and reject the parameter.
         if self._model.startswith("embed-v4"):
             kwargs["output_dimension"] = self._dim
         response = await self._client.embed(
@@ -181,7 +190,9 @@ def get_embedding_provider() -> EmbeddingProvider:
     elif name == "cohere":
         if not s.cohere_api_key:
             raise EmbeddingConfigError("EMBEDDING_PROVIDER=cohere but COHERE_API_KEY is not set")
-        provider = CohereEmbeddingProvider(api_key=s.cohere_api_key, **model_kw)
+        provider = CohereEmbeddingProvider(
+            api_key=s.cohere_api_key, dimension=int(s.embedding_dimensions), **model_kw,
+        )
     elif name == "ollama":
         provider = OllamaEmbeddingProvider(base_url=s.ollama_base_url, **model_kw)
     else:
