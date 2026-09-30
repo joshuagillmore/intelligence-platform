@@ -30,7 +30,7 @@ def _runtime_override() -> tuple[str, str]:
     """
     from intel_platform.api.routes import admin_config
 
-    override = getattr(admin_config, "_llm_override", None) or {}
+    override = admin_config.get_llm_override() or {}
     return (
         (override.get("provider") or "").strip().lower(),
         (override.get("model") or "").strip(),
