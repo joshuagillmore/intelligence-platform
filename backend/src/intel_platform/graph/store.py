@@ -347,24 +347,50 @@ class GraphStore:
 
         return rel_data
 
+    # What a relationship read returns for each edge touching the queried node
+    # `n`. The match is undirected so both ends are found, but the endpoints are
+    # read from the edge itself: this used to report `n` as the source and the
+    # neighbour as the target for every edge, so an incoming edge came back
+    # reversed and entity merge rebuilt it that way.
+    _REL_ROW = """
+        type(r) AS rel_type, properties(r) AS props,
+        startNode(r).id AS source_id, startNode(r).name AS source_name,
+        endNode(r).id AS target_id, endNode(r).name AS target_name,
+        CASE WHEN startNode(r) = n THEN 'out' ELSE 'in' END AS direction,
+        m.id AS neighbor_id, m.name AS neighbor_name
+    """
+
+    @staticmethod
+    def _rel_from_record(record) -> dict:
+        """One relationship, properties spread flat.
+
+        The structural keys are written after the properties so an edge
+        property can never shadow where the edge actually points.
+        """
+        return {
+            **record["props"],
+            "rel_type": record["rel_type"],
+            "source_id": record["source_id"], "source_name": record["source_name"],
+            "target_id": record["target_id"], "target_name": record["target_name"],
+            # Relative to the queried entity: "out" when it is the start node.
+            "direction": record["direction"],
+            # The other end, whichever way the edge points.
+            "neighbor_id": record["neighbor_id"], "neighbor_name": record["neighbor_name"],
+        }
+
     def get_relationships(self, entity_id: str) -> list[dict]:
+        """Every edge touching the entity, in its true direction.
+
+        `source_*`/`target_*` are the edge's real start and end nodes;
+        `direction` is "out" when the queried entity is the source and "in"
+        when it is the target; `neighbor_*` is the other end either way.
+        """
         with self._driver.session() as session:
             result = session.run(
-                """
-                MATCH (n {id: $id})-[r]-(m)
-                RETURN type(r) as rel_type, properties(r) as props,
-                       n.id as source_id, n.name as source_name,
-                       m.id as target_id, m.name as target_name
-                """,
+                f"MATCH (n {{id: $id}})-[r]-(m) RETURN {self._REL_ROW}",
                 id=entity_id,
             )
-            return [
-                {"rel_type": record["rel_type"], "target_id": record["target_id"],
-                 "target_name": record["target_name"],
-                 "source_id": record["source_id"], "source_name": record["source_name"],
-                 **record["props"]}
-                for record in result
-            ]
+            return [self._rel_from_record(record) for record in result]
 
     def get_relationships_bulk(self, entity_ids: list[str]) -> dict[str, list[dict]]:
         """Relationships for many entities in one round trip.
@@ -381,23 +407,16 @@ class GraphStore:
             return {}
         with self._driver.session() as session:
             result = session.run(
-                """
+                f"""
                 MATCH (n)-[r]-(m)
                 WHERE n.id IN $ids
-                RETURN n.id as key, type(r) as rel_type, properties(r) as props,
-                       n.id as source_id, n.name as source_name,
-                       m.id as target_id, m.name as target_name
+                RETURN n.id AS key, {self._REL_ROW}
                 """,
                 ids=list(entity_ids),
             )
             out: dict[str, list[dict]] = {}
             for record in result:
-                out.setdefault(record["key"], []).append({
-                    "rel_type": record["rel_type"], "target_id": record["target_id"],
-                    "target_name": record["target_name"],
-                    "source_id": record["source_id"], "source_name": record["source_name"],
-                    **record["props"],
-                })
+                out.setdefault(record["key"], []).append(self._rel_from_record(record))
             return out
 
     def get_subgraph(self, entity_id: str, hops: int = 1) -> dict:
