@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -14,6 +15,10 @@ from intel_platform.services.graph_builder import build_graph_from_extractions
 from intel_platform.services.ingestion import ingest_text
 
 logger = logging.getLogger(__name__)
+
+# Written only when the analyst cancels. The runner checks for it between items
+# and never writes over it.
+REVOKED = "REVOKED"
 
 
 class CollectionRunner:
@@ -30,7 +35,12 @@ class CollectionRunner:
         extraction_mode: str = "nlp",
         on_progress: callable = None,
     ) -> dict:
-        self._update_status(collection_id, "STARTED")
+        # The route marks a run STARTED when it accepts it (replacing an
+        # earlier REVOKED); a cancel landing after that is honoured by the
+        # first check below, so this write never replaces REVOKED itself.
+        # Every store call here is the sync Neo4j driver, so it runs in a
+        # thread: on the loop it stalls every request the API is serving.
+        await asyncio.to_thread(self._update_status, collection_id, "STARTED")
         approved_items = [item for item in plan if item.get("approved", False)]
         total_items = len(approved_items)
 
@@ -43,14 +53,25 @@ class CollectionRunner:
         total_entities = 0
         total_relationships = 0
         errors: list[dict] = []
+        items_run = 0
+        cancelled = False
 
         for idx, item in enumerate(approved_items):
+            # Cancel sets REVOKED; before this check nothing read it, so every
+            # item still ran and SUCCESS was written over the cancellation.
+            if await asyncio.to_thread(self._read_status, collection_id) == REVOKED:
+                cancelled = True
+                logger.info("Collection %s cancelled after %d of %d item(s)", collection_id, idx, total_items)
+                break
+            items_run += 1
+
             item_desc = item.get("description", "")
             source_type = item.get("source_type", "web_search")
+            item_docs = 0
 
             try:
-                # Stage 1: Search
-                urls = self._search_for_item(item_desc, source_type, proxy_url)
+                # Stage 1: Search (sync, and it sleeps on rate limits)
+                urls = await asyncio.to_thread(self._search_for_item, item_desc, source_type, proxy_url)
                 all_urls.extend(urls)
 
                 # Stage 2: Crawl
@@ -62,31 +83,52 @@ class CollectionRunner:
                         doc_data, project_id, collection_id, extraction_mode,
                     )
                     total_docs_crawled += 1
+                    item_docs += 1
                     total_entities += result.get("entities_created", 0)
                     total_relationships += result.get("relationships_created", 0)
 
-            except Exception:
+                if not item_docs:
+                    # Search found nothing, or nothing it found could be
+                    # crawled. Either way this item collected nothing, and a
+                    # run of such items is a failure, not an empty success.
+                    reason = "search returned no results" if not urls else f"none of {len(urls)} page(s) could be crawled"
+                    errors.append({"item_id": item.get("id", idx), "description": item_desc, "reason": reason})
+
+            except Exception as exc:
                 logger.exception("Plan item %d failed: %s", item.get("id", idx), item_desc)
-                errors.append({"item_id": item.get("id", idx), "description": item_desc})
+                errors.append({
+                    "item_id": item.get("id", idx), "description": item_desc,
+                    "reason": type(exc).__name__,
+                })
 
             # Update progress
             progress = (idx + 1) / total_items if total_items > 0 else 1.0
-            self._update_status(
-                collection_id, "PROGRESS",
+            await asyncio.to_thread(
+                self._update_status, collection_id, "PROGRESS",
                 progress=progress, documents_acquired=total_docs_crawled,
             )
             if on_progress:
                 on_progress(collection_id, progress, total_docs_crawled)
 
-        self._update_status(
-            collection_id, "SUCCESS",
-            progress=1.0, documents_acquired=total_docs_crawled,
+        if cancelled:
+            status = REVOKED
+        elif items_run and len(errors) == items_run:
+            status = "FAILURE"
+        elif errors:
+            status = "PARTIAL"
+        else:
+            status = "SUCCESS"
+
+        await asyncio.to_thread(
+            self._update_status, collection_id, status,
+            progress=1.0 if status != REVOKED else (items_run / total_items if total_items else 1.0),
+            documents_acquired=total_docs_crawled,
         )
 
         return {
             "collection_id": collection_id,
-            "status": "SUCCESS",
-            "items_processed": len(approved_items),
+            "status": status,
+            "items_processed": items_run,
             "urls_found": len(all_urls),
             "documents_crawled": total_docs_crawled,
             "entities_created": total_entities,
@@ -107,6 +149,12 @@ class CollectionRunner:
         if not content.strip():
             return {"entities_created": 0, "relationships_created": 0}
 
+        # One bound for storage and extraction, as on the agentic path: an
+        # unbounded page is hundreds of sequential extraction calls.
+        max_chars = getattr(settings, "max_document_chars", 50000)
+        if len(content) > max_chars:
+            content = content[:max_chars]
+
         doc = Document(
             name=doc_data.get("title", "") or doc_data.get("url", "untitled"),
             content=content,
@@ -115,7 +163,7 @@ class CollectionRunner:
             project_id=project_id,
             source_doc_id=collection_id,
         )
-        self._store.create_entity(doc)
+        await asyncio.to_thread(self._store.create_entity, doc)
 
         chunks = ingest_text(content, chunk_size=settings.chunk_size, overlap=settings.chunk_overlap)
 
@@ -129,27 +177,47 @@ class CollectionRunner:
                 from intel_platform.services.extraction import extract_entities_hybrid
                 ents, rels = await extract_entities_hybrid(chunk["content"], doc.id)
             else:
-                ents, rels = extract_entities_nlp(chunk["content"], doc.id)
+                ents, rels = await asyncio.to_thread(extract_entities_nlp, chunk["content"], doc.id)
             all_entities.extend(ents)
             all_relationships.extend(rels)
 
-        return build_graph_from_extractions(
+        result = await asyncio.to_thread(
+            build_graph_from_extractions,
             self._store, all_entities, all_relationships, project_id, source_doc_id=doc.id,
         )
+        if result.get("dropped_attributes"):
+            logger.warning(
+                "Graph build for %s dropped %d invalid attribute value(s)",
+                doc_data.get("url", "?"), result["dropped_attributes"],
+            )
+        return result
+
+    def _read_status(self, collection_id: str) -> str | None:
+        with self._store._driver.session() as session:
+            record = session.run(
+                "MATCH (c:Collection {id: $id}) RETURN c.status AS status", id=collection_id,
+            ).single()
+        return record["status"] if record else None
 
     def _update_status(
         self, collection_id: str, status: str,
         progress: float = 0.0, documents_acquired: int = 0,
     ) -> None:
-        """Persist collection status to Neo4j."""
+        """Persist collection status to Neo4j, never overwriting a cancellation.
+
+        The check and the write are one statement: a cancel landing while an
+        item runs must not be replaced by that item's PROGRESS update. Only the
+        route, accepting a new run, replaces REVOKED.
+        """
         now = datetime.now(timezone.utc).isoformat()
         with self._store._driver.session() as session:
             session.run(
                 """
                 MATCH (c:Collection {id: $id})
-                SET c.status = $status, c.progress = $progress,
+                SET c.status = CASE WHEN c.status = $revoked THEN c.status ELSE $status END,
+                    c.progress = $progress,
                     c.documents_acquired = $docs, c.updated_at = $now
                 """,
-                id=collection_id, status=status,
+                id=collection_id, status=status, revoked=REVOKED,
                 progress=progress, docs=documents_acquired, now=now,
             )

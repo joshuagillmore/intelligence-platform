@@ -5,6 +5,7 @@ optional full-content fetching by following article links.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from time import mktime
@@ -77,7 +78,8 @@ class RSSFeedConnector(SourceConnector):
         try:
             client = ProxiedClient()
             text = await client.fetch_text(feed_url, timeout=30)
-            feed = feedparser.parse(text)
+            # Parsing a large feed is CPU work; keep it off the event loop.
+            feed = await asyncio.to_thread(feedparser.parse, text)
 
             if feed.bozo and not feed.entries:
                 return AcquireResult(success=False, error=f"Feed parse error: {feed.bozo_exception}")

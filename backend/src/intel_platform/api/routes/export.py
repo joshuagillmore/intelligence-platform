@@ -1,3 +1,5 @@
+import csv
+import io
 import logging
 import uuid as uuid_mod
 from datetime import datetime, timezone
@@ -111,18 +113,32 @@ def export_graph_json(project_id: str, store: GraphStore = Depends(get_graph_sto
     )
 
 
+# A spreadsheet treats a cell starting with any of these as a formula. Entity
+# names are scraped from the web, so `=HYPERLINK(...)` is attacker-controlled
+# input the analyst would otherwise execute by opening the export. A leading
+# apostrophe makes the cell literal text (OWASP CSV-injection guidance).
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_cell(value) -> str:
+    text = "" if value is None else str(value)
+    return "'" + text if text.startswith(_FORMULA_PREFIXES) else text
+
+
 @router.get("/export/entities")
 def export_entities_csv(project_id: str, store: GraphStore = Depends(get_graph_store)):
     """Export all entities as CSV."""
     entities = store.search_entities(project_id=project_id, limit=10000)
 
-    # Build CSV
-    lines = ["id,name,entity_type"]
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(["id", "name", "entity_type"])
     for e in entities:
-        name = e.get("name", "").replace(",", ";").replace('"', "'")
-        lines.append(f'{e.get("id","")},"{name}",{e.get("entity_type","")}')
+        writer.writerow([
+            _csv_cell(e.get("id", "")), _csv_cell(e.get("name", "")), _csv_cell(e.get("entity_type", "")),
+        ])
 
-    csv_content = "\n".join(lines)
+    csv_content = buffer.getvalue()
     return JSONResponse(
         content={"csv": csv_content, "count": len(entities)},
         headers={"Content-Disposition": f"attachment; filename=entities-{project_id[:8]}.csv"},

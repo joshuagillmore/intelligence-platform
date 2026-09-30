@@ -24,7 +24,9 @@ class SkillsLoader:
             return
         for file in dir_path.glob("*.yaml"):
             try:
-                with open(file) as f:
+                # Explicit UTF-8: the platform default is cp1252 on Windows,
+                # which turned every em-dash in a prompt into mojibake there.
+                with open(file, encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                 if not data or "name" not in data:
                     continue
@@ -37,6 +39,11 @@ class SkillsLoader:
                 continue
 
     def get_system_prompt(self, skill_name: str, include_foundation: bool = False) -> str | None:
+        # The foundation prompt is kept out of the registry (it is not a skill
+        # to select) but must be reachable by name: GraphRAG has no skill to
+        # prepend it to, and asking for it returned None.
+        if skill_name == "foundation":
+            return self._foundation_prompt or None
         skill = self._registry.get(skill_name)
         if not skill:
             return None

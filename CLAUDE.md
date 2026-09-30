@@ -17,7 +17,6 @@ Claude Code *online* branches alike. Read it first. `backend/CLAUDE.md` and
 │ wind · d3 +              │  axios │  • Neo4j        (graph)       │
 │ leaflet                  │        │  • Postgres/pgvector (docs,   │
 └─────────────────────────┘        │    vectors, collection mgmt)  │
-                                    │  • Redis + Celery (async)     │
                                     │  • LLMs: Anthropic/OpenAI/    │
                                     │    Cohere/Ollama (orchestr.)  │
                                     │  • crawl4ai + ddgs collection │
@@ -31,7 +30,8 @@ Claude Code *online* branches alike. Read it first. `backend/CLAUDE.md` and
   `frontend/CLAUDE.md`.
 - **Dual datastore:** Neo4j is the knowledge graph (entities + relationships);
   Postgres/pgvector holds documents, embeddings, and collection-plan state.
-- **Deploy:** Railway (single Dockerfile, `start.sh` runs frontend + backend).
+- **Deploy:** Railway builds the root `Dockerfile`; its entrypoint `start.sh`
+  runs the Next.js server and uvicorn, and exits non-zero if either dies.
   Local full stack via `docker compose`.
 
 ## Repo layout
@@ -39,12 +39,12 @@ Claude Code *online* branches alike. Read it first. `backend/CLAUDE.md` and
 | Path | What |
 |------|------|
 | `backend/` | FastAPI app + all intelligence logic (`src/intel_platform/`) |
-| `frontend/` | Next.js analyst UI (`src/app/`, `src/components/`, `src/stores/`) |
+| `frontend/` | Next.js analyst UI (`src/app/`, `src/components/`, `src/lib/`) |
 | `docs/` | Specs, plans, design records (`docs/design/specs`, `/plans`) |
-| `docker-compose.yml` | Local full stack: neo4j, postgres, redis, ollama, backend, frontend |
+| `docker-compose.yml` | Local full stack: neo4j, postgres, ollama, backend, frontend |
 | `Dockerfile`, `start.sh`, `railway.*` | Production build + Railway deploy |
 | `.env.example` | Config surface — copy to `.env` (gitignored) |
-| `docs/code-review-2026-03-22.md` | Last full review (2026-03-22); see "Known issues" |
+| `docs/code-review-2026-09-30.md` | Last full review (2026-09-30; previous: `code-review-2026-03-22.md`); see "Known issues" |
 
 ## Branching & integration (READ THIS)
 
@@ -68,7 +68,7 @@ The goal is a deployable `main` and few, coherent branches — not PR sprawl.
 Run the checks for whatever you touched — do not assert success without them:
 
 - **Backend:** `cd backend && uv run pytest` **and** `uv run ruff check .`
-- **Frontend:** `cd frontend && npm run lint` **and** `npm run build`
+- **Frontend:** `cd frontend && npm run lint` **and** `npm run build` **and** `npm run test`
 
 If a check fails, it's not done. Report the failure, don't paper over it.
 
@@ -76,8 +76,8 @@ If a check fails, it's not done. Report the failure, don't paper over it.
 
 **Local full stack (recommended):**
 ```bash
-docker compose up            # neo4j:7474/7687 · postgres:5432 · redis:6379
-                             # ollama:11434 · backend:8000 · frontend:3000
+docker compose up            # neo4j:7474/7687 · postgres:5432 · ollama:11434
+                             # backend:8000 · frontend:3000
 ```
 **Backend alone:** `cd backend && uv run uvicorn intel_platform.api.app:app --reload`
 **Frontend alone:** `cd frontend && npm run dev`  → http://localhost:3000
@@ -85,8 +85,8 @@ docker compose up            # neo4j:7474/7687 · postgres:5432 · redis:6379
 ## Config & secrets
 
 - Copy `.env.example` → `.env` (gitignored). **Never commit `.env` or keys.**
-  Sensitive: `JWT_SECRET`, `API_KEY`, `POSTGRES_URL`, `NEO4J_PASSWORD`,
-  `COHERE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`.
+  Sensitive: `JWT_SECRET`, `API_KEY`, `ENCRYPTION_KEY`, `POSTGRES_URL`,
+  `NEO4J_PASSWORD`, `COHERE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`.
 - Add every new setting to `.env.example` (with a safe placeholder) so the
   config surface stays discoverable.
 - Settings load via pydantic-settings (`intel_platform.config.Settings`).
@@ -106,17 +106,20 @@ docker compose up            # neo4j:7474/7687 · postgres:5432 · redis:6379
 
 - **Auth:** ships with default development credentials. Set
   `REQUIRE_SECURE_AUTH=true` on any public or deployed instance — the app then
-  refuses to start on the built-in `JWT_SECRET`, `API_KEY` or admin password
-  instead of trusting the operator to have replaced them.
+  refuses to start unless `JWT_SECRET` is non-default and at least 32 bytes,
+  `API_KEY` is blank or non-default and at least 16 bytes, `ENCRYPTION_KEY` is a
+  valid Fernet key, no admin's *stored* hash verifies `admin`, and MCP is off.
+  The exact rules are in `SECURITY.md`; keep it in step with `api/app.py`.
 - **Watchlists and snapshots are persisted to Neo4j** (`Watchlist` / `Snapshot`
   nodes) and survive restarts. The remaining in-memory state is the admin
   `_llm_override` (provider/model override in `admin_config`), which resets on
   restart — persist it if that matters.
 - **SSRF guard lives in `collection/url_guard.py`**, not in any one fetcher. It
   rejects non-HTTP(S) schemes, internal hostnames, and hosts resolving to
-  private/reserved IPs (DNS-rebinding defence). Four paths call it — `scraper`,
-  `crawler`, `proxy`, and `agentic._validate_urls` — so preserve it there rather
-  than in a caller, and route any new fetch path through it.
+  private/reserved IPs (DNS-rebinding defence). The fetchers call it —
+  `scraper`, `crawler` (every requested URL and the final redirected URL) and
+  `proxy` (every request and redirect hop of `ProxiedClient`) — so preserve it
+  there rather than in a caller, and route any new fetch path through it.
 - **Neo4j on Railway** — connection binding (IPv6) has bitten deploys before;
   verify the bolt URI/host when changing DB or deploy config.
 

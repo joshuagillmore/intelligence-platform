@@ -24,10 +24,12 @@ Security:
 """
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
 import logging
+import math
 from collections import Counter
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -50,6 +52,10 @@ MAX_PREVIEW_ROWS = 50
 MAX_PROFILE_UNIQUE = 100
 MAX_ROWS = 500_000  # Hard limit: refuse files with more rows
 MAX_COLUMNS = 1_000  # Hard limit: refuse files with more columns
+# Rows x columns, for formats whose size on the wire says nothing about their
+# size in memory. A compressed workbook of one-cell rows under a wide header
+# is kilobytes to upload and becomes rows x columns once records are built.
+MAX_CELLS = 5_000_000
 MAX_JSON_SIZE = 100 * 1024 * 1024  # 100MB decoded text limit for JSON
 # XML nesting deeper than this is a malformed or hostile document, not data.
 MAX_XML_DEPTH = 40
@@ -69,13 +75,26 @@ _SAFE_ENCODINGS = {
 }
 
 
+def _is_plain_number(value: str) -> bool:
+    try:
+        return math.isfinite(float(value))
+    except ValueError:
+        return False
+
+
 def _sanitize_cell(value: str) -> str:
     """Sanitize a cell value to prevent CSV formula injection.
 
     Prefixes dangerous characters with a single quote to neutralize
-    formula execution in spreadsheet applications.
+    formula execution in spreadsheet applications. A plain signed number is
+    not a formula and is left alone: quoting it turned every negative
+    coordinate into the text "'-33.87".
     """
-    if value and isinstance(value, str) and value.lstrip().startswith(_FORMULA_PREFIXES):
+    if (
+        value and isinstance(value, str)
+        and value.lstrip().startswith(_FORMULA_PREFIXES)
+        and not _is_plain_number(value)
+    ):
         return "'" + value
     return value
 
@@ -308,8 +327,11 @@ def parse_excel(raw: bytes, config: dict) -> AcquireResult:
         try:
             wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
         except (InvalidFileException, Exception) as e:
+            # The library's message describes its internals (archive members,
+            # zip structure), not the analyst's file; it goes to the log.
+            logger.info("Excel file could not be opened: %s", e)
             return AcquireResult(
-                success=False, error=f"Invalid Excel file: {e}")
+                success=False, error=f"Invalid Excel file ({type(e).__name__}); is it an .xlsx workbook?")
 
         sheet_names = wb.sheetnames
         sheet_name = config.get("sheet_name") or sheet_names[0]
@@ -320,23 +342,32 @@ def parse_excel(raw: bytes, config: dict) -> AcquireResult:
 
         ws = wb[sheet_name]
 
-        # Read rows with limits to prevent memory exhaustion
+        # A read-only sheet pads every row to the dimension the file declares,
+        # and the file can declare A1:XFD1048576 while holding three columns:
+        # each row became a 16,384-wide list before any limit was checked. Drop
+        # the declaration so each row is as wide as its own last cell, and check
+        # every row as it arrives rather than the first one after all are read.
+        ws.reset_dimensions()
         rows = []
+        cells = 0
         for i, row in enumerate(ws.iter_rows(values_only=True)):
             if i > MAX_ROWS:
                 return AcquireResult(
                     success=False,
                     error=f"Sheet exceeds maximum row limit of {MAX_ROWS:,}.")
+            if len(row) > MAX_COLUMNS:
+                return AcquireResult(
+                    success=False,
+                    error=f"Row {i + 1} has {len(row)} columns, exceeding limit of {MAX_COLUMNS}.")
+            cells += len(row)
+            if cells > MAX_CELLS:
+                return AcquireResult(
+                    success=False,
+                    error=f"Sheet exceeds the limit of {MAX_CELLS:,} cells.")
             rows.append(row)
 
         if not rows:
             return AcquireResult(success=True, record_count=0, metadata={"sheets": sheet_names})
-
-        # Column count check
-        if len(rows[0]) > MAX_COLUMNS:
-            return AcquireResult(
-                success=False,
-                error=f"Sheet has {len(rows[0])} columns, exceeding limit of {MAX_COLUMNS}.")
 
         has_header = config.get("has_header", True)
         if has_header:
@@ -348,6 +379,13 @@ def parse_excel(raw: bytes, config: dict) -> AcquireResult:
         else:
             headers = [f"column_{i}" for i in range(len(rows[0]))]
             data_rows = rows
+
+        # Every record carries every header, so this is the size about to be built.
+        if len(data_rows) * len(headers) > MAX_CELLS:
+            return AcquireResult(
+                success=False,
+                error=f"Sheet exceeds the limit of {MAX_CELLS:,} cells "
+                      f"({len(data_rows):,} rows x {len(headers)} columns).")
 
         records = []
         for row_idx, row in enumerate(data_rows):
@@ -409,6 +447,9 @@ def _check_json_depth(obj: Any, max_depth: int = 20, current: int = 0) -> bool:
     return True
 
 
+_UNPARSED = object()
+
+
 def _sanitize_json_value(val: Any) -> Any:
     """Sanitize JSON values — prevent formula injection in string values."""
     if isinstance(val, str):
@@ -437,32 +478,53 @@ def parse_json(raw: bytes, config: dict) -> AcquireResult:
             error=f"JSON content exceeds {MAX_JSON_SIZE // (1024*1024)}MB limit.")
 
     records = []
-    is_jsonl = config.get("jsonl", False)
+    lines_skipped = 0
 
-    if is_jsonl or ("\n" in text and text.lstrip().startswith("{")):
+    # Whole-document JSON first. Guessing JSONL from "starts with { and has a
+    # newline" read every pretty-printed object as JSONL, failed on every
+    # line, and reported a successful upload of zero records. JSONL is what a
+    # file is when it does *not* parse whole — including one named .jsonl that
+    # is really a pretty-printed document.
+    whole: Any = _UNPARSED
+    whole_error: json.JSONDecodeError | None = None
+    try:
+        whole = json.loads(text)
+    except json.JSONDecodeError as e:
+        whole_error = e
+
+    looks_like_jsonl = "\n" in text and text.lstrip().startswith("{")
+    is_jsonl = whole is _UNPARSED and (config.get("jsonl", False) or looks_like_jsonl)
+
+    if is_jsonl:
         # JSONL: one JSON object per line
         lines = text.splitlines()
         if len(lines) > MAX_ROWS:
             return AcquireResult(
                 success=False,
                 error=f"JSONL file exceeds maximum row limit of {MAX_ROWS:,}.")
+        non_blank = 0
         for line_num, line in enumerate(lines, 1):
             line = line.strip()
             if not line:
                 continue
+            non_blank += 1
             try:
                 obj = json.loads(line)
-                if isinstance(obj, dict):
-                    obj = _sanitize_json_value(obj)
-                    obj["_row_number"] = line_num
-                    records.append(obj)
             except json.JSONDecodeError:
+                lines_skipped += 1
                 continue
+            if isinstance(obj, dict):
+                obj = _sanitize_json_value(obj)
+                obj["_row_number"] = line_num
+                records.append(obj)
+        if non_blank and lines_skipped == non_blank:
+            return AcquireResult(
+                success=False,
+                error=f"None of the {non_blank} lines parsed as JSON; the file is neither JSON nor JSONL.")
+    elif whole is _UNPARSED:
+        return AcquireResult(success=False, error=f"Invalid JSON: {whole_error}")
     else:
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError as e:
-            return AcquireResult(success=False, error=f"Invalid JSON: {e}")
+        data = whole
 
         # Depth check to prevent JSON bomb
         if not _check_json_depth(data):
@@ -540,7 +602,7 @@ def parse_json(raw: bytes, config: dict) -> AcquireResult:
         schema_info=schema_info,
         profiling=profiling,
         preview_rows=records[:MAX_PREVIEW_ROWS],
-        metadata={"format": "jsonl" if is_jsonl else "json"},
+        metadata={"format": "jsonl" if is_jsonl else "json", "lines_skipped": lines_skipped},
     )
 
 
@@ -925,23 +987,29 @@ class FlatFileConnector(SourceConnector):
             file_format = detect_format(filename)
 
         try:
-            if file_format in ("csv", "tsv"):
-                if file_format == "tsv":
-                    config = {**config, "delimiter": "\t"}
-                return parse_csv(file_bytes, config)
-            elif file_format in ("xlsx", "xls"):
-                return parse_excel(file_bytes, config)
-            elif file_format == "jsonl":
-                return parse_json(file_bytes, {**config, "jsonl": True})
-            elif file_format == "geojson":
-                return parse_geojson(file_bytes, config)
-            elif file_format == "json":
-                return parse_json(file_bytes, config)
-            elif file_format == "xml":
-                return parse_xml(file_bytes, config)
-            else:
-                return AcquireResult(
-                    success=False, error=f"Unsupported format: {file_format}")
+            # Parsing is CPU-bound and can take seconds on a large upload; on the
+            # event loop it stalls every request the API is serving meanwhile.
+            return await asyncio.to_thread(_parse, file_bytes, file_format, config)
         except Exception as e:
+            # Unexpected, so the text is whatever the failing code said —
+            # paths, internals. Logged in full; the client gets the kind.
             logger.exception("Flat file parse error: %s", e)
-            return AcquireResult(success=False, error=str(e))
+            return AcquireResult(success=False, error=f"The file could not be parsed ({type(e).__name__}).")
+
+
+def _parse(file_bytes: bytes, file_format: str, config: dict[str, Any]) -> AcquireResult:
+    if file_format in ("csv", "tsv"):
+        if file_format == "tsv":
+            config = {**config, "delimiter": "\t"}
+        return parse_csv(file_bytes, config)
+    if file_format in ("xlsx", "xls"):
+        return parse_excel(file_bytes, config)
+    if file_format == "jsonl":
+        return parse_json(file_bytes, {**config, "jsonl": True})
+    if file_format == "geojson":
+        return parse_geojson(file_bytes, config)
+    if file_format == "json":
+        return parse_json(file_bytes, config)
+    if file_format == "xml":
+        return parse_xml(file_bytes, config)
+    return AcquireResult(success=False, error=f"Unsupported format: {file_format}")

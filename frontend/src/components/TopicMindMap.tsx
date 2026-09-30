@@ -104,8 +104,15 @@ export default function TopicMindMap({
   const onClickRef = useRef(onNodeClick);
   const onBreadcrumbsRef = useRef(onBreadcrumbsChange);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+  // The selected id, read by the tree-building effect through a ref so that a
+  // selection change restyles the tree instead of rebuilding it.
+  const selectedRef = useRef(selectedNodeId);
+  // Draws the dashed cross-reference links for the current selection over the
+  // tree the build effect last laid out. Set by that effect.
+  const drawCrossRefsRef = useRef<(() => void) | null>(null);
   onClickRef.current = onNodeClick;
   onBreadcrumbsRef.current = onBreadcrumbsChange;
+  selectedRef.current = selectedNodeId;
 
   // Expose zoom controls
   const zoomIn = useCallback(() => {
@@ -224,29 +231,63 @@ export default function TopicMindMap({
       }
     }
 
+    // Coordinate projection helpers
+    function projectX(d: any): number {
+      if (isRadial) {
+        const angle = d.x - Math.PI / 2;
+        return d.y * Math.cos(angle);
+      }
+      return d.y;
+    }
+    function projectY(d: any): number {
+      if (isRadial) {
+        const angle = d.x - Math.PI / 2;
+        return d.y * Math.sin(angle);
+      }
+      return d.x;
+    }
+    function linkPath(s: any, d: any): string {
+      const sx = projectX(s), sy = projectY(s);
+      const dx = projectX(d), dy = projectY(d);
+      return `M${sx},${sy}C${(sx + dx) / 2},${sy} ${(sx + dx) / 2},${dy} ${dx},${dy}`;
+    }
+
+    // ---- CROSS-REFERENCE LINKS ----
+    // Drawn for whichever node is selected *now*. They used to be drawn only
+    // inside the build, from the selection at build time (usually none), and
+    // the selection effect then removed them without redrawing, so they never
+    // appeared.
+    let visibleNodes: any[] = [];
+    function drawCrossRefs() {
+      g.selectAll('path.cross-ref').remove();
+      const selected = selectedRef.current;
+      if (!selected || !crossRefMap.has(selected)) return;
+      const selectedNode = visibleNodes.find((n: any) => n.data.id === selected);
+      if (!selectedNode) return;
+      for (const linkedId of Array.from(crossRefMap.get(selected)!)) {
+        const linkedNode = visibleNodes.find((n: any) => n.data.id === linkedId);
+        if (!linkedNode) continue;
+        g.append('path')
+          .attr('class', 'cross-ref')
+          .attr('fill', 'none')
+          .attr('stroke', '#f59e0b')
+          .attr('stroke-width', 1)
+          .attr('stroke-dasharray', '4,4')
+          .attr('stroke-opacity', 0.5)
+          .attr('pointer-events', 'none')
+          .attr('d', linkPath(selectedNode, linkedNode));
+      }
+    }
+    drawCrossRefsRef.current = drawCrossRefs;
+
     function update(source: any) {
       const treeData = treeLayout(root);
       const nodes = treeData.descendants();
       const links = treeData.links();
+      const selectedNodeId = selectedRef.current;
 
       if (!isRadial) {
         nodes.forEach((d: any) => { d.y = d.depth * 200; });
-      }
-
-      // Coordinate projection helpers
-      function projectX(d: any): number {
-        if (isRadial) {
-          const angle = d.x - Math.PI / 2;
-          return d.y * Math.cos(angle);
-        }
-        return d.y;
-      }
-      function projectY(d: any): number {
-        if (isRadial) {
-          const angle = d.x - Math.PI / 2;
-          return d.y * Math.sin(angle);
-        }
-        return d.x;
       }
 
       // ---- LINKS ----
@@ -277,15 +318,6 @@ export default function TopicMindMap({
           return linkPath(o, o);
         })
         .remove();
-
-      function linkPath(s: any, d: any): string {
-        const sx = projectX(s), sy = projectY(s);
-        const dx = projectX(d), dy = projectY(d);
-        if (isRadial) {
-          return `M${sx},${sy}C${(sx + dx) / 2},${sy} ${(sx + dx) / 2},${dy} ${dx},${dy}`;
-        }
-        return `M${sx},${sy}C${(sx + dx) / 2},${sy} ${(sx + dx) / 2},${dy} ${dx},${dy}`;
-      }
 
       // ---- NODES ----
       const node = g.selectAll<SVGGElement, any>('g.node')
@@ -432,27 +464,9 @@ export default function TopicMindMap({
         .remove();
       nodeExit.select('circle').attr('r', 1e-6);
 
-      // ---- CROSS-REFERENCE LINKS ----
-      g.selectAll('path.cross-ref').remove();
-
-      if (selectedNodeId && crossRefMap.has(selectedNodeId)) {
-        const selectedNode = nodes.find((n: any) => n.data.id === selectedNodeId);
-        const linkedTopicIds = crossRefMap.get(selectedNodeId)!;
-
-        for (const linkedId of Array.from(linkedTopicIds)) {
-          const linkedNode = nodes.find((n: any) => n.data.id === linkedId);
-          if (selectedNode && linkedNode) {
-            g.append('path')
-              .attr('class', 'cross-ref')
-              .attr('fill', 'none')
-              .attr('stroke', '#f59e0b')
-              .attr('stroke-width', 1)
-              .attr('stroke-dasharray', '4,4')
-              .attr('stroke-opacity', 0.5)
-              .attr('d', linkPath(selectedNode, linkedNode));
-          }
-        }
-      }
+      // ---- CROSS-REFERENCE LINKS (over the new layout) ----
+      visibleNodes = nodes;
+      drawCrossRefs();
 
       // Stash old positions
       nodes.forEach((d: any) => {
@@ -466,8 +480,11 @@ export default function TopicMindMap({
     // Cleanup tooltip on unmount
     return () => {
       tooltip.remove();
+      drawCrossRefsRef.current = null;
     };
-  }, [data, layout, searchQuery, crossReferences]); // selectedNodeId removed to prevent tree rebuild
+    // selectedNodeId is read through selectedRef: a selection change is
+    // handled by the effect below without rebuilding the tree.
+  }, [data, layout, searchQuery, crossReferences]);
 
   // Separate effect to update selection visuals without rebuilding the tree
   useEffect(() => {
@@ -496,8 +513,8 @@ export default function TopicMindMap({
       }
     });
 
-    // Update cross-reference links
-    svg.selectAll('path.cross-ref').remove();
+    // Redraw the cross-reference links for the new selection.
+    drawCrossRefsRef.current?.();
   }, [selectedNodeId, searchQuery]);
 
   return (

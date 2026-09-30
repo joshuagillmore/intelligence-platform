@@ -28,6 +28,7 @@ class ReportService:
                         source_id=report.id, target_id=eid,
                         rel_type="MENTIONS", confidence=1.0,
                         source="report_service", method="analyst",
+                        project_id=project_id,
                     )
                     self._store.create_relationship(rel)
                 except ValueError:
@@ -50,5 +51,16 @@ class ReportService:
     def get_report(self, report_id: str) -> dict | None:
         return self._store.get_entity(report_id)
 
-    def delete_report(self, report_id: str) -> None:
+    def delete_report(self, report_id: str, project_id: str | None = None) -> bool:
+        """Delete a Report node; False (nothing deleted) for anything else.
+
+        This deleted whatever node carried the id — an entity, a Document,
+        another project's report — and the route answered "deleted" regardless.
+        """
+        node = self._store.get_entity(report_id)
+        if not node or node.get("entity_type") != "Report":
+            return False
+        if project_id is not None and node.get("project_id") != project_id:
+            return False
         self._store.delete_entity(report_id)
+        return True

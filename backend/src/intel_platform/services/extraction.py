@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -19,6 +18,62 @@ from intel_platform.services.geo.coordinates import parse_coordinates
 logger = logging.getLogger(__name__)
 
 _nlp = None
+
+
+class ExtractionResult(tuple):
+    """``(entities, relationships)`` for one chunk, plus how they were produced.
+
+    Still a 2-tuple, so every ``ents, rels = await extract_...(...)`` caller is
+    unchanged. The attributes are the per-chunk record that used to be missing:
+    a chunk the model never read looked exactly like one it did.
+
+    - ``method``: ``"hybrid" | "llm" | "nlp"`` — what actually ran.
+    - ``degraded``: the requested method failed and this is the NLP fallback.
+    - ``reason``: why it degraded (empty when it did not). Carries the exception
+      *type*, never its message, so it is safe to show an analyst.
+    - ``skipped_items``: individual model entities/relationships dropped for
+      being malformed, without discarding the rest of the reply.
+    """
+
+    method: str
+    degraded: bool
+    reason: str
+    skipped_items: int
+
+    def __new__(cls, entities: list[dict], relationships: list[dict], *, method: str,
+                degraded: bool = False, reason: str = "", skipped_items: int = 0):
+        self = super().__new__(cls, (entities, relationships))
+        self.method = method
+        self.degraded = degraded
+        self.reason = reason
+        self.skipped_items = skipped_items
+        return self
+
+    def __getnewargs_ex__(self):
+        # copy and pickle rebuild a tuple subclass from tuple(self); without
+        # this they call __new__ with one argument and fail.
+        return (self[0], self[1]), {
+            "method": self.method, "degraded": self.degraded,
+            "reason": self.reason, "skipped_items": self.skipped_items,
+        }
+
+    @property
+    def meta(self) -> dict:
+        return {
+            "method": self.method,
+            "degraded": self.degraded,
+            "reason": self.reason,
+            "skipped_items": self.skipped_items,
+        }
+
+
+class _LLMExtractionFailed(Exception):
+    """The LLM half produced nothing usable; ``reason`` says why."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
 
 SPACY_TO_ENTITY_TYPE = {
     "PERSON": "Person",
@@ -416,8 +471,12 @@ _LLM_TYPE_CANON = {
     # the hierarchy actually defines under Equipment.
     "ship": "Ship", "submarine": "Submarine", "aircraft": "Aircraft",
     "drone": "Drone", "missile": "Weapon", "radar": "Radar",
-    "satellite": "EquipmentType", "artillery": "Weapon", "vehicle": "EquipmentType",
-    "hardware": "EquipmentType", "tank": "MilitaryAsset",
+    # Satellite/Vehicle/Hardware are graph types in their own right; these had
+    # the same EquipmentType/MilitaryAsset mapping the comment above describes
+    # and landed as Custom. Tank has no type of its own — a tank is a vehicle.
+    # tests/test_llm_type_canon.py fails if a target here is not a graph type.
+    "satellite": "Satellite", "artillery": "Weapon", "vehicle": "Vehicle",
+    "hardware": "Hardware", "tank": "Vehicle",
     # Intelligence docs
     "report": "Document", "assessment": "Document", "briefing": "Document",
 }
@@ -604,11 +663,133 @@ def _has_hash_context(text: str, match_start: int, match_end: int) -> bool:
     return bool(HASH_CONTEXT_KEYWORDS.search(window))
 
 
-def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
-    """Extract cyber-specific entities using regex patterns."""
+#: A defang marker — every form ``enrichment.observables.refang`` reverses:
+#: a bracketed, parenthesised or braced dot, at or colon (``[.] (.) {.} [dot]
+#: (dot) [at] (at) [@] [:] (:)``), or an ``hxxp`` scheme. Listing fewer than
+#: refang handles meant ``evil{.}com`` or ``ops(at)evil(dot)com`` were refanged
+#: into indicators but not counted as defanged.
+_DEFANG_MARKER = re.compile(
+    r"[\[\(\{]\s*(?:\.|dot|@|at|:)\s*[\]\)\}]|h[x]{2}ps?(?::|[\[\(\{]\s*:\s*[\]\)\}])//",
+    re.IGNORECASE,
+)
+_NON_SPACE_RUN = re.compile(r"\S+")
+#: Trailing punctuation that ends a URL match rather than belonging to it.
+_URL_TRAILING = ".,;:!?)]}'\""
+
+
+def _defanged_values(raw_text: str) -> set[str]:
+    """Values the author defanged, refanged and normalised for comparison.
+
+    Works on the whole whitespace-delimited token carrying a marker, so a
+    defanged host inside an otherwise ordinary URL (``http://evil[.]com/gate.php``)
+    records the URL as well as the host — the old detector stopped at the host,
+    and the URL was then discarded as an undefanged citation. Values are read
+    back out of the refanged token with the same patterns the extractor uses,
+    so what is recorded here compares equal to what is extracted there.
+    """
+    found: set[str] = set()
+    for run in _NON_SPACE_RUN.finditer(raw_text or ""):
+        token = run.group()
+        if not _DEFANG_MARKER.search(token):
+            continue
+        value = refang(token)
+        for m in URL_PATTERN.finditer(value):
+            found.add(m.group().rstrip(_URL_TRAILING).lower())
+        for m in EMAIL_PATTERN.finditer(value):
+            found.add(m.group().lower())
+        # Hosts, including the host of every URL and address above, so the
+        # Domain check sees the assertion made about them.
+        for m in _get_domain_pattern().finditer(value):
+            found.add(m.group().lower())
+        for m in IP_PATTERN.finditer(value):
+            found.add(m.group())
+    return found
+
+
+def _is_sourcing_not_content(name: str, start: int, url_spans: list[tuple[int, int]],
+                             defanged: set[str]) -> bool:
+    """Whether this host is where the document came from rather than what it is about.
+
+    A hostname inside a hyperlink is provenance: the citation, the nav bar, the
+    cookie banner, the "share on" link. Minting an entity for it is what filled
+    one project with 2,653 URL nodes — 98% of them isolated — and put bbc.com
+    and apps.apple.com in a threat-indicator table.
+
+    A hostname standing alone in prose is the opposite: something the author
+    wrote out because the document is *about* it. Every Domain in the labelled
+    fixtures is of this kind — all 8 standalone, none inside a URL — so this
+    distinction costs no recall on the cases we have ground truth for.
+
+    Defanging overrides both: an author who writes ``evil[.]com`` has asserted
+    that it is an indicator, wherever it appears.
+    """
+    if name in defanged:
+        return False
+    return any(s <= start < e for s, e in url_spans)
+
+
+def _drop_model_sourcing(entities: list[dict], raw_text: str) -> list[dict]:
+    """Apply the sourcing rule above to the model's Domain and URL entities.
+
+    The regex pass has always declined to mint a host that only appears inside
+    a hyperlink, or an undefanged URL; the model, reading the same citation,
+    minted both. Here the same rule judges what it returns:
+
+    - a URL survives only if the author defanged it;
+    - a host survives if it is defanged, or appears at least once outside a
+      link. A host the text never states is not judged — the model may have
+      normalised it — and is kept.
+    """
+    if not any(e.get("entity_type") in ("Domain", "URL") for e in entities):
+        return entities
+    defanged = _defanged_values(raw_text)
+    text = refang(raw_text or "").lower()
+    url_spans = [m.span() for m in URL_PATTERN.finditer(text)]
+
+    def _only_inside_links(host: str) -> bool:
+        # A dot may precede the host (so bbc.com is found in www.bbc.com); a
+        # label character may not (so evil.com is not found in notevil.com).
+        pattern = re.compile(r"(?<![a-z0-9-])" + re.escape(host) + r"(?![a-z0-9-])")
+        starts = [m.start() for m in pattern.finditer(text)]
+        return bool(starts) and all(any(s <= p < e for s, e in url_spans) for p in starts)
+
+    kept = []
+    for e in entities:
+        etype = e.get("entity_type")
+        value = refang(str(e.get("name", ""))).strip().lower()
+        if etype == "URL" and value.rstrip(_URL_TRAILING) not in defanged:
+            logger.debug("Dropping model URL %r: an undefanged link is provenance", e.get("name"))
+            continue
+        if etype == "Domain" and value not in defanged and _only_inside_links(value):
+            logger.debug("Dropping model Domain %r: it appears only inside links", e.get("name"))
+            continue
+        kept.append(e)
+    return kept
+
+
+def _extract_cyber_entities(text: str, doc_id: str, raw_text: str | None = None) -> list[dict]:
+    """Extract cyber-specific entities using regex patterns.
+
+    ``raw_text`` is the text before refang, when the caller has it.
+    ``extract_entities_nlp`` refangs up front so spaCy and the relationship
+    matcher see canonical text, which erases the defang markers this function
+    needs; it therefore passes the original. Callers that hand over untouched
+    text can omit it.
+    """
+    # Which values the author deliberately obfuscated, captured *before* refang
+    # destroys the evidence. Defanging is a positive assertion that a value is
+    # an indicator, and it is the only such signal the text carries.
+    deliberately_defanged = _defanged_values(raw_text if raw_text is not None else text)
+
     # Reverse common defang notation (evil[.]com, hxxp://, a[at]b[.]com) first so
     # the patterns below catch IOCs that threat-intel text deliberately obfuscates.
     text = refang(text)
+
+    # Where the document cites its sources. A host inside a hyperlink is how the
+    # document was assembled, not something it is reporting on — see
+    # _is_sourcing_not_content below.
+    url_spans = [m.span() for m in URL_PATTERN.finditer(text)]
+
     cyber_entities = []
     seen = set()
 
@@ -628,21 +809,33 @@ def _extract_cyber_entities(text: str, doc_id: str) -> list[dict]:
 
     for match in _get_domain_pattern().finditer(text):
         domain = _strip_percent_prefix(match.group().lower(), text, match.start())
-        if domain and domain not in seen and "." in domain:
-            seen.add(domain)
-            cyber_entities.append({
-                "name": domain, "entity_type": "Domain",
-                "source": doc_id, "method": "regex", "confidence": 0.9,
-            })
+        if not domain or domain in seen or "." not in domain:
+            continue
+        if _is_sourcing_not_content(domain, match.start(), url_spans, deliberately_defanged):
+            continue
+        seen.add(domain)
+        cyber_entities.append({
+            "name": domain, "entity_type": "Domain",
+            "source": doc_id, "method": "regex",
+            # A defanged host was asserted to be an indicator; a bare one in
+            # prose is inferred to be. Say which, rather than calling both 0.9.
+            "confidence": 0.95 if domain in deliberately_defanged else 0.9,
+        })
 
+    # URLs are minted only when defanged. An ordinary http(s) link is where the
+    # document came from — a citation, a footer, a "read more" — and the labelled
+    # fixtures agree: across all twelve, the expected URL count is zero. A
+    # defanged one (hxxps://evil[.]com/gate.php) is the exception, because
+    # writing it that way is an assertion that it is an indicator.
     for match in URL_PATTERN.finditer(text):
-        url = match.group().rstrip('.,;:!?)]}\'"')
-        if url and url not in seen:
-            seen.add(url)
-            cyber_entities.append({
-                "name": url, "entity_type": "URL",
-                "source": doc_id, "method": "regex", "confidence": 0.9,
-            })
+        url = match.group().rstrip(_URL_TRAILING)
+        if not url or url in seen or url.lower() not in deliberately_defanged:
+            continue
+        seen.add(url)
+        cyber_entities.append({
+            "name": url, "entity_type": "URL",
+            "source": doc_id, "method": "regex", "confidence": 0.95,
+        })
 
     for match in EMAIL_PATTERN.finditer(text):
         email = match.group().lower()
@@ -793,6 +986,45 @@ KNOWN_MALWARE = {
 }
 
 
+_LEADING_DETERMINER = re.compile(r"^(?:the|a|an)\s+", re.IGNORECASE)
+
+
+def _strip_determiner(name: str) -> str:
+    return _LEADING_DETERMINER.sub("", name).strip()
+
+
+def _mention_spans(sent_text: str, entities: list[dict]) -> list[tuple[int, int, dict]]:
+    """Where each entity is mentioned in the sentence, as (start, end, entity)."""
+    spans = []
+    for e in entities:
+        name = e.get("name") or ""
+        if not name:
+            continue
+        for m in re.finditer(r"(?<!\w)" + re.escape(name) + r"(?!\w)", sent_text):
+            spans.append((m.start(), m.end(), e))
+    return spans
+
+
+def _entity_for_token(token, sent, spans: list[tuple[int, int, dict]]) -> dict | None:
+    """The entity a dependency token refers to, or None.
+
+    The token must be part of an entity mention ("Service" in "Russian Foreign
+    Intelligence Service"), or head a phrase containing one ("Hackers from
+    APT29", "by APT29"). Substring tests are not enough: ``"it" in "Citrix"``
+    bound a pronoun subject to Citrix.
+    """
+    offset = token.idx - sent.start_char
+    containing = [s for s in spans if s[0] <= offset < s[1]]
+    if containing:
+        return max(containing, key=lambda s: s[1] - s[0])[2]
+    lo = token.left_edge.idx - sent.start_char
+    hi = token.right_edge.idx + len(token.right_edge.text) - sent.start_char
+    inside = [s for s in spans if lo <= s[0] and s[1] <= hi]
+    if inside:
+        return min(inside, key=lambda s: s[0])[2]
+    return None
+
+
 def _postprocess_entities(entities: list[dict]) -> list[dict]:
     """Fix common spaCy misclassifications for intelligence documents."""
     # Load from YAML (with fallback to hardcoded module constants)
@@ -816,7 +1048,7 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         # Strip leading determiners spaCy glues onto ORG/LOC spans ("the Russian
         # Foreign Intelligence Service" -> "Russian Foreign Intelligence Service")
         # — inflates false positives and breaks dedup against the canonical name.
-        stripped = re.sub(r"^(?:the|a|an)\s+", "", name, flags=re.IGNORECASE).strip()
+        stripped = _strip_determiner(name)
         if stripped and stripped != name:
             name = stripped
             e["name"] = name
@@ -923,9 +1155,9 @@ def _apply_coreference(doc, entities: list[dict]) -> list[dict]:
     return entities
 
 
-def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]]:
+def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
     if not text.strip():
-        return [], []
+        return ExtractionResult([], [], method="nlp")
 
     # Refang defanged IOCs (evil[.]com, hxxp://, a[at]b[.]com) up front so spaCy,
     # the cyber regex pass, and the sentence-matching that builds relationships all
@@ -933,6 +1165,11 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
     # _extract_cyber_entities left spaCy tagging the raw literal as a junk node and
     # orphaned the IOC from relationships (its refanged name was not a substring of
     # the raw sentence text). refang is idempotent, so the inner call is harmless.
+    #
+    # Keep the original, though: whether a value was defanged is the one signal
+    # the text carries that it is an indicator rather than a citation, and
+    # refang is precisely the operation that erases it.
+    raw_text = text
     text = refang(text)
 
     nlp = _get_nlp()
@@ -942,7 +1179,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
     entities = []
 
     # 1. Extract cyber entities via regex first
-    cyber_entities = _extract_cyber_entities(text, doc_id)
+    cyber_entities = _extract_cyber_entities(text, doc_id, raw_text=raw_text)
     for ce in cyber_entities:
         if ce["name"] not in seen_names:
             seen_names[ce["name"]] = ce
@@ -1033,16 +1270,21 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
         sent_text = sent.text
         sent_entities_list = []
 
-        # spaCy-detected entities in this sentence
+        # spaCy-detected entities in this sentence. Looked up by the name the
+        # entity ended up with: postprocessing strips determiners and quotes,
+        # and a lookup by the raw span text missed every entity it renamed.
         for ent in sent.ents:
             name = ent.text.strip()
-            if name in seen_names:
-                sent_entities_list.append(seen_names[name])
+            match = seen_names.get(name) or seen_names.get(_strip_determiner(name.strip("'\"")))
+            if match is not None and match not in sent_entities_list:
+                sent_entities_list.append(match)
 
         # Regex-extracted entities that appear in this sentence text
         for e in entities:
             if e.get("method") == "regex" and e["name"] in sent_text and e not in sent_entities_list:
                 sent_entities_list.append(e)
+
+        mention_spans = _mention_spans(sent_text, sent_entities_list)
 
         # ── Stage A: Dependency-parse relationship extraction ──
         # Find the root verb and its subject/object via dependency labels
@@ -1059,16 +1301,10 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
             obj_ent = None
             for child in token.children:
                 if child.dep_ in ("nsubj", "nsubjpass", "agent") and not subj_ent:
-                    # Find which entity this token belongs to
-                    for e in sent_entities_list:
-                        if child.text in e["name"] or e["name"] in sent_text[child.idx - sent.start_char:child.idx - sent.start_char + len(e["name"]) + 20]:
-                            subj_ent = e
-                            break
+                    # Which entity this token refers to, by position, not substring
+                    subj_ent = _entity_for_token(child, sent, mention_spans)
                 elif child.dep_ in ("dobj", "pobj", "attr") and not obj_ent:
-                    for e in sent_entities_list:
-                        if child.text in e["name"] or e["name"] in sent_text[child.idx - sent.start_char:child.idx - sent.start_char + len(e["name"]) + 20]:
-                            obj_ent = e
-                            break
+                    obj_ent = _entity_for_token(child, sent, mention_spans)
 
             if subj_ent and obj_ent and subj_ent["name"] != obj_ent["name"]:
                 _add_rel(subj_ent["name"], obj_ent["name"], rel_type_from_verb, 0.7, sent_text)
@@ -1103,20 +1339,88 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
     # Resolve event_datetime on Event entities from their OCCURRED_ON Date links
     _link_event_dates(entities, relationships)
 
-    return entities, relationships
+    return ExtractionResult(entities, relationships, method="nlp")
 
 
-async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list[dict]]:
-    """Extract entities using LLM. Returns (entities, relationships)."""
+def _confidence(raw, default: float) -> float:
+    """A model-supplied confidence as a float; raises on "high" and the like."""
+    return default if raw is None else float(raw)
 
+
+def _llm_entity(e, doc_id: str) -> dict:
+    """One model entity as an extraction dict. Raises on a malformed item."""
+    if not isinstance(e, dict):
+        raise TypeError(f"entity is {type(e).__name__}, not an object")
+    name = e.get("name", "")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("entity has no name")
+    entity = {
+        "name": name,
+        "entity_type": _normalize_llm_entity_type(e.get("entity_type", "Person")),
+        "source": doc_id,
+        "method": "llm",
+        "confidence": _confidence(e.get("confidence"), 0.85),
+        "aliases": e.get("aliases", []),
+    }
+    # Pass through entity attributes from LLM. Only an object is attributes;
+    # graph_builder validates the fields themselves.
+    attrs = e.get("attributes", {})
+    if attrs and isinstance(attrs, dict):
+        entity["attributes"] = attrs
+    return entity
+
+
+def _llm_relationship(r, doc_id: str) -> dict:
+    """One model relationship as an extraction dict. Raises on a malformed item."""
+    if not isinstance(r, dict):
+        raise TypeError(f"relationship is {type(r).__name__}, not an object")
+    src_name = r.get("source_entity", r.get("source", ""))
+    tgt_name = r.get("target_entity", r.get("target", ""))
+    return {
+        "source_name": src_name,
+        "target_name": tgt_name,
+        "rel_type": _normalize_rel_type(r.get("relationship_type", r.get("rel_type", ""))),
+        "confidence": _confidence(r.get("confidence"), 0.7),
+        "source": doc_id,
+        "method": "llm",
+        "evidence": _clean_evidence(r.get("evidence", ""), src_name, tgt_name),
+        # Carry the model's polarity through. Without this a denial is
+        # indistinguishable from an assertion by the time it reaches the
+        # graph, and contradicting reporting counts as corroboration.
+        "polarity": (
+            "denies"
+            if str(r.get("polarity", "")).strip().lower() in ("denies", "deny", "negated", "false")
+            else "asserts"
+        ),
+    }
+
+
+def _describe_failure(exc: BaseException) -> str:
+    # The type, not the message: the message can carry provider URLs or key
+    # fragments, and this string is meant to be shown.
+    return f"provider error ({type(exc).__name__})"
+
+
+async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[dict], int]:
+    """The LLM half alone: (entities, relationships, skipped_items).
+
+    Raises ``_LLMExtractionFailed`` with a reason when the model produced
+    nothing usable. The callers decide what the fallback is.
+    """
     # Use the extraction-specific provider selection (routes to local Ollama
     # when extraction_llm_provider=ollama; respects runtime overrides otherwise).
+    # Resolved inside the failure boundary: the lookup reads the key store, and
+    # a failure there escaped as a 500 from /ingest.
     from intel_platform.llm.providers import _get_extraction_provider
-    provider = await _get_extraction_provider()
+    from intel_platform.services.llm_output import json_object
 
+    try:
+        provider = await _get_extraction_provider()
+    except Exception as exc:
+        logger.warning("Extraction provider lookup failed for doc %s", doc_id, exc_info=True)
+        raise _LLMExtractionFailed(f"provider lookup failed ({type(exc).__name__})") from exc
     if not provider:
-        # Fallback to NLP if no LLM configured
-        return extract_entities_nlp(text, doc_id)
+        raise _LLMExtractionFailed("no LLM provider configured")
 
     from intel_platform.llm.skills.loader import SkillsLoader
     loader = SkillsLoader()
@@ -1129,75 +1433,109 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
             temperature=0.2,
             max_tokens=8192,
         )
+    except Exception as exc:
+        logger.warning("LLM entity extraction call failed for doc %s", doc_id, exc_info=True)
+        raise _LLMExtractionFailed(_describe_failure(exc)) from exc
 
-        # Try to parse JSON from response
-        content = result.content
-        # Find JSON in response (may be wrapped in markdown code blocks)
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0]
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0]
+    # The first JSON object anywhere in the reply — fenced, prose-led or bold-
+    # labelled. `{}` means nothing parsed.
+    data = json_object(result.content or "")
+    if not data:
+        raise _LLMExtractionFailed("reply contained no JSON object")
+    if "entities" not in data and "relationships" not in data:
+        # Typically a list where an object was asked for: json_object then finds
+        # the first *entity* inside it, which has neither key. Reading that as
+        # the reply would be zero entities presented as a success.
+        raise _LLMExtractionFailed("reply had no entities or relationships list")
+    raw_entities = data.get("entities") or []
+    raw_rels = data.get("relationships") or []
+    if not isinstance(raw_entities, list) or not isinstance(raw_rels, list):
+        raise _LLMExtractionFailed("reply's entities or relationships was not a list")
 
-        data = json.loads(content.strip())
+    skipped = 0
+    entities: list[dict] = []
+    for e in raw_entities:
+        try:
+            entities.append(_llm_entity(e, doc_id))
+        except (TypeError, ValueError, AttributeError):
+            skipped += 1
+    relationships: list[dict] = []
+    for r in raw_rels:
+        try:
+            relationships.append(_llm_relationship(r, doc_id))
+        except (TypeError, ValueError, AttributeError):
+            skipped += 1
+    if skipped:
+        logger.warning("LLM extraction for doc %s skipped %d malformed item(s)", doc_id, skipped)
 
-        entities = []
-        for e in data.get("entities", []):
-            entity = {
-                "name": e.get("name", ""),
-                "entity_type": _normalize_llm_entity_type(e.get("entity_type", "Person")),
-                "source": doc_id,
-                "method": "llm",
-                "confidence": float(e.get("confidence", 0.85)),
-                "aliases": e.get("aliases", []),
-            }
-            # Pass through entity attributes from LLM
-            attrs = e.get("attributes", {})
-            if attrs:
-                entity["attributes"] = attrs
-            entities.append(entity)
-
-        relationships = []
-        for r in data.get("relationships", []):
-            src_name = r.get("source_entity", r.get("source", ""))
-            tgt_name = r.get("target_entity", r.get("target", ""))
-            relationships.append({
-                "source_name": src_name,
-                "target_name": tgt_name,
-                "rel_type": _normalize_rel_type(r.get("relationship_type", r.get("rel_type", ""))),
-                "confidence": float(r.get("confidence", 0.7)),
-                "source": doc_id,
-                "method": "llm",
-                "evidence": _clean_evidence(r.get("evidence", ""), src_name, tgt_name),
-                # Carry the model's polarity through. Without this a denial is
-                # indistinguishable from an assertion by the time it reaches the
-                # graph, and contradicting reporting counts as corroboration.
-                "polarity": (
-                    "denies"
-                    if str(r.get("polarity", "")).strip().lower() in ("denies", "deny", "negated", "false")
-                    else "asserts"
-                ),
-            })
-
-        _apply_type_hints(entities)
-        _link_event_dates(entities, relationships)
-
-        return entities, relationships
-    except Exception:
-        # ANY failure degrades to NLP — not just unparseable JSON but a provider
-        # that's unreachable/rate-limited/erroring (Ollama down, cloud 429/401/5xx).
-        # hybrid is the DEFAULT mode, so a provider hiccup must never 500 the
-        # ingest path (which creates the Document first) or silently drop a
-        # document's extraction in the collection paths.
-        logger.warning("LLM entity extraction failed for doc %s, falling back to NLP", doc_id, exc_info=True)
-        return extract_entities_nlp(text, doc_id)
+    # The same provenance rule the regex pass applies (G-8): a citation link
+    # is not an indicator because the model, rather than a regex, read it.
+    entities = _drop_model_sourcing(entities, text)
+    _apply_type_hints(entities)
+    _link_event_dates(entities, relationships)
+    return entities, relationships, skipped
 
 
-async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], list[dict]]:
-    """Run both NLP and LLM extraction, merge results. LLM results take priority."""
+async def extract_entities_llm(text: str, doc_id: str) -> ExtractionResult:
+    """Extract entities using LLM. Returns (entities, relationships) with a record.
+
+    ANY failure degrades to NLP — not just an unparseable reply but a provider
+    that's unreachable/rate-limited/erroring (Ollama down, cloud 429/401/5xx).
+    hybrid is the DEFAULT mode, so a provider hiccup must never 500 the ingest
+    path (which creates the Document first). The degradation is now recorded on
+    the result rather than only in the log.
+    """
+    try:
+        entities, relationships, skipped = await _extract_with_llm(text, doc_id)
+    except Exception as exc:
+        reason = exc.reason if isinstance(exc, _LLMExtractionFailed) else f"extraction failed ({type(exc).__name__})"
+        if not isinstance(exc, _LLMExtractionFailed):
+            logger.warning("LLM entity extraction failed for doc %s", doc_id, exc_info=True)
+        logger.warning("LLM extraction degraded to NLP for doc %s: %s", doc_id, reason)
+        ents, rels = extract_entities_nlp(text, doc_id)
+        return ExtractionResult(ents, rels, method="nlp", degraded=True, reason=reason)
+    return ExtractionResult(entities, relationships, method="llm", skipped_items=skipped)
+
+
+# Indicator types that are only ever the same entity when the value is the same.
+# A copy of EXACT_MATCH_TYPES in graph_builder.resolve_entity_name, where it is a
+# function local and so cannot be imported — keep the two in step.
+_EXACT_MATCH_TYPES = frozenset({
+    "IPAddress", "Domain", "URL", "EmailAddress", "Hash", "Vulnerability", "TTP",
+})
+
+
+def _merge_key(name: str) -> str:
+    """The normalised value two extractions of one entity share."""
+    return (name or "").strip().lower()
+
+
+def _exact_match_only(entity: dict) -> bool:
+    """Whether an entity may merge only on an identical value, never a fuzzy one.
+
+    Regex output is a literal value lifted from the text (an address, a hash,
+    a CVE id, a designation); a near-identical one is a different value.
+    """
+    return entity.get("method") == "regex" or entity.get("entity_type") in _EXACT_MATCH_TYPES
+
+
+async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
+    """Run both NLP and LLM extraction, merge results. LLM results take priority.
+
+    When the LLM half fails the chunk is the NLP result, marked ``degraded``
+    with the reason — it used to be the same NLP result with nothing to say so.
+    """
     import jellyfish
 
     nlp_entities, nlp_rels = extract_entities_nlp(text, doc_id)
-    llm_entities, llm_rels = await extract_entities_llm(text, doc_id)
+    try:
+        llm_entities, llm_rels, skipped = await _extract_with_llm(text, doc_id)
+    except Exception as exc:
+        reason = exc.reason if isinstance(exc, _LLMExtractionFailed) else f"extraction failed ({type(exc).__name__})"
+        if not isinstance(exc, _LLMExtractionFailed):
+            logger.warning("LLM half of hybrid extraction failed for doc %s", doc_id, exc_info=True)
+        logger.warning("Hybrid extraction degraded to NLP for doc %s: %s", doc_id, reason)
+        return ExtractionResult(nlp_entities, nlp_rels, method="nlp", degraded=True, reason=reason)
 
     # ── Entities ──────────────────────────────────────────────────────────
     # LLM entities are primary (semantic, well-typed, lean). From NLP add only
@@ -1206,26 +1544,35 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], l
     # LLM already covers the semantic ones, so unioning them back in just
     # re-introduces the precision-killing noise the NLP-only pass fought.
     merged_entities = list(llm_entities)
-    llm_name_list = [e["name"].lower() for e in llm_entities]
-
-    def _match_llm(name_lower: str) -> str | None:
-        if name_lower in llm_name_list:
-            return name_lower
-        for n in llm_name_list:
-            if jellyfish.jaro_winkler_similarity(name_lower, n) >= 0.92:
-                return n
-        return None
+    # Exact lookup over every LLM entity; fuzzy lookup only over LLM entities
+    # whose type tolerates it. Indicators are matched by value or not at all:
+    # 185.220.101.42/.43 score 0.971 Jaro-Winkler, CVE-2024-3400/3401 0.969 and
+    # T1566.001/.002 0.956, all above the threshold that suits semantic names.
+    llm_by_key: dict[str, dict] = {}
+    fuzzy_pool: list[tuple[str, dict]] = []
+    for llm_e in llm_entities:
+        key = _merge_key(llm_e.get("name", ""))
+        llm_by_key.setdefault(key, llm_e)
+        if not _exact_match_only(llm_e):
+            fuzzy_pool.append((key, llm_e))
+    # NLP names already kept. Deliberately *not* part of the fuzzy pool: adding
+    # them there is what let each sibling indicator match the one kept before it.
+    kept_nlp_keys: set[str] = set()
 
     for e in nlp_entities:
-        e_lower = e["name"].lower()
-        match = _match_llm(e_lower)
+        key = _merge_key(e.get("name", ""))
+        match = llm_by_key.get(key)
+        if match is None and not _exact_match_only(e):
+            for pool_key, candidate in fuzzy_pool:
+                if jellyfish.jaro_winkler_similarity(key, pool_key) >= 0.92:
+                    match = candidate
+                    break
         if match is not None:
             # Found by both — merge NLP attributes/confidence into the LLM entity.
-            for llm_e in merged_entities:
-                if llm_e["name"].lower() == match:
-                    llm_e["confidence"] = max(llm_e.get("confidence", 0), e.get("confidence", 0))
-                    _merge_attributes(llm_e, e)
-                    break
+            match["confidence"] = max(match.get("confidence", 0), e.get("confidence", 0))
+            _merge_attributes(match, e)
+            continue
+        if key in kept_nlp_keys:
             continue
         # Unmatched NLP entity: keep deterministic regex IOCs, plus high-signal
         # spaCy entities the LLM missed — known-list matches or repeated mentions
@@ -1233,7 +1580,7 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], l
         # the one-off spaCy over-extraction (base confidence 0.7 / short 0.5).
         if e.get("method") == "regex" or e.get("confidence", 0) >= 0.8:
             merged_entities.append(e)
-            llm_name_list.append(e_lower)
+            kept_nlp_keys.add(key)
 
     # ── Relationships ─────────────────────────────────────────────────────
     # LLM relations are typed + evidence-backed — primary. From NLP keep only
@@ -1259,4 +1606,4 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], l
     # same name could still carry the generic type into the merge.
     _apply_type_hints(merged_entities)
 
-    return merged_entities, merged_rels
+    return ExtractionResult(merged_entities, merged_rels, method="hybrid", skipped_items=skipped)

@@ -46,8 +46,10 @@ def _compute_location_edges(
             continue
         rels = rels_by_id.get(lid, [])
         for rel in rels:
-            target_id = rel.get("target_id", "")
-            target_name = rel.get("target_name", "")
+            # Edges carry their true direction; the entity we want is whichever
+            # end is not this location (an entity LOCATED_AT a place is the source).
+            target_id = rel.get("neighbor_id") or rel.get("target_id", "")
+            target_name = rel.get("neighbor_name") or rel.get("target_name", "")
             # Skip if target is also a location — we want shared NON-location entities
             if target_id in location_ids:
                 continue
@@ -99,8 +101,10 @@ def get_geo_locations(project_id: str, store: GraphStore = Depends(get_graph_sto
         if loc.get("id"):
             rels = rels_by_id.get(loc["id"], [])
             loc["relationships"] = [
-                {"target_name": r.get("target_name"), "rel_type": r.get("rel_type"),
-                 "target_id": r.get("target_id", ""),
+                {"target_name": r.get("neighbor_name") or r.get("target_name"),
+                 "rel_type": r.get("rel_type"),
+                 "target_id": r.get("neighbor_id") or r.get("target_id", ""),
+                 "direction": r.get("direction", "out"),
                  "confidence": r.get("confidence", r.get("props", {}).get("confidence"))}
                 for r in rels
             ]
@@ -210,16 +214,17 @@ def get_entity_timeline(
         if first_seen:
             parsed = normalize_datetime(first_seen)
             if parsed:
-                target_name = rel.get("target_name", "")
+                target_name = rel.get("neighbor_name") or rel.get("target_name", "")
+                arrow = "→" if rel.get("direction", "out") == "out" else "←"
                 events.append({
                     "date": parsed,
                     "type": "relationship",
-                    "label": f"{rel.get('rel_type', '')} → {target_name}",
+                    "label": f"{rel.get('rel_type', '')} {arrow} {target_name}",
                 })
 
-        # PERF: single fetch per relationship target instead of separate fetches
+        # PERF: single fetch per relationship neighbour instead of separate fetches
         # for Date and Document checks
-        target = store.get_entity(rel.get("target_id", ""))
+        target = store.get_entity(rel.get("neighbor_id") or rel.get("target_id", ""))
         rel_type = rel.get("rel_type", "")
 
         # Connected Date entities (OCCURRED_ON relationships)

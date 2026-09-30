@@ -8,10 +8,10 @@ two places, and it matters which:
 | `hero.png` | — | generated | README banner, 2400x840. Built from `hero.html` over the geo map; regenerate with `node docs/screenshots/make-hero.js` |
 | `network-graph.png` | `/network` | by hand | Shortest path between two entities, the evidence behind one edge — claim, confidence, corroboration, source grade, method, basis — and the Graph-RAG assistant answering *why* a vessel behaved as it did |
 | `geo-aoi.png` | `/geo` | by hand | 398 locations / 53 geocoded / 279 connections, layer and temporal controls, and a Graph-RAG answer about an incident on the map |
-| `collection-plan.png` | `/collection-plans` | by hand | PIR-derived plan: refined requirement → assigned sources → per-source run status, successes and failures both |
+| `collection-plan.png` | `/collection-plans` | Playwright | PIR-derived plan: requirement, collapsed refinement analysis, assigned sources with per-source run status |
 | `cyber-enrichment.png` | `/cyber` | Playwright | IOC dashboard, connected entities with confidence, GeoIP/RDAP enrichment, cyber relationship graph |
 | `products-intsum.png` | `/products` | Playwright | Generated INTSUM with Bottom Line, calibrated probability language, Markdown/PDF export |
-| `topic-mindmap.png` | Data Sources | Playwright | Radial mind-map over 5,258 entities in 612 thematic clusters |
+| `topic-mindmap.png` | Data Sources | Playwright | Radial mind-map over 5,258 entities in 612 clusters, with model-written topic names |
 
 ## The hero banner
 
@@ -37,13 +37,13 @@ edge carries a hard scrim because `object-fit: cover` always fits the full
 out, and without the scrim the brightest text on the banner reads "No clusters
 found. No relationships found."
 
-**Of the six view screenshots, the first three are hand-captured and are not
+**Of the six view screenshots, `network-graph.png` and `geo-aoi.png` are hand-captured and are not
 reproducible from a clean clone.** They show live Graph-RAG answers and an interactively-found path, which
 depend on a project that has really collected and on a working LLM provider.
 Nothing in this repo regenerates them; treat them as artefacts, and recapture by
 hand if the UI changes enough to make them wrong.
 
-The last three come from `tests/e2e/capture-docs.spec.ts`, which drives the
+The other four come from `tests/e2e/capture-docs.spec.ts`, which drives the
 interaction each shot needs rather than grabbing an empty view:
 
 ```bash
@@ -51,7 +51,7 @@ interaction each shot needs rather than grabbing an empty view:
 cd backend  && uv run python scripts/seed_demo.py
 cd frontend && CAPTURE_PROJECT_ID=demo-sentinel CAPTURE_IOC=45.83.12.7 \
                npx playwright test capture-docs.spec.ts \
-               -g "cyber-enrichment|products-intsum|topic-mindmap"
+               -g "cyber-enrichment|products-intsum|topic-mindmap|collection-plan"
 ```
 
 ## Env knobs
@@ -70,21 +70,23 @@ cd frontend && CAPTURE_PROJECT_ID=demo-sentinel CAPTURE_IOC=45.83.12.7 \
 Staging around a defect makes the screenshots lie about the product, so these
 are left showing it:
 
-- **`collection-plan.png` shows failed sources** next to successful ones, and
-  the refinement analysis as raw markdown. That rendering is fixed in the app —
-  it now goes through the `Markdown` component behind a collapsed disclosure —
-  but this image predates the fix and has not been retaken.
-- **Topic names in `topic-mindmap.png` are raw TF-IDF keywords** ("wikipedia /
-  wiki / org"), not model-written labels. Refinement falls back when the
-  configured provider is rate-limited; the tree reports `label_source` so this
-  is visible rather than silent (see `tests/test_topic_label_provenance.py`).
+- **`collection-plan.png` shows failed sources** next to successful ones. A plan
+  where one of six feeds returns 403 is the normal case, and hiding it would
+  misrepresent what collection against the open web is like.
+- **Three of the nine clusters in `topic-mindmap.png` are page furniture** —
+  "BBC Website Structure", "Wikipedia Navigation", "MarineAware Investor
+  Relations". Those labels are correct: a real share of the collected corpus
+  *is* website chrome, and the clustering says so. Extraction no longer turns
+  that chrome into entities, but it cannot retroactively clean document text
+  that was already collected.
 
 The cyber shot is deliberately taken against `demo-sentinel` rather than a crawl
-project, and that is a limitation worth naming: on real collected data the IOC
-table is currently dominated by ordinary web domains lifted from page furniture,
-including hostnames corrupted by percent-encoding (`2fen.wikipedia.org` from an
-encoded `/`). Until URL/Domain extraction distinguishes an observable from a
-document's own provenance, that view is not representative.
+project. That is now a data limitation rather than a code one: extraction
+distinguishes an observable from a document's own sourcing (see
+`tests/test_observable_vs_provenance.py`), so newly collected projects no longer
+fill the IOC table with ordinary web domains — but graphs built before that
+still carry them. `backend/scripts/prune_sourcing_entities.py` removes the
+stale nodes; it is a dry run unless given `--apply`.
 
 Use representative, non-sensitive data. The seeded `demo-sentinel` project is
 the safest source and is reproducible by anyone cloning the repo.

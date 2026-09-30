@@ -1,4 +1,12 @@
-from pydantic_settings import BaseSettings
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# backend/src/intel_platform/config.py -> the repository root. The .env lives
+# there (it also feeds docker compose), and a bare ".env" resolved against the
+# working directory, so `cd backend && uv run uvicorn ...` never read it.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+ENV_FILE = _REPO_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -12,6 +20,15 @@ class Settings(BaseSettings):
 
     # API
     api_key: str = "dev-api-key-change-in-production"
+    # HS256 signing key for login tokens. The default is public (it is in this
+    # file), so it is for local development only: REQUIRE_SECURE_AUTH refuses to
+    # boot on it, on a blank value, or on anything shorter than 32 bytes.
+    jwt_secret: str = "intel-platform-dev-secret-change-in-production"
+    # Fernet key for API keys stored in Postgres. Blank = stored in plaintext
+    # (dev only); REQUIRE_SECURE_AUTH refuses to boot without a valid key.
+    encryption_key: str = ""
+    # Browser origins allowed to call the API with credentials, comma-separated.
+    cors_origins: str = "http://localhost:3000,http://localhost:8000"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     # Per-client request/minute cap. High by default for the single-user
@@ -21,8 +38,11 @@ class Settings(BaseSettings):
     # Trust X-Forwarded-For for the client IP used by rate limiting / login
     # throttling. OFF by default: only enable behind a trusted reverse proxy
     # (e.g. Railway), otherwise clients can spoof the header to evade limits.
-    # When on, the LEFTMOST X-Forwarded-For entry is used.
+    # When on, the entry trusted_proxy_hops from the RIGHT is used: the one the
+    # nearest trusted proxy appended. Set it to the number of proxies in front
+    # of the app (1 for Railway's edge alone).
     trust_proxy_headers: bool = False
+    trusted_proxy_hops: int = 1
     # Security hardening: when true, refuse to start with the built-in default
     # JWT secret / API key / admin password. Set REQUIRE_SECURE_AUTH=true on any
     # public or deployed instance.
@@ -30,9 +50,9 @@ class Settings(BaseSettings):
     # Seed password for the auto-created admin user (blank -> 'admin' in dev; must
     # be set when require_secure_auth is on). Read via Settings so .env works too.
     default_admin_password: str = ""
-    # The MCP server exposes read+write graph tools and is NOT behind the REST
-    # auth layer, so it is disabled by default. Enable deliberately (behind a
-    # trusted network / gateway) via MCP_ENABLED=true.
+    # The MCP server (endpoint /mcp) exposes graph-writing and LLM-spending
+    # tools, so it is disabled by default. When enabled it requires the REST
+    # API's credentials; it is refused outright under require_secure_auth.
     mcp_enabled: bool = False
 
     # Extraction
@@ -85,8 +105,19 @@ class Settings(BaseSettings):
     # summarization), which is high-volume and would exhaust a rate-limited cloud
     # key. Empty = use the default provider (preserves prior behavior, e.g. on
     # deployments without a local Ollama). Set to "ollama" to offload locally.
+    # Topic-label refinement is one LLM call per cluster node, so it drains a
+    # rate-limited cloud key fastest. Set to "ollama" to run it locally.
+    topics_llm_provider: str = ""
+    topics_llm_model: str = ""
     collection_llm_provider: str = ""
     collection_llm_model: str = ""
+    # Which provider bulk collection work prefers when collection_llm_provider
+    # is empty: "cloud-first" (a configured cloud key, else Ollama) or
+    # "local-first". Read by llm/providers.py.
+    collection_llm_preference: str = "cloud-first"
+    # Largest response body, in bytes, a collection or enrichment fetch will
+    # buffer before giving up on it.
+    max_fetch_bytes: int = 10_000_000
 
     # Search engines to try in order, comma-separated, first non-empty answer
     # wins. `ddgs` fronts several engines that fail independently — the
@@ -147,6 +178,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     cohere_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434"
+    # Context window requested from Ollama. Its own default (2048 tokens)
+    # silently truncates extraction and report prompts.
+    ollama_num_ctx: int = 16384
     default_llm_provider: str = "anthropic"
     default_llm_model: str = ""
 
@@ -157,7 +191,12 @@ class Settings(BaseSettings):
     vector_search_limit: int = 20
     hybrid_graph_weight: float = 0.4  # weight for graph results in hybrid scoring
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # extra="ignore": the same .env carries keys for docker compose and the VPN
+    # sidecar (SURFSHARK_*, ...) that are not settings; forbidding them made a
+    # copy of .env.example fail to load at all.
+    model_config = SettingsConfigDict(
+        env_file=str(ENV_FILE), env_file_encoding="utf-8", extra="ignore",
+    )
 
 
 from functools import lru_cache  # noqa: E402
@@ -169,8 +208,22 @@ def get_settings() -> Settings:
 
 
 class _SettingsProxy:
+    """Module-level ``settings`` that always resolves to the cached instance.
+
+    Attribute *writes* are forwarded too. Without that, ``monkeypatch.setattr(
+    settings, "x", ...)`` stored ``x`` on the proxy itself, and the undo wrote
+    the old value back onto the proxy as well, leaving a permanent shadow that
+    every later reader (and every later patch of the instance) lost to.
+    """
+
     def __getattr__(self, name):
         return getattr(get_settings(), name)
+
+    def __setattr__(self, name, value):
+        setattr(get_settings(), name, value)
+
+    def __delattr__(self, name):
+        delattr(get_settings(), name)
 
 
 settings = _SettingsProxy()

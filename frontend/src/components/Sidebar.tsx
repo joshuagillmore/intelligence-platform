@@ -3,10 +3,24 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
-import { clearAllAssistantThreads } from '@/lib/AssistantContext';
-import { collectionsApi, watchlistApi, healthApi } from '@/lib/api';
+import { collectionsApi, watchlistApi, healthApi, clearSession, readWatchlist } from '@/lib/api';
 import { useNotifications, useNotificationCount } from '@/components/NotificationProvider';
 import { APP_NAME, APP_VERSION } from '@/lib/branding';
+import { readHealth, type HealthLevel } from '@/lib/health';
+
+const HEALTH_LABEL: Record<HealthLevel, string> = {
+  checking: 'Checking',
+  ok: 'Systems Nominal',
+  degraded: 'Degraded',
+  down: 'Backend Unreachable',
+};
+
+const HEALTH_DOT: Record<HealthLevel, string> = {
+  checking: 'bg-gray-500',
+  ok: 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]',
+  degraded: 'bg-yellow-500',
+  down: 'bg-red-500',
+};
 
 type NavItem = { name: string; href: string; icon: string; adminOnly?: boolean };
 
@@ -57,7 +71,7 @@ export default function Sidebar() {
 
   const [username, setUsername] = useState('');
   const [role, setRole] = useState('');
-  const [backendHealthy, setBackendHealthy] = useState(true);
+  const [backendHealth, setBackendHealth] = useState<HealthLevel>('checking');
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -71,10 +85,11 @@ export default function Sidebar() {
     let cancelled = false;
     async function checkHealth() {
       try {
-        await healthApi.check();
-        if (!cancelled) setBackendHealthy(true);
+        // A 200 can still say "degraded" (Neo4j down); read the body.
+        const res = await healthApi.check();
+        if (!cancelled) setBackendHealth(readHealth(res?.data).level);
       } catch {
-        if (!cancelled) setBackendHealthy(false);
+        if (!cancelled) setBackendHealth('down');
       }
     }
     checkHealth();
@@ -84,21 +99,35 @@ export default function Sidebar() {
 
   useEffect(() => {
     async function fetchBadges() {
-      try {
-        const colRes = await collectionsApi.list();
-        const active = (colRes.data || []).filter((c: { status?: string }) => {
-          const s = c.status?.toUpperCase();
-          return s === 'PENDING' || s === 'STARTED' || s === 'PROGRESS' || s === 'RUNNING';
-        });
-        setActiveCollections(active.length);
-      } catch { /* ignore */ }
+      // The pulse means "collection is running in this project now". It used
+      // to list every project's tasks and count PENDING rows that never ran.
+      if (activeProject) {
+        try {
+          const colRes = await collectionsApi.list(activeProject.id);
+          const rows = Array.isArray(colRes.data) ? colRes.data : [];
+          const running = rows.filter((c: { status?: string }) => {
+            const s = c.status?.toUpperCase();
+            return s === 'STARTED' || s === 'PROGRESS' || s === 'RUNNING';
+          });
+          setActiveCollections(running.length);
+        } catch {
+          setActiveCollections(0);
+        }
+      } else {
+        setActiveCollections(0);
+      }
 
       if (activeProject) {
         try {
           const wRes = await watchlistApi.list(activeProject.id);
-          const items = wRes.data?.items || wRes.data || [];
-          setWatchlistCount(Array.isArray(items) ? items.length : 0);
-        } catch { /* ignore */ }
+          setWatchlistCount(readWatchlist(wRes.data).length);
+        } catch {
+          // Hide the badge (it only renders above 0) rather than keep a count
+          // that may belong to the previous project.
+          setWatchlistCount(0);
+        }
+      } else {
+        setWatchlistCount(0);
       }
     }
     fetchBadges();
@@ -133,14 +162,10 @@ export default function Sidebar() {
   }
 
   function handleSignOut() {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
-    localStorage.removeItem('auth_role');
-    // Assistant threads hold RAG answers and verbatim source-document
-    // excerpts — analyst content that must not outlive the session on a
-    // shared workstation. Drop the selected project with them.
-    clearAllAssistantThreads();
-    localStorage.removeItem('activeProject');
+    // Token, identity, selected project and assistant threads (RAG answers,
+    // verbatim excerpts) must not outlive the session on a shared workstation.
+    // The full navigation also drops the in-memory copies.
+    clearSession();
     window.location.href = '/login';
   }
 
@@ -316,8 +341,8 @@ export default function Sidebar() {
         {/* System Status — driven by the real backend health check */}
         <div className="px-4 py-2 border-t border-navy-800">
           <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${backendHealthy ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-red-500'}`} />
-            <span className="text-[9px] tracking-widest text-gray-500 uppercase font-medium">{backendHealthy ? 'Systems Nominal' : 'Backend Unreachable'}</span>
+            <span className={`w-2 h-2 rounded-full ${HEALTH_DOT[backendHealth]}`} />
+            <span className="text-[9px] tracking-widest text-gray-500 uppercase font-medium">{HEALTH_LABEL[backendHealth]}</span>
           </div>
         </div>
       </div>

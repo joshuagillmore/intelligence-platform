@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -7,26 +9,63 @@ from intel_platform.api.cache import cached
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.db.engine import get_db
 from intel_platform.graph.store import GraphStore
-from intel_platform.services.topics import TopicTreeService
+from intel_platform.services.topics import TopicTreeService, apply_topic_edits
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
-@router.get("/topics")
 @cached(ttl=60)
+async def _algorithmic_topic_tree(
+    project_id: str, method: str, granularity: str, store: GraphStore,
+) -> dict:
+    """The tree as the algorithm builds it. Cached; the analyst's edits are not in it."""
+    svc = TopicTreeService(store)
+    return await svc.build_topic_tree(project_id, method=method, granularity=granularity)
+
+
+async def _topic_edits(db: AsyncSession, project_id: str) -> list | None:
+    """The project's topic edits, oldest first, or None when they cannot be read."""
+    from sqlalchemy import select
+
+    from intel_platform.db.models import TopicEdit
+
+    try:
+        result = await db.execute(
+            select(TopicEdit)
+            .where(TopicEdit.project_id == project_id)
+            .order_by(TopicEdit.created_at.asc())
+        )
+        return list(result.scalars().all())
+    except Exception:
+        logger.warning("Topic edits unavailable for project %s", project_id, exc_info=True)
+        return None
+
+
+@router.get("/topics")
 async def get_topic_tree(
     project_id: str,
     method: str = "tfidf",
     granularity: str = "medium",
     store: GraphStore = Depends(get_graph_store),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Build hierarchical topic tree.
+    """Build hierarchical topic tree, with the analyst's edits applied.
 
     method: tfidf (keyword-based), semantic (embedding-based), or hybrid
     granularity: broad (3-5 clusters), medium (10-15), detailed (30+)
+
+    Only the algorithmic tree is cached. The edits are read and applied on
+    every request, so a rename is visible on the next load without the cache
+    having to be cleared — which, being per process, could not be done for
+    every worker anyway. `edits_overlay` says whether they could be read.
     """
-    svc = TopicTreeService(store)
-    return await svc.build_topic_tree(project_id, method=method, granularity=granularity)
+    tree = await _algorithmic_topic_tree(project_id, method, granularity, store)
+    edits = await _topic_edits(db, project_id)
+    out = apply_topic_edits(tree, edits or [])
+    out["edits_overlay"] = "unavailable" if edits is None else "applied"
+    return out
 
 
 @router.get("/topics/{entity_id}")

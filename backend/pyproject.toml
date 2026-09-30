@@ -4,14 +4,14 @@ version = "0.1.0"
 description = "AI-powered intelligence analyst workbench"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi~=0.115.0",
-    "uvicorn[standard]~=0.30.0",
+    "fastapi~=0.136.3",
+    "uvicorn[standard]~=0.54.0",
     "neo4j~=5.0",
     "pydantic~=2.5",
     "pydantic-settings~=2.0",
     "python-multipart~=0.0.9",
     "spacy~=3.7",
-    "pypdf~=4.0",
+    "pypdf>=6,<7",
     "thefuzz[speedup]~=0.22",
     "networkx~=3.2",
     "scipy~=1.12",
@@ -21,14 +21,15 @@ dependencies = [
     "openai>=1.50.0",
     "cohere~=5.1",
     "pyyaml~=6.0",
-    "celery[redis]~=5.3",
-    "redis~=5.0",
     "beautifulsoup4~=4.12",
     "aiohttp~=3.9",
-    "mcp[cli]~=1.12.0",
+    # socks: collection/proxy.py sends httpx through Tor as socks5h://, which
+    # needs socksio. It used to arrive only via ddgs, which no longer uses httpx.
+    "httpx[socks]>=0.27",
+    "mcp[cli]~=1.29",
     "pyjwt~=2.8",
     "bcrypt~=4.0",
-    "crawl4ai~=0.8.6",
+    "crawl4ai~=0.9.4",
     "ddgs~=9.0",
     "sqlalchemy[asyncio]~=2.0",
     "asyncpg~=0.30",
@@ -64,6 +65,12 @@ testpaths = ["tests"]
 [tool.ruff]
 target-version = "py311"
 line-length = 120
+
+[tool.ruff.lint]
+# Explicit, not ruff's default: 0.16 widened the default rule set (0 -> 601
+# findings on this tree with no code change). These four are the pre-0.16
+# defaults the codebase is clean against.
+select = ["E4", "E7", "E9", "F"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["E402", "F401"]

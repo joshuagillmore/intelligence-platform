@@ -5,9 +5,10 @@ import Sidebar from '@/components/Sidebar';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { collectionsApi, collectionPlansApi, ingestApi, llmApi, pirsApi, CollectionPlan, CollectionActivityEntry, PlanExecutionStatus, Pir } from '@/lib/api';
+import { collectionsApi, collectionPlansApi, ingestApi, llmApi, pirsApi, isHttpStatus, CollectionPlan, CollectionActivityEntry, PlanExecutionStatus, Pir } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { planTitle } from '@/lib/planTitle';
+import { extractRefinedPir } from '@/lib/refinedPir';
 
 interface Collection {
   id: string;
@@ -26,11 +27,18 @@ interface Collection {
 
 interface PlanItem {
   id: number;
+  /** The plan source this item stands for. Rejecting the item deletes this
+   *  source; matching by display name removed the wrong one when two sources
+   *  shared a name. */
+  source_id?: string;
   description: string;
   source_type: string;
   status: string;
   approved: boolean;
 }
+
+/** Delay between polls of a plan with a run in flight. */
+const PLAN_POLL_MS = 3000;
 
 const EXTRACTION_MODES = [
   { value: 'nlp', label: 'NLP' },
@@ -72,6 +80,9 @@ function CollectionsWorkflow() {
   const [collectionsLoading, setCollectionsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Failures of the per-plan actions (run again, delete), shown by the plan
+  // list rather than inside the step-3 panel, which is usually closed.
+  const [planActionError, setPlanActionError] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadContent, setUploadContent] = useState('');
   const [uploadReliability, setUploadReliability] = useState('C3');
@@ -195,36 +206,75 @@ function CollectionsWorkflow() {
     return () => clearInterval(interval);
   }, [collections]);
 
-  // Poll plans that might have a run in flight.
+  // Poll only plans with a run in flight, per their execution status.
   //
-  // The set was `status === 'ACTIVE'`, which both over- and under-covers: a plan
-  // an analyst activated by hand is polled forever although nothing is running,
-  // while a DRAFT plan that is actually collecting is never polled at all.
-  //
-  // Watched ids are memoized to a stable string so that a poll updating
-  // runStates does not itself tear down and restart the interval.
-  const watchedIds = useMemo(() => plans
-    .filter(p => p.status === 'ACTIVE' || runStates[String(p.id)]?.status === 'running')
-    .map(p => String(p.id))
+  // ACTIVE is a lifecycle flag, not liveness: every plan that was ever executed
+  // is ACTIVE, so polling on it hit every executed plan every 3 s forever
+  // (~820 requests a minute with 20 plans), with overlapping unawaited ticks.
+  // Now: which plans are running is asked once per plan when the list loads,
+  // then only running plans are polled, each tick is awaited before the next
+  // is scheduled, and a plan whose run just ended gets one confirming poll so
+  // its final events and counts land.
+  const runStatesRef = useRef(runStates);
+  useEffect(() => { runStatesRef.current = runStates; }, [runStates]);
+  const [confirmIds, setConfirmIds] = useState<string[]>([]);
+
+  const loadRunState = useCallback(async (planId: string) => {
+    try {
+      const res = await collectionPlansApi.executionStatus(planId);
+      const wasRunning = runStatesRef.current[planId]?.status === 'running';
+      if (wasRunning && res.data?.status !== 'running') {
+        setConfirmIds(prev => (prev.includes(planId) ? prev : [...prev, planId]));
+      }
+      setRunStates(prev => ({ ...prev, [planId]: res.data }));
+    } catch { /* a failed poll is not evidence the run stopped — leave the last
+                 known state rather than reporting idle */ }
+  }, []);
+
+  // One status check per plan when it first appears in the list, so a run
+  // started elsewhere (another tab, the scheduler) is picked up.
+  const planIdsKey = useMemo(() => plans.map(p => String(p.id)).sort().join(','), [plans]);
+  useEffect(() => {
+    if (!planIdsKey) return;
+    for (const id of planIdsKey.split(',')) {
+      if (!(id in runStatesRef.current)) loadRunState(id);
+    }
+  }, [planIdsKey, loadRunState]);
+
+  const runningKey = useMemo(() => Object.entries(runStates)
+    .filter(([, s]) => s?.status === 'running')
+    .map(([id]) => id)
     .sort()
-    .join(','), [plans, runStates]);
+    .join(','), [runStates]);
+  const confirmKey = useMemo(() => [...confirmIds].sort().join(','), [confirmIds]);
 
   useEffect(() => {
-    if (!watchedIds) return;
-    const ids = watchedIds.split(',');
-    const interval = setInterval(async () => {
-      loadPlans();
-      for (const id of ids) {
-        loadRunState(id);
-        try {
-          const res = await collectionPlansApi.activity(id);
-          setActivityLogs(prev => ({ ...prev, [id]: res.data }));
-        } catch { /* ignore */ }
-      }
-    }, 3000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchedIds, loadPlans]);
+    const confirming = confirmKey ? confirmKey.split(',') : [];
+    const ids = Array.from(new Set([...(runningKey ? runningKey.split(',') : []), ...confirming]));
+    if (ids.length === 0) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      await Promise.all([
+        loadPlans(),
+        ...ids.map(async id => {
+          await loadRunState(id);
+          try {
+            const res = await collectionPlansApi.activity(id);
+            if (!cancelled) setActivityLogs(prev => ({ ...prev, [id]: res.data }));
+          } catch { /* keep the last trail we had */ }
+        }),
+      ]);
+      if (cancelled) return;
+      if (confirming.length > 0) setConfirmIds(prev => prev.filter(id => !confirming.includes(id)));
+      timer = setTimeout(tick, PLAN_POLL_MS);
+    };
+    timer = setTimeout(tick, PLAN_POLL_MS);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [runningKey, confirmKey, loadPlans, loadRunState]);
 
   // Fetch activity when expanding a plan
   async function loadActivity(planId: string) {
@@ -232,14 +282,6 @@ function CollectionsWorkflow() {
       const res = await collectionPlansApi.activity(planId);
       setActivityLogs(prev => ({ ...prev, [planId]: res.data }));
     } catch { /* ignore */ }
-  }
-
-  async function loadRunState(planId: string) {
-    try {
-      const res = await collectionPlansApi.executionStatus(planId);
-      setRunStates(prev => ({ ...prev, [planId]: res.data }));
-    } catch { /* a failed poll is not evidence the run stopped — leave the last
-                 known state rather than reporting idle */ }
   }
 
   function toggleExpanded(id: string) {
@@ -291,10 +333,11 @@ PIR: ${pirText}` }],
       const answer = res.data?.response || res.data?.answer || res.data?.content || JSON.stringify(res.data);
       setRefineAnalysis(answer);
 
-      // Try to extract refined PIR from the response
-      const refinedMatch = answer.match(/(?:refined|revised|improved|proposed)\s*(?:PIR|version)[:\s]*[""]?([^""]+)[""]?/i);
-      if (refinedMatch) {
-        setRefinedPir(refinedMatch[1].trim());
+      // The refined PIR is whatever follows a "Refined PIR"-style label, in
+      // whatever markdown the model used. No label: keep the analyst's text.
+      const refined = extractRefinedPir(answer);
+      if (refined) {
+        setRefinedPir(refined);
       }
 
       // Auto-open step 2
@@ -332,6 +375,7 @@ PIR: ${pirText}` }],
       // Convert plan sources to plan items for approval UI
       const items: PlanItem[] = (plan.sources || []).map((src, i) => ({
         id: i + 1,
+        source_id: String(src.id),
         description: src.name,
         source_type: src.source_type,
         status: 'pending',
@@ -379,17 +423,30 @@ PIR: ${pirText}` }],
     setError(null);
     try {
       if (activePlan) {
-        // Remove rejected sources before executing
+        // Remove rejected sources before executing, by id. If any removal
+        // fails, stop: executing would collect from a source the analyst
+        // rejected.
         const rejectedItems = planItems.filter(item => !item.approved);
+        const failed: string[] = [];
         for (const item of rejectedItems) {
-          const matchingSource = (activePlan.sources || []).find(s => s.name === item.description);
-          if (matchingSource) {
-            try {
-              await collectionPlansApi.deleteSource(String(activePlan.id), String(matchingSource.id));
-            } catch { /* source may not exist */ }
+          if (!item.source_id) {
+            failed.push(`${item.description} (no source id)`);
+            continue;
+          }
+          try {
+            await collectionPlansApi.deleteSource(String(activePlan.id), item.source_id);
+          } catch (e) {
+            // Already gone is what we wanted; anything else is a failure.
+            if (!isHttpStatus(e, 404)) failed.push(`${item.description} (${getErrorMessage(e).replace(/\.$/, '')})`);
           }
         }
+        if (failed.length > 0) {
+          setError(`Did not execute: could not remove rejected source${failed.length === 1 ? '' : 's'} ${failed.join('; ')}. Try again.`);
+          return;
+        }
         await collectionPlansApi.execute(String(activePlan.id), maxResultsPerSource);
+        // Start watching this run now rather than on the next list load.
+        loadRunState(String(activePlan.id));
       }
       resetWorkflow();
       loadCollections();
@@ -934,6 +991,9 @@ PIR: ${pirText}` }],
               Collection Plans
               <span className="text-gray-500 font-mono ml-2">({plans.length})</span>
             </h2>
+            {planActionError && (
+              <p role="alert" className="text-red-400 text-xs mb-3">{planActionError}</p>
+            )}
             <div className="space-y-2">
               {plans.map(plan => {
                 const statusColor = plan.status === 'ACTIVE' ? 'bg-emerald-500/20 text-emerald-400'
@@ -1075,10 +1135,11 @@ PIR: ${pirText}` }],
                             <button
                               disabled={isRunning}
                               onClick={async () => {
+                                setPlanActionError(null);
                                 try {
                                   await collectionPlansApi.execute(String(plan.id));
                                 } catch (e) {
-                                  setError(getErrorMessage(e));
+                                  setPlanActionError(`Could not start the run: ${getErrorMessage(e)}`);
                                 }
                                 loadPlans(); loadActivity(String(plan.id)); loadRunState(String(plan.id));
                               }}
@@ -1089,7 +1150,16 @@ PIR: ${pirText}` }],
                                 : 'Run Again'}
                             </button>
                             <button
-                              onClick={async () => { await collectionPlansApi.delete(String(plan.id)); loadPlans(); }}
+                              onClick={async () => {
+                                if (!confirm(`Delete "${planTitle(plan.pir || plan.name)}"? Its sources and collection history go with it. This can't be undone.`)) return;
+                                setPlanActionError(null);
+                                try {
+                                  await collectionPlansApi.delete(String(plan.id));
+                                } catch (e) {
+                                  setPlanActionError(`Could not delete the plan: ${getErrorMessage(e)}`);
+                                }
+                                loadPlans();
+                              }}
                               className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-2 rounded text-[10px] font-bold uppercase tracking-wider hover:bg-red-900/20 transition-all"
                             >
                               Delete

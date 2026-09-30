@@ -80,9 +80,86 @@ class TestEdgesDescribeReturnedNodes:
 class TestEdges:
     def test_an_empty_project_is_empty_not_an_error(self, graph_store):
         g = graph_store.get_full_graph("test-graph-selection-empty", limit=50)
-        assert g == {"nodes": [], "edges": [], "node_count": 0, "edge_count": 0}
+        assert g == {"nodes": [], "edges": [], "node_count": 0, "edge_count": 0, "truncated": False}
 
     def test_another_projects_nodes_never_appear(self, graph_store, wired):
         graph_store.create_entity(Organization(name="Elsewhere", project_id="test-graph-other"))
         g = graph_store.get_full_graph(PROJECT, limit=100)
         assert "Elsewhere" not in {n["name"] for n in g["nodes"]}
+
+
+# ── Contract 3: the same request returns the same slice, and says when it is one ──
+#
+# Ties were broken by scan order, so two builds of one project could keep
+# different nodes and edges, and analytics that read the 10,000-node build had no
+# way to know it was a sample. Review A-4 / E-5.
+
+TIE_PROJECT = "test-graph-selection-ties"
+
+
+@pytest.fixture
+def equal_degree(graph_store):
+    """Five isolated nodes, created in descending id order, so scan order is
+    the reverse of id order."""
+    ids = [f"{TIE_PROJECT}-{i}" for i in range(5)]
+    for i in reversed(ids):
+        graph_store.create_entity(Person(id=i, name=f"Tie {i[-1]}", project_id=TIE_PROJECT))
+    return ids
+
+
+class TestDeterministicSelection:
+    def test_equal_degree_is_broken_by_id(self, graph_store, equal_degree):
+        g = graph_store.get_full_graph(TIE_PROJECT, limit=3)
+        assert [n["id"] for n in g["nodes"]] == equal_degree[:3]
+
+    def test_the_same_request_returns_the_same_slice(self, graph_store, equal_degree):
+        first = graph_store.get_full_graph(TIE_PROJECT, limit=2)
+        second = graph_store.get_full_graph(TIE_PROJECT, limit=2)
+        assert [n["id"] for n in first["nodes"]] == [n["id"] for n in second["nodes"]]
+
+    def test_edges_are_kept_strongest_first(self, graph_store):
+        """Four nodes, six edges, a budget of four: the four most confident
+        edges survive, not whichever the scan met first."""
+        people = [Person(id=f"{TIE_PROJECT}-k{i}", name=f"K{i}", project_id=TIE_PROJECT) for i in range(4)]
+        for p in people:
+            graph_store.create_entity(p)
+        confidence = 0.1
+        for i, a in enumerate(people):
+            for b in people[i + 1:]:
+                graph_store.create_relationship(Relationship(
+                    source_id=a.id, target_id=b.id, rel_type="ASSOCIATED_WITH", confidence=confidence,
+                ))
+                confidence = round(confidence + 0.1, 1)
+        g = graph_store.get_full_graph(TIE_PROJECT, limit=4)
+        assert sorted(e["confidence"] for e in g["edges"]) == [0.3, 0.4, 0.5, 0.6]
+        assert g["truncated"] is True
+
+
+class TestTruncatedFlag:
+    def test_a_budget_smaller_than_the_project_says_truncated(self, graph_store, equal_degree):
+        assert graph_store.get_full_graph(TIE_PROJECT, limit=3)["truncated"] is True
+
+    @pytest.mark.parametrize("limit", [5, 50])
+    def test_a_budget_that_fits_the_project_does_not(self, graph_store, equal_degree, limit):
+        g = graph_store.get_full_graph(TIE_PROJECT, limit=limit)
+        assert g["truncated"] is False
+        assert g["node_count"] == 5
+
+
+class TestAnalyticsKnowTheyAreSampled:
+    def test_the_networkx_graph_carries_the_flag(self):
+        from intel_platform.services.enrichment import build_networkx_from_data
+        g = build_networkx_from_data({"nodes": [{"id": "a"}], "edges": [], "truncated": True})
+        assert g.graph["truncated"] is True
+
+    def test_statistics_report_it(self, graph_store, equal_degree, monkeypatch):
+        from intel_platform.services import enrichment
+        from intel_platform.services.graph_cache import graph_cache
+        graph_cache.invalidate(TIE_PROJECT)
+        real = graph_store.get_full_graph
+        monkeypatch.setattr(graph_store, "get_full_graph", lambda project_id, limit: real(project_id, limit=3))
+        try:
+            stats = enrichment.compute_all_statistics(graph_store, TIE_PROJECT)
+        finally:
+            graph_cache.invalidate(TIE_PROJECT)
+        assert stats["truncated"] is True

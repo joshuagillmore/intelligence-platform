@@ -22,8 +22,11 @@ from intel_platform.enrichment.base import (
     EnrichmentProvider,
     EnrichmentResult,
     RelatedEntity,
+    fetch,
+    fetch_json,
     register_provider,
 )
+from intel_platform.enrichment.providers.dns import doh_answers
 
 _DOH_URL = "https://cloudflare-dns.com/dns-query"
 _GRAVATAR_URL = "https://www.gravatar.com/avatar/{hash}"
@@ -80,33 +83,22 @@ class EmailProvider(EnrichmentProvider):
         )
 
     async def _mx_records(self, domain: str) -> list[str]:
-        try:
-            resp = await self._client.get(
-                _DOH_URL,
-                params={"name": domain, "type": "MX"},
-                headers={"Accept": "application/dns-json"},
-                timeout=10,
-            )
-            data = resp.json()
-        except Exception:
-            return []
-        if not isinstance(data, dict):
-            return []
-        answers = data.get("Answer")
-        if not isinstance(answers, list):
-            return []
-        return [
-            str(a.get("data", "")).strip('"')
-            for a in answers
-            if isinstance(a, dict) and a.get("data")
-        ]
+        # A resolver outage raises (ProviderError) rather than reading as
+        # "has_mx: false" — the domain's mail capability is unknown, not absent.
+        data = await fetch_json(
+            self._client, self.name, _DOH_URL,
+            params={"name": domain, "type": "MX"},
+            headers={"Accept": "application/dns-json"},
+            timeout=10,
+        )
+        return doh_answers(data, self.name)
 
     async def _has_gravatar(self, email: str) -> bool:
         digest = hashlib.md5(email.strip().lower().encode(), usedforsecurity=False).hexdigest()
-        try:
-            resp = await self._client.get(
-                _GRAVATAR_URL.format(hash=digest), params={"d": "404"}, timeout=10
-            )
-            return getattr(resp, "status_code", None) == 200
-        except Exception:
-            return False
+        # 200 = avatar exists, 404 = none (we ask for d=404). Anything else is
+        # not an answer, and raises.
+        resp = await fetch(
+            self._client, self.name, _GRAVATAR_URL.format(hash=digest),
+            allow=(404,), params={"d": "404"}, timeout=10,
+        )
+        return resp.status_code == 200

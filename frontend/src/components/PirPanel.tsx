@@ -223,6 +223,8 @@ export default function PirPanel({ projectId }: { projectId: string }) {
   }
 
   async function remove(pir: Pir) {
+    const label = pir.title || pir.text.slice(0, 80) || 'this requirement';
+    if (!confirm(`Delete requirement "${label}"? This can't be undone.`)) return;
     setError(null);
     try {
       await pirsApi.delete(pir.id);

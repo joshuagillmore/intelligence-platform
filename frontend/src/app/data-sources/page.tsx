@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { useNotifications } from '@/components/NotificationProvider';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
@@ -13,6 +13,7 @@ import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
 import { topicsApi, queryApi } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
+import { readRagAnswer } from '@/lib/assistantGrounding';
 import Markdown from '@/components/Markdown';
 
 /* -- Types ------------------------------------------------------------ */
@@ -99,6 +100,13 @@ const entityTypeColor = (type: string) => {
   return 'bg-gray-900/40 text-gray-300 border-gray-700/50';
 };
 
+/** The tree cut off below `depth` levels (for "Collapse all"). */
+function collapseTree(node: TreeNode, depth: number): TreeNode {
+  return depth <= 0
+    ? { ...node, children: [] }
+    : { ...node, children: (node.children || []).map((c) => collapseTree(c, depth - 1)) };
+}
+
 function getStoredLayout(): LayoutMode {
   if (typeof window === 'undefined') return 'radial';
   return (localStorage.getItem('mindmap-layout') as LayoutMode) || 'radial';
@@ -114,6 +122,7 @@ export default function DataSourcesPage() {
   const [topicTree, setTopicTree] = useState<TreeNode>({ name: 'Knowledge Base', id: 'root', children: [] });
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [editsUnmatched, setEditsUnmatched] = useState(0);
   const [crossReferences, setCrossReferences] = useState<CrossReference[]>([]);
 
   // Layout
@@ -125,6 +134,8 @@ export default function DataSourcesPage() {
   // Selected node
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeName, setSelectedNodeName] = useState<string | null>(null);
+  // The selected topic, readable from async work that outlives a render.
+  const selectedRef = useRef<string | null>(null);
 
   // Entity context
   const [entityContext, setEntityContext] = useState<EntityContext | null>(null);
@@ -167,6 +178,11 @@ export default function DataSourcesPage() {
       const res = await topicsApi.tree(activeProject.id, clusteringMethod, granularity);
       const data = res.data;
 
+      // Saved topic edits whose node no longer exists after the tree was
+      // rebuilt; the backend counts them rather than dropping them silently.
+      setEditsUnmatched(
+        data && typeof data === 'object' && typeof data.edits_unmatched === 'number' ? data.edits_unmatched : 0,
+      );
       if (data && typeof data === 'object' && !Array.isArray(data) && data.children) {
         setTopicTree(data);
         setCrossReferences(data.cross_references || []);
@@ -215,53 +231,29 @@ export default function DataSourcesPage() {
       return;
     }
 
+    // The analyst can pick another topic while this streams; nothing from this
+    // run may land in that topic's panel. The finished summary is still cached
+    // under its own topic.
+    const isCurrent = () => selectedRef.current === nodeId;
     setSummaryLoading(true);
     setSummary(null);
     try {
-      const url = topicsApi.summarizeUrl(nodeId);
-      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ project_id: activeProject.id, level: 'topic' }),
-      });
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('No response body');
-
-      const decoder = new TextDecoder();
-      let fullText = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        // Parse SSE events
-        for (const line of chunk.split('\n')) {
-          if (line.startsWith('data: ')) {
-            const payload = line.slice(6);
-            if (payload === '[DONE]') break;
-            fullText += payload;
-            setSummary(fullText);
-          }
-        }
-      }
+      const fullText = await topicsApi.streamSummary(
+        nodeId,
+        { project_id: activeProject.id, level: 'topic' },
+        (text) => { if (isCurrent()) setSummary(text); },
+      );
 
       if (fullText) {
         setSummaryCache((prev: Record<string, string>) => ({ ...prev, [nodeId]: fullText }));
-        setConversation([{ role: 'assistant', content: fullText }]);
-      } else {
+        if (isCurrent()) setConversation([{ role: 'assistant', content: fullText }]);
+      } else if (isCurrent()) {
         setSummary('No summary content returned.');
       }
-    } catch {
-      setSummary('Unable to generate summary at this time.');
+    } catch (e) {
+      if (isCurrent()) setSummary(`Unable to generate summary: ${getErrorMessage(e)}`);
     } finally {
-      setSummaryLoading(false);
+      if (isCurrent()) setSummaryLoading(false);
     }
   }, [activeProject, summaryCache]);
 
@@ -270,6 +262,7 @@ export default function DataSourcesPage() {
   const handleTopicClick = useCallback(async (node: TreeNode) => {
     if (!activeProject) return;
 
+    selectedRef.current = node.id;
     setSelectedNodeId(node.id);
     setSelectedNodeName(node.name);
     setEntityContext(null);
@@ -277,6 +270,10 @@ export default function DataSourcesPage() {
     setKeywords([]);
     setExpandedDocs(new Set());
     setConversation([]);
+    // Another topic's summary or question may still be in flight; it no longer
+    // owns the panel's loading state.
+    setSummaryLoading(false);
+    setQueryLoading(false);
 
     // Check summary cache
     if (summaryCache[node.id]) {
@@ -295,6 +292,7 @@ export default function DataSourcesPage() {
     setContextLoading(true);
     try {
       const res = await topicsApi.context(node.id, activeProject.id);
+      if (selectedRef.current !== node.id) return; // another topic is showing now
       const data = res.data;
       if (data.documents && !data.source_documents) {
         data.source_documents = data.documents;
@@ -304,6 +302,7 @@ export default function DataSourcesPage() {
 
       // Summary is now generated on-demand via button, not auto-generated
     } catch (e) {
+      if (selectedRef.current !== node.id) return;
       console.error('Failed to load entity context', e);
       setEntityContext({
         entity: { id: node.id, name: node.name, entity_type: node.entity_type || 'Unknown' },
@@ -311,7 +310,7 @@ export default function DataSourcesPage() {
         source_documents: [],
       });
     } finally {
-      setContextLoading(false);
+      if (selectedRef.current === node.id) setContextLoading(false);
     }
   }, [activeProject, summaryCache]);
 
@@ -319,6 +318,7 @@ export default function DataSourcesPage() {
 
   async function askAboutTopic() {
     if (!queryInput.trim() || !activeProject || !selectedNodeName) return;
+    const forNode = selectedRef.current;
     setQueryLoading(true);
     const userMessage = queryInput;
     setQueryInput('');
@@ -329,12 +329,18 @@ export default function DataSourcesPage() {
     try {
       const scopedQuery = `Regarding "${selectedNodeName}": ${userMessage}`;
       const res = await queryApi.rag(activeProject.id, scopedQuery);
-      const answer = res.data.answer || res.data.response || JSON.stringify(res.data);
-      setConversation((prev: ConversationMessage[]) => [...prev, { role: 'assistant', content: answer }]);
+      // The answer belongs to the topic it was asked about; drop it if the
+      // analyst has moved to another one.
+      if (selectedRef.current !== forNode) return;
+      // No model ran → say so; never show the raw response or retrieved
+      // context as if it were the answer.
+      const { content } = readRagAnswer(res.data);
+      setConversation((prev: ConversationMessage[]) => [...prev, { role: 'assistant', content }]);
     } catch {
+      if (selectedRef.current !== forNode) return;
       setConversation((prev: ConversationMessage[]) => [...prev, { role: 'assistant', content: 'Failed to process query.' }]);
     } finally {
-      setQueryLoading(false);
+      if (selectedRef.current === forNode) setQueryLoading(false);
     }
   }
 
@@ -361,10 +367,13 @@ export default function DataSourcesPage() {
   }, []);
 
   const [treeCollapsed, setTreeCollapsed] = useState(false);
-  const collapseTree = (node: TreeNode, depth: number): TreeNode =>
-    depth <= 0
-      ? { ...node, children: [] }
-      : { ...node, children: (node.children || []).map((c) => collapseTree(c, depth - 1)) };
+  // Memoized: building the collapsed tree inline produced a new object on every
+  // render, and the mind map rebuilds (losing zoom and expansion) whenever its
+  // data changes identity, so with "Collapse all" on, every click rebuilt it.
+  const mindMapData = useMemo(
+    () => (treeCollapsed ? collapseTree(topicTree, 1) : topicTree),
+    [treeCollapsed, topicTree],
+  );
 
   const handleExpandAll = useCallback(() => {
     setTreeCollapsed(false);
@@ -494,6 +503,14 @@ export default function DataSourcesPage() {
             />
           </div>
 
+          {editsUnmatched > 0 && !loading && !loadError && (
+            <p className="px-4 pb-1 text-[11px] text-yellow-300/80">
+              {editsUnmatched} saved topic edit{editsUnmatched === 1 ? '' : 's'} could not be applied: the
+              topic{editsUnmatched === 1 ? ' it targets no longer exists' : 's they target no longer exist'} after
+              the tree was rebuilt.
+            </p>
+          )}
+
           {/* Map */}
           <div className="flex-1 px-4 pb-2 min-h-0">
             {loading ? (
@@ -509,7 +526,7 @@ export default function DataSourcesPage() {
               </div>
             ) : topicTree.children && topicTree.children.length > 0 ? (
               <TopicMindMap
-                data={treeCollapsed ? collapseTree(topicTree, 1) : topicTree}
+                data={mindMapData}
                 onNodeClick={handleTopicClick}
                 selectedNodeId={selectedNodeId}
                 layout={layout}

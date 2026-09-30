@@ -186,3 +186,77 @@ class TestAcquireUrlsConcurrent:
 
         assert len(records) == 2
         assert connector.max_active == 1
+
+
+class TestAReturnedFailureIsAFailure:
+    """WebScrapeConnector returns success=False rather than raising. The fan-out
+    only looked for exceptions, so a page the SSRF guard refused was logged as
+    "url_fetched · 0 rec" and its reason (redirect_unsafe) never reached the
+    trail."""
+
+    async def test_unsuccessful_result_is_logged_as_failed_with_its_reason(self):
+        from intel_platform.connectors.base import AcquireResult
+
+        class Refusing:
+            async def acquire(self, config):
+                return AcquireResult(success=False, error=f"Rejected {config['url']}: redirect_unsafe")
+
+        db = FakeDB()
+        plan, source = _make_plan_source()
+        records, errors = await _acquire_urls_concurrent(
+            Refusing(), {}, ["https://a.example.com/"], db=db, plan=plan, source=source, concurrency=2,
+        )
+
+        assert records == []
+        assert len(errors) == 1 and "redirect_unsafe" in errors[0]
+        assert _events(db) == ["url_fetching", "url_failed"]
+
+
+class TestFanOutWithTheRealConnectors:
+    """The fan-out hands each URL to the connector as `{**config, "url": u}`.
+
+    `DatabaseConnector.acquire` ignored that and fetched the whole `urls` list on
+    every call: 5 URLs became 25 fetches and 5 copies of each page, each copy
+    then counted as independent corroboration of whatever it said.
+    """
+
+    async def test_database_source_fetches_each_url_once(self, monkeypatch):
+        from intel_platform.connectors import database as database_mod
+
+        fetched: list[str] = []
+
+        class FakeScraper:
+            async def scrape_url(self, url, timeout=30):
+                fetched.append(url)
+                return {"url": url, "title": url, "content": f"registry page {url}", "content_length": 20}
+
+        monkeypatch.setattr(database_mod, "WebScraper", FakeScraper)
+        urls = [f"https://registry{i}.example.org/record" for i in range(5)]
+        db = FakeDB()
+        plan, source = _make_plan_source()
+
+        records, errors = await _acquire_urls_concurrent(
+            database_mod.DatabaseConnector(), {"urls": urls}, urls,
+            db=db, plan=plan, source=source, concurrency=4,
+        )
+
+        assert sorted(fetched) == sorted(urls), "each URL is fetched exactly once"
+        assert len(records) == 5
+        assert errors == []
+
+    async def test_database_connector_honours_a_single_url(self, monkeypatch):
+        from intel_platform.connectors import database as database_mod
+
+        fetched: list[str] = []
+
+        class FakeScraper:
+            async def scrape_url(self, url, timeout=30):
+                fetched.append(url)
+                return {"url": url, "title": "", "content": "text", "content_length": 4}
+
+        monkeypatch.setattr(database_mod, "WebScraper", FakeScraper)
+        result = await database_mod.DatabaseConnector().acquire(
+            {"url": "https://one.example.org/", "urls": ["https://one.example.org/", "https://two.example.org/"]}
+        )
+        assert fetched == ["https://one.example.org/"]
+        assert result.record_count == 1

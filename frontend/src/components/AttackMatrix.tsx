@@ -1,5 +1,5 @@
 'use client';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   attackApi,
@@ -9,7 +9,11 @@ import {
   AttackReport,
   AttackTechniqueCell,
   AttackTechniqueDetail,
+  isAdminSession,
+  isHttpStatus,
 } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errorMessages';
+import { describeMapResult } from '@/lib/attackMapping';
 import { TYPE_BADGE_CLASS } from '@/lib/entityStyles';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import Markdown from '@/components/Markdown';
@@ -127,6 +131,12 @@ export default function AttackMatrix({
   const [downloading, setDownloading] = useState(false);
   const [showOnlyCovered, setShowOnlyCovered] = useState(false);
   const [expandedTechniques, setExpandedTechniques] = useState<Record<string, boolean>>({});
+  // Ingest, re-sync and embed are admin routes; analysts are not offered them.
+  // Read after mount: localStorage is not available during server render.
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    setIsAdmin(isAdminSession());
+  }, []);
 
   // Technique detail drawer
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -137,6 +147,16 @@ export default function AttackMatrix({
   const [d3fend, setD3fend] = useState<AttackD3fendCountermeasure[] | null>(null);
   const [d3fendLoading, setD3fendLoading] = useState(false);
   const [d3fendError, setD3fendError] = useState(false);
+  // The lookup answered but D3FEND itself could not be read (outage or an
+  // upstream shape change): the empty list means "unknown", not "none".
+  const [d3fendDegraded, setD3fendDegraded] = useState(false);
+  // Re-check earlier AI mappings on the next map run (removes ones the model
+  // no longer confirms).
+  const [remapExisting, setRemapExisting] = useState(false);
+  // The technique the drawer is showing now. Detail and D3FEND responses for
+  // any other technique (a slow response overtaken by a newer click) are
+  // dropped instead of landing in this drawer.
+  const drawerFor = useRef<string | null>(null);
 
   // ATT&CK report modal
   const [reportOpen, setReportOpen] = useState(false);
@@ -165,11 +185,18 @@ export default function AttackMatrix({
 
   async function handleIngest() {
     setIngesting(true);
+    setMapNote(null);
     try {
       await attackApi.ingest();
       await loadMatrix();
-    } catch {
-      setError(true);
+    } catch (e) {
+      // Report the failed action; the matrix itself loaded fine and must stay.
+      setMapNote({
+        text: isHttpStatus(e, 403)
+          ? 'Admin only: ask an administrator to load or re-sync the ATT&CK dataset.'
+          : `ATT&CK ingest failed: ${getErrorMessage(e)}`,
+        tone: 'warn',
+      });
     } finally {
       setIngesting(false);
     }
@@ -197,28 +224,21 @@ export default function AttackMatrix({
     setMapping(true);
     setMapNote(null);
     try {
-      const res = await attackApi.map(projectId);
-      const { mapped, skipped } = res.data;
-      if (mapped > 0) {
-        setNeedsEmbed(false);
-        setMapNote({
-          text: `AI mapped ${mapped} TTP${mapped === 1 ? '' : 's'} to ATT&CK${skipped ? ` · ${skipped} skipped` : ''}.`,
-          tone: 'ok',
-        });
-        await loadMatrix();
-      } else if (skipped > 0) {
-        // Nothing mapped but TTPs were considered — most likely techniques
-        // aren't embedded yet. Point the analyst at the one-time Embed step.
-        setNeedsEmbed(true);
-        setMapNote({
-          text: `No TTPs were mapped. If you haven't embedded techniques yet, run "Embed techniques" first, then map again.`,
-          tone: 'warn',
-        });
-      } else {
-        setMapNote({ text: 'No unmapped TTPs to map — everything with a match is already resolved.', tone: 'ok' });
-      }
-    } catch {
-      setMapNote({ text: 'AI mapping failed. Check the backend LLM/embedding provider and try again.', tone: 'warn' });
+      const res = await attackApi.map(projectId, remapExisting);
+      // The backend attributes every skip to a reason; the note says which,
+      // and only a missing technique catalogue points at the Embed step.
+      const note = describeMapResult(res.data, { isAdmin });
+      setNeedsEmbed(note.needsEmbed);
+      setMapNote({ text: note.text, tone: note.tone });
+      if (res.data.mapped > 0 || (res.data.stale_removed ?? 0) > 0) await loadMatrix();
+    } catch (e) {
+      // 503: no model could run. That is a failure, not "0 mapped".
+      setMapNote({
+        text: isHttpStatus(e, 503)
+          ? 'AI mapping could not run: no LLM provider is available. Configure or start one, then map again.'
+          : `AI mapping failed: ${getErrorMessage(e)}`,
+        tone: 'warn',
+      });
     } finally {
       setMapping(false);
     }
@@ -231,13 +251,27 @@ export default function AttackMatrix({
     setMapNote(null);
     try {
       const res = await attackApi.embed();
-      setNeedsEmbed(false);
+      const { embedded, reason, detail } = res.data;
+      if (embedded > 0) {
+        setNeedsEmbed(false);
+        setMapNote({
+          text: `Embedded ${embedded} techniques. You can now map TTPs with AI.`,
+          tone: 'ok',
+        });
+      } else {
+        // A zero is a failure with a reason, not "done": nothing was embedded.
+        setMapNote({
+          text: `No techniques were embedded. ${detail || reason || 'Embedding produced no rows.'}`,
+          tone: 'warn',
+        });
+      }
+    } catch (e) {
       setMapNote({
-        text: `Embedded ${res.data.embedded} techniques. You can now map TTPs with AI.`,
-        tone: 'ok',
+        text: isHttpStatus(e, 403)
+          ? 'Admin only: ask an administrator to embed the ATT&CK techniques.'
+          : 'Embedding failed. Check the backend embedding provider and try again.',
+        tone: 'warn',
       });
-    } catch {
-      setMapNote({ text: 'Embedding failed. Check the backend embedding provider and try again.', tone: 'warn' });
     } finally {
       setEmbedding(false);
     }
@@ -309,27 +343,33 @@ export default function AttackMatrix({
   }
 
   const openTechnique = useCallback(async (id: string) => {
+    drawerFor.current = id;
     setSelectedId(id);
     setDetail(null);
     setDetailLoading(true);
     // Reset the lazy D3FEND state for the new technique.
     setD3fend(null);
+    setD3fendDegraded(false);
     setD3fendError(false);
     setD3fendLoading(false);
     try {
       const res = await attackApi.technique(id, projectId);
+      if (drawerFor.current !== id) return; // the analyst opened another technique
       setDetail(res.data);
     } catch {
+      if (drawerFor.current !== id) return;
       setDetail(null);
     } finally {
-      setDetailLoading(false);
+      if (drawerFor.current === id) setDetailLoading(false);
     }
   }, [projectId]);
 
   const closeDrawer = useCallback(() => {
+    drawerFor.current = null;
     setSelectedId(null);
     setDetail(null);
     setD3fend(null);
+    setD3fendDegraded(false);
     setD3fendError(false);
     setD3fendLoading(false);
   }, []);
@@ -338,15 +378,19 @@ export default function AttackMatrix({
   // lookup, so it can be slow or come back empty on an outage).
   const loadD3fend = useCallback(async () => {
     if (!selectedId) return;
+    const forId = selectedId;
     setD3fendLoading(true);
     setD3fendError(false);
     try {
-      const res = await attackApi.d3fend(selectedId);
+      const res = await attackApi.d3fend(forId);
+      if (drawerFor.current !== forId) return;
       setD3fend(res.data.countermeasures || []);
+      setD3fendDegraded(res.data.degraded === true);
     } catch {
+      if (drawerFor.current !== forId) return;
       setD3fendError(true);
     } finally {
-      setD3fendLoading(false);
+      if (drawerFor.current === forId) setD3fendLoading(false);
     }
   }, [selectedId]);
 
@@ -449,16 +493,25 @@ export default function AttackMatrix({
           the full tactics-and-techniques matrix. This downloads the dataset server-side and may
           take up to a minute.
         </p>
-        <button
-          onClick={handleIngest}
-          disabled={ingesting}
-          className="mt-5 flex items-center gap-2 px-4 py-2.5 text-sm rounded-md font-medium transition-colors disabled:opacity-60"
-          style={{ backgroundColor: ACCENT, color: '#0e1321' }}
-          aria-label="Ingest MITRE ATT&CK data"
-        >
-          {ingesting && <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>}
-          {ingesting ? 'Ingesting ATT&CK data…' : 'Ingest ATT&CK data'}
-        </button>
+        {isAdmin ? (
+          <button
+            onClick={handleIngest}
+            disabled={ingesting}
+            className="mt-5 flex items-center gap-2 px-4 py-2.5 text-sm rounded-md font-medium transition-colors disabled:opacity-60"
+            style={{ backgroundColor: ACCENT, color: '#0e1321' }}
+            aria-label="Ingest MITRE ATT&CK data"
+          >
+            {ingesting && <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>}
+            {ingesting ? 'Ingesting ATT&CK data…' : 'Ingest ATT&CK data'}
+          </button>
+        ) : (
+          <p className="text-sm text-gray-400 mt-4">Ask an administrator to load the ATT&CK dataset.</p>
+        )}
+        {mapNote && (
+          <p role="status" className="text-xs mt-3" style={{ color: mapNote.tone === 'warn' ? '#fcd34d' : '#93c5fd' }}>
+            {mapNote.text}
+          </p>
+        )}
       </div>
     );
   }
@@ -517,6 +570,21 @@ export default function AttackMatrix({
             {mapping ? 'Mapping…' : 'Map TTPs → ATT&CK (AI)'}
           </button>
 
+          <label
+            className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md cursor-pointer select-none"
+            style={{ color: '#9ca3af' }}
+            title="Also re-check TTPs the AI mapped before, and remove mappings the model no longer confirms"
+          >
+            <input
+              type="checkbox"
+              checked={remapExisting}
+              onChange={(e) => setRemapExisting(e.target.checked)}
+              disabled={mapping}
+              className="accent-accent-periwinkle"
+            />
+            Re-check earlier AI mappings
+          </label>
+
           <button
             onClick={handleDownloadLayer}
             disabled={downloading}
@@ -544,7 +612,9 @@ export default function AttackMatrix({
           </button>
 
           {/* One-time admin: embed techniques into pgvector so AI mapping has
-              candidates. Highlighted when a map came back empty (likely un-embedded). */}
+              candidates. Highlighted when a map came back empty (likely un-embedded).
+              Embed and re-sync are admin routes, so analysts are not offered them. */}
+          {isAdmin && (<>
           <button
             onClick={handleEmbed}
             disabled={embedding}
@@ -575,6 +645,10 @@ export default function AttackMatrix({
             <span className={`material-symbols-outlined text-[14px] ${ingesting ? 'animate-spin' : ''}`}>sync</span>
             {ingesting ? 'Syncing…' : `Re-sync${matrix?.version ? ` • v${matrix.version}` : ''}`}
           </button>
+          </>)}
+          {!isAdmin && matrix?.version && (
+            <span className="px-1 text-[11px] text-gray-500">ATT&CK v{matrix.version}</span>
+          )}
         </div>
       </div>
 
@@ -865,6 +939,14 @@ export default function AttackMatrix({
                         <p className="text-xs text-gray-500">
                           Couldn&apos;t load D3FEND countermeasures.{' '}
                           <button onClick={loadD3fend} className="underline hover:brightness-125" style={{ color: ACCENT }}>
+                            Retry
+                          </button>
+                        </p>
+                      ) : d3fendDegraded && d3fend.length === 0 ? (
+                        <p className="text-xs text-yellow-300/80">
+                          D3FEND could not be read just now (the lookup failed or answered in an unexpected
+                          shape), so this is not a &ldquo;none&rdquo;. Nothing was cached.{' '}
+                          <button onClick={loadD3fend} className="underline hover:brightness-125">
                             Retry
                           </button>
                         </p>

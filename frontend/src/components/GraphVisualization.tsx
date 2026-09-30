@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import { TYPE_COLOR_HEX as TYPE_COLORS } from '@/lib/entityStyles';
 import { labelledNodeIds } from '@/lib/graphLabels';
@@ -58,6 +58,120 @@ function abbreviateRelType(rel: string): string {
   return words.map(w => w.charAt(0).toUpperCase() + w.slice(1, 4).toLowerCase()).join(' ');
 }
 
+/** The inputs that decide how nodes, edges and labels are painted. */
+interface StyleInputs {
+  selectedNodeId?: string | null;
+  egoHighlightDepth: number;
+  highlightedNodeIds?: Set<string>;
+  highlightedEdgeKeys?: Set<string>;
+}
+
+interface PaintTargets {
+  node: d3.Selection<SVGCircleElement, GraphNode, SVGGElement, unknown>;
+  link: d3.Selection<SVGLineElement, GraphEdge, SVGGElement, unknown>;
+  label: d3.Selection<SVGTextElement, GraphNode, SVGGElement, unknown>;
+  colorFn: (d: GraphNode) => string;
+  adjacency: Record<string, string[]>;
+  labelled: Set<string>;
+}
+
+const NO_IDS: Set<string> = new Set();
+
+function edgeEndpointIds(d: GraphEdge): [string, string] {
+  const sid = typeof d.source === 'string' ? d.source : (d.source as GraphNode).id;
+  const tid = typeof d.target === 'string' ? d.target : (d.target as GraphNode).id;
+  return [sid, tid];
+}
+
+/** The selected node and everything within `depth` hops of it. */
+function egoNeighbourhood(adj: Record<string, string[]>, selectedNodeId: string | null | undefined, depth: number): Set<string> {
+  const egoSet = new Set<string>();
+  if (!selectedNodeId) return egoSet;
+  egoSet.add(selectedNodeId);
+  let frontier = [selectedNodeId];
+  for (let d = 0; d < depth; d++) {
+    const nextFrontier: string[] = [];
+    for (const nid of frontier) {
+      for (const neighbor of (adj[nid] || [])) {
+        if (!egoSet.has(neighbor)) {
+          egoSet.add(neighbor);
+          nextFrontier.push(neighbor);
+        }
+      }
+    }
+    frontier = nextFrontier;
+  }
+  return egoSet;
+}
+
+/**
+ * Paint selection, ego and path-highlight styling onto the rendered graph.
+ *
+ * Runs after every simulation build and whenever the styling inputs change, so
+ * a rebuild never drops the selected node's ring. A path highlight, when there
+ * is one, decides what is dimmed (it is an explicit overlay the analyst clears);
+ * otherwise the selection's ego neighbourhood does. The selected node keeps its
+ * ring and bold label either way.
+ */
+function paintGraph(t: PaintTargets, inputs: StyleInputs) {
+  const { selectedNodeId, egoHighlightDepth } = inputs;
+  const hlNodes = inputs.highlightedNodeIds ?? NO_IDS;
+  const hlEdges = inputs.highlightedEdgeKeys ?? NO_IDS;
+  const hasPath = hlNodes.size > 0;
+  const onPath = (id: string) => hasPath && hlNodes.has(id);
+  const edgeOnPath = (sid: string, tid: string) =>
+    hlEdges.size > 0 && (hlEdges.has(`${sid}-${tid}`) || hlEdges.has(`${tid}-${sid}`));
+
+  const ego = hasPath ? NO_IDS : egoNeighbourhood(t.adjacency, selectedNodeId, egoHighlightDepth);
+  const hasEgo = ego.size > 0;
+  const emphasised = (id: string) => (hasPath ? onPath(id) : ego.has(id));
+  const dimmed = (id: string) => (hasPath || hasEgo) && !emphasised(id);
+  const edgeEmphasised = (sid: string, tid: string) =>
+    hasPath ? edgeOnPath(sid, tid) : hasEgo && ego.has(sid) && ego.has(tid);
+
+  t.node
+    .attr('fill', d => (dimmed(d.id) ? '#374151' : t.colorFn(d)))
+    .attr('stroke', d => {
+      if (d.id === selectedNodeId) return '#fff';
+      if (emphasised(d.id)) return '#fbbf24';
+      if (d.isCommunity) return '#8b5cf6';
+      return 'none';
+    })
+    .attr('stroke-width', d => {
+      if (d.id === selectedNodeId) return 3;
+      if (emphasised(d.id)) return 2;
+      if (d.isCommunity) return 2;
+      return 0;
+    })
+    .attr('opacity', d => (dimmed(d.id) ? (hasPath ? 0.3 : 0.2) : 1));
+
+  t.link
+    .attr('stroke', d => {
+      const [sid, tid] = edgeEndpointIds(d);
+      if (edgeEmphasised(sid, tid)) return '#fbbf24';
+      return hasPath || hasEgo ? '#1e293b' : '#4b5563';
+    })
+    .attr('stroke-width', d => {
+      const [sid, tid] = edgeEndpointIds(d);
+      if (edgeEmphasised(sid, tid)) return hasPath ? 3 : 2.5;
+      return Math.min(3, d.weight || 1);
+    })
+    .attr('stroke-opacity', d => {
+      const [sid, tid] = edgeEndpointIds(d);
+      if (hasPath) return edgeOnPath(sid, tid) ? 0.5 : 0.15;
+      if (hasEgo && !edgeEmphasised(sid, tid)) return 0.08;
+      return 0.6;
+    });
+
+  // A selected node is always named, budget or not — clicking a node to find
+  // out what it is and getting no name back would make the unlabelled
+  // majority a dead end rather than a hover away.
+  t.label
+    .attr('display', d => (d.id === selectedNodeId || t.labelled.has(d.id) ? null : 'none'))
+    .attr('fill', d => (dimmed(d.id) ? (hasPath ? '#4b5563' : '#374151') : '#e5e7eb'))
+    .attr('font-weight', d => (d.id === selectedNodeId ? 'bold' : 'normal'));
+}
+
 export default function GraphVisualization({
   nodes, edges, onNodeClick, onEdgeClick, selectedNodeId,
   highlightedNodeIds, highlightedEdgeKeys,
@@ -85,6 +199,30 @@ export default function GraphVisualization({
   const colorFnRef = useRef<(d: GraphNode) => string>(() => '#78716c');
   const adjacencyRef = useRef<Record<string, string[]>>({});
 
+  // Latest props for the build effect, which re-runs on the data's content
+  // (below) rather than on array identity: the page hands over fresh arrays
+  // whenever any filter input settles, even when the result is unchanged, and
+  // rebuilding on each would restart the layout for nothing.
+  const dataRef = useRef({ nodes, edges });
+  dataRef.current = { nodes, edges };
+  const styleInputsRef = useRef<StyleInputs>({ selectedNodeId, egoHighlightDepth, highlightedNodeIds, highlightedEdgeKeys });
+  styleInputsRef.current = { selectedNodeId, egoHighlightDepth, highlightedNodeIds, highlightedEdgeKeys };
+  const nodesKey = useMemo(() => nodes.map(n => n.id).join(','), [nodes]);
+  const edgesKey = useMemo(() => edges.map(e => `${e.source_id}>${e.target_id}:${e.rel_type}`).join(','), [edges]);
+
+  const paint = useCallback((inputs: StyleInputs) => {
+    const node = nodeSelRef.current;
+    const link = linkSelRef.current;
+    const label = labelSelRef.current;
+    if (!node || !link || !label) return;
+    paintGraph({
+      node, link, label,
+      colorFn: colorFnRef.current,
+      adjacency: adjacencyRef.current,
+      labelled: labelledRef.current,
+    }, inputs);
+  }, []);
+
   const emitPositions = useCallback((simNodes: GraphNode[]) => {
     if (!onPositionsRef.current) return;
     const positions: Record<string, { x: number; y: number }> = {};
@@ -98,7 +236,14 @@ export default function GraphVisualization({
 
   // === Main effect: builds the simulation (does NOT depend on selectedNodeId) ===
   useEffect(() => {
+    const { nodes } = dataRef.current;
     if (!svgRef.current || nodes.length === 0) return;
+
+    // An edge whose endpoint is not among the nodes makes d3's forceLink throw
+    // "node not found" and takes the whole view down. Callers should not send
+    // one; this makes sure a caller that does costs an edge, not the page.
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const edges = dataRef.current.edges.filter(e => nodeIds.has(e.source_id) && nodeIds.has(e.target_id));
 
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
@@ -148,16 +293,6 @@ export default function GraphVisualization({
     }
     colorFnRef.current = color;
 
-    // Convert Set props to lookup-friendly form
-    const hlNodeSet = highlightedNodeIds || new Set<string>();
-    const hlEdgeSet = highlightedEdgeKeys || new Set<string>();
-    const isHighlighted = (id: string) => hlNodeSet.size > 0 && hlNodeSet.has(id);
-    const isEdgeHighlighted = (sid: string, tid: string) => {
-      if (hlEdgeSet.size === 0) return false;
-      return hlEdgeSet.has(`${sid}-${tid}`) || hlEdgeSet.has(`${tid}-${sid}`);
-    };
-    const hasHighlights = hlNodeSet.size > 0;
-
     // Container with zoom
     const g = svg.append('g');
     const zoomBehavior = d3.zoom<SVGSVGElement, unknown>()
@@ -173,8 +308,9 @@ export default function GraphVisualization({
     // --- Apply layout-specific forces or positions ---
     const sim = d3.forceSimulation<GraphNode>(simNodes);
 
-    // Use a stored ref for radial/hierarchical center (not live selectedNodeId)
-    const layoutCenterId = selectedNodeId || (simNodes.length > 0 ? simNodes[0].id : '');
+    // Radial/hierarchical centre on whatever is selected at build time; a later
+    // selection restyles the graph without re-laying it out.
+    const layoutCenterId = styleInputsRef.current.selectedNodeId || (simNodes.length > 0 ? simNodes[0].id : '');
 
     if (layout === 'radial') {
       const hopMap: Record<string, number> = {};
@@ -293,28 +429,11 @@ export default function GraphVisualization({
         }
       });
 
+    // Stroke colour, width and opacity are set by paintGraph below.
     const link = linkG.selectAll<SVGLineElement, GraphEdge>('.edge-visible')
       .data(simEdges)
       .join('line')
       .attr('class', 'edge-visible')
-      .attr('stroke', d => {
-        const sid = typeof d.source === 'string' ? d.source : (d.source as GraphNode).id;
-        const tid = typeof d.target === 'string' ? d.target : (d.target as GraphNode).id;
-        if (isEdgeHighlighted(sid, tid)) return '#fbbf24';
-        return hasHighlights ? '#1e293b' : '#4b5563';
-      })
-      .attr('stroke-width', d => {
-        const sid = typeof d.source === 'string' ? d.source : (d.source as GraphNode).id;
-        const tid = typeof d.target === 'string' ? d.target : (d.target as GraphNode).id;
-        if (isEdgeHighlighted(sid, tid)) return 3;
-        return Math.min(3, d.weight || 1);
-      })
-      .attr('stroke-opacity', d => {
-        const sid = typeof d.source === 'string' ? d.source : (d.source as GraphNode).id;
-        const tid = typeof d.target === 'string' ? d.target : (d.target as GraphNode).id;
-        if (hasHighlights && !isEdgeHighlighted(sid, tid)) return 0.15;
-        return 0.5;
-      })
       .attr('pointer-events', 'none');
 
     // Store ref for selection effect
@@ -348,30 +467,13 @@ export default function GraphVisualization({
       .attr('opacity', 0)
       .attr('pointer-events', 'none');
 
-    // Nodes
+    // Nodes. Fill, stroke and opacity are set by paintGraph below.
     const node = g.append('g')
       .selectAll<SVGCircleElement, GraphNode>('circle')
       .data(simNodes)
       .join('circle')
       .attr('r', d => radius(d))
-      .attr('fill', d => {
-        if (hasHighlights && !isHighlighted(d.id)) {
-          return '#374151';
-        }
-        return color(d);
-      })
-      .attr('stroke', d => {
-        if (isHighlighted(d.id)) return '#fbbf24';
-        if (d.isCommunity) return '#8b5cf6';
-        return 'none';
-      })
-      .attr('stroke-width', d => {
-        if (isHighlighted(d.id)) return 2;
-        if (d.isCommunity) return 2;
-        return 0;
-      })
       .attr('stroke-dasharray', d => d.isCommunity ? '4,2' : 'none')
-      .attr('opacity', d => hasHighlights && !isHighlighted(d.id) ? 0.3 : 1)
       .attr('cursor', 'pointer')
       .on('click', (event, d) => onClickRef.current(d, event as unknown as MouseEvent))
       .call(d3.drag<SVGCircleElement, GraphNode>()
@@ -397,14 +499,13 @@ export default function GraphVisualization({
     // labelling all 500 rendered text over text and left none of it readable.
     const labelled = labelledNodeIds(simNodes, deg);
 
+    // Display, fill and weight are set by paintGraph below.
     const label = g.append('g')
       .selectAll<SVGTextElement, GraphNode>('text')
       .data(simNodes)
       .join('text')
       .text(d => d.name.length > 32 ? d.name.slice(0, 29) + '…' : d.name)
-      .attr('display', d => labelled.has(d.id) ? null : 'none')
       .attr('font-size', '10px')
-      .attr('fill', d => hasHighlights && !isHighlighted(d.id) ? '#4b5563' : '#e5e7eb')
       // A dark halo painted behind the glyphs. Labels sit over edges and other
       // nodes, and 10px grey on a navy canvas crossed by a link is the case
       // where it stops being readable.
@@ -418,6 +519,10 @@ export default function GraphVisualization({
 
     labelSelRef.current = label as unknown as d3.Selection<SVGTextElement, GraphNode, SVGGElement, unknown>;
     labelledRef.current = labelled;
+
+    // Selection, ego and path styling for the freshly built graph — the styling
+    // effect below only runs when those inputs change, not on a rebuild.
+    paint(styleInputsRef.current);
 
     // Legend
     const usedTypes = Array.from(new Set(simNodes.map(n => n.entity_type))).sort();
@@ -480,96 +585,16 @@ export default function GraphVisualization({
     sim.on('end', () => emitPositions(simNodes));
 
     return () => { sim.stop(); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    nodes.length, edges.length, layout, colorMode,
-    nodes.map(n => n.id).join(','),
-    // eslint-disable-next-line no-nested-ternary
-    highlightedNodeIds ? highlightedNodeIds.size : 0,
-    highlightedEdgeKeys ? highlightedEdgeKeys.size : 0,
-  ]);
+    // nodesKey/edgesKey stand in for the data (read through dataRef); a
+    // highlight or selection change restyles without a rebuild (effect below).
+    // communityMap is here because colour-by-community reads it and the
+    // communities usually arrive after the graph.
+  }, [nodesKey, edgesKey, layout, colorMode, communityMap, emitPositions, paint]);
 
-  // === Selection highlight effect: updates visuals WITHOUT rebuilding simulation ===
+  // === Styling effect: updates visuals WITHOUT rebuilding the simulation ===
   useEffect(() => {
-    const nodeSel = nodeSelRef.current;
-    const linkSel = linkSelRef.current;
-    const labelSel = labelSelRef.current;
-    if (!nodeSel || !linkSel || !labelSel) return;
-
-    const adj = adjacencyRef.current;
-    const colorFn = colorFnRef.current;
-
-    // Compute ego network nodes within egoHighlightDepth hops
-    const egoSet = new Set<string>();
-    if (selectedNodeId) {
-      egoSet.add(selectedNodeId);
-      let frontier = [selectedNodeId];
-      for (let d = 0; d < egoHighlightDepth; d++) {
-        const nextFrontier: string[] = [];
-        for (const nid of frontier) {
-          for (const neighbor of (adj[nid] || [])) {
-            if (!egoSet.has(neighbor)) {
-              egoSet.add(neighbor);
-              nextFrontier.push(neighbor);
-            }
-          }
-        }
-        frontier = nextFrontier;
-      }
-    }
-
-    const hasEgo = egoSet.size > 0;
-
-    // Update node visuals
-    nodeSel
-      .attr('fill', d => {
-        if (hasEgo && !egoSet.has(d.id)) return '#374151';
-        return colorFn(d);
-      })
-      .attr('stroke', d => {
-        if (d.id === selectedNodeId) return '#fff';
-        if (hasEgo && egoSet.has(d.id) && d.id !== selectedNodeId) return '#fbbf24';
-        if (d.isCommunity) return '#8b5cf6';
-        return 'none';
-      })
-      .attr('stroke-width', d => {
-        if (d.id === selectedNodeId) return 3;
-        if (hasEgo && egoSet.has(d.id)) return 2;
-        if (d.isCommunity) return 2;
-        return 0;
-      })
-      .attr('opacity', d => hasEgo && !egoSet.has(d.id) ? 0.2 : 1);
-
-    // Update edge visuals
-    linkSel
-      .attr('stroke', d => {
-        const sid = typeof d.source === 'string' ? d.source : (d.source as GraphNode).id;
-        const tid = typeof d.target === 'string' ? d.target : (d.target as GraphNode).id;
-        if (hasEgo && egoSet.has(sid) && egoSet.has(tid)) return '#fbbf24';
-        return hasEgo ? '#1e293b' : '#4b5563';
-      })
-      .attr('stroke-width', d => {
-        const sid = typeof d.source === 'string' ? d.source : (d.source as GraphNode).id;
-        const tid = typeof d.target === 'string' ? d.target : (d.target as GraphNode).id;
-        if (hasEgo && egoSet.has(sid) && egoSet.has(tid)) return 2.5;
-        return Math.min(3, d.weight || 1);
-      })
-      .attr('stroke-opacity', d => {
-        const sid = typeof d.source === 'string' ? d.source : (d.source as GraphNode).id;
-        const tid = typeof d.target === 'string' ? d.target : (d.target as GraphNode).id;
-        if (hasEgo && !(egoSet.has(sid) && egoSet.has(tid))) return 0.08;
-        return 0.6;
-      });
-
-    // Update label visuals. A selected node is always named, budget or not —
-    // clicking a node to find out what it is and getting no name back would
-    // make the unlabelled majority a dead end rather than a hover away.
-    labelSel
-      .attr('display', d =>
-        d.id === selectedNodeId || labelledRef.current.has(d.id) ? null : 'none')
-      .attr('fill', d => hasEgo && !egoSet.has(d.id) ? '#374151' : '#e5e7eb')
-      .attr('font-weight', d => d.id === selectedNodeId ? 'bold' : 'normal');
-  }, [selectedNodeId, egoHighlightDepth]);
+    paint({ selectedNodeId, egoHighlightDepth, highlightedNodeIds, highlightedEdgeKeys });
+  }, [paint, selectedNodeId, egoHighlightDepth, highlightedNodeIds, highlightedEdgeKeys]);
 
   return (
     <svg ref={svgRef} className="w-full h-full bg-navy-900 rounded-lg" style={{ minHeight: '400px' }} />

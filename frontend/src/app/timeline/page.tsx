@@ -5,20 +5,11 @@ import Sidebar from '@/components/Sidebar';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
 import { timelineApi } from '@/lib/api';
+import { readTimeline, type TimelineEvent } from '@/lib/timeline';
+import { getErrorMessage } from '@/lib/errorMessages';
 import { TYPE_COLOR_CLASS as TYPE_COLORS, TYPE_COLOR_HEX } from '@/lib/entityStyles';
-import { useNotifications } from '@/components/NotificationProvider';
-
-interface TimelineEvent {
-  id: string;
-  name: string;
-  entity_type: string;
-  timestamp: string;
-  event_type: string;
-}
 
 // TYPE_COLORS (dot/badge classes) imported from '@/lib/entityStyles' — SSOT.
-
-const ENTITY_TYPES = ['Person', 'Organization', 'Location', 'ThreatActor', 'Document', 'IPAddress', 'Domain', 'Event', 'Hash', 'Vulnerability', 'Report', 'Topic'];
 
 function TimelineChart({ events }: { events: TimelineEvent[] }) {
   // Group events by date
@@ -106,41 +97,50 @@ function groupByDate(events: TimelineEvent[]): Record<string, TimelineEvent[]> {
 
 export default function TimelinePage() {
   const { activeProject } = useProject();
-  const { addNotification } = useNotifications();
   const router = useRouter();
   const [events, setEvents] = useState<TimelineEvent[]>([]);
+  // How many events exist in full; the page holds the newest `events.length`.
+  const [total, setTotal] = useState(0);
+  // Every entity type in this project's timeline (from `types_present`), so the
+  // filter never hides a type a fixed list did not know about.
+  const [types, setTypes] = useState<string[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Most entities in a project are organizations and locations, which have no
   // date of their own; their timestamp is when collection added them. On a
   // 500-event project only 5 carried an extracted date, so the default view is
   // a collection log, and nothing said which it was.
   const [datedOnly, setDatedOnly] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [enabledTypes, setEnabledTypes] = useState<Set<string>>(new Set(ENTITY_TYPES));
+  // Types the analyst has switched off. Everything else is shown, including a
+  // type that first appears after a refresh.
+  const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
 
   const loadTimeline = useCallback(async () => {
     if (!activeProject) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await timelineApi.get(activeProject.id);
-      setEvents(res.data.events || []);
+      const timeline = readTimeline(res.data);
+      setEvents(timeline.events);
+      setTotal(timeline.total);
+      setTypes(timeline.types);
     } catch (e) {
-      console.error('Failed to load timeline', e);
-      addNotification({
-        title: 'Failed to load timeline',
-        message: 'Could not load timeline events for this project. Please try again.',
-        type: 'error',
-      });
+      setEvents([]);
+      setTotal(0);
+      setTypes([]);
+      setLoadError(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
-  }, [activeProject, addNotification]);
+  }, [activeProject]);
 
   useEffect(() => {
     loadTimeline();
   }, [loadTimeline]);
 
   function toggleType(t: string) {
-    setEnabledTypes(prev => {
+    setHiddenTypes(prev => {
       const next = new Set(prev);
       if (next.has(t)) next.delete(t);
       else next.add(t);
@@ -155,7 +155,7 @@ export default function TimelinePage() {
   const isDated = (e: TimelineEvent) => e.event_type === 'event';
   const datedCount = events.filter(isDated).length;
   const filtered = events
-    .filter(e => enabledTypes.has(e.entity_type))
+    .filter(e => !hiddenTypes.has(e.entity_type))
     .filter(e => !datedOnly || isDated(e));
   const grouped = groupByDate(filtered);
 
@@ -183,6 +183,13 @@ export default function TimelinePage() {
             <h2 className="text-xl font-bold">Timeline</h2>
             <p className="text-xs text-gray-400 mt-1">
               {filtered.length} events
+              {/* The page holds the newest events only; say so when that is
+                  not all of them. */}
+              {total > events.length && (
+                <span className="text-gray-500">
+                  {' · '}loaded the newest {events.length.toLocaleString()} of {total.toLocaleString()}
+                </span>
+              )}
               {/* Say what the dates mean. Without this the view reads as a
                   chronology of what happened, when almost all of it is a
                   chronology of when collection ran. */}
@@ -216,11 +223,14 @@ export default function TimelinePage() {
             </label>
             <h3 className="text-sm font-semibold text-gray-400 mb-3">Filter by Type</h3>
             <div className="space-y-2">
-              {ENTITY_TYPES.map(t => (
+              {types.length === 0 && !loading && (
+                <p className="text-xs text-gray-500">No types yet.</p>
+              )}
+              {types.map(t => (
                 <label key={t} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={enabledTypes.has(t)}
+                    checked={!hiddenTypes.has(t)}
                     onChange={() => toggleType(t)}
                     className="accent-accent-blue"
                   />
@@ -231,13 +241,13 @@ export default function TimelinePage() {
             </div>
             <div className="mt-4 flex gap-2">
               <button
-                onClick={() => setEnabledTypes(new Set(ENTITY_TYPES))}
+                onClick={() => setHiddenTypes(new Set())}
                 className="text-xs text-accent-blue hover:underline"
               >
                 All
               </button>
               <button
-                onClick={() => setEnabledTypes(new Set())}
+                onClick={() => setHiddenTypes(new Set(types))}
                 className="text-xs text-gray-400 hover:underline"
               >
                 None
@@ -249,6 +259,11 @@ export default function TimelinePage() {
           <div className="flex-1 overflow-y-auto p-6">
             {loading && events.length === 0 ? (
               <div className="mt-8"><LoadingSpinner size="lg" /></div>
+            ) : loadError ? (
+              <div role="alert" className="text-center mt-8">
+                <p className="text-red-300">Could not load the timeline: {loadError}</p>
+                <button onClick={loadTimeline} className="mt-3 text-xs text-accent-blue hover:underline">Retry</button>
+              </div>
             ) : filtered.length === 0 ? (
               <div className="text-center text-gray-500 mt-8">No events to display.</div>
             ) : (

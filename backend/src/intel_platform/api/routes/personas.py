@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from intel_platform.api.deps import verify_api_key
+from intel_platform.api.deps import require_admin, verify_api_key
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -39,6 +39,8 @@ _personas: dict[str, dict] = {
         "active": False,
     },
 }
+
+_BUILTIN_PERSONA_IDS = frozenset(_personas)
 
 _active_persona: str = "allsource"
 
@@ -98,20 +100,29 @@ def list_personas():
     }
 
 
-@router.post("/personas")
+# The active persona shapes how every user's requirements are decomposed, so
+# creating, changing, activating or deleting one is an admin action; reading
+# them is not.
+
+
+@router.post("/personas", dependencies=[Depends(require_admin)])
 def create_persona(req: PersonaRequest):
+    """Create a persona, or update a custom one. Built-ins cannot be overwritten."""
+    if req.id in _BUILTIN_PERSONA_IDS:
+        raise HTTPException(status_code=409, detail="A built-in persona cannot be overwritten")
     _personas[req.id] = {
         "id": req.id,
         "name": req.name,
         "description": req.description,
         "skills": req.skills,
         "temperature": req.temperature,
-        "active": False,
+        # Updating the active persona keeps it active.
+        "active": _personas.get(req.id, {}).get("active", False),
     }
     return _personas[req.id]
 
 
-@router.post("/personas/{persona_id}/activate")
+@router.post("/personas/{persona_id}/activate", dependencies=[Depends(require_admin)])
 def activate_persona(persona_id: str):
     global _active_persona
     if persona_id not in _personas:
@@ -123,11 +134,11 @@ def activate_persona(persona_id: str):
     return {"active_persona": persona_id}
 
 
-@router.delete("/personas/{persona_id}")
+@router.delete("/personas/{persona_id}", dependencies=[Depends(require_admin)])
 def delete_persona(persona_id: str):
     if persona_id not in _personas:
         raise HTTPException(status_code=404, detail="Persona not found")
-    if persona_id in ("osint_collector", "cyber_analyst", "allsource", "report_writer"):
+    if persona_id in _BUILTIN_PERSONA_IDS:
         raise HTTPException(status_code=400, detail="Cannot delete built-in personas")
     del _personas[persona_id]
     return {"status": "deleted"}

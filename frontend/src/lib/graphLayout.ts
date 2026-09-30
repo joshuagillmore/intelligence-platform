@@ -23,17 +23,25 @@ export function collapseToCommunities(
   nodes: GraphNode[],
   edges: GraphEdge[]
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
-  // Group nodes by community_id
+  // Group nodes by community_id. A node with no community (missing, or the
+  // negative "unassigned" marker) is not part of any cluster: it stays as
+  // itself. Grouping those under -1 merged them into one invented super-node.
   const communities: Record<number, GraphNode[]> = {};
+  const unassigned: GraphNode[] = [];
   nodes.forEach(node => {
-    const cid = node.community_id ?? -1;
+    const cid = node.community_id;
+    if (typeof cid !== 'number' || !Number.isFinite(cid) || cid < 0) {
+      unassigned.push(node);
+      return;
+    }
     if (!communities[cid]) communities[cid] = [];
     communities[cid].push(node);
   });
 
   // Create community super-nodes
-  const collapsedNodes: GraphNode[] = [];
+  const collapsedNodes: GraphNode[] = [...unassigned];
   const nodeToComm: Record<string, string> = {};
+  unassigned.forEach(n => { nodeToComm[n.id] = n.id; });
 
   Object.entries(communities).forEach(([cidStr, members]) => {
     const cid = parseInt(cidStr);

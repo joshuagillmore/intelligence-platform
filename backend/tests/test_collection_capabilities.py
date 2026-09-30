@@ -121,12 +121,33 @@ class TestApiFeedConfigBridging:
         with pytest.raises(ValueError, match="base_url"):
             APIFeedConnector().configure({"urls": ["https://example.com/api"]})
 
-    def test_resolver_asks_for_urls_on_api_feed(self):
-        """If this stops being true the bridge is dead code and should go."""
-        import pathlib
+    async def test_search_grounded_resolution_still_yields_urls_for_api_feed(self, monkeypatch):
+        """If this stops being true the bridge is dead code and should go.
 
-        src = pathlib.Path("src/intel_platform/collection/agentic.py").read_text(encoding="utf-8")
-        assert '"urls"] if source.source_type in ("web_scrape", "database", "api_feed")' in src
+        The LLM fallback now asks an api_feed for "base_url", the key its prompt
+        names (C-11); search-grounded resolution still returns "urls" for it,
+        which is what the bridge below exists for. Checked by behaviour rather
+        than by grepping the source for one spelling of the line.
+        """
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+
+        from intel_platform.collection import agentic
+        from intel_platform.collection.proxy import ProxyConfig
+
+        async def direct():
+            return ProxyConfig(mode="direct")
+
+        monkeypatch.setattr("intel_platform.collection.proxy.get_active_proxy_config", direct)
+        results = [{"url": "https://api.example.org/v1", "title": "API", "snippet": ""}]
+        source = SimpleNamespace(name="Registry API", source_type="api_feed", config={})
+
+        with patch("intel_platform.collection.search.web_search", return_value=results), \
+             patch.object(agentic, "_structured_generate",
+                          new=AsyncMock(return_value={"urls": ["https://api.example.org/v1"]})):
+            cfg = await agentic._resolve_via_search(None, "pir", source)
+
+        assert "urls" in cfg and "base_url" not in cfg
 
     def test_first_resolved_url_becomes_the_base_url(self):
         """The bridge itself, as the acquire path applies it."""

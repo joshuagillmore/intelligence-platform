@@ -27,13 +27,14 @@ Sync Neo4j helpers take a ``Driver`` so async callers offload with
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 import re
 import xml.etree.ElementTree as ET
 import zipfile
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from neo4j import Driver
@@ -41,6 +42,7 @@ from neo4j import Driver
 from intel_platform.collection.proxy import ProxiedClient
 from intel_platform.config import settings
 
+from .dataset_cache import MAX_DATASET_BYTES, is_fresh, write_atomically
 from .graph_ops import VULN_CHAIN_META_ID
 
 logger = logging.getLogger(__name__)
@@ -122,57 +124,82 @@ def build_map(capec_xml: str, cwe_xml: str) -> tuple[dict[str, set[str]], dict[s
     return parse_capec(capec_xml), parse_cwe_names(cwe_xml)
 
 
-# --- Fetch (on demand, cached) ---------------------------------------------
+# --- Fetch (on demand, parsed before cached) --------------------------------
 
-def _read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
-
-
-def _write_text(path: Path, content: str) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-    except OSError:
-        logger.warning("Could not cache %s", path, exc_info=True)
+# Both files are MITRE's moving "latest" releases, so a cached copy is only
+# trusted for this long before it is fetched again (a stale copy remains the
+# fallback when the refresh fails).
+_LATEST_MAX_AGE = timedelta(days=30)
 
 
-def _write_bytes(path: Path, content: bytes) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(content)
-    except OSError:
-        logger.warning("Could not cache %s", path, exc_info=True)
-
-
-def _read_zip_xml(path: Path) -> str:
-    """Return the XML text of the first ``.xml`` member of a cached zip."""
-    with zipfile.ZipFile(path) as zf:
+def _xml_from_zip(data: bytes) -> str:
+    """The XML text of the first ``.xml`` member of a zip archive."""
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
         members = [n for n in zf.namelist() if n.lower().endswith(".xml")]
         member = members[0] if members else zf.namelist()[0]
         return zf.read(member).decode("utf-8")
 
 
-async def _load_capec_xml() -> str:
-    if _CAPEC_CACHE.exists():
-        logger.info("Loading cached CAPEC %s", _CAPEC_CACHE.name)
-        return await asyncio.to_thread(_read_text, _CAPEC_CACHE)
-    logger.info("Fetching CAPEC from %s", settings.capec_xml_url)
-    resp = await ProxiedClient().get(settings.capec_xml_url, timeout=120)
-    resp.raise_for_status()
-    text = resp.text
-    await asyncio.to_thread(_write_text, _CAPEC_CACHE, text)
-    return text
+def _capec_map_from(data: bytes) -> dict[str, set[str]]:
+    mapping = parse_capec(data.decode("utf-8"))
+    if not mapping:
+        raise ValueError("CAPEC parsed to no CWE-to-ATT&CK mappings")
+    return mapping
 
 
-async def _load_cwe_xml() -> str:
-    if not _CWE_CACHE.exists():
-        logger.info("Fetching CWE from %s", settings.cwe_xml_url)
-        resp = await ProxiedClient().get(settings.cwe_xml_url, timeout=120)
+def _cwe_names_from(data: bytes) -> dict[str, str]:
+    names = parse_cwe_names(_xml_from_zip(data))
+    if not names:
+        raise ValueError("CWE catalog parsed to no weaknesses")
+    return names
+
+
+def _parse_file(parse, path: Path):
+    return parse(path.read_bytes())
+
+
+async def _load_dataset(path: Path, url: str, parse, label: str):
+    """A parsed dataset: from a fresh cache, else fetched, parsed, then cached.
+
+    The download is cached (atomically) only after ``parse`` accepts it, so an
+    error page or truncated body is never the copy later runs trust. When the
+    refresh fails, a stale cached copy that still parses is used, with a warning.
+    """
+    if is_fresh(path, _LATEST_MAX_AGE):
+        try:
+            logger.info("Loading cached %s %s", label, path.name)
+            return await asyncio.to_thread(_parse_file, parse, path)
+        except Exception:
+            logger.warning("Cached %s %s does not parse; fetching it again", label, path.name, exc_info=True)
+
+    try:
+        logger.info("Fetching %s from %s", label, url)
+        resp = await ProxiedClient().get(url, timeout=120, max_bytes=MAX_DATASET_BYTES)
         resp.raise_for_status()
-        await asyncio.to_thread(_write_bytes, _CWE_CACHE, resp.content)
-    else:
-        logger.info("Loading cached CWE %s", _CWE_CACHE.name)
-    return await asyncio.to_thread(_read_zip_xml, _CWE_CACHE)
+        data = resp.content
+        parsed = await asyncio.to_thread(parse, data)
+    except Exception:
+        if path.exists():
+            try:
+                parsed = await asyncio.to_thread(_parse_file, parse, path)
+            except Exception:
+                parsed = None
+            if parsed is not None:
+                logger.warning("%s refresh failed; using the stale cached copy", label, exc_info=True)
+                return parsed
+        raise
+    await asyncio.to_thread(write_atomically, path, data)
+    return parsed
+
+
+async def load_capec_map() -> dict[str, set[str]]:
+    """``cwe_id → {technique_id}`` from CAPEC (cached; see :func:`_load_dataset`)."""
+    return await _load_dataset(_CAPEC_CACHE, settings.capec_xml_url, _capec_map_from, "CAPEC")
+
+
+async def load_cwe_names() -> dict[str, str]:
+    """``cwe_id → name`` from the CWE catalog zip (cached; see :func:`_load_dataset`)."""
+    return await _load_dataset(_CWE_CACHE, settings.cwe_xml_url, _cwe_names_from, "CWE")
 
 
 # --- Load reference edges (Neo4j; idempotent) ------------------------------
@@ -238,9 +265,8 @@ async def ingest_vuln_chain(driver: Driver) -> dict:
     offloaded with ``asyncio.to_thread`` so they never block the event loop; only
     the network fetch itself runs on the loop.
     """
-    capec_xml = await _load_capec_xml()
-    cwe_xml = await _load_cwe_xml()
-    cwe_to_techs, cwe_names = await asyncio.to_thread(build_map, capec_xml, cwe_xml)
+    cwe_to_techs = await load_capec_map()
+    cwe_names = await load_cwe_names()
     return await asyncio.to_thread(load_vuln_chain, driver, cwe_to_techs, cwe_names)
 
 

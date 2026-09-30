@@ -1,3 +1,7 @@
+# Datastore passwords come from NEO4J_PASSWORD / POSTGRES_PASSWORD (shell or
+# the root .env), defaulting to the dev value `changeme`. Each is read both by
+# the datastore service and by the backend's connection settings below, so one
+# variable sets both sides.
 services:
   neo4j:
     image: neo4j:5-community
@@ -5,7 +9,7 @@ services:
       - "127.0.0.1:7474:7474"
       - "127.0.0.1:7687:7687"
     environment:
-      NEO4J_AUTH: neo4j/changeme
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-changeme}
       NEO4J_PLUGINS: '["apoc"]'
     volumes:
       - neo4j_data:/data
@@ -22,7 +26,7 @@ services:
     environment:
       POSTGRES_DB: intel_platform
       POSTGRES_USER: intel
-      POSTGRES_PASSWORD: changeme
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -31,19 +35,8 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "127.0.0.1:6379:6379"
-    command: redis-server --requirepass changeme
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "changeme", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.35.0
     ports:
       - "127.0.0.1:11434:11434"
     volumes:
@@ -70,6 +63,13 @@ services:
       - "127.0.0.1:8000:8000"
     env_file: .env
     environment:
+      # Datastore connections use the compose service names and the same
+      # password variables as the services above. These override .env, whose
+      # localhost URLs are for running the backend outside compose.
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-changeme}
+      - POSTGRES_URL=postgresql+asyncpg://intel:${POSTGRES_PASSWORD:-changeme}@postgres:5432/intel_platform
       # Route per-document LLM/hybrid extraction to the in-stack Ollama so it's
       # local + rate-limit-free (overrides .env for the compose network URL).
       - EXTRACTION_MODE=hybrid
@@ -80,8 +80,6 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
       ollama:
         condition: service_healthy
 
@@ -89,10 +87,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      # A build arg, not runtime env: `next build` bakes the rewrite
+      # destination into the standalone server (see frontend/Dockerfile).
+      args:
+        BACKEND_URL: http://backend:8000
     ports:
       - "127.0.0.1:3000:3000"
-    environment:
-      - BACKEND_URL=http://backend:8000
     depends_on:
       - backend
 
@@ -107,7 +107,7 @@ services:
   # hard depends_on from backend to these (that would force the profile).
   # ---------------------------------------------------------------------------
   gluetun:
-    image: qmcgaw/gluetun:latest
+    image: qmcgaw/gluetun:v3.41.3
     profiles: ["vpn"]
     cap_add:
       - NET_ADMIN
@@ -131,13 +131,16 @@ services:
       OPENVPN_USER: ${SURFSHARK_OVPN_USER:-}
       OPENVPN_PASSWORD: ${SURFSHARK_OVPN_PASSWORD:-}
       SERVER_COUNTRIES: ${SURFSHARK_COUNTRIES:-Netherlands}
+      # A city inside that country (Surfshark: Toronto, Montreal, Vancouver);
+      # empty lets gluetun pick any server in the country. Josh, 2026-09-30.
+      SERVER_CITIES: ${SURFSHARK_CITIES:-}
       HTTPPROXY: "on"
       HTTPPROXY_LISTENING_ADDRESS: ":8888"
       HTTP_CONTROL_SERVER_ADDRESS: ":8000"
     restart: unless-stopped
 
   tor:
-    image: osminogin/tor-simple
+    image: osminogin/tor-simple:0.4.9.13
     profiles: ["vpn"]
     # SOCKS5 on 9050; no extra capabilities needed.
     restart: unless-stopped

@@ -22,6 +22,39 @@ def _search_terms(query: str) -> list[str]:
     return [t for t in (query or "").lower().split() if t][:_MAX_SEARCH_TERMS]
 
 
+# Shared reference data rather than per-project entities: ATT&CK, CWE/CAPEC and
+# D3FEND. These nodes carry no project_id and every project that maps to them
+# links to the same node, so a project-scoped walk may end on one but must never
+# pass through it — through T1566 lies every other project's phishing TTPs.
+CATALOG_LABELS = (
+    "AttackTechnique", "AttackGroup", "AttackSoftware", "AttackTactic",
+    "AttackMitigation", "Cwe", "Capec", "D3fendTechnique",
+)
+
+# Subgraph walks are clamped to this many hops. The route allowed 5 and the
+# service layer passed anything through, so hops=5 across ATT&CK hubs
+# enumerated paths without end, and a negative value became `[*1..-1]`.
+_MIN_HOPS = 1
+_MAX_HOPS = 4
+# Path enumeration stops here; the result says `truncated` when it did.
+_MAX_SUBGRAPH_PATHS = 5000
+# shortestPath is a bounded breadth-first search, so it keeps its own ceiling.
+_SHORTEST_PATH_MAX_HOPS = 10
+
+
+def _clamp_hops(hops) -> int:
+    try:
+        value = int(hops)
+    except (TypeError, ValueError):
+        value = _MIN_HOPS
+    return max(_MIN_HOPS, min(_MAX_HOPS, value))
+
+
+def _is_catalog(var: str) -> str:
+    """Cypher predicate: `var` carries one of the catalog labels."""
+    return "(" + " OR ".join(f"{var}:{label}" for label in CATALOG_LABELS) + ")"
+
+
 def _validate_label(label: str) -> str:
     """Validate entity label. Must be alphanumeric (Neo4j label requirement)."""
     if not label or not re.match(r'^[A-Za-z][A-Za-z0-9_]*$', label):
@@ -59,12 +92,19 @@ class GraphStore:
         _, parent_category = normalize_entity_type(specific_type)
 
         label = _validate_label(specific_type)
+        # Every entity also carries the shared :Entity label, whose unique `id`
+        # constraint is what makes the by-id lookups an index seek.
+        labels = label if label == "Entity" else f"{label}:Entity"
         props = self._serialize_props(entity.model_dump(exclude={"entity_type"}))
         props["entity_type"] = specific_type
         props["entity_category"] = parent_category
+        # Every document that mentions the entity; later ones are appended on
+        # merge by record_entity_source. source_doc_id stays the first.
+        if props.get("source_doc_id"):
+            props["source_doc_ids"] = [props["source_doc_id"]]
         with self._driver.session() as session:
             result = session.run(
-                f"CREATE (n:{label} $props) RETURN n",
+                f"CREATE (n:{labels} $props) RETURN n",
                 props=props,
             )
             record = result.single()
@@ -80,8 +120,13 @@ class GraphStore:
 
     def get_entity(self, entity_id: str) -> dict | None:
         with self._driver.session() as session:
-            result = session.run("MATCH (n {id: $id}) RETURN n", id=entity_id)
-            record = result.single()
+            record = session.run("MATCH (n:Entity {id: $id}) RETURN n", id=entity_id).single()
+            if record is None:
+                # A node written by raw Cypher elsewhere since the last startup
+                # (a legacy Collection, a test fixture) has no :Entity label
+                # until ensure_entity_label runs again. Only a miss pays for
+                # the unindexed lookup.
+                record = session.run("MATCH (n {id: $id}) RETURN n", id=entity_id).single()
             return dict(record["n"]) if record else None
 
     def update_entity(self, entity_id: str, props: dict) -> dict | None:
@@ -94,11 +139,16 @@ class GraphStore:
             return self.get_entity(entity_id)
         clean = self._serialize_props(props)
         with self._driver.session() as session:
-            result = session.run(
-                "MATCH (n {id: $id}) SET n += $props RETURN n",
+            record = session.run(
+                "MATCH (n:Entity {id: $id}) SET n += $props RETURN n",
                 id=entity_id, props=clean,
-            )
-            record = result.single()
+            ).single()
+            if record is None:
+                # Unlabelled node (see get_entity).
+                record = session.run(
+                    "MATCH (n {id: $id}) SET n += $props RETURN n",
+                    id=entity_id, props=clean,
+                ).single()
             node = dict(record["n"]) if record else None
 
         if node:
@@ -107,6 +157,33 @@ class GraphStore:
                 from intel_platform.services.graph_cache import graph_cache
                 graph_cache.invalidate(project_id)
         return node
+
+    def record_entity_source(self, entity_id: str, source_doc_id: str) -> None:
+        """Add a document to the entity's `source_doc_ids`, once.
+
+        `source_doc_id` was set only when the entity was created, so a later
+        document that merged into it left no trace and retrieval could only
+        reach the first. An entity written before the list existed starts it
+        from its `source_doc_id`. The first SET takes the node's write lock
+        before the list is read, so concurrent builds cannot drop each
+        other's documents.
+        """
+        if not source_doc_id:
+            return
+        with self._driver.session() as session:
+            session.run(
+                """
+                MATCH (n:Entity {id: $id})
+                SET n._sources_lock = true
+                WITH n, coalesce(
+                    n.source_doc_ids,
+                    CASE WHEN coalesce(n.source_doc_id, '') = '' THEN [] ELSE [n.source_doc_id] END
+                ) AS docs
+                SET n.source_doc_ids = CASE WHEN $doc IN docs THEN docs ELSE docs + $doc END
+                REMOVE n._sources_lock
+                """,
+                id=entity_id, doc=source_doc_id,
+            )
 
     def get_geolocatable_entities(self, project_id: str, limit: int = 2000) -> list[dict]:
         """Nodes that can appear on the map: any Location-category node, an
@@ -117,7 +194,7 @@ class GraphStore:
         with self._driver.session() as session:
             result = session.run(
                 """
-                MATCH (n) WHERE n.project_id = $project_id AND (
+                MATCH (n:Entity) WHERE n.project_id = $project_id AND (
                     n.entity_category = 'Location' OR n.entity_type = 'Location'
                     OR (n.latitude IS NOT NULL AND n.longitude IS NOT NULL)
                     OR (n.entity_type = 'IPAddress' AND n.geolocation IS NOT NULL AND n.geolocation <> '')
@@ -137,7 +214,7 @@ class GraphStore:
         the fulltext top-N can miss a high-frequency name like "Russia", which
         would spawn duplicate roll-up nodes. Optional entity_type narrows it.
         """
-        cypher = "MATCH (n) WHERE n.project_id = $project_id AND toLower(n.name) = toLower($name)"
+        cypher = "MATCH (n:Entity) WHERE n.project_id = $project_id AND toLower(n.name) = toLower($name)"
         params: dict = {"project_id": project_id, "name": name}
         if entity_type:
             cypher += " AND n.entity_type = $entity_type"
@@ -154,7 +231,7 @@ class GraphStore:
         it accompanies — the count is what tells the analyst the list is
         truncated, and a count of something else would be worse than none.
         """
-        cypher = "MATCH (n) WHERE n.project_id = $project_id"
+        cypher = "MATCH (n:Entity) WHERE n.project_id = $project_id"
         params: dict = {"project_id": project_id}
         if entity_type:
             cypher += " AND n.entity_type = $entity_type"
@@ -180,7 +257,7 @@ class GraphStore:
         self, project_id: str, query: str = "", entity_type: str | None = None,
         limit: int = 50, offset: int = 0,
     ) -> list[dict]:
-        cypher = "MATCH (n) WHERE n.project_id = $project_id"
+        cypher = "MATCH (n:Entity) WHERE n.project_id = $project_id"
         params: dict = {"project_id": project_id, "limit": limit, "offset": offset}
         if entity_type:
             cypher += " AND n.entity_type = $entity_type"
@@ -247,93 +324,128 @@ class GraphStore:
             )
             return [dict(record["n"]) for record in result]
 
+    # Distinct evidence sentences kept per list on one edge.
+    _MAX_EVIDENCE = 20
+
+    @classmethod
+    def _merge_assertion(cls, current: dict, props: dict) -> dict:
+        """The update that folds one more assertion of a claim into its edge.
+
+        Agreement and disagreement are relative to the polarity the edge was
+        first asserted with. An agreeing source corroborates; a disagreeing one
+        is recorded in `contradicting_sources` and turns the edge CONFLICT, and
+        is never counted as corroboration — it was, because the source was
+        appended before its polarity was compared. Evidence sentences are kept
+        per side (`evidence_all`, `contradicting_evidence`) instead of only the
+        first; `evidence` stays the first sentence, the primary reference.
+        """
+        new_doc = props.get("source_doc_id") or ""
+        new_evidence = props.get("evidence") or ""
+        prior_polarity = str(current.get("polarity") or "asserts").lower()
+        new_polarity = str(props.get("polarity") or "asserts").lower()
+        agrees = new_polarity == prior_polarity
+
+        sources = list(current.get("corroboration_sources") or [])
+        if current.get("source_doc_id") and current["source_doc_id"] not in sources:
+            sources.append(current["source_doc_id"])
+        contradicting = list(current.get("contradicting_sources") or [])
+        evidence_all = list(current.get("evidence_all") or ([current["evidence"]] if current.get("evidence") else []))
+        contradicting_evidence = list(current.get("contradicting_evidence") or [])
+
+        # Only a *different* source corroborates. Two mentions inside one
+        # document are one source, not two — that distinction is the whole
+        # point of a corroboration count.
+        side_sources, side_evidence = (sources, evidence_all) if agrees else (contradicting, contradicting_evidence)
+        if new_doc and new_doc not in side_sources:
+            side_sources.append(new_doc)
+        if new_evidence and new_evidence not in side_evidence and len(side_evidence) < cls._MAX_EVIDENCE:
+            side_evidence.append(new_evidence)
+
+        # Contradiction. A source that denies what another asserts must not
+        # be absorbed as further agreement — that is how contested reporting
+        # silently becomes settled fact. Once disputed, stays disputed until
+        # reviewed.
+        prior_agreement = str(current.get("corroboration_agreement") or "AGREE").upper()
+        agreement = "CONFLICT" if (not agrees or prior_agreement == "CONFLICT") else prior_agreement
+
+        prior_conf = float(current.get("confidence") or 0)
+        new_conf = float(props.get("confidence") or 0)
+        return {
+            "corroboration_count": len(sources) if sources else int(current.get("corroboration_count") or 1),
+            "corroboration_sources": sources,
+            "contradicting_sources": contradicting,
+            "corroboration_agreement": agreement,
+            # Keep the strongest assessed confidence — except once sources
+            # disagree, where the prior confidence no longer stands alone.
+            "confidence": min(prior_conf, new_conf) if agreement == "CONFLICT" else max(prior_conf, new_conf),
+            "evidence": current.get("evidence") or (new_evidence if agrees else ""),
+            "evidence_all": evidence_all,
+            "contradicting_evidence": contradicting_evidence,
+            "source_doc_id": current.get("source_doc_id") or (new_doc if agrees else ""),
+            "last_seen": props.get("last_seen") or current.get("last_seen"),
+            # The edge keeps the polarity it was first asserted with; the
+            # disagreement is carried by corroboration_agreement.
+            "polarity": prior_polarity,
+        }
+
     def create_relationship(self, rel) -> dict:
         if rel.rel_type not in self.VALID_REL_TYPES:
             raise ValueError(f"Invalid relationship type: {rel.rel_type}")
-        props = self._serialize_props(rel.model_dump(exclude={"source_id", "target_id", "rel_type"}))
-        with self._driver.session() as session:
-            # Corroboration: the same claim asserted by a second document is not a
-            # second edge, it is the same edge with more support. Previously every
-            # assertion created a duplicate, so corroboration_count sat at 1
-            # forever and the graph accumulated near-identical edges.
-            existing = session.run(
-                """
-                MATCH (a {id: $source_id})-[r]->(b {id: $target_id})
-                WHERE type(r) = $rel_type
-                RETURN r LIMIT 1
+        project_id = getattr(rel, "project_id", "") or ""
+        props = self._serialize_props(
+            rel.model_dump(exclude={"source_id", "target_id", "rel_type", "project_id"})
+        )
+        # The type is interpolated, not a parameter, so MERGE can name it; it
+        # is safe because it has just been checked against the allowlist.
+        rel_type = rel.rel_type
+        # With a project, both endpoints are matched inside it: an edge can
+        # never join two projects, and the edge is stamped with its project.
+        scope = ""
+        if project_id:
+            props["project_id"] = project_id
+            scope = "WHERE a.project_id = $project_id AND b.project_id = $project_id"
+
+        def _upsert(tx) -> dict:
+            # Corroboration: the same claim asserted by a second document is not
+            # a second edge, it is the same edge with more support.
+            #
+            # One write transaction. MERGE between two bound nodes locks both,
+            # so concurrent assertions of one claim make one edge; the lock SET
+            # then holds the edge itself until commit, so the read-modify-write
+            # below cannot interleave with another. It was a lookup followed by
+            # a separate create or update, so concurrent builds duplicated the
+            # edge or wrote back each other's stale source lists.
+            record = tx.run(
+                f"""
+                MATCH (a:Entity {{id: $source_id}})
+                MATCH (b:Entity {{id: $target_id}})
+                {scope}
+                MERGE (a)-[r:{rel_type}]->(b)
+                ON CREATE SET r = $props
+                SET r._upsert_lock = true
+                REMOVE r._upsert_lock
+                WITH r, coalesce(r.id = $new_id, false) AS created
+                ORDER BY created DESC, elementId(r)
+                LIMIT 1
+                RETURN r, created, elementId(r) AS eid
                 """,
-                source_id=rel.source_id, target_id=rel.target_id, rel_type=rel.rel_type,
+                source_id=rel.source_id, target_id=rel.target_id,
+                props=props, new_id=props.get("id"), project_id=project_id,
             ).single()
+            if record is None:
+                return {}  # an endpoint is missing, or outside the project
+            if record["created"]:
+                return dict(record["r"])
+            update = self._merge_assertion(dict(record["r"]), props)
+            if project_id:
+                update["project_id"] = project_id
+            return dict(tx.run(
+                "MATCH ()-[r]->() WHERE elementId(r) = $eid SET r += $update RETURN r",
+                eid=record["eid"], update=self._serialize_props(update),
+            ).single()["r"])
 
-            if existing:
-                current = dict(existing["r"])
-                new_doc = props.get("source_doc_id") or ""
-                sources = list(current.get("corroboration_sources") or [])
-                if current.get("source_doc_id") and current["source_doc_id"] not in sources:
-                    sources.append(current["source_doc_id"])
-
-                # Only a *different* source corroborates. Two mentions inside one
-                # document are one source, not two — that distinction is the whole
-                # point of a corroboration count.
-                corroborated = bool(new_doc) and new_doc not in sources
-                if corroborated:
-                    sources.append(new_doc)
-
-                # Contradiction. A source that denies what another asserts must not
-                # be absorbed as further agreement — that is how contested
-                # reporting silently becomes settled fact.
-                prior_polarity = str(current.get("polarity") or "asserts").lower()
-                new_polarity = str(props.get("polarity") or "asserts").lower()
-                prior_agreement = str(current.get("corroboration_agreement") or "AGREE").upper()
-                if prior_polarity != new_polarity:
-                    agreement = "CONFLICT"
-                elif prior_agreement == "CONFLICT":
-                    agreement = "CONFLICT"  # once disputed, stays disputed until reviewed
-                else:
-                    agreement = prior_agreement
-
-                update = {
-                    "corroboration_count": max(len(sources), 1) if sources else int(current.get("corroboration_count") or 1),
-                    "corroboration_sources": sources,
-                    "corroboration_agreement": agreement,
-                    # Keep the strongest assessed confidence — except once sources
-                    # disagree, where the prior confidence no longer stands alone.
-                    "confidence": (
-                        min(float(current.get("confidence") or 0), float(props.get("confidence") or 0))
-                        if agreement == "CONFLICT"
-                        else max(float(current.get("confidence") or 0), float(props.get("confidence") or 0))
-                    ),
-                    # Keep the first captured sentence; it is the primary reference.
-                    "evidence": current.get("evidence") or props.get("evidence", ""),
-                    "source_doc_id": current.get("source_doc_id") or new_doc,
-                    "last_seen": props.get("last_seen") or current.get("last_seen"),
-                    # The edge keeps the polarity it was first asserted with; the
-                    # disagreement is carried by corroboration_agreement.
-                    "polarity": prior_polarity,
-                }
-                result = session.run(
-                    """
-                    MATCH (a {id: $source_id})-[r]->(b {id: $target_id})
-                    WHERE type(r) = $rel_type
-                    SET r += $update
-                    RETURN type(r) as rel_type, r as rel
-                    """,
-                    source_id=rel.source_id, target_id=rel.target_id,
-                    rel_type=rel.rel_type, update=self._serialize_props(update),
-                )
-            else:
-                result = session.run(
-                    """
-                    MATCH (a {id: $source_id})
-                    MATCH (b {id: $target_id})
-                    CALL apoc.create.relationship(a, $rel_type, $props, b) YIELD rel
-                    RETURN type(rel) as rel_type, rel
-                    """,
-                    source_id=rel.source_id, target_id=rel.target_id,
-                    rel_type=rel.rel_type, props=props,
-                )
-            record = result.single()
-            rel_data = dict(record["rel"]) if record else {}
+        with self._driver.session() as session:
+            rel_data = session.execute_write(_upsert)
 
         # Invalidate graph cache — resolve project_id from source entity
         project_id = getattr(rel, "project_id", None) or props.get("project_id")
@@ -347,24 +459,50 @@ class GraphStore:
 
         return rel_data
 
+    # What a relationship read returns for each edge touching the queried node
+    # `n`. The match is undirected so both ends are found, but the endpoints are
+    # read from the edge itself: this used to report `n` as the source and the
+    # neighbour as the target for every edge, so an incoming edge came back
+    # reversed and entity merge rebuilt it that way.
+    _REL_ROW = """
+        type(r) AS rel_type, properties(r) AS props,
+        startNode(r).id AS source_id, startNode(r).name AS source_name,
+        endNode(r).id AS target_id, endNode(r).name AS target_name,
+        CASE WHEN startNode(r) = n THEN 'out' ELSE 'in' END AS direction,
+        m.id AS neighbor_id, m.name AS neighbor_name
+    """
+
+    @staticmethod
+    def _rel_from_record(record) -> dict:
+        """One relationship, properties spread flat.
+
+        The structural keys are written after the properties so an edge
+        property can never shadow where the edge actually points.
+        """
+        return {
+            **record["props"],
+            "rel_type": record["rel_type"],
+            "source_id": record["source_id"], "source_name": record["source_name"],
+            "target_id": record["target_id"], "target_name": record["target_name"],
+            # Relative to the queried entity: "out" when it is the start node.
+            "direction": record["direction"],
+            # The other end, whichever way the edge points.
+            "neighbor_id": record["neighbor_id"], "neighbor_name": record["neighbor_name"],
+        }
+
     def get_relationships(self, entity_id: str) -> list[dict]:
+        """Every edge touching the entity, in its true direction.
+
+        `source_*`/`target_*` are the edge's real start and end nodes;
+        `direction` is "out" when the queried entity is the source and "in"
+        when it is the target; `neighbor_*` is the other end either way.
+        """
         with self._driver.session() as session:
             result = session.run(
-                """
-                MATCH (n {id: $id})-[r]-(m)
-                RETURN type(r) as rel_type, properties(r) as props,
-                       n.id as source_id, n.name as source_name,
-                       m.id as target_id, m.name as target_name
-                """,
+                f"MATCH (n:Entity {{id: $id}})-[r]-(m) RETURN {self._REL_ROW}",
                 id=entity_id,
             )
-            return [
-                {"rel_type": record["rel_type"], "target_id": record["target_id"],
-                 "target_name": record["target_name"],
-                 "source_id": record["source_id"], "source_name": record["source_name"],
-                 **record["props"]}
-                for record in result
-            ]
+            return [self._rel_from_record(record) for record in result]
 
     def get_relationships_bulk(self, entity_ids: list[str]) -> dict[str, list[dict]]:
         """Relationships for many entities in one round trip.
@@ -381,36 +519,54 @@ class GraphStore:
             return {}
         with self._driver.session() as session:
             result = session.run(
-                """
-                MATCH (n)-[r]-(m)
+                f"""
+                MATCH (n:Entity)-[r]-(m)
                 WHERE n.id IN $ids
-                RETURN n.id as key, type(r) as rel_type, properties(r) as props,
-                       n.id as source_id, n.name as source_name,
-                       m.id as target_id, m.name as target_name
+                RETURN n.id AS key, {self._REL_ROW}
                 """,
                 ids=list(entity_ids),
             )
             out: dict[str, list[dict]] = {}
             for record in result:
-                out.setdefault(record["key"], []).append({
-                    "rel_type": record["rel_type"], "target_id": record["target_id"],
-                    "target_name": record["target_name"],
-                    "source_id": record["source_id"], "source_name": record["source_name"],
-                    **record["props"],
-                })
+                out.setdefault(record["key"], []).append(self._rel_from_record(record))
             return out
 
-    def get_subgraph(self, entity_id: str, hops: int = 1) -> dict:
+    def get_subgraph(self, entity_id: str, hops: int = 1, project_id: str | None = None) -> dict:
+        """Everything within `hops` of the entity, as nodes and directed edges.
+
+        `hops` is clamped to 1..4. With `project_id`, the start node must be in
+        that project, every other node on a path must be too, and a catalog
+        node (see CATALOG_LABELS) may only end a path. Without it the walk is
+        unscoped, as before. At most `_MAX_SUBGRAPH_PATHS` paths are read;
+        `truncated` says whether that budget cut the walk short.
+        """
+        hops = _clamp_hops(hops)
+        params: dict = {"id": entity_id, "max_paths": _MAX_SUBGRAPH_PATHS}
+        start_scope = path_scope = ""
+        if project_id:
+            params["project_id"] = project_id
+            start_scope = "WHERE start.project_id = $project_id"
+            path_scope = f"""
+                WHERE all(x IN nodes(path) WHERE x.project_id = $project_id OR {_is_catalog('x')})
+                  AND none(x IN nodes(path)[1..-1] WHERE {_is_catalog('x')})
+            """
         with self._driver.session() as session:
             result = session.run(
                 f"""
-                MATCH path = (start {{id: $id}})-[*1..{hops}]-(connected)
-                UNWIND nodes(path) as n
-                WITH collect(DISTINCT n) as nodes, collect(relationships(path)) as all_rels
-                UNWIND all_rels as path_rels
-                UNWIND path_rels as r
-                WITH nodes, collect(DISTINCT r) as rels
+                MATCH (start:Entity {{id: $id}}) {start_scope}
+                MATCH path = (start)-[*1..{hops}]-(connected)
+                {path_scope}
+                WITH path LIMIT $max_paths + 1
+                WITH collect(path) AS all_paths
+                WITH all_paths[..$max_paths] AS paths, size(all_paths) > $max_paths AS truncated
+                UNWIND paths AS p
+                UNWIND nodes(p) AS n
+                WITH paths, truncated, collect(DISTINCT n) AS nodes
+                UNWIND paths AS p
+                UNWIND relationships(p) AS r
+                WITH truncated, nodes, collect(DISTINCT r) AS rels
                 RETURN
+                    truncated,
                     [n IN nodes | properties(n)] as nodes,
                     [r IN rels | {{
                         rel_type: type(r),
@@ -419,14 +575,15 @@ class GraphStore:
                         props: properties(r)
                     }}] as edges
                 """,
-                id=entity_id,
+                parameters=params,
             )
             record = result.single()
             if not record:
-                return {"nodes": [], "edges": [], "node_count": 0, "edge_count": 0}
+                return {"nodes": [], "edges": [], "node_count": 0, "edge_count": 0, "truncated": False}
             return {
                 "nodes": record["nodes"], "edges": record["edges"],
                 "node_count": len(record["nodes"]), "edge_count": len(record["edges"]),
+                "truncated": bool(record["truncated"]),
             }
 
     @staticmethod
@@ -461,20 +618,31 @@ class GraphStore:
         Costs ~2.1s cold against ~0.25s before: ranking needs the relationship
         counts, and an unlabeled `project_id` match cannot use a label index.
         The route caches for 30s, so only the first caller pays it.
+
+        The selection is deterministic — nodes by degree then id, edges by
+        confidence then endpoints — so two builds of one project keep the same
+        slice. Ties used to fall to scan order. `truncated` is True when the
+        budget cut nodes or edges: analytics read the 10,000-node build as if
+        it were the whole project, with nothing to say it might not be.
         """
+        limit = max(0, int(limit))
         with self._driver.session() as session:
+            # One row past the budget, so a full page is distinguishable from a
+            # truncated one without a separate count.
             nodes_result = session.run(
                 """
-                MATCH (n) WHERE n.project_id = $project_id
+                MATCH (n:Entity) WHERE n.project_id = $project_id
                 OPTIONAL MATCH (n)-[r]-()
                 WITH n, count(r) AS degree
-                ORDER BY degree DESC
-                LIMIT $limit
+                ORDER BY degree DESC, n.id
+                LIMIT $limit + 1
                 RETURN properties(n) as props
                 """,
                 project_id=project_id, limit=limit,
             )
             nodes = [self._strip_heavy_props(record["props"]) for record in nodes_result]
+            truncated = len(nodes) > limit
+            nodes = nodes[:limit]
             node_ids = [n.get("id") for n in nodes if n.get("id")]
             # Restricted to the nodes actually returned. The edge query used to
             # run its own independent LIMIT over the whole project, so nothing
@@ -484,9 +652,10 @@ class GraphStore:
                 """
                 MATCH (a)-[r]->(b)
                 WHERE a.id IN $node_ids AND b.id IN $node_ids
-                RETURN type(r) as rel_type, startNode(r).id as source_id,
-                       endNode(r).id as target_id, properties(r) as props
-                LIMIT $limit
+                WITH r, a.id AS source_id, b.id AS target_id
+                ORDER BY coalesce(r.confidence, 0.0) DESC, source_id, type(r), target_id
+                LIMIT $limit + 1
+                RETURN type(r) as rel_type, source_id, target_id, properties(r) as props
                 """,
                 node_ids=node_ids, limit=limit,
             )
@@ -495,25 +664,41 @@ class GraphStore:
                  "target_id": r["target_id"], **r["props"]}
                 for r in edges_result
             ]
+            truncated = truncated or len(edges) > limit
+            edges = edges[:limit]
             return {"nodes": nodes, "edges": edges,
-                    "node_count": len(nodes), "edge_count": len(edges)}
+                    "node_count": len(nodes), "edge_count": len(edges),
+                    "truncated": truncated}
 
-    def find_shortest_path(self, entity_id_1: str, entity_id_2: str) -> dict:
+    def find_shortest_path(self, entity_id_1: str, entity_id_2: str, project_id: str | None = None) -> dict:
+        """Shortest undirected path between two entities, up to 10 hops.
+
+        With `project_id`, both ends and every node between them must belong to
+        that project. Both ends are entities, so a catalog node could only ever
+        be interior — which the scoping rule forbids — and none qualify.
+        """
+        params: dict = {"id1": entity_id_1, "id2": entity_id_2}
+        end_scope = path_scope = ""
+        if project_id:
+            params["project_id"] = project_id
+            end_scope = "WHERE a.project_id = $project_id AND b.project_id = $project_id"
+            path_scope = "WHERE all(x IN nodes(path) WHERE x.project_id = $project_id)"
         with self._driver.session() as session:
             result = session.run(
-                """
-                MATCH path = shortestPath((a {id: $id1})-[*..10]-(b {id: $id2}))
+                f"""
+                MATCH (a:Entity {{id: $id1}}), (b:Entity {{id: $id2}}) {end_scope}
+                MATCH path = shortestPath((a)-[*..{_SHORTEST_PATH_MAX_HOPS}]-(b))
+                {path_scope}
                 RETURN [n IN nodes(path) | properties(n)] as nodes,
-                       [r IN relationships(path) | {
+                       [r IN relationships(path) | {{
                            rel_type: type(r),
                            source_id: startNode(r).id,
                            target_id: endNode(r).id,
                            props: properties(r)
-                       }] as edges,
+                       }}] as edges,
                        length(path) as path_length
                 """,
-                id1=entity_id_1,
-                id2=entity_id_2,
+                parameters=params,
             )
             record = result.single()
             if not record:
@@ -531,7 +716,10 @@ class GraphStore:
         project_id = entity.get("project_id") if entity else None
 
         with self._driver.session() as session:
-            session.run("MATCH (n {id: $id}) DETACH DELETE n", id=entity_id)
+            summary = session.run("MATCH (n:Entity {id: $id}) DETACH DELETE n", id=entity_id).consume()
+            if summary.counters.nodes_deleted == 0 and entity is not None:
+                # Unlabelled node (see get_entity).
+                session.run("MATCH (n {id: $id}) DETACH DELETE n", id=entity_id)
 
         if project_id:
             from intel_platform.services.graph_cache import graph_cache
@@ -548,7 +736,7 @@ class GraphStore:
             "entity_type": "Project", "project_id": "",
         }
         with self._driver.session() as session:
-            result = session.run("CREATE (n:Project $props) RETURN n", props=props)
+            result = session.run("CREATE (n:Project:Entity $props) RETURN n", props=props)
             record = result.single()
             return dict(record["n"]) if record else {}
 
@@ -582,7 +770,7 @@ class GraphStore:
         with self._driver.session() as session:
             result = session.run(
                 """
-                MATCH (n {project_id: $pid}) WHERE NOT n:Project AND n.created_at IS NOT NULL
+                MATCH (n:Entity {project_id: $pid}) WHERE NOT n:Project AND n.created_at IS NOT NULL
                 RETURN n.created_at as created_at ORDER BY n.created_at DESC LIMIT 1
                 """,
                 pid=project_id,
@@ -599,7 +787,7 @@ class GraphStore:
         with self._driver.session() as session:
             result = session.run(
                 """
-                OPTIONAL MATCH (n {project_id: $pid}) WHERE NOT n:Project
+                OPTIONAL MATCH (n:Entity {project_id: $pid}) WHERE NOT n:Project
                 WITH count(n) as entity_count
                 OPTIONAL MATCH (d:Document {project_id: $pid})
                 WITH entity_count, count(d) as doc_count

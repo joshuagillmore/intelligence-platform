@@ -6,23 +6,8 @@ import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import HighlightedExcerpt from '@/components/HighlightedExcerpt';
 import { useProject } from '@/lib/ProjectContext';
 import { searchApi, documentsApi } from '@/lib/api';
+import { readSearch, type SearchResults } from '@/lib/search';
 import { TYPE_COLOR_CLASS } from '@/lib/entityStyles';
-
-interface SearchEntry {
-  id: string;
-  name: string;
-  entity_type: string;
-  reliability?: string;
-  report_type?: string;
-  preview?: string;
-}
-
-interface SearchResults {
-  entities: SearchEntry[];
-  documents: SearchEntry[];
-  reports: SearchEntry[];
-  total: number;
-}
 
 /** A passage returned by meaning-based retrieval, with its similarity score. */
 interface Passage {
@@ -102,7 +87,7 @@ function SearchPageContent() {
         setPassages(res.data?.results || []);
       } else {
         const res = await searchApi.search(activeProject.id, q.trim());
-        setResults(res.data);
+        setResults(readSearch(res.data));
       }
       setRan(q.trim());
     } catch {
@@ -149,7 +134,7 @@ function SearchPageContent() {
   }
 
   const nothingYet = !loading && !error && !results && !passages;
-  const emptyKeyword = results && results.total === 0;
+  const emptyKeyword = results && results.count === 0;
   const emptyMeaning = passages && passages.length === 0;
 
   return (
@@ -203,7 +188,7 @@ function SearchPageContent() {
           ))}
           <span className="text-[11px] text-gray-500">
             {mode === 'keyword'
-              ? 'Matches names and text exactly.'
+              ? 'Matches entity names: every word must appear in the name.'
               : 'Finds passages that mean the same thing, even with different words.'}
           </span>
         </div>
@@ -225,7 +210,7 @@ function SearchPageContent() {
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-8">
             <h3 className="text-base font-semibold text-gray-300 mb-1">Search the project</h3>
             <p className="text-sm text-gray-500 mb-5 max-w-xl">
-              Keyword search matches entity names and document text. Meaning search retrieves
+              Keyword search matches entity names (not document text). Meaning search retrieves
               passages by what they say — useful when you don&apos;t know the exact wording.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl">
@@ -287,11 +272,14 @@ function SearchPageContent() {
         )}
 
         {/* ── Keyword results ── */}
-        {results && results.total > 0 && (
+        {results && results.count > 0 && (
           <div className="space-y-6">
             <p className="text-xs text-gray-500">
-              {results.total} result{results.total !== 1 ? 's' : ''} for
+              {results.truncated
+                ? <>Showing {results.count.toLocaleString()} of {results.total.toLocaleString()} names matching</>
+                : <>{results.count} name{results.count !== 1 ? 's' : ''} matching</>}
               <span className="text-gray-300"> &quot;{ran}&quot;</span>
+              {results.truncated && <span> · refine the search to see the rest</span>}
             </p>
 
             {results.entities.length > 0 && (
@@ -405,7 +393,7 @@ function SearchPageContent() {
             <p className="text-xs text-gray-500 mb-4">
               {mode === 'meaning'
                 ? 'Meaning search only covers ingested document text.'
-                : 'Keyword search matches names and text exactly.'}
+                : 'Keyword search matches entity names only, not document text.'}
             </p>
             <button
               onClick={() => { const next: Mode = mode === 'keyword' ? 'meaning' : 'keyword'; setMode(next); run(ran, next); }}

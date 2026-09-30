@@ -197,6 +197,60 @@ class TestParseVerdicts:
         assert parse_verdicts("", self.EEIS) == []
 
 
+class TestDecoratedVerdictLines:
+    """R-6: the verdict block as models actually lay it out.
+
+    `_VERDICT_LINE` only accepted the requested shape plus a bold wrap round
+    the whole line. A markdown table, a bold field or a bulleted line parsed as
+    nothing, every element became UNASSESSED, and the response blamed the
+    model for returning no verdicts.
+    """
+
+    EEIS = ["Which vessels were struck?", "Who attributed it?", "Which facilities operate?"]
+
+    def test_markdown_table(self):
+        narrative = (
+            "| # | Element | Verdict | Justification |\n"
+            "|---|---|---|---|\n"
+            "| 1 | vessels struck | SATISFIED | Three sources name MV Aurora Trader. |\n"
+            "| 2 | who attributed it | UNMET | Nothing addresses attribution. |\n"
+            "| 3 | facilities | PARTIAL | One site named. |\n"
+        )
+        got = parse_verdicts(narrative, self.EEIS)
+        assert [(g["index"], g["verdict"]) for g in got] == [(0, "SATISFIED"), (1, "UNMET"), (2, "PARTIAL")]
+        assert got[0]["justification"] == "Three sources name MV Aurora Trader."
+
+    def test_bold_fields(self):
+        narrative = "**1** | **vessels struck** | **SATISFIED** | MV Aurora Trader named."
+        got = parse_verdicts(narrative, self.EEIS)
+        assert got and got[0]["verdict"] == "SATISFIED"
+        assert got[0]["justification"] == "MV Aurora Trader named."
+
+    def test_bulleted_and_numbered_lines(self):
+        narrative = (
+            "- 1 | vessels struck | SATISFIED | named\n"
+            "* 2 | who attributed it | UNMET | absent\n"
+            "3. 3 | facilities | PARTIAL | one site\n"
+        )
+        assert [g["verdict"] for g in parse_verdicts(narrative, self.EEIS)] == ["SATISFIED", "UNMET", "PARTIAL"]
+
+    def test_numbered_table_cell(self):
+        got = parse_verdicts("| 2. | who attributed | UNMET | absent |", self.EEIS)
+        assert got and got[0]["index"] == 1
+
+    def test_labelled_bold_block(self):
+        narrative = "**EEI_ASSESSMENT:**\n`1 | vessels struck | SATISFIED | named`"
+        assert parse_verdicts(narrative, self.EEIS)[0]["verdict"] == "SATISFIED"
+
+    def test_prose_only_reply_parses_nothing(self):
+        """No partial match from prose that merely uses the verdict words."""
+        narrative = (
+            "Element 1 is SATISFIED by the reporting on MV Aurora Trader, while "
+            "element 2 remains UNMET and element 3 is only PARTIAL."
+        )
+        assert parse_verdicts(narrative, self.EEIS) == []
+
+
 class TestUnassessedElements:
     """An element with no verdict has not been shown to be answered.
 

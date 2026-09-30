@@ -48,6 +48,9 @@ export default function CollectionPlansPage() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [plansError, setPlansError] = useState<string | null>(null);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   // Create plan form. `pir_id` anchors the plan on one of the project's
   // Priority Intelligence Requirements (see /pirs) rather than a free-text copy.
@@ -77,18 +80,26 @@ export default function CollectionPlansPage() {
   const loadPlans = useCallback(async () => {
     if (!activeProject) return;
     setLoading(true);
-    try {
-      const [plansRes, dashRes] = await Promise.all([
-        collectionPlansApi.list(activeProject.id),
-        collectionPlansApi.dashboard(activeProject.id),
-      ]);
-      setPlans(plansRes.data);
-      setDashboard(dashRes.data);
-    } catch (e) {
-      console.error('Failed to load plans', e);
-    } finally {
-      setLoading(false);
+    // Separately settled: a dashboard failure used to take the plan list down
+    // with it, which then read "No collection plans yet".
+    const [plansRes, dashRes] = await Promise.allSettled([
+      collectionPlansApi.list(activeProject.id),
+      collectionPlansApi.dashboard(activeProject.id),
+    ]);
+    if (plansRes.status === 'fulfilled') {
+      setPlans(plansRes.value.data);
+      setPlansError(null);
+    } else {
+      setPlansError(getErrorMessage(plansRes.reason));
     }
+    if (dashRes.status === 'fulfilled') {
+      setDashboard(dashRes.value.data);
+      setDashboardError(null);
+    } else {
+      setDashboard(null);
+      setDashboardError(getErrorMessage(dashRes.reason));
+    }
+    setLoading(false);
   }, [activeProject]);
 
   const loadPirs = useCallback(async () => {
@@ -103,21 +114,38 @@ export default function CollectionPlansPage() {
 
   useEffect(() => { loadPlans(); loadPirs(); }, [loadPlans, loadPirs]);
 
+  // The plan the detail panel is for. A response for any other plan (a slow
+  // load overtaken by a newer click) is dropped.
+  const detailFor = useRef<string | null>(null);
+
   const loadPlanDetail = useCallback(async (planId: string) => {
+    detailFor.current = planId;
     try {
       const [planRes, acqRes] = await Promise.all([
         collectionPlansApi.get(planId),
         collectionPlansApi.acquisitions(planId),
       ]);
+      if (detailFor.current !== planId) return;
       setSelectedPlan(planRes.data);
       setAcquisitions(acqRes.data);
+      setDetailError(null);
     } catch (e) {
-      console.error('Failed to load plan detail', e);
+      if (detailFor.current !== planId) return;
+      // Never leave another plan's detail on screen: Transition and Delete act
+      // on the id shown there.
+      setSelectedPlan(null);
+      setAcquisitions([]);
+      setDetailError(getErrorMessage(e));
     }
   }, []);
 
   useEffect(() => {
+    // Clear first, so the previous plan's actions are gone while this loads.
+    setSelectedPlan(null);
+    setAcquisitions([]);
+    setDetailError(null);
     if (selectedPlanId) loadPlanDetail(selectedPlanId);
+    else detailFor.current = null;
   }, [selectedPlanId, loadPlanDetail]);
 
   async function createPlan() {
@@ -239,6 +267,9 @@ export default function CollectionPlansPage() {
       <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8 overflow-y-auto h-screen">
 
         {/* Dashboard Summary */}
+        {dashboardError && (
+          <p role="alert" className="text-red-400 text-xs mb-6">Could not load the collection dashboard: {dashboardError}</p>
+        )}
         {dashboard && (
           <section className="mb-8">
             <h2 className="text-[10px] font-black tracking-[0.2em] text-accent-periwinkle uppercase mb-4 flex items-center gap-2">
@@ -346,7 +377,13 @@ export default function CollectionPlansPage() {
             {/* Plan List */}
             {loading ? <LoadingSpinner size="sm" /> : (
               <div className="space-y-2">
-                {plans.length === 0 && (
+                {plansError && (
+                  <div role="alert" className="bg-navy-800 rounded p-4 text-center text-red-400 text-sm">
+                    Could not load collection plans: {plansError}
+                    <button onClick={loadPlans} className="block mx-auto mt-2 text-xs text-accent-blue hover:underline">Retry</button>
+                  </div>
+                )}
+                {plans.length === 0 && !plansError && (
                   <div className="bg-navy-800 rounded p-6 text-center text-gray-500 text-sm">
                     No collection plans yet. Create one to start collecting data.
                   </div>
@@ -383,9 +420,20 @@ export default function CollectionPlansPage() {
           {/* Right Panel: Plan Detail */}
           <div className="lg:w-2/3">
             {!selectedPlan ? (
-              <div className="bg-navy-800 rounded p-8 text-center text-gray-500 text-sm">
-                Select a collection plan to view details, manage sources, and upload data.
-              </div>
+              detailError ? (
+                <div role="alert" className="bg-navy-800 rounded p-8 text-center text-red-400 text-sm">
+                  Could not load this plan: {detailError}
+                  {selectedPlanId && (
+                    <button onClick={() => loadPlanDetail(selectedPlanId)} className="block mx-auto mt-2 text-xs text-accent-blue hover:underline">Retry</button>
+                  )}
+                </div>
+              ) : selectedPlanId ? (
+                <div className="bg-navy-800 rounded p-8"><LoadingSpinner size="sm" /></div>
+              ) : (
+                <div className="bg-navy-800 rounded p-8 text-center text-gray-500 text-sm">
+                  Select a collection plan to view details, manage sources, and upload data.
+                </div>
+              )
             ) : (
               <div className="space-y-6">
                 {/* Plan Header */}

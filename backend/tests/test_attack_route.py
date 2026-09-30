@@ -171,6 +171,28 @@ def test_map_returns_counts(client, analyst_header, _override_db):
     assert resp.json() == {"mapped": 3, "skipped": 2}
 
 
+def test_map_passes_remap_through(client, analyst_header, _override_db):
+    fake = AsyncMock(return_value={"mapped": 0, "skipped": 0, "skip_reasons": {}, "stale_removed": 0})
+    with patch("intel_platform.api.routes.attack.attack_mapping.map_project_ttps", new=fake):
+        resp = client.post(
+            "/api/attack/map", params={"project_id": "p1", "remap": "true"}, headers=analyst_header,
+        )
+    assert resp.status_code == 200
+    assert fake.await_args.kwargs["remap"] is True
+
+
+def test_map_llm_unavailable_is_503_without_leaking(client, analyst_header, _override_db):
+    # Contract 14: an LLM outage is an error, not {"mapped": 0, "skipped": N}.
+    from intel_platform.services.attack import mapping
+
+    with patch("intel_platform.api.routes.attack.attack_mapping.map_project_ttps",
+               new=AsyncMock(side_effect=mapping.LLMUnavailable("ollama 404: model not found"))):
+        resp = client.post("/api/attack/map", params={"project_id": "p1"}, headers=analyst_header)
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "LLM provider unavailable"
+    assert "ollama" not in resp.text
+
+
 def test_d3fend_requires_auth(client):
     resp = client.get("/api/attack/technique/T1566/d3fend")
     assert resp.status_code in (401, 403)
@@ -183,6 +205,24 @@ def test_d3fend_passthrough(client, analyst_header, _override_db):
         resp = client.get("/api/attack/technique/T1566/d3fend", headers=analyst_header)
     assert resp.status_code == 200
     assert resp.json() == fake
+
+
+@pytest.mark.parametrize("tid", ["T1566x", "T15661", "T1566.01", "1566", "t1566", "TA0001"])
+def test_d3fend_rejects_a_malformed_technique_id(client, analyst_header, _override_db, tid):
+    # The id is interpolated into the outbound D3FEND URL; only T#### or
+    # T####.### may reach it.
+    fetch = AsyncMock(return_value={"countermeasures": []})
+    with patch("intel_platform.api.routes.attack.attack_d3fend.get_countermeasures", new=fetch):
+        resp = client.get(f"/api/attack/technique/{tid}/d3fend", headers=analyst_header)
+    assert resp.status_code == 422
+    fetch.assert_not_awaited()
+
+
+def test_d3fend_accepts_a_subtechnique_id(client, analyst_header, _override_db):
+    with patch("intel_platform.api.routes.attack.attack_d3fend.get_countermeasures",
+               new=AsyncMock(return_value={"countermeasures": []})):
+        resp = client.get("/api/attack/technique/T1566.001/d3fend", headers=analyst_header)
+    assert resp.status_code == 200
 
 
 def test_report_requires_auth(client):

@@ -9,16 +9,18 @@ the ~700-way classification problem.
 
 Confirmed matches at/above ``attack_mapping_confidence_min`` are written as
 ``(:TTP)-[:MAPS_TO {confidence, method:"llm", rationale}]->(:AttackTechnique)``
-(Phase 1 T-code resolution uses ``method:"tcode"``). Degrades cleanly — a missing
-embedding or LLM provider yields skips, never an exception — so the endpoint never
-500s on a provider outage. The LLM call is routed through the extraction/collection
-provider so bulk mapping won't drain a rate-limited cloud key.
+(Phase 1 T-code resolution uses ``method:"tcode"``). Every skipped TTP carries a
+reason (no candidates, rejected by the model, unreadable reply, embedding or
+retrieval unavailable); an unreachable LLM raises ``LLMUnavailable`` (the route
+returns 503) instead of reading as "the model rejected everything". The LLM call
+is routed through the extraction/collection provider so bulk mapping won't drain
+a rate-limited cloud key.
 """
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
+from collections import Counter
 
 from neo4j import Driver
 from sqlalchemy import text as sql_text
@@ -28,6 +30,7 @@ from intel_platform.config import settings
 from intel_platform.llm.embeddings import EmbeddingProvider, get_embedding_provider
 from intel_platform.llm.providers import _get_extraction_provider
 from intel_platform.llm.skills.loader import SkillsLoader
+from intel_platform.services.llm_output import json_object
 
 logger = logging.getLogger(__name__)
 
@@ -35,23 +38,63 @@ logger = logging.getLogger(__name__)
 _EMBED_BATCH_SIZE = 96
 
 
+class LLMUnavailable(RuntimeError):
+    """No LLM could be reached, or the confirmation call failed.
+
+    Raised rather than counted as a skip: an outage is not the model rejecting
+    the candidates, and ``{"mapped": 0, "skipped": N}`` would say it was. The
+    route turns it into a 503. TTPs mapped before the failure keep their edges,
+    and a re-run picks up the ones still unmapped.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Neo4j reads / writes (sync driver — callers offload via asyncio.to_thread)
 # ---------------------------------------------------------------------------
 
-def _fetch_unresolved_ttps(driver: Driver, project_id: str, limit: int) -> list[dict]:
-    """Project TTPs lacking a T-code (``method:"tcode"``) MAPS_TO edge (capped)."""
+def _fetch_unresolved_ttps(driver: Driver, project_id: str, limit: int, remap: bool = False) -> list[dict]:
+    """Project TTPs still to map, ordered by id and capped.
+
+    By default a TTP with *any* ``MAPS_TO`` edge is done: excluding only T-code
+    edges re-sent every LLM-mapped TTP to the model on every run. ``remap``
+    re-selects LLM-mapped TTPs (never T-code ones, which are exact). Ordering
+    by id makes the cap deterministic rather than whatever the store yields.
+    """
+    exclude = (
+        "(t)-[:MAPS_TO {method: 'tcode'}]->(:AttackTechnique)" if remap
+        else "(t)-[:MAPS_TO]->(:AttackTechnique)"
+    )
     with driver.session() as session:
         return session.run(
-            """
-            MATCH (t:TTP {project_id: $pid})
-            WHERE NOT (t)-[:MAPS_TO {method: 'tcode'}]->(:AttackTechnique)
+            f"""
+            MATCH (t:TTP {{project_id: $pid}})
+            WHERE NOT {exclude}
             RETURN t.id AS id, coalesce(t.name, '') AS name,
                    coalesce(t.description, '') AS description
+            ORDER BY t.id
             LIMIT $limit
             """,
             pid=project_id, limit=limit,
         ).data()
+
+
+def _prune_llm_mappings(driver: Driver, ttp_id: str, keep: list[str]) -> int:
+    """Delete this TTP's ``method:"llm"`` MAPS_TO edges to techniques not in ``keep``.
+
+    Called only when the model gave a readable answer on a re-map: an edge it no
+    longer confirms is stale. T-code edges are never touched.
+    """
+    with driver.session() as session:
+        rec = session.run(
+            """
+            MATCH (t:TTP {id: $ttp_id})-[r:MAPS_TO {method: 'llm'}]->(tech:AttackTechnique)
+            WHERE NOT tech.attack_id IN $keep
+            DELETE r
+            RETURN count(r) AS removed
+            """,
+            ttp_id=ttp_id, keep=keep,
+        ).single()
+        return int(rec["removed"]) if rec else 0
 
 
 def _merge_mapping(driver: Driver, ttp_id: str, tech_id: str, confidence: float, rationale: str) -> bool:
@@ -98,20 +141,23 @@ async def _retrieve_candidates(session: AsyncSession, query_vec: list[float], to
     ]
 
 
-def _parse_matches(content: str) -> list[dict]:
-    """Parse the skill's strict-JSON reply into confirmed matches (lenient)."""
-    txt = (content or "").strip()
-    if "```json" in txt:
-        txt = txt.split("```json")[1].split("```")[0]
-    elif "```" in txt:
-        txt = txt.split("```")[1].split("```")[0]
-    try:
-        data = json.loads(txt.strip())
-    except (ValueError, IndexError):
-        return []
-    raw = data.get("matches", []) if isinstance(data, dict) else []
+def _parse_matches(content: str) -> list[dict] | None:
+    """Read the confirmation reply into matches, or ``None`` if it cannot be read.
+
+    The skill asks for bare JSON; models add a lead-in sentence, a fence, bold,
+    a list marker or a table around it. ``llm_output.json_object`` finds the
+    object wherever it sits. ``None`` (no object, or no ``matches`` list in it)
+    means "unparsed"; ``[]`` means the model read the candidates and confirmed
+    none. Those are different findings and are counted separately.
+    """
+    parsed = json_object(content or "")
+    if not parsed:  # json_object returns {} when nothing parses
+        return None
+    raw = parsed.get("matches")
+    if not isinstance(raw, list):
+        return None
     out: list[dict] = []
-    for m in raw if isinstance(raw, list) else []:
+    for m in raw:
         if not isinstance(m, dict):
             continue
         tid = (m.get("technique_id") or "").strip()
@@ -126,7 +172,11 @@ def _parse_matches(content: str) -> list[dict]:
 
 
 async def _confirm_matches(provider, skill_system: str, ttp_text: str, candidates: list[dict]) -> list[dict] | None:
-    """Ask the LLM which candidates apply. Returns matches, or None if unreachable."""
+    """Ask the LLM which candidates apply.
+
+    Returns the matches, or ``None`` when the reply could not be read. A failed
+    call raises ``LLMUnavailable`` — an outage is not a rejection.
+    """
     lines = [f"- {c['technique_id']}: {c['text']}" for c in candidates]
     prompt = (
         "Observed TTP:\n"
@@ -142,10 +192,10 @@ async def _confirm_matches(provider, skill_system: str, ttp_text: str, candidate
             temperature=0.1,
             max_tokens=1024,
         )
-    except Exception:
+    except Exception as exc:
         logger.warning("ATT&CK mapping LLM call failed", exc_info=True)
-        return None
-    return _parse_matches(result.content)
+        raise LLMUnavailable("ATT&CK mapping LLM call failed") from exc
+    return _parse_matches(getattr(result, "content", "") or "")
 
 
 # ---------------------------------------------------------------------------
@@ -158,30 +208,55 @@ async def map_project_ttps(
     project_id: str,
     *,
     embedding_provider: EmbeddingProvider | None = None,
+    remap: bool = False,
 ) -> dict:
-    """RAG-map a project's un-T-code-resolved TTPs to ATT&CK techniques.
+    """RAG-map a project's unmapped TTPs to ATT&CK techniques.
 
-    Returns ``{"mapped": int, "skipped": int}``. A TTP counts as ``mapped`` when at
-    least one confirmed match at/above the confidence floor is written; otherwise
-    ``skipped`` (no candidates, LLM unreachable, or all matches below threshold).
-    Never raises for provider outages — the whole batch degrades to skips.
+    ``remap`` also re-examines TTPs the LLM mapped before; where the model now
+    gives a readable answer that no longer confirms an earlier ``llm`` edge,
+    that edge is removed and counted in ``stale_removed``.
+
+    Returns ``{"mapped": int, "skipped": int, "skip_reasons": {reason: count}}``.
+    A TTP counts as ``mapped`` when at least one confirmed match at/above the
+    confidence floor is written. Every skipped TTP is attributed to one reason:
+
+    * ``no_candidates`` — retrieval found no nearby technique;
+    * ``rejected`` — the model read the candidates and confirmed none at/above
+      the floor;
+    * ``unparsed`` — the model's reply could not be read (not a rejection);
+    * ``embedding_unavailable`` / ``candidate_retrieval_failed`` /
+      ``technique_catalogue_not_embedded`` — the batch could not run; these
+      also set ``reason`` and ``detail`` on the result.
+
+    An unreachable LLM raises ``LLMUnavailable`` rather than degrading to skips
+    (contract 14): an outage must read as an error, not as zero mappings.
     """
     # Cap the batch — /attack/map is analyst-triggerable and each TTP costs an
     # embedding + LLM call; an unbounded project TTP set would be an open-ended
     # cost/latency/memory sink. Over-cap TTPs are simply left for a later run.
     cap = int(getattr(settings, "attack_mapping_max_ttps", 200) or 200)
-    ttps = await asyncio.to_thread(_fetch_unresolved_ttps, driver, project_id, cap)
+    ttps = await asyncio.to_thread(_fetch_unresolved_ttps, driver, project_id, cap, remap)
+    remap_fields = {"stale_removed": 0} if remap else {}
     if not ttps:
-        return {"mapped": 0, "skipped": 0}
+        return {"mapped": 0, "skipped": 0, "skip_reasons": {}, **remap_fields}
 
+    def _batch_skipped(reason: str, detail: str) -> dict:
+        return {
+            "mapped": 0,
+            "skipped": len(ttps),
+            "skip_reasons": {reason: len(ttps)},
+            "reason": reason,
+            "detail": detail,
+            **remap_fields,
+        }
 
-    # Embedding provider — degrade whole batch to skips if unavailable/unreachable.
+    # Embedding provider — the whole batch cannot run without it.
     if embedding_provider is None:
         try:
             embedding_provider = get_embedding_provider()
         except Exception:
             logger.warning("No embedding provider for ATT&CK mapping", exc_info=True)
-            return {"mapped": 0, "skipped": len(ttps)}
+            return _batch_skipped("embedding_unavailable", "No embedding provider is configured or reachable.")
 
     texts = [_ttp_text(t) for t in ttps]
     vectors: list[list[float]] = []
@@ -191,17 +266,19 @@ async def map_project_ttps(
             vectors.extend(result.embeddings)
     except Exception:
         logger.warning("Embedding TTP text failed for ATT&CK mapping", exc_info=True)
-        return {"mapped": 0, "skipped": len(ttps)}
+        return _batch_skipped("embedding_unavailable", "The embedding provider returned an error.")
     if len(vectors) != len(ttps):
-        return {"mapped": 0, "skipped": len(ttps)}
+        return _batch_skipped("embedding_unavailable", "The embedding provider returned too few vectors.")
 
     # LLM provider (extraction/collection route so bulk mapping won't drain a
     # rate-limited cloud key) + the confirmation skill's system prompt.
     try:
         llm_provider = await _get_extraction_provider()
-    except Exception:
+    except Exception as exc:
         logger.warning("No LLM provider for ATT&CK mapping", exc_info=True)
-        return {"mapped": 0, "skipped": len(ttps)}
+        raise LLMUnavailable("no LLM provider for ATT&CK mapping") from exc
+    if llm_provider is None:
+        raise LLMUnavailable("no LLM provider for ATT&CK mapping")
     skill_system = SkillsLoader().get_system_prompt("attack_mapping", include_foundation=True) or ""
 
     top_k = int(getattr(settings, "attack_mapping_top_k", 5) or 5)
@@ -220,46 +297,54 @@ async def map_project_ttps(
         logger.warning("Could not count ATT&CK technique embeddings", exc_info=True)
         embedded = None
     if embedded == 0:
-        return {
-            "mapped": 0,
-            "skipped": len(ttps),
-            "reason": "technique_catalogue_not_embedded",
-            "detail": "Run POST /api/attack/embed to embed the ATT&CK catalogue before mapping.",
-        }
+        return _batch_skipped(
+            "technique_catalogue_not_embedded",
+            "Run POST /api/attack/embed to embed the ATT&CK catalogue before mapping.",
+        )
 
     mapped = 0
-    skipped = 0
-    for ttp, vec in zip(ttps, vectors):
+    stale_removed = 0
+    skip_reasons: Counter[str] = Counter()
+    for index, (ttp, vec) in enumerate(zip(ttps, vectors)):
         try:
             candidates = await _retrieve_candidates(session, vec, top_k)
         except Exception:
             # A real pgvector error (e.g. embedding dim != the table's Vector column)
-            # must not 500 the endpoint — degrade the rest of the batch to skips.
+            # must not 500 the endpoint — the rest of the batch is reported as
+            # not attempted, with the reason.
             logger.warning("pgvector candidate retrieval failed for ATT&CK mapping", exc_info=True)
-            skipped = len(ttps) - mapped
+            skip_reasons["candidate_retrieval_failed"] += len(ttps) - index
             break
         if not candidates:
-            skipped += 1
+            skip_reasons["no_candidates"] += 1
             continue
 
-        matches = None
-        if llm_provider is not None:
-            matches = await _confirm_matches(llm_provider, skill_system, _ttp_text(ttp), candidates)
-        if matches is None:  # provider unreachable
-            skipped += 1
+        matches = await _confirm_matches(llm_provider, skill_system, _ttp_text(ttp), candidates)
+        if matches is None:  # the reply could not be read — not a rejection
+            skip_reasons["unparsed"] += 1
             continue
 
         candidate_ids = {c["technique_id"] for c in candidates}
-        wrote = False
+        confirmed: list[str] = []
         for m in matches:
             if m["technique_id"] in candidate_ids and m["confidence"] >= threshold:
                 if await asyncio.to_thread(
                     _merge_mapping, driver, ttp["id"], m["technique_id"], m["confidence"], m["rationale"]
                 ):
-                    wrote = True
-        if wrote:
+                    confirmed.append(m["technique_id"])
+        if remap:
+            # A readable answer that no longer confirms an earlier llm edge
+            # makes that edge stale (a rejection removes them all).
+            stale_removed += await asyncio.to_thread(_prune_llm_mappings, driver, ttp["id"], confirmed)
+        if confirmed:
             mapped += 1
         else:
-            skipped += 1
+            skip_reasons["rejected"] += 1
 
-    return {"mapped": mapped, "skipped": skipped}
+    result = {"mapped": mapped, "skipped": sum(skip_reasons.values()), "skip_reasons": dict(skip_reasons)}
+    if remap:
+        result["stale_removed"] = stale_removed
+    if skip_reasons.get("candidate_retrieval_failed"):
+        result["reason"] = "candidate_retrieval_failed"
+        result["detail"] = "Technique candidate retrieval failed; the embedding width may not match the index."
+    return result

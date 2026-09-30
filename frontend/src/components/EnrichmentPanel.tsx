@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { enrichmentApi } from '@/lib/api';
 import { TYPE_ICON } from '@/lib/entityStyles';
 
@@ -29,6 +29,18 @@ function parseJson(value: any): any {
   }
 }
 
+/** Providers with a real cached payload. The cache view may list every provider
+ *  with `null` on a miss; a null is "nothing cached", not a cached result. */
+function cachedProviders(cached: unknown): Record<string, Record<string, any>> {
+  if (!cached || typeof cached !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(cached as Record<string, unknown>).filter(
+      (entry): entry is [string, Record<string, any>] =>
+        entry[1] != null && typeof entry[1] === 'object' && !Array.isArray(entry[1]),
+    ),
+  );
+}
+
 function statusClass(status?: string): string {
   switch (status) {
     case 'ok':
@@ -39,6 +51,10 @@ function statusClass(status?: string): string {
       return 'bg-yellow-900/30 text-yellow-400';
     case 'error':
       return 'bg-red-900/30 text-red-400';
+    // Deliberately not run (e.g. a lookup that would leave the proxy): neither
+    // a failure nor a result.
+    case 'skipped':
+      return 'bg-navy-700 text-gray-300 border border-dashed border-gray-500';
     default:
       return 'bg-gray-800 text-gray-400';
   }
@@ -61,6 +77,10 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Record<string, any> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The entity this panel is showing now. A run is slow (every provider goes
+  // through the collection proxy), so the analyst can move to another entity
+  // before it returns; its result must not land on the new one.
+  const currentEntity = useRef(entityId);
 
   // Show enrichment the backend has already cached. Without this the panel only
   // ever populated from a fresh Investigate click, so a previously-enriched
@@ -68,21 +88,26 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
   // served by GET /enrichment/entities/{id}, just never requested.
   // Declared before the early return below so hook order stays stable.
   useEffect(() => {
+    // A new entity starts clean: nothing from the previous one carries over.
+    currentEntity.current = entityId;
+    setStatus(null);
+    setError(null);
+    setBusy(false);
     if (!ENRICHABLE_TYPES.includes(entityType)) return;
     let cancelled = false;
     (async () => {
       try {
         const { data } = await enrichmentApi.getCached(entityId);
-        const cached = data?.cached;
-        if (!cancelled && cached && Object.keys(cached).length > 0) {
+        const cached = cachedProviders(data?.cached);
+        if (!cancelled && Object.keys(cached).length > 0) {
           // The cache view returns each provider's payload, not the {status}
           // envelope the live run returns — tag them so the chips read
           // "geoip: cached" rather than "geoip: —".
           setStatus(
             Object.fromEntries(
-              Object.entries(cached).map(([name, payload]: [string, any]) => [
+              Object.entries(cached).map(([name, payload]) => [
                 name,
-                { ...(payload && typeof payload === 'object' ? payload : {}), status: payload?.status ?? 'cached' },
+                { ...payload, status: payload.status ?? 'cached' },
               ]),
             ),
           );
@@ -102,16 +127,19 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
   const actionVerb = isGeo ? 'Geolocate' : 'Investigate';
 
   async function run() {
+    const runFor = entityId;
     setBusy(true);
     setError(null);
     try {
-      const { data } = await enrichmentApi.investigate(entityId);
+      const { data } = await enrichmentApi.investigate(runFor);
+      if (currentEntity.current !== runFor) return;
       setStatus(data?.providers || null);
       onEnriched?.();
     } catch {
+      if (currentEntity.current !== runFor) return;
       setError('Enrichment failed — check the collection egress and provider availability.');
     } finally {
-      setBusy(false);
+      if (currentEntity.current === runFor) setBusy(false);
     }
   }
 
@@ -152,10 +180,12 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
           {properties.kev_date_added ? ` · ${properties.kev_date_added}` : ''}
         </div>
       )}
+      {/* NVD's own rating. `severity` is the combined KEV/NVD rating now, so a
+          KEV "critical" must not be shown as the CVSS score's severity. */}
       {properties.cvss_score != null && (
         <Field
           label="CVSS"
-          value={`${properties.cvss_score}${properties.severity ? ` (${properties.severity})` : ''}`}
+          value={`${properties.cvss_score}${properties.cvss_severity ? ` (${properties.cvss_severity})` : ''}`}
         />
       )}
       {properties.description ? <Field label="Description" value={String(properties.description)} /> : null}
@@ -233,11 +263,21 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
 
       {status && (
         <div className="mt-2 flex flex-wrap gap-1">
-          {Object.entries(status).map(([name, s]: [string, any]) => (
-            <span key={name} className={`text-[10px] px-1.5 py-0.5 rounded ${statusClass(s?.status)}`}>
-              {name}: {s?.status || '—'}
-            </span>
-          ))}
+          {Object.entries(status).map(([name, s]: [string, any]) => {
+            // error and skipped carry the reason; say it on the chip.
+            const reason = (s?.status === 'error' || s?.status === 'skipped') && typeof s?.reason === 'string'
+              ? s.reason
+              : '';
+            return (
+              <span
+                key={name}
+                title={reason || undefined}
+                className={`text-[10px] px-1.5 py-0.5 rounded ${statusClass(s?.status)}`}
+              >
+                {name}: {s?.status || '—'}{reason ? ` · ${reason}` : ''}
+              </span>
+            );
+          })}
         </div>
       )}
     </div>

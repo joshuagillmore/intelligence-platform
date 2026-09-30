@@ -27,6 +27,7 @@ import re
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import SYSTEM_ENTITY_TYPES, probability_to_label
 from intel_platform.services.graph_rag import GraphRAGPipeline
+from intel_platform.services.llm_output import normalise_line
 
 logger = logging.getLogger(__name__)
 
@@ -42,18 +43,27 @@ _MAX_DOCS = 25
 _DOC_EXCERPT_CHARS = 1500
 
 # The model is asked to close its answer with machine-readable blocks so the
-# structured fields below are parsed from real output rather than guessed. Both
-# patterns tolerate the list/table decoration models habitually add.
+# structured fields below are parsed from real output rather than guessed. Lines
+# are read through `llm_output.normalise_line`, so bold fields, bullets, list
+# numbering and table pipes are gone before these patterns see them; extra
+# table columns after the probability are allowed. The probability may not run
+# on into a digit or `%` — "15%" is not 0.15 read loosely, it is unreadable.
 _HYPOTHESIS_RE = re.compile(
-    r"^[\s\-*|]*H(\d+)\s*\|\s*(.+?)\s*\|\s*([01](?:\.\d+)?)\s*\|?\s*$", re.MULTILINE
+    r"^H(\d+)\s*\|\s*(.+?)\s*\|\s*(-?\d*\.?\d+)(?![\d%])\s*(?:\|.*)?$", re.IGNORECASE
 )
 
 
 def _find_rating(content: str, document_id: str) -> str:
-    """Pull the Admiralty rating the model assigned to a specific document id."""
+    """Pull the Admiralty rating the model assigned to a specific document id.
+
+    Emphasis and quoting round the id or the grade ("**doc**: **B2**", a
+    backticked id, an em dash) used to defeat the match and leave the document
+    unrated with no sign that the model had rated it.
+    """
     match = re.search(
-        re.escape(document_id) + r"[`'\"\s]*[:|\-–]\s*[*`]*\s*([A-Fa-f])\s*-?\s*([1-6])\b",
-        content,
+        re.escape(document_id)
+        + r"[`'\"\s*_]*[:|\-–—][\s*_`]*([A-Fa-f])\s*-?\s*([1-6])(?![\w])",
+        content or "",
     )
     return f"{match.group(1).upper()}{match.group(2)}" if match else ""
 
@@ -372,16 +382,23 @@ class AnalyticAgentService:
     def _parse_hypotheses(content: str) -> list[dict]:
         seen: set[str] = set()
         hypotheses = []
-        for num, statement, prob in _HYPOTHESIS_RE.findall(content or ""):
+        for line in (content or "").split("\n"):
+            match = _HYPOTHESIS_RE.match(normalise_line(line))
+            if not match:
+                continue
+            num, statement, prob = match.groups()
             key = f"H{num}"
             if key in seen:
                 continue
-            seen.add(key)
             try:
                 probability = float(prob)
             except ValueError:
                 continue
-            probability = min(max(probability, 0.0), 1.0)
+            # Dropped, not clamped: 1.5 became 1.0 — "Almost Certain" — for a
+            # value the model never gave, and 70 meant 70 percent.
+            if not 0.0 <= probability <= 1.0:
+                continue
+            seen.add(key)
             hypotheses.append({
                 "id": key,
                 "statement": statement.strip().strip("*"),

@@ -16,16 +16,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from dataclasses import asdict
 from datetime import datetime, timezone
 
 from intel_platform.enrichment.base import (
     EnrichmentResult,
+    ProviderError,
     RelatedEntity,
     get_providers_for,
 )
 from intel_platform.enrichment.cache import RateLimiter
-from intel_platform.enrichment.observables import refang
+from intel_platform.enrichment.observables import cve_id, refang
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +38,50 @@ _PROTECTED_KEYS = frozenset({
     "id", "name", "project_id", "entity_type", "entity_category",
     "created_at", "source_doc_id",
 })
+
+# Per-source severity ratings folded into the node's `severity`, which /cyber
+# and the enrichment panel read. KEV and NVD each used to write `severity`
+# directly and whichever finished last won; now each writes its own key and the
+# node shows the highest. A KEV hit is critical: the CVE is being exploited.
+_SEVERITY_SOURCES = frozenset({"kev_severity", "cvss_severity", "known_exploited"})
+_SEVERITY_RANK = {"none": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+# Serializes read-derive-write per process so concurrent applies (KEV and NVD
+# run in parallel worker threads) cannot leave the lower rating last.
+_severity_lock = threading.Lock()
+
+
+def combined_severity(node: dict) -> str:
+    """The highest per-source severity recorded on ``node``, or ``""``."""
+    ratings = [
+        str(node.get(key) or "").lower() for key in ("kev_severity", "cvss_severity")
+    ]
+    if node.get("known_exploited") is True:
+        ratings.append("critical")
+    ranked = [r for r in ratings if r in _SEVERITY_RANK]
+    return max(ranked, key=_SEVERITY_RANK.__getitem__) if ranked else ""
+
+
+# One limiter for the whole process. Provider quotas (ip-api 45/min, Nominatim
+# 1/s, NVD's keyless window) are per client IP, and the route and auto-enrich
+# hook build a new EnrichmentService per call — a limiter owned by the service
+# was new every request and never throttled anything. Read at construction, so
+# tests can swap it.
+_RATE_LIMITER = RateLimiter()
+
+
+def observable_for(entity: dict) -> str:
+    """The value providers look up for ``entity``, which also keys the cache.
+
+    Normally the refanged name. A Vulnerability is looked up by its CVE id —
+    the name when the name is one, else a well-formed ``cve_id`` property —
+    because KEV and NVD are keyed by id: "Log4Shell" by name is "not in KEV"
+    for a CVE that is. With neither, the name is returned and the CVE-keyed
+    providers skip it rather than answer for it.
+    """
+    name = refang(entity.get("name", "") or "").strip()
+    if entity.get("entity_type") == "Vulnerability":
+        return cve_id(name) or cve_id(str(entity.get("cve_id") or "")) or name
+    return name
 
 
 def _result_to_cache(result: EnrichmentResult) -> dict:
@@ -67,7 +113,7 @@ class EnrichmentService:
                  available_keys: frozenset[str] | set[str] = frozenset()):
         self.store = store
         self.cache = cache
-        self.limiter = limiter or RateLimiter()
+        self.limiter = limiter if limiter is not None else _RATE_LIMITER
         self.available_keys = available_keys
         # None -> use the built-in graph writer; injectable for tests.
         self._write_related_fn = write_related
@@ -79,7 +125,9 @@ class EnrichmentService:
         ``only`` restricts to named providers (the per-source refresh button);
         ``bypass_cache`` forces a fresh lookup.
         """
-        entity = self.store.get_entity(entity_id)
+        # GraphStore uses the sync Neo4j driver: every call goes to a worker
+        # thread so an Investigate never blocks the event loop.
+        entity = await asyncio.to_thread(self.store.get_entity, entity_id)
         if not entity:
             return {"entity_id": entity_id, "error": "not found", "providers": {}}
         providers = get_providers_for(entity.get("entity_type", ""), self.available_keys)
@@ -104,7 +152,7 @@ class EnrichmentService:
         entity_id = entity.get("id")
         entity_type = entity.get("entity_type", "")
         project_id = entity.get("project_id", "")
-        observable = refang(entity.get("name", "")).strip()
+        observable = observable_for(entity)
         results: dict[str, dict] = {}
 
         if not entity_id:
@@ -144,27 +192,47 @@ class EnrichmentService:
             except Exception:
                 logger.debug("enrichment cache get failed for %s", provider.name, exc_info=True)
         if cached is not None:
-            applied = self._safe_apply(entity, project_id, _result_from_cache(cached))
-            results[provider.name] = {"status": "cached" if applied else "error"}
+            applied = await asyncio.to_thread(
+                self._safe_apply, entity, project_id, _result_from_cache(cached)
+            )
+            results[provider.name] = (
+                {"status": "cached"} if applied else {"status": "error", "reason": "graph write failed"}
+            )
             return
 
+        # A failed lookup is recorded with its reason and goes no further: it is
+        # neither applied to the node nor cached, so an outage is never stored
+        # (and served for the provider's TTL) as "nothing found".
         try:
             if self.limiter is not None:
                 await self.limiter.acquire(
                     provider.name, rate=provider.rate, capacity=provider.capacity
                 )
             result = await provider.lookup(observable, entity_type)
-        except Exception as exc:  # per-provider isolation (lookup)
+        except ProviderError as exc:
             logger.warning(
-                "enrichment provider %s failed for %s: %s", provider.name, observable, exc
+                "enrichment provider %s failed for %s: %s", provider.name, observable, exc.reason,
+                exc_info=exc.__cause__ is not None,
             )
-            results[provider.name] = {"status": "error"}
+            results[provider.name] = {"status": "error", "reason": exc.reason}
+            return
+        except Exception:  # per-provider isolation (lookup)
+            logger.warning(
+                "enrichment provider %s raised for %s", provider.name, observable, exc_info=True
+            )
+            results[provider.name] = {"status": "error", "reason": "lookup failed"}
+            return
+
+        if result.skipped:
+            # The provider declined this value; it asserts nothing, so nothing
+            # is written (not even `enriched`) and nothing is cached.
+            results[provider.name] = {"status": "skipped", "reason": result.skipped}
             return
 
         # per-provider isolation (graph write) — a store failure here must not
-        # abort the other providers.
-        if not self._safe_apply(entity, project_id, result):
-            results[provider.name] = {"status": "error"}
+        # abort the other providers. The write runs in a worker thread.
+        if not await asyncio.to_thread(self._safe_apply, entity, project_id, result):
+            results[provider.name] = {"status": "error", "reason": "graph write failed"}
             return
 
         if self.cache is not None:
@@ -184,7 +252,11 @@ class EnrichmentService:
         }
 
     def _safe_apply(self, entity: dict, project_id: str, result) -> bool:
-        """Apply a result to the node, isolating any store/graph write failure."""
+        """Apply a result to the node, isolating any store/graph write failure.
+
+        Sync (it drives the sync Neo4j driver); callers run it via
+        ``asyncio.to_thread``.
+        """
         try:
             self._apply(entity, project_id, result)
             return True
@@ -200,10 +272,24 @@ class EnrichmentService:
         props["enriched"] = True
         props["enriched_at"] = datetime.now(timezone.utc).isoformat()
         self.store.update_entity(entity.get("id"), props)
+        if _SEVERITY_SOURCES & props.keys():
+            self._derive_severity(entity.get("id"))
 
         if result.related:
             writer = self._write_related_fn or self._default_write_related
             writer(entity, result.related, project_id)
+
+    def _derive_severity(self, entity_id: str) -> None:
+        """Set the node's ``severity`` to the highest of its per-source ratings.
+
+        Reads after this apply's own write, under a process lock: whichever
+        derivation runs last therefore sees every rating written before it.
+        """
+        with _severity_lock:
+            node = self.store.get_entity(entity_id) or {}
+            severity = combined_severity(node)
+            if severity and node.get("severity") != severity:
+                self.store.update_entity(entity_id, {"severity": severity})
 
     def _default_write_related(self, entity: dict, related, project_id: str) -> None:
         """Upsert related nodes (exact-match dedup) and their typed edges."""
@@ -226,6 +312,7 @@ class EnrichmentService:
                     source_id=src_id, target_id=tgt_id, rel_type=rel.rel_type,
                     confidence=0.95, method="enrichment",
                     evidence=str(rel.properties.get("evidence", "")),
+                    project_id=project_id,
                 ))
             except Exception:
                 logger.debug("enrichment: could not create %s edge", rel.rel_type, exc_info=True)

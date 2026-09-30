@@ -299,6 +299,46 @@ export function parseGrounding(data: unknown): AssistantGrounding | null {
   return grounding;
 }
 
+export interface RagAnswer {
+  /** What to show as the assistant's reply. Never the retrieved context. */
+  content: string;
+  /** True when no model answer was produced (LLM failed or returned nothing). */
+  failed: boolean;
+  grounding: AssistantGrounding | null;
+}
+
+/**
+ * Read a `POST /query` response into an assistant reply.
+ *
+ * When the LLM fails the backend still answers 200: `answer: ""`,
+ * `model: "none"`, `llm_error: "<reason>"`, and the retrieved `context`. The
+ * context is retrieval output, not an answer, so it is never shown as the
+ * reply; it stays available as grounding (the citations), and the reply says
+ * plainly that no model ran.
+ */
+export function readRagAnswer(data: unknown): RagAnswer {
+  const d = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+  const grounding = parseGrounding(d);
+  const answer =
+    (typeof d.answer === 'string' && d.answer.trim() && d.answer) ||
+    (typeof d.response === 'string' && d.response.trim() && d.response) ||
+    '';
+  const llmError = typeof d.llm_error === 'string' ? d.llm_error.trim() : '';
+  const noModel = toText(d.model) === 'none' || !!llmError;
+
+  if (noModel && !answer) {
+    return {
+      content: `No model ran; showing retrieved context only.${llmError ? ` (${llmError})` : ''}`,
+      failed: true,
+      grounding,
+    };
+  }
+  if (!answer) {
+    return { content: 'The model returned no answer.', failed: true, grounding };
+  }
+  return { content: answer, failed: false, grounding };
+}
+
 /**
  * Coerce a value read back from localStorage into a renderable grounding.
  *

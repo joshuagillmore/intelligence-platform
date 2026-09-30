@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { createSummaryStreamParser, type SummaryStreamEvent } from './sse';
+import type { AttackMapResult } from './attackMapping';
 
 // Use relative URL so it works on both localhost and Railway (same-origin)
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
@@ -22,21 +24,69 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+/** Keys that belong to one analyst's session. */
+const SESSION_KEYS = ['auth_token', 'auth_user', 'auth_role', 'activeProject'];
+/** Per-project assistant threads (see `AssistantContext`): RAG answers and
+ *  verbatim source-document excerpts. */
+const ASSISTANT_THREAD_PREFIX = 'assistant_thread:';
+
+/**
+ * Forget everything the current analyst's session left in this browser: the
+ * token and identity, the selected project, and every assistant thread. Called
+ * on sign-out, on a 401, and before storing a new login, because workstations
+ * are shared and none of it may carry over to the next analyst. Per-browser
+ * display preferences (layout choices) are kept.
+ */
+export function clearSession(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const storage = window.localStorage;
+    const threads: string[] = [];
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (key && key.startsWith(ASSISTANT_THREAD_PREFIX)) threads.push(key);
+    }
+    for (const key of [...SESSION_KEYS, ...threads]) storage.removeItem(key);
+  } catch {
+    /* storage unavailable (private mode, blocked site data): nothing to clear */
+  }
+}
+
+/** A 401 means the session is over: clear it and send the analyst to log in. */
+function handleUnauthorized(): void {
+  if (typeof window === 'undefined') return;
+  clearSession();
+  // Only redirect if not already on login page
+  if (!window.location.pathname.includes('/login')) {
+    window.location.href = '/login';
+  }
+}
+
 // Redirect to login on 401
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('auth_user');
-      // Only redirect if not already on login page
-      if (!window.location.pathname.includes('/login')) {
-        window.location.href = '/login';
-      }
-    }
+    if (error.response?.status === 401) handleUnauthorized();
     return Promise.reject(error);
   }
 );
+
+/** Whether the signed-in user is an admin, per the role stored at login.
+ *  UI gating only: the backend enforces admin on every admin route, this just
+ *  keeps analysts from being offered buttons that can only 403. */
+export function isAdminSession(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem('auth_role') === 'admin';
+  } catch {
+    return false;
+  }
+}
+
+/** True for an axios error the backend answered with `status`. */
+export function isHttpStatus(error: unknown, status: number): boolean {
+  return axios.isAxiosError(error) && error.response?.status === status;
+}
 
 export interface Project {
   id: string;
@@ -225,6 +275,9 @@ export interface AttackD3fendCountermeasure {
 
 export interface AttackD3fendResponse {
   countermeasures: AttackD3fendCountermeasure[];
+  /** The live D3FEND lookup failed or answered in an unexpected shape, so the
+   *  empty list means "unknown", not "none"; nothing was cached. */
+  degraded?: boolean;
 }
 
 // Phase 3c: aggregated ATT&CK report for a project. Rolls up observed techniques
@@ -276,12 +329,18 @@ export const attackApi = {
     api.post<{ mapped: number }>('/attack/resolve', null, { params: { project_id: projectId } }),
   // (Admin) Embed all ATT&CK techniques into pgvector for RAG mapping. One-time,
   // idempotent, and slow (~30-90s for 697 techniques).
-  embed: () => api.post<{ embedded: number }>('/attack/embed'),
+  // `embedded: 0` comes with a machine `reason` and a human `detail` saying why
+  // (no techniques ingested, no provider, rate-limited) — never read a bare 0
+  // as success.
+  embed: () => api.post<{ embedded: number; reason?: string; detail?: string }>('/attack/embed'),
   // RAG+LLM map the project's TTP entities that lack an explicit T-code. Slow for
-  // many TTPs. Returns how many were mapped vs. skipped.
-  map: (projectId: string) =>
-    api.post<{ mapped: number; skipped: number }>('/attack/map', null, {
-      params: { project_id: projectId },
+  // many TTPs. Returns mapped/skipped counts with a reason per skip
+  // (`skip_reasons`); `remap` also re-checks earlier AI mappings and reports how
+  // many it removed (`stale_removed`). 503 "LLM provider unavailable" when no
+  // model can run. See `lib/attackMapping` for the wording.
+  map: (projectId: string, remap = false) =>
+    api.post<AttackMapResult>('/attack/map', null, {
+      params: { project_id: projectId, ...(remap ? { remap: true } : {}) },
     }),
   // Candidate ATT&CK Groups ranked by technique overlap with the project.
   attribution: (projectId: string) =>
@@ -371,7 +430,6 @@ export const collectionsApi = {
     api.put(`/collections/${id}`, data),
   status: (id: string) => api.get(`/collections/${id}/status`),
   cancel: (id: string) => api.post(`/collections/${id}/cancel`),
-  approve: (id: string) => api.post(`/collections/${id}/approve`),
   parsePlan: (planText: string) => api.post('/collections/parse-plan', { plan_text: planText }),
   count: (projectId: string) => api.get(`/collections/count/${projectId}`),
 };
@@ -741,6 +799,61 @@ export const topicsApi = {
     api.get('/topics', { params: { project_id: projectId, method, granularity } }),
   context: (entityId: string, projectId: string) => api.get(`/topics/${entityId}`, { params: { project_id: projectId } }),
   summarizeUrl: (entityId: string) => `${API_BASE}/api/topics/${entityId}/summarize`,
+  /** Stream an LLM summary of a topic node (server-sent events; see `lib/sse`).
+   *  `onText` receives the text so far as events arrive. Resolves with the full
+   *  summary only once the stream says `[DONE]`; rejects on an HTTP error, an
+   *  `{"error"}` event, a malformed payload, or a stream that stops early, so a
+   *  failure can never be mistaken for (or cached as) a summary. */
+  streamSummary: async (
+    entityId: string,
+    body: { project_id: string; level?: string },
+    onText?: (textSoFar: string) => void,
+  ): Promise<string> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const response = await fetch(topicsApi.summarizeUrl(entityId), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+    if (response.status === 401) handleUnauthorized();
+    if (!response.ok) throw new Error(`Summary request failed (${response.status}).`);
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('The summary response had no body.');
+
+    const decoder = new TextDecoder();
+    const parser = createSummaryStreamParser();
+    let text = '';
+    let finished = false;
+    const apply = (events: SummaryStreamEvent[]) => {
+      for (const event of events) {
+        if (event.type === 'error') throw new Error(event.message);
+        if (event.type === 'done') {
+          finished = true;
+          return;
+        }
+        text += event.text;
+        onText?.(text);
+      }
+    };
+    try {
+      while (!finished) {
+        const { done, value } = await reader.read();
+        if (done) {
+          apply(parser.push(decoder.decode()));
+          apply(parser.end());
+          break;
+        }
+        apply(parser.push(decoder.decode(value, { stream: true })));
+      }
+    } finally {
+      reader.cancel().catch(() => undefined);
+    }
+    if (!finished) throw new Error('The summary stream ended before it finished.');
+    return text;
+  },
 
   // Node editing
   updateNode: (nodeId: string, data: { project_id: string; name?: string; description?: string; parent_id?: string }) =>
@@ -760,11 +873,16 @@ export const reportsApi = {
     api.post('/reports', data),
   // Grounded generation: retrieves real graph + document evidence for the selected
   // entities via the Graph-RAG pipeline before drafting, instead of a bare LLM call.
+  // `requirement` (PIR text) or `pir_id` makes the requirement the subject of the
+  // product; without one it is only "tell me about these entities". Answers 503
+  // "LLM provider unavailable" when no model could draft it.
   generate: (data: {
     project_id: string;
     report_type: string;
     skill_name: string;
     entity_ids: string[];
+    requirement?: string;
+    pir_id?: string;
     include_evidence?: boolean;
     probability_assessments?: boolean;
   }) => api.post('/reports/generate', data),
@@ -839,11 +957,43 @@ export const adminApi = {
   listEnrichmentProviders: () => api.get('/enrichment/providers'),
 };
 
+export interface WatchedEntity {
+  id: string;
+  name: string;
+  entity_type: string;
+  relationship_count?: number;
+}
+
+export interface WatchlistResponse {
+  watched_entities: WatchedEntity[];
+  count: number;
+}
+
+/**
+ * The watched entities in a `GET /watchlist` body (`{watched_entities, count}`).
+ *
+ * Throws on any other shape: consumers used to guess (`entities`, `watchlist`,
+ * a bare array, `.items`), found nothing, and showed an always-empty watchlist
+ * and a badge stuck at 0. A wrong shape is an error to show, not an empty list.
+ */
+export function readWatchlist(data: unknown): WatchedEntity[] {
+  const rows =
+    data && typeof data === 'object' && !Array.isArray(data)
+      ? (data as { watched_entities?: unknown }).watched_entities
+      : undefined;
+  if (!Array.isArray(rows)) throw new Error('Unexpected watchlist response shape.');
+  return rows.filter(
+    (r): r is WatchedEntity => !!r && typeof r === 'object' && typeof (r as WatchedEntity).id === 'string',
+  );
+}
+
 export const watchlistApi = {
   add: (projectId: string, entityId: string) =>
     api.post('/watchlist/add', { project_id: projectId, entity_id: entityId }),
   remove: (projectId: string, entityId: string) =>
     api.post('/watchlist/remove', { project_id: projectId, entity_id: entityId }),
+  /** The body is a `WatchlistResponse`; read it with `readWatchlist`. Left
+   *  untyped so existing callers that index it loosely still compile. */
   list: (projectId: string) => api.get('/watchlist', { params: { project_id: projectId } }),
 };
 
@@ -886,7 +1036,9 @@ export const healthApi = {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    return axios.get(`${API_BASE}/health`, { headers });
+    // Polled every 30 s by the sidebar and status bar. Without its own timeout
+    // a hung backend left the check pending (and the dot green) for minutes.
+    return axios.get(`${API_BASE}/health`, { headers, timeout: 5000 });
   },
 };
 
@@ -910,6 +1062,21 @@ export function entityFields(entity: unknown): Record<string, unknown> {
       : {};
   // Nested wins: where a route supplies both, `properties` is the explicit one.
   return { ...e, ...nested };
+}
+
+/** Keys that identify an entity rather than describe it. */
+const IDENTITY_KEYS = new Set(['id', 'name', 'entity_type', 'project_id', 'properties']);
+
+/**
+ * The entity's descriptive fields as `[key, value]` pairs for a properties
+ * panel, from either the flattened or the nested shape (see `entityFields`),
+ * without identity keys or empty values. Listing `entity.properties` directly
+ * showed nothing for flattened entities.
+ */
+export function entityPropertyEntries(entity: unknown): Array<[string, unknown]> {
+  return Object.entries(entityFields(entity)).filter(
+    ([k, v]) => !IDENTITY_KEYS.has(k) && v !== null && v !== undefined && v !== '',
+  );
 }
 
 export default api;

@@ -1,9 +1,12 @@
+import contextlib
 import logging
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
+from starlette.requests import Request as StarletteRequest
 
 from intel_platform.api.middleware import RateLimitMiddleware, RequestLoggingMiddleware, SecurityHeadersMiddleware
 
@@ -14,17 +17,39 @@ from intel_platform.graph.schema import initialize_schema
 
 logger = logging.getLogger(__name__)
 
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
+
+def _parse_origins(value: str) -> list[str]:
+    return [origin.strip() for origin in value.split(",") if origin.strip()]
+
+
+CORS_ORIGINS = _parse_origins(settings.cors_origins)
+
+
+def _secret_problems() -> list[str]:
+    """What is wrong with the JWT secret and API key in effect (empty when sound).
+
+    Shared by the boot warning and REQUIRE_SECURE_AUTH so the two can never
+    disagree about what counts as insecure.
+    """
+    from intel_platform.api.auth import api_key_problem, jwt_secret_problem
+    from intel_platform.crypto import encryption_problem
+    return [
+        p for p in (
+            jwt_secret_problem(settings.jwt_secret),
+            api_key_problem(settings.api_key),
+            encryption_problem(settings.encryption_key),
+        ) if p
+    ]
 
 
 def _insecure_defaults() -> list[str]:
-    """List the built-in default secrets still in effect (empty when hardened)."""
-    from intel_platform.api.auth import _DEFAULT_API_KEY, _IS_DEFAULT_SECRET
+    """List the insecure secrets still in effect (empty when hardened)."""
+    from intel_platform.api.auth import _DEFAULT_API_KEY
     problems = []
-    if _IS_DEFAULT_SECRET:
-        problems.append("JWT_SECRET is the built-in default")
-    if settings.api_key == _DEFAULT_API_KEY:
-        problems.append("API_KEY is the built-in default (it will NOT authenticate)")
+    for problem in _secret_problems():
+        if settings.api_key == _DEFAULT_API_KEY and problem.startswith("API_KEY"):
+            problem += " (it will NOT authenticate)"
+        problems.append(problem)
     if not settings.default_admin_password:
         problems.append("DEFAULT_ADMIN_PASSWORD is blank (a default 'admin' user may be seeded)")
     return problems
@@ -46,23 +71,57 @@ def _warn_insecure_defaults() -> None:
 
 
 def _enforce_secure_auth() -> None:
-    """Fail-closed: refuse to start with built-in default secrets when REQUIRE_SECURE_AUTH is set."""
+    """Fail-closed: refuse to start on insecure secrets when REQUIRE_SECURE_AUTH is set."""
     if not settings.require_secure_auth:
         return
-    # Reuse the same detection, but the blank-admin-password case is enforced at
-    # seed time in _ensure_default_admin, so only the two hard secrets block boot here.
-    from intel_platform.api.auth import _DEFAULT_API_KEY, _IS_DEFAULT_SECRET
-    problems = []
-    if _IS_DEFAULT_SECRET:
-        problems.append("JWT_SECRET is the built-in default")
-    if settings.api_key == _DEFAULT_API_KEY:
-        problems.append("API_KEY is the built-in default")
+    # The admin password is judged against the stored hash in
+    # _ensure_default_admin, which needs the database; everything else is here.
+    problems = _secret_problems()
     if problems:
         raise RuntimeError(
-            "REQUIRE_SECURE_AUTH=true but insecure defaults are in use: "
+            "REQUIRE_SECURE_AUTH=true but insecure settings are in use: "
             + "; ".join(problems)
-            + ". Set a strong JWT_SECRET and API_KEY before deploying."
+            + ". Set JWT_SECRET to at least 32 random bytes, API_KEY to at least "
+            "16 random bytes (or blank, to disable API-key auth) and ENCRYPTION_KEY to a "
+            "Fernet key before deploying."
         )
+
+
+def _mount_mcp(target: FastAPI, cfg) -> None:
+    """Mount the authenticated MCP endpoint at /mcp when MCP_ENABLED is set.
+
+    Its tools write to the graph and spend LLM calls, so it is refused outright
+    under REQUIRE_SECURE_AUTH, and otherwise served behind the same credentials
+    as the REST API by the MCP package's own ASGI wrapper. Registered as a route
+    (endpoint /mcp), ahead of the frontend catch-all. Failures propagate: an
+    operator who enabled MCP must not get a server that quietly lacks it.
+    """
+    if not cfg.mcp_enabled:
+        logger.info("MCP server disabled (set MCP_ENABLED=true to enable)")
+        return
+    if cfg.require_secure_auth:
+        raise RuntimeError(
+            "MCP_ENABLED=true is refused under REQUIRE_SECURE_AUTH=true: its tools write to the "
+            "graph and spend LLM calls. Disable MCP on this deployment."
+        )
+    from intel_platform.mcp import build_authenticated_app
+    target.add_route("/mcp", _AsgiEndpoint(build_authenticated_app(cfg)))
+    logger.info("MCP server mounted at /mcp (authenticated)")
+
+
+class _AsgiEndpoint:
+    """Serve an ASGI app from a route as raw ASGI, whatever its shape.
+
+    Starlette's `add_route` treats a plain function as a request/response
+    endpoint and would call an `async def app(scope, receive, send)` with a
+    Request. A class instance is always passed (scope, receive, send).
+    """
+
+    def __init__(self, asgi_app):
+        self.asgi_app = asgi_app
+
+    async def __call__(self, scope, receive, send):
+        await self.asgi_app(scope, receive, send)
 
 
 @asynccontextmanager
@@ -78,7 +137,13 @@ async def lifespan(app: FastAPI):
     from intel_platform.db.engine import init_db
     await init_db()
     logger.info("PostgreSQL collection management tables initialized")
-    yield
+    async with contextlib.AsyncExitStack() as stack:
+        # A mounted MCP app's own lifespan never runs, so its session manager is
+        # started here, for the lifetime of this app.
+        if settings.mcp_enabled:
+            from intel_platform.mcp import session_lifespan
+            await stack.enter_async_context(session_lifespan())
+        yield
     driver.close()
     # Cleanup async engine
     from intel_platform.db.engine import get_engine
@@ -95,22 +160,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+async def _graph_unavailable(request: StarletteRequest, exc: Exception) -> JSONResponse:
+    """Neo4j unreachable or the session lost: a 503 the caller can retry.
+
+    Unhandled, the driver's exception became a 500 whose trace named the bolt
+    address; every route reads the graph, so one handler covers them all,
+    including store calls made in a worker thread.
+    """
+    logger.warning("Neo4j unavailable during %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=503, content={"detail": "Graph database unavailable"})
+
+
+app.add_exception_handler(ServiceUnavailable, _graph_unavailable)
+app.add_exception_handler(SessionExpired, _graph_unavailable)
+
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.rate_limit_per_minute)
 app.add_middleware(SecurityHeadersMiddleware)
 
-# Mount MCP server — OFF by default: its tools include graph writes and it is not
-# behind the REST auth. Enable deliberately (behind a trusted gateway) via MCP_ENABLED=true.
-if settings.mcp_enabled:
-    try:
-        from intel_platform.mcp.server import get_mcp_app
-        mcp_app = get_mcp_app()
-        app.mount("/mcp", mcp_app)
-        logger.warning("MCP server mounted at /mcp (unauthenticated — ensure the network is trusted)")
-    except Exception as exc:
-        logger.warning("MCP server not available: %s", exc)
-else:
-    logger.info("MCP server disabled (set MCP_ENABLED=true to enable)")
+# MCP server — OFF by default (MCP_ENABLED=true to enable).
+_mount_mcp(app, settings)
 
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(health.router, tags=["health"])
@@ -142,40 +211,65 @@ app.include_router(attack.router, prefix="/api", tags=["attack"])
 
 # Reverse proxy to frontend Node.js server (Railway single-port deployment)
 from pathlib import Path  # noqa: E402
+
+import httpx  # noqa: E402
+from fastapi import Request  # noqa: E402
+from fastapi.responses import Response  # noqa: E402
+
+# Headers that describe one connection, not the resource (RFC 9110 §7.6.1), so a
+# proxy must not pass them on; plus any header the Connection header names.
+_HOP_BY_HOP = frozenset({
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "proxy-connection", "te", "trailer", "trailers", "transfer-encoding", "upgrade",
+})
+# httpx has already decoded the body, so the upstream encoding and length no
+# longer describe what is sent; Starlette sets the length itself.
+_REFRAMED = frozenset({"content-encoding", "content-length"})
+
+
+def _forwardable_response_headers(headers: httpx.Headers) -> list[tuple[str, str]]:
+    """Every upstream response header a client should see, repeats included.
+
+    Contract 19: on Railway the browser reaches Next only through this proxy,
+    so a header Next sets (the Content-Security-Policy above all) exists for the
+    browser only if it is forwarded. Copying through a dict kept one value of a
+    repeated header, so only the last Set-Cookie survived.
+    """
+    named = {token.strip().lower() for value in headers.get_list("connection") for token in value.split(",")}
+    drop = _HOP_BY_HOP | _REFRAMED | named
+    return [(name, value) for name, value in headers.multi_items() if name.lower() not in drop]
+
+
+async def _proxy_frontend(request: Request, path: str) -> Response:
+    """Proxy non-API requests to the Next.js frontend server."""
+    # SECURITY: reject path traversal and protocol injection attempts
+    if ".." in path or path.startswith("/") or "://" in path:
+        return Response(status_code=400)
+    # Don't proxy API, health, or MCP routes
+    if path.startswith(("api/", "health", "mcp/", "openapi", "docs")):
+        return Response(status_code=404)
+    url = f"http://127.0.0.1:3000/{path}"
+    if request.url.query:
+        url += f"?{request.url.query}"
+    try:
+        # Don't forward Accept-Encoding to upstream — let httpx handle decompression
+        fwd_headers = {k: v for k, v in request.headers.items()
+                       if k.lower() not in ('host', 'accept-encoding')}
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, headers=fwd_headers, timeout=10)
+    except Exception:
+        return Response(content="Frontend not available", status_code=502)
+    response = Response(content=resp.content, status_code=resp.status_code)
+    for name, value in _forwardable_response_headers(resp.headers):
+        response.headers.append(name, value)
+    return response
+
+
 _frontend_dir = Path("/app/frontend-server")
 if _frontend_dir.exists() and (_frontend_dir / "server.js").exists():
-    import httpx
-    from fastapi import Request
-    from fastapi.responses import Response
-
-    @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
-    async def proxy_frontend(request: Request, path: str):
-        """Proxy non-API requests to the Next.js frontend server."""
-        # SECURITY: reject path traversal and protocol injection attempts
-        if ".." in path or path.startswith("/") or "://" in path:
-            return Response(status_code=400)
-        # Don't proxy API, health, or MCP routes
-        if path.startswith(("api/", "health", "mcp/", "openapi", "docs")):
-            return Response(status_code=404)
-        url = f"http://127.0.0.1:3000/{path}"
-        if request.url.query:
-            url += f"?{request.url.query}"
-        try:
-            # Don't forward Accept-Encoding to upstream — let httpx handle decompression
-            fwd_headers = {k: v for k, v in request.headers.items()
-                          if k.lower() not in ('host', 'accept-encoding')}
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=fwd_headers, timeout=10)
-                # Strip encoding/transfer headers — content is already decompressed by httpx
-                safe_headers = {k: v for k, v in resp.headers.items()
-                               if k.lower() not in ('content-encoding', 'transfer-encoding', 'content-length')}
-                return Response(
-                    content=resp.content,
-                    status_code=resp.status_code,
-                    headers=safe_headers,
-                )
-        except Exception:
-            return Response(content="Frontend not available", status_code=502)
+    app.add_api_route(
+        "/{path:path}", _proxy_frontend, methods=["GET", "HEAD"], include_in_schema=False,
+    )
 elif Path("/app/static").exists():
     from fastapi.staticfiles import StaticFiles
     app.mount("/", StaticFiles(directory="/app/static", html=True), name="static")

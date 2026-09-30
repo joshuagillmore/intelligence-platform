@@ -7,22 +7,54 @@ import { getErrorMessage } from '@/lib/errorMessages';
  * Errors, unknowns) into user-facing copy. These tests pin the status-code
  * mapping and the non-Axios fallbacks.
  */
-function axiosErrorWithStatus(status: number): AxiosError {
+function axiosErrorWithStatus(status: number, data: unknown = null): AxiosError {
   const err = new AxiosError('Request failed');
-  // Minimal AxiosResponse stub — getErrorMessage only reads `.status`.
+  // Minimal AxiosResponse stub — getErrorMessage reads `.status` and `.data`.
   err.response = {
     status,
     statusText: '',
-    data: null,
+    data,
     headers: {},
     config: {},
   } as unknown as AxiosError['response'];
   return err;
 }
 
+describe('getErrorMessage with a backend detail', () => {
+  // The backend's `detail` is already sanitised and says what went wrong;
+  // replacing it with "Request failed (409)." threw the useful part away.
+  it('shows a string detail from a 4xx', () => {
+    expect(getErrorMessage(axiosErrorWithStatus(409, { detail: 'A collection run is already in flight' })))
+      .toBe('A collection run is already in flight');
+    expect(getErrorMessage(axiosErrorWithStatus(413, { detail: 'File too large' }))).toBe('File too large');
+  });
+
+  it('prefers the detail over the generic copy for a mapped status', () => {
+    expect(getErrorMessage(axiosErrorWithStatus(503, { detail: 'LLM provider unavailable' })))
+      .toBe('LLM provider unavailable');
+    expect(getErrorMessage(axiosErrorWithStatus(403, { detail: 'Admin access required' })))
+      .toBe('Admin access required');
+  });
+
+  it('falls back to the status copy when detail is not a string', () => {
+    const validation = { detail: [{ loc: ['body', 'name'], msg: 'field required', type: 'missing' }] };
+    expect(getErrorMessage(axiosErrorWithStatus(422, validation))).toBe('Request failed (422).');
+    expect(getErrorMessage(axiosErrorWithStatus(500, 'Internal Server Error'))).toContain('Server error');
+  });
+
+  it('falls back to the status copy when detail is empty', () => {
+    expect(getErrorMessage(axiosErrorWithStatus(429, { detail: '   ' }))).toContain('Rate limit exceeded');
+  });
+});
+
 describe('getErrorMessage', () => {
+  it('does not blame an API key for a 401 (the UI signs in with a session)', () => {
+    const msg = getErrorMessage(axiosErrorWithStatus(401));
+    expect(msg).not.toMatch(/API key/i);
+    expect(msg).toMatch(/sign in/i);
+  });
+
   it('maps known HTTP status codes to friendly copy', () => {
-    expect(getErrorMessage(axiosErrorWithStatus(401))).toContain('Authentication failed');
     expect(getErrorMessage(axiosErrorWithStatus(403))).toContain('Access denied');
     expect(getErrorMessage(axiosErrorWithStatus(429))).toContain('Rate limit exceeded');
     expect(getErrorMessage(axiosErrorWithStatus(500))).toContain('Server error');

@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import logging
 import re
+from functools import lru_cache
+from typing import Annotated
 from urllib.parse import urlsplit
 
 import jellyfish
+from pydantic import TypeAdapter, ValidationError
 
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import (
@@ -104,8 +107,13 @@ def resolve_entity_name(
         import re as _re
         for existing in existing_names:
             existing_lower = existing.lower().strip()
+            existing_type = existing_types.get(existing, "") if existing_types else ""
             # Skip cyber entities
-            if existing_types and existing_types.get(existing, "") in EXACT_MATCH_TYPES:
+            if existing_type in EXACT_MATCH_TYPES:
+                continue
+            # The same type gate as the Jaro-Winkler pass above. Without it a
+            # Person "Wagner" resolved into the Organization "Wagner Group".
+            if existing_type and entity_type and not _types_compatible(entity_type, existing_type):
                 continue
             shorter = min(name_lower, existing_lower, key=len)
             longer = max(name_lower, existing_lower, key=len)
@@ -318,6 +326,70 @@ def _type_from_name(name: str, current: str) -> str:
     return current
 
 
+# Fields the build sets itself. An LLM attribute named after one of these used
+# to overwrite it — `"project_id"` moved the entity into another project,
+# `"entity_type"` gave a Person node an Organization type — so they are never
+# taken from `attributes`.
+_STRUCTURAL_FIELDS = frozenset({"id", "name", "entity_type", "project_id", "source_doc_id", "created_at"})
+
+
+@lru_cache(maxsize=None)
+def _field_adapter(cls: type, field_name: str) -> TypeAdapter:
+    """A validator for one model field, with the field's own constraints."""
+    field = cls.model_fields[field_name]
+    if field.metadata:
+        return TypeAdapter(Annotated[(field.annotation, *field.metadata)])
+    return TypeAdapter(field.annotation)
+
+
+def _preview(value, limit: int = 80) -> str:
+    text = repr(value)
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
+def _validated_attributes(cls: type, attrs, entity_name: str) -> tuple[dict, int]:
+    """The LLM attributes that `cls` accepts, validated one field at a time.
+
+    Returns (accepted, dropped). An attribute is dropped, and logged, when its
+    value fails the field's validation or when it names a structural field.
+    Keys the model does not have were always ignored and still are; they are
+    not counted. Validation goes field by field so that one malformed value
+    costs that value, not the entity and everything the build had left to do.
+    """
+    if not attrs:
+        return {}, 0
+    if not isinstance(attrs, dict):
+        logger.warning(
+            "Dropped attributes on %s %r: expected a mapping, got %s",
+            cls.__name__, entity_name, type(attrs).__name__,
+        )
+        return {}, 1
+    accepted: dict = {}
+    dropped = 0
+    for key, value in attrs.items():
+        # `is not None` (not truthiness) so a real 0.0 latitude/longitude
+        # (equator / prime meridian) survives.
+        if key not in cls.model_fields or value is None:
+            continue
+        if key in _STRUCTURAL_FIELDS:
+            dropped += 1
+            logger.warning(
+                "Dropped attribute %r on %s %r: the build sets this field itself",
+                key, cls.__name__, entity_name,
+            )
+            continue
+        try:
+            accepted[key] = _field_adapter(cls, key).validate_python(value)
+        except ValidationError as exc:
+            dropped += 1
+            reason = exc.errors()[0].get("msg", "invalid") if exc.errors() else "invalid"
+            logger.warning(
+                "Dropped attribute %r=%s on %s %r: %s",
+                key, _preview(value), cls.__name__, entity_name, reason,
+            )
+    return accepted, dropped
+
+
 def build_graph_from_extractions(
     store: GraphStore, entities: list[dict], relationships: list[dict], project_id: str,
     source_doc_id: str = "", auto_enrich_loop=None,
@@ -329,6 +401,7 @@ def build_graph_from_extractions(
     entities_filtered = 0
     dates_absorbed = 0
     dates_orphaned = 0
+    dropped_attributes = 0
     absorbed_names: set[str] = set()
     name_to_id: dict[str, str] = {}
     # Newly-created entities (id/name/type/project) — fed to the selective
@@ -343,6 +416,20 @@ def build_graph_from_extractions(
     batch_names: list[str] = []
     batch_name_to_id: dict[str, str] = {}
     batch_name_to_type: dict[str, str] = {}
+    # (entity id, document id) pairs already on the graph from this build, so
+    # a merge records a document against an entity once, not once per mention.
+    recorded_sources: set[tuple[str, str]] = set()
+
+    def _merged_into(entity_id: str, doc_id: str) -> None:
+        """Record that `doc_id` also mentions an existing entity.
+
+        source_doc_id was set only on create, so a later document merging into
+        the entity left no trace and GraphRAG / hybrid retrieval could only
+        reach the first.
+        """
+        if doc_id and (entity_id, doc_id) not in recorded_sources:
+            recorded_sources.add((entity_id, doc_id))
+            store.record_entity_source(entity_id, doc_id)
 
     for ent_data in entities:
         # Normalise before anything reads the name: the junk check, resolution
@@ -377,12 +464,16 @@ def build_graph_from_extractions(
             absorbed_names.add(name)
             continue
 
+        # The document this mention came from: the extraction's own, or the caller's.
+        entity_doc_id = ent_data.get("source", "") or source_doc_id
+
         # Check intra-batch cache first
         cache_key = f"{name}::{raw_type}"
         if cache_key in _resolution_cache:
             cached = _resolution_cache[cache_key]
             if cached:
                 name_to_id[name] = cached
+                _merged_into(cached, entity_doc_id)
                 merged += 1
                 continue
 
@@ -394,6 +485,7 @@ def build_graph_from_extractions(
         if match:
             name_to_id[name] = batch_name_to_id[match]
             _resolution_cache[cache_key] = batch_name_to_id[match]
+            _merged_into(batch_name_to_id[match], entity_doc_id)
             merged += 1
             continue
 
@@ -410,6 +502,7 @@ def build_graph_from_extractions(
             if match:
                 name_to_id[name] = candidate_name_to_id[match]
                 _resolution_cache[cache_key] = candidate_name_to_id[match]
+                _merged_into(candidate_name_to_id[match], entity_doc_id)
                 merged += 1
                 continue
 
@@ -426,24 +519,28 @@ def build_graph_from_extractions(
 
         # Try to find a Pydantic class for the specific type, then parent category
         cls = ENTITY_TYPE_MAP.get(specific_type) or ENTITY_TYPE_MAP.get(parent_category)
-        # Determine source doc ID from extraction data or caller
-        entity_doc_id = ent_data.get("source", "") or source_doc_id
 
-        # Build constructor kwargs, passing through extracted attributes
+        # Build constructor kwargs, passing through extracted attributes that
+        # validate against the model, field by field.
         kwargs: dict = {"name": name, "project_id": project_id, "source_doc_id": entity_doc_id}
-        attrs = ent_data.get("attributes", {})
-        if attrs and cls:
-            # Only pass attributes that the Pydantic model accepts. `is not None`
-            # (not truthiness) so a real 0.0 latitude/longitude (equator / prime
-            # meridian) survives — setting a text field to "" just matches its
-            # default, so this is safe for non-numeric fields too.
-            model_fields = set(cls.model_fields.keys())
-            for k, v in attrs.items():
-                if k in model_fields and v is not None:
-                    kwargs[k] = v
+        if cls:
+            accepted, dropped = _validated_attributes(cls, ent_data.get("attributes"), name)
+            dropped_attributes += dropped
+            kwargs.update(accepted)
 
         if cls:
-            entity = cls(**kwargs)
+            try:
+                entity = cls(**kwargs)
+            except ValidationError:
+                # Each field already validated alone; this is the backstop for
+                # anything that only fails in combination. Keep the entity.
+                extra = len(kwargs) - 3
+                dropped_attributes += extra
+                logger.warning(
+                    "Dropped %d attribute(s) on %s %r: invalid together", extra, cls.__name__, name,
+                    exc_info=True,
+                )
+                entity = cls(name=name, project_id=project_id, source_doc_id=entity_doc_id)
         else:
             # Generic entity for unknown types
             from intel_platform.models.entities import Entity, EntityType
@@ -454,6 +551,7 @@ def build_graph_from_extractions(
             entity = Entity(name=name, entity_type=et, project_id=project_id, source_doc_id=entity_doc_id)
 
         store.create_entity(entity)
+        recorded_sources.add((entity.id, entity_doc_id))
         name_to_id[name] = entity.id
         batch_names.append(name)
         batch_name_to_id[name] = entity.id
@@ -470,8 +568,14 @@ def build_graph_from_extractions(
     rels_retired = 0
     dropped_types: dict[str, int] = {}
     for rel_data in relationships:
-        source_id = name_to_id.get(rel_data["source_name"])
-        target_id = name_to_id.get(rel_data["target_name"])
+        # Endpoint names are cleaned exactly as entity names were, since
+        # name_to_id is keyed by the cleaned name. They were not, so
+        # "**Yi Peng 3**" became a node named "Yi Peng 3" while every edge
+        # naming "**Yi Peng 3**" was dropped as never extracted.
+        source_name = _clean_entity_name(rel_data["source_name"])
+        target_name = _clean_entity_name(rel_data["target_name"])
+        source_id = name_to_id.get(source_name)
+        target_id = name_to_id.get(target_name)
         if not source_id or not target_id:
             # An OCCURRED_ON edge whose Date endpoint was absorbed is redundant
             # by design — the date now lives on the entity — so it is retired,
@@ -479,8 +583,8 @@ def build_graph_from_extractions(
             # never extracted, which was silent and is how event dating stayed
             # broken across a 15-run campaign.
             if rel_data.get("rel_type") == "OCCURRED_ON" and (
-                rel_data["source_name"] in absorbed_names
-                or rel_data["target_name"] in absorbed_names
+                source_name in absorbed_names
+                or target_name in absorbed_names
             ):
                 rels_retired += 1
             else:
@@ -500,6 +604,9 @@ def build_graph_from_extractions(
         rel = Relationship(
             source_id=source_id, target_id=target_id,
             rel_type=rel_data["rel_type"],
+            # Both endpoints were resolved inside this project; the store
+            # matches them there and stamps the edge with it.
+            project_id=project_id,
             confidence=confidence,
             source=rel_data.get("source", ""), method=rel_data.get("method", ""),
             # Carry the source-sentence evidence through to the edge (was dropped
@@ -543,4 +650,6 @@ def build_graph_from_extractions(
         "relationships_created": rels_created,
         "relationships_dropped": rels_dropped,
         "relationships_dropped_by_type": dropped_types,
+        # LLM attributes that failed validation and were left off the entity.
+        "dropped_attributes": dropped_attributes,
     }

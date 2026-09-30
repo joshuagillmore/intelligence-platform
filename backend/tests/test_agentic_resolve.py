@@ -2,7 +2,19 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from intel_platform.collection import agentic
+from intel_platform.collection.proxy import ProxyConfig
+
+
+@pytest.fixture(autouse=True)
+def direct_mode(monkeypatch):
+    """Pin the proxy mode: reading it from an absent Postgres cost 60 s a test."""
+    async def _direct():
+        return ProxyConfig(mode="direct")
+
+    monkeypatch.setattr("intel_platform.collection.proxy.get_active_proxy_config", _direct)
 
 
 def _src(source_type="web_scrape"):
@@ -60,6 +72,68 @@ async def test_grounded_resolution_returns_none_without_search_results():
     assert cfg is None
 
 
+class _Db:
+    def __init__(self):
+        self.added = []
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def commit(self):
+        pass
+
+
+def _model_that_follows_the_prompt(reply: dict):
+    """A _structured_generate stand-in that behaves like the real one: the model
+    answers in the shape the prompt asked for, and the call fails when that
+    shape lacks a key the caller requires."""
+    async def fake(provider, messages, system, expected_keys=None, max_retries=3, errors=None):
+        if expected_keys and any(k not in reply for k in expected_keys):
+            return None
+        return dict(reply)
+
+    return fake
+
+
+async def test_api_feed_resolution_accepts_the_shape_its_prompt_asks_for():
+    """RESOLVE_SYSTEM asks an api_feed for {"base_url": ...}; the parser required
+    "urls", so every LLM-resolved api_feed failed three times and was dropped."""
+    source = SimpleNamespace(
+        id="s1", name="Sanctions API", source_type="api_feed", config={},
+        collection_status="pending", last_error="",
+    )
+    plan = SimpleNamespace(id="p1", refined_pir="", pir="Who is sanctioned?", requirement="")
+
+    async def no_search(*a, **kw):
+        return None
+
+    reply = {"base_url": "https://api.example.org", "endpoint": "v1/sanctions", "response_path": "data"}
+    with patch.object(agentic, "_resolve_via_search", new=no_search), \
+         patch.object(agentic, "_structured_generate", new=_model_that_follows_the_prompt(reply)):
+        await agentic.resolve_sources(plan, [source], _Db(), provider=None)
+
+    assert source.collection_status == "queued", source.last_error
+    assert source.config["base_url"] == "https://api.example.org"
+
+
+async def test_api_feed_base_url_is_filtered_like_any_other_url():
+    source = SimpleNamespace(
+        id="s1", name="Internal API", source_type="api_feed", config={},
+        collection_status="pending", last_error="",
+    )
+    plan = SimpleNamespace(id="p1", refined_pir="", pir="x", requirement="")
+
+    async def no_search(*a, **kw):
+        return None
+
+    reply = {"base_url": "http://169.254.169.254/latest", "endpoint": ""}
+    with patch.object(agentic, "_resolve_via_search", new=no_search), \
+         patch.object(agentic, "_structured_generate", new=_model_that_follows_the_prompt(reply)):
+        await agentic.resolve_sources(plan, [source], _Db(), provider=None)
+
+    assert source.config.get("base_url", "") == ""
+
+
 def test_validate_urls_rejects_all_private_ranges():
     """SSRF defense-in-depth: every private/loopback/link-local range is filtered,
     including 172.16/12 (which the old string-prefix check missed)."""
@@ -74,3 +148,62 @@ def test_validate_urls_rejects_all_private_ranges():
     assert set(out) == set(allowed), f"unexpected: {out}"
     # 172.16/12 specifically must not survive
     assert not any("172." in u for u in out)
+
+
+def test_validate_urls_is_the_ssrf_guard():
+    """CLAUDE.md says _validate_urls calls the guard; it had its own partial
+    copy, which passed everything below. It now asks url_guard (without a
+    lookup: the fetch path resolves, and only when no proxy is active)."""
+    blocked = [
+        "http://0x7f.1/admin",            # 127.0.0.1 to a browser
+        "http://2130706433/",             # 127.0.0.1
+        "http://host.docker.internal/",   # the Docker host
+        "http://api.localhost/",          # loopback in Chromium
+        "http://100.100.100.200/latest/meta-data/",  # Alibaba Cloud metadata
+        "http://[::ffff:127.0.0.1]/",
+        "http://neo4j:7474/",
+    ]
+    assert agentic._validate_urls(blocked + ["https://www.iaea.org/"]) == ["https://www.iaea.org/"]
+
+
+# ---------------------------------------------------------------------------
+# Structured replies are read with llm_output.json_object, whatever the shape
+# ---------------------------------------------------------------------------
+
+class _Replies:
+    """A provider that answers each call with the next canned reply."""
+
+    def __init__(self, *replies):
+        self.replies = list(replies)
+        self.calls = 0
+
+    async def generate(self, **kwargs):
+        self.calls += 1
+        return SimpleNamespace(content=self.replies.pop(0) if self.replies else "")
+
+
+URLS = {"urls": ["https://www.iaea.org/newscenter"]}
+
+
+@pytest.mark.parametrize("reply", [
+    '{"urls": ["https://www.iaea.org/newscenter"]}',
+    '```json\n{"urls": ["https://www.iaea.org/newscenter"]}\n```',
+    'Here are the sources I selected:\n{"urls": ["https://www.iaea.org/newscenter"]}',
+    '**Config:** {"urls": ["https://www.iaea.org/newscenter"]}',
+    '1. I chose authoritative sources.\n2. {"urls": ["https://www.iaea.org/newscenter"]}',
+    '| field | value |\n|---|---|\n| config | {"urls": ["https://www.iaea.org/newscenter"]} |',
+    # A schema echoed before the answer: the first balanced {...} is not JSON.
+    'Using the shape {urls: [...]}, the answer is {"urls": ["https://www.iaea.org/newscenter"]}',
+], ids=["bare", "fenced", "prose-prefixed", "bold-label", "numbered", "table-row", "schema-echo"])
+async def test_structured_reply_shapes_are_read(reply):
+    provider = _Replies(reply)
+    out = await agentic._structured_generate(provider, [{"role": "user", "content": "x"}], "sys", expected_keys=["urls"])
+    assert out == URLS
+    assert provider.calls == 1
+
+
+async def test_prose_with_no_object_is_retried_then_none():
+    provider = _Replies("I could not find anything relevant.", "Nothing.", "Still nothing.")
+    out = await agentic._structured_generate(provider, [{"role": "user", "content": "x"}], "sys", expected_keys=["urls"])
+    assert out is None
+    assert provider.calls == 3

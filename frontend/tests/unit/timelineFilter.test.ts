@@ -4,10 +4,11 @@ type Ev = { entity_type: string; event_type: string };
 
 /** Mirrors the filter in src/app/timeline/page.tsx. */
 const isDated = (e: Ev) => e.event_type === 'event';
-const visible = (events: Ev[], types: Set<string>, datedOnly: boolean) =>
-  events.filter(e => types.has(e.entity_type)).filter(e => !datedOnly || isDated(e));
+const visible = (events: Ev[], hidden: Set<string>, datedOnly: boolean) =>
+  events.filter(e => !hidden.has(e.entity_type)).filter(e => !datedOnly || isDated(e));
 
-const ALL = new Set(['Event', 'Organization', 'Location']);
+// Nothing hidden: the default, and what "All" resets to.
+const ALL = new Set<string>();
 
 // Shaped like the live project: 5 dated events among 495 entities whose
 // timestamp is simply when collection added them.
@@ -37,7 +38,7 @@ describe('timeline dated-events filter', () => {
   });
 
   it('composes with the type filter rather than overriding it', () => {
-    const onlyOrgs = new Set(['Organization']);
+    const onlyOrgs = new Set(['Event', 'Location']); // hide all but Organization
     expect(visible(sample, onlyOrgs, false)).toHaveLength(2);
     expect(visible(sample, onlyOrgs, true)).toHaveLength(0);
   });

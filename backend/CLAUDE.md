@@ -1,8 +1,9 @@
 # Backend — `intel_platform`
 
 FastAPI service: the collection → extraction → graph → analysis engine. Python
-**3.11**, managed entirely with **`uv`**. See the root `CLAUDE.md` for
-architecture, branching, and the deploy story.
+**3.11** (pinned in `.python-version`, which uv, CI and the images follow),
+managed entirely with **`uv`**. See the root `CLAUDE.md` for architecture,
+branching, and the deploy story.
 
 ## Commands (uv only — never bare `python`/`pip`)
 
@@ -18,7 +19,8 @@ uv run ruff format .                                  # format
 `ruff` and `pytest` live in the `dev` optional-dependencies extra, so use
 `uv sync --extra dev` (plain `uv sync` omits them). The Docker image installs
 the spaCy model automatically; for the individual-dev path above, install it
-once (it is not in the lock):
+yourself. It is not in the lock, so **every `uv sync` removes it again**:
+reinstall after each sync (NLP extraction silently degrades without it):
 
 ```bash
 uv pip install "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
@@ -51,8 +53,8 @@ init, then `pytest` — so it is the canonical reference for a green run.
 | Package | Responsibility |
 |---------|----------------|
 | `api/` | FastAPI app + `routes/` (27 routers: auth, documents, entities, graph, collections, collection_plans, pirs, query, assess, analysis, topics, reports, geo, timeline, search, watchlist, personas, snapshots, admin_config, llm, ingest, export, notebook, projects, health, enrichment, attack). App = `api.app:app`; middleware = rate-limit / request-logging / security-headers. |
-| `services/` | Business logic (22 + `attack/`): extraction, enrichment, ingestion, graph_builder, graph_rag, hybrid_retrieval, vector_search, document_clustering, topics, assessment, `requirement_assessor` (per-EEI gap analysis that drives re-tasking), analytic_agents, summarization, geocoding, collection_planner, plan_executor, reports, mindmap_export, graph_cache, text_utils, `content_quality` (one gate deciding whether a fetched page is content), `llm_output` (reading labelled values and JSON back out of model replies). `attack/` = MITRE ATT&CK® (`stix_parser` pure STIX→model, `graph_ops` Neo4j load + matrix/technique/resolve/navigator/attribution reads, `ingest` fetch-and-load, `embeddings` technique-catalog→pgvector, `mapping` RAG text→technique, `vuln_chain` CVE→ATT&CK chain: CWE/CAPEC XML fetch+parse → `(:Cwe)-[:ENABLES]->(:AttackTechnique)` reference edges + per-project `resolve_cve`, `d3fend` lazy keyless D3FEND countermeasure fetch + Postgres cache, `report` ATT&CK-structured intelligence product: graph sections + deterministic markdown + optional LLM narrative). |
-| `collection/` | Agentic web collection: `search` (multi-engine via ddgs, see below) → `crawler`/`scraper` (crawl4ai) → `runner`/`executor` (CollectionRunner) → ingest. `tasks.py` = Celery. `agentic.py` = LLM-driven planning. `requirement_loop.py` = re-tasks collection at the EEIs the planned sources left unanswered (see "Collecting against a requirement"). |
+| `services/` | Business logic (22 + `attack/`): extraction, enrichment, ingestion, graph_builder, graph_rag, hybrid_retrieval, vector_search, document_clustering, topics, assessment, `requirement_assessor` (per-EEI gap analysis that drives re-tasking), analytic_agents, summarization, geocoding, `geo/` (`coordinates`: MGRS/DMS/decimal parsing and conversion via pygeodesy; `overpass`: OSM local-feature lookup through `ProxiedClient`), collection_planner, plan_executor, reports, mindmap_export, graph_cache, text_utils, `content_quality` (one gate deciding whether a fetched page is content), `llm_output` (reading labelled values and JSON back out of model replies). `attack/` = MITRE ATT&CK® (`stix_parser` pure STIX→model, `graph_ops` Neo4j load + matrix/technique/resolve/navigator/attribution reads, `ingest` fetch-and-load, `embeddings` technique-catalog→pgvector, `mapping` RAG text→technique, `vuln_chain` CVE→ATT&CK chain: CWE/CAPEC XML fetch+parse → `(:Cwe)-[:ENABLES]->(:AttackTechnique)` reference edges + per-project `resolve_cve`, `d3fend` lazy keyless D3FEND countermeasure fetch + Postgres cache, `report` ATT&CK-structured intelligence product: graph sections + deterministic markdown + optional LLM narrative). |
+| `collection/` | Agentic web collection: `search` (multi-engine via ddgs, see below) → `crawler`/`scraper` (crawl4ai) → `runner`/`executor` (CollectionRunner) → ingest. `agentic.py` = LLM-driven planning; its runs are asyncio tasks in the API process (no Celery/Redis). `requirement_loop.py` = re-tasks collection at the EEIs the planned sources left unanswered (see "Collecting against a requirement"). |
 | `llm/` | Multi-provider layer: `anthropic`, `openai_provider`, `cohere_provider`, `ollama`, plus `embeddings`, `skills`, the **`orchestrator`**, and **`providers`** (`_get_provider` / `_get_collection_provider` / `_get_extraction_provider` / `_resolve_api_key` / `_cloud_provider_from_env` — the single source of truth for provider selection; services import from here, not from `api/routes/llm.py`, which only re-exports them). |
 | `enrichment/` | Cyber-observable enrichment: `observables` (refang/classify), `base` (provider ABC + registry), `cache` (Postgres cache + rate limiter), `service` (Investigate orchestrator), `hook` (auto-enrich), `providers/` (dns, geoip, kev, nvd, rdap, certs, email — keyless, egress via `ProxiedClient`). |
 | `graph/` | Neo4j: `schema.py` (`initialize_schema`), `store.py`. |
@@ -160,16 +162,18 @@ to a dedicated provider so it won't drain a rate-limited cloud key — see
 
 ## Conventions
 
-- **Async everywhere** (FastAPI + async SQLAlchemy + async Neo4j/httpx).
+- **Async handlers, sync Neo4j.** FastAPI + async SQLAlchemy + async httpx,
+  but the Neo4j driver (and spaCy, PDF/xlsx parsing) is synchronous: from an
+  `async def`, call it through `asyncio.to_thread`, never directly on the loop.
 - **Pydantic v2** models for all request/response shapes (`models/`).
 - Config only via `intel_platform.config.Settings` (pydantic-settings) — never
   read `os.environ` ad hoc in business logic.
 - Don't leak internal error detail to API clients (past review finding);
   log server-side, return clean errors.
 - The SSRF guard is `collection/url_guard.py`, not any one fetcher. `scraper`,
-  `crawler`, `proxy` and `agentic._validate_urls` all call it, so it cannot be
-  bypassed by reaching for a lower-level fetch helper — keep it that way, and
-  route any new outbound fetch through it.
+  `crawler` and `proxy` call it, so it cannot be bypassed by reaching for a
+  lower-level fetch helper — keep it that way, and route any new outbound
+  fetch through it.
 
 ## Definition of done
 

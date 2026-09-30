@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 
 from intel_platform.api.cache import cached
 from intel_platform.api.deps import get_graph_store, project_exists, verify_api_key
@@ -8,23 +9,33 @@ from intel_platform.services.enrichment import (
     compute_degree_centrality, detect_communities, compute_all_statistics,
     compute_structural_holes, extract_ego_network, compute_influence_propagation,
 )
-from intel_platform.services.graph_cache import graph_cache
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
+def _edge_prop(edge: dict, key: str, default=None):
+    """An edge property, whether the store flattened it or nested it under `props`."""
+    value = edge.get(key, edge.get("props", {}).get(key))
+    return default if value is None else value
+
+
 @router.get("/graph")
-def get_full_graph(project_id: str, limit: int = 500, min_centrality: float = 0, store: GraphStore = Depends(get_graph_store)):
+def get_full_graph(
+    project_id: str,
+    limit: int = Query(500, ge=1, le=10000),
+    min_centrality: float = 0,
+    store: GraphStore = Depends(get_graph_store),
+):
     import networkx as nx
 
     data = store.get_full_graph(project_id=project_id, limit=limit)
 
-    # PERF: reuse already-fetched data for building the NetworkX graph
-    # instead of issuing a second query to Neo4j
-    G = graph_cache.get_or_build_graph(
-        project_id,
-        lambda: build_networkx_from_data(data),
-    )
+    # Built from the fetched display slice and never cached. `graph_cache` holds
+    # the analytics graph (centrality, communities, statistics) that expects the
+    # whole project; caching this `limit`-truncated slice under the same key made
+    # every analytic depend on which request came first — `/graph?limit=1`
+    # poisoned them all for five minutes.
+    G = build_networkx_from_data(data)
 
     try:
         # Get community assignments (Louvain needs undirected)
@@ -79,21 +90,35 @@ def get_full_graph(project_id: str, limit: int = 500, min_centrality: float = 0,
     enriched_edges = []
     for edge in data.get("edges", []):
         if edge.get("source_id") in visible_ids and edge.get("target_id") in visible_ids:
+            # Contract 4: what the evidence panel needs about each edge. The
+            # three identifying keys are unchanged — GraphVisualization reads them.
             enriched_edges.append({
                 "source_id": edge.get("source_id", ""),
                 "target_id": edge.get("target_id", ""),
                 "rel_type": edge.get("rel_type", ""),
-                "confidence": edge.get("confidence", edge.get("props", {}).get("confidence", 0.5)),
-                "first_seen": edge.get("first_seen", edge.get("props", {}).get("first_seen")),
-                "last_seen": edge.get("last_seen", edge.get("props", {}).get("last_seen")),
+                "confidence": _edge_prop(edge, "confidence", 0.5),
+                "evidence": str(_edge_prop(edge, "evidence", "")),
+                "method": str(_edge_prop(edge, "method", "")),
+                "source_doc_id": str(_edge_prop(edge, "source_doc_id", "")),
+                # An edge written before polarity was recorded is an assertion.
+                "polarity": _edge_prop(edge, "polarity", "asserts"),
+                "first_seen": _edge_prop(edge, "first_seen"),
+                "last_seen": _edge_prop(edge, "last_seen"),
             })
 
+    # The same node set get_full_graph draws its slice from, counted in full, so
+    # the view can say "showing N of M" with a real M.
+    total_nodes = store.count_entities(project_id=project_id)
     return {
         "project_exists": project_exists(store, project_id),
         "nodes": enriched_nodes,
         "edges": enriched_edges,
         "node_count": len(enriched_nodes),
         "edge_count": len(enriched_edges),
+        "total_nodes": total_nodes,
+        # Whether the project holds more than this view shows. The store reports
+        # it (contract 3); otherwise it follows from the true count.
+        "truncated": bool(data.get("truncated", total_nodes > len(data.get("nodes", [])))),
     }
 
 
@@ -123,24 +148,34 @@ def get_statistics(project_id: str, store: GraphStore = Depends(get_graph_store)
 
 @router.get("/graph/structural-holes")
 @cached(ttl=30)
-def get_structural_holes(project_id: str, top_n: int = 20, store: GraphStore = Depends(get_graph_store)):
+def get_structural_holes(
+    project_id: str, top_n: int = Query(20, ge=1, le=1000), store: GraphStore = Depends(get_graph_store),
+):
     return compute_structural_holes(store, project_id, top_n=top_n)
 
 
 @router.get("/graph/ego-network/{entity_id}")
-def get_ego_network(entity_id: str, project_id: str, hops: int = 2, store: GraphStore = Depends(get_graph_store)):
-    return extract_ego_network(store, project_id, entity_id, hops=min(hops, 4))
+def get_ego_network(
+    entity_id: str, project_id: str, hops: int = Query(2, ge=1, le=4),
+    store: GraphStore = Depends(get_graph_store),
+):
+    return extract_ego_network(store, project_id, entity_id, hops=hops)
+
+
+class InfluenceRequest(BaseModel):
+    """Typed so a malformed body is a 422 rather than a failure inside the walk."""
+
+    project_id: str
+    seed_ids: list[str]
+    steps: int = Field(default=3, ge=1, le=10)
+    threshold: float = Field(default=0.3, ge=0.0, le=1.0)
 
 
 @router.post("/graph/influence")
 def post_influence_propagation(
-    body: dict,
+    body: InfluenceRequest,
     store: GraphStore = Depends(get_graph_store),
 ):
-    project_id = body.get("project_id", "")
-    seed_ids = body.get("seed_ids", [])
-    steps = min(body.get("steps", 3), 10)
-    threshold = body.get("threshold", 0.3)
     return compute_influence_propagation(
-        store, project_id, seed_ids, steps=steps, threshold=threshold
+        store, body.project_id, body.seed_ids, steps=body.steps, threshold=body.threshold
     )

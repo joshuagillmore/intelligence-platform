@@ -100,6 +100,33 @@ describe('PirPanel', () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('pir-1', { status: 'SATISFIED' }));
   });
 
+  // One click used to delete a requirement outright, with its plan links.
+  it('asks before deleting a requirement, and does nothing if declined', async () => {
+    const mockDelete = pirsApi.delete as unknown as ReturnType<typeof vi.fn>;
+    mockDelete.mockReset();
+    mockList.mockResolvedValue({ data: [samplePir] });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<PirPanel projectId="proj-1" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(mockDelete).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('deletes the requirement once confirmed', async () => {
+    const mockDelete = pirsApi.delete as unknown as ReturnType<typeof vi.fn>;
+    mockDelete.mockReset();
+    mockDelete.mockResolvedValue({});
+    mockList.mockResolvedValue({ data: [samplePir] });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<PirPanel projectId="proj-1" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('pir-1'));
+    confirmSpy.mockRestore();
+  });
+
   it('hands the requirement to the collection workflow', async () => {
     mockList.mockResolvedValue({ data: [samplePir] });
     render(<PirPanel projectId="proj-1" />);

@@ -1,10 +1,9 @@
 'use client';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { APP_NAME, APP_TAGLINE } from '@/lib/branding';
+import { clearSession } from '@/lib/api';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -26,10 +25,16 @@ export default function LoginPage() {
         return;
       }
       const data = await res.json();
+      // Nothing from a previous analyst's session (selected project, assistant
+      // threads) may carry into this one on a shared workstation.
+      clearSession();
       localStorage.setItem('auth_token', data.access_token);
       localStorage.setItem('auth_user', data.username);
       localStorage.setItem('auth_role', data.role);
-      router.push('/');
+      // A full navigation, not router.push: the project and assistant
+      // contexts live in the root layout and would otherwise keep the previous
+      // analyst's in-memory state (and write it back to storage).
+      window.location.href = '/';
     } catch {
       setError('Connection error');
     } finally {

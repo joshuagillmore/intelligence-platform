@@ -16,7 +16,6 @@ this doc synthesizes them into a single reading.
 │ wind · d3 +              │  axios │  • Neo4j        (graph)       │
 │ leaflet                  │        │  • Postgres/pgvector (docs,   │
 └─────────────────────────┘        │    vectors, collection mgmt)  │
-                                    │  • Redis + Celery (async)     │
                                     │  • LLMs: Anthropic/OpenAI/    │
                                     │    Cohere/Ollama (orchestr.)  │
                                     │  • crawl4ai + ddgs collection │
@@ -43,8 +42,8 @@ of the state.
 | Package | Responsibility |
 |---------|----------------|
 | `api/` | FastAPI app (`api.app:app`) and `routes/` — 27 routers (auth, documents, entities, graph, collections, collection_plans, pirs, query, assess, analysis, topics, reports, geo, timeline, search, watchlist, personas, snapshots, admin_config, llm, ingest, export, notebook, projects, health, enrichment, attack). Middleware handles rate-limiting, request-logging, and security headers. |
-| `services/` | Business logic: extraction, enrichment, ingestion, graph_builder, graph_rag, hybrid_retrieval, vector_search, document_clustering, topics, assessment, summarization, geocoding, collection_planner, plan_executor, reports, mindmap_export, graph_cache, text_utils. |
-| `collection/` | Agentic web collection: `search` (ddgs) → `crawler`/`scraper` (crawl4ai) → `runner`/`executor` (CollectionRunner) → ingest. `agentic.py` is the LLM-driven planner; `tasks.py` runs Celery jobs. |
+| `services/` | Business logic: extraction, enrichment, ingestion, graph_builder, graph_rag, hybrid_retrieval, vector_search, document_clustering, topics, assessment, summarization, geocoding, `geo/` (coordinate/MGRS parsing, Overpass local features), collection_planner, plan_executor, reports, mindmap_export, graph_cache, text_utils, `llm_output` (reading values back out of model replies), plus `attack/` (MITRE ATT&CK). |
+| `collection/` | Agentic web collection: `search` (ddgs) → `crawler`/`scraper` (crawl4ai) → `runner`/`executor` (CollectionRunner) → ingest. `agentic.py` is the LLM-driven planner; its runs are asyncio tasks in the API process. |
 | `llm/` | Multi-provider layer: `anthropic`, `openai_provider`, `cohere_provider`, `ollama`, plus `embeddings`, the analytic-tradecraft `skills/`, and the **`orchestrator`** — the single source of truth for provider selection. |
 | `enrichment/` | Cyber-observable enrichment: `observables` (refang/classify), `base` (provider ABC + registry), `cache` (Postgres cache + rate limiter), `service` (Investigate orchestrator), `hook` (auto-enrich), and keyless `providers/` (dns, geoip, kev, nvd, rdap, certs, email) that egress via `ProxiedClient`. |
 | `graph/` | Neo4j access: `schema.py` (`initialize_schema`) and `store.py`. |
@@ -111,8 +110,8 @@ feeding the extraction pipeline. Two properties matter for a public repo:
   internal service hostnames, and hosts that resolve to private or reserved IPs
   (a DNS-rebinding defence). It is deliberately one shared validator rather than
   a check inside each fetcher, so it cannot be bypassed by calling a lower-level
-  helper: `scraper`, `crawler`, `proxy` and `agentic._validate_urls` all go
-  through it. Preserve it, and route any new outbound fetch through it.
+  helper: `scraper`, `crawler` and `proxy` all go through it. Preserve it,
+  and route any new outbound fetch through it.
 - **Optional egress proxy.** Web-collection and cyber-enrichment egress (crawl4ai,
   ddgs, and the httpx-based connectors) can be routed through a selectable proxy
   — Off / VPN / Tor — chosen at runtime from the admin API and persisted in
@@ -124,8 +123,9 @@ feeding the extraction pipeline. Two properties matter for a public repo:
 
 ## Request flow (analyst asks a question)
 
-1. The frontend calls the backend through `lib/api.ts` (axios). Every request
-   carries the API key; auth-gated routes also carry a JWT.
+1. The frontend calls the backend through `lib/api.ts` (axios) with the JWT it
+   received at login. (`API_KEY` is a separate bearer path for scripts and
+   service callers; the browser never holds it.)
 2. Middleware runs first: rate-limit → request-logging → security headers.
 3. The route handler pulls structured context from Neo4j (`graph_rag`) and
    relevant documents from pgvector (`hybrid_retrieval` / `vector_search`).
@@ -134,18 +134,26 @@ feeding the extraction pipeline. Two properties matter for a public repo:
 5. The grounded answer (with citations/provenance) returns to the UI — as a
    graph view, a geo layer, a topic mind-map, or a written intelligence product.
 
-Long-running work (crawls, bulk extraction) is handed to Celery/Redis so requests
-stay responsive.
+Long-running work runs inside the API process rather than on a separate queue:
+a collection run is an asyncio task (held by `collection_plans.register_run`,
+reported through `current_run_state`), and blocking calls — the synchronous
+Neo4j driver, spaCy, file parsing — are pushed to worker threads with
+`asyncio.to_thread` so requests stay responsive. There is no Celery or Redis.
 
 ## Deployment
 
 - **Local full stack:** `docker compose up` brings up Neo4j (7474/7687),
-  Postgres (5432), Redis (6379), Ollama (11434), the backend (8000), and the
-  frontend (3000). Extraction is wired to the in-stack Ollama for a
-  keys-optional local experience.
+  Postgres (5432), Ollama (11434), the backend (8000), and the frontend (3000).
+  Extraction is wired to the in-stack Ollama for a keys-optional local
+  experience. Datastore passwords come from `NEO4J_PASSWORD` /
+  `POSTGRES_PASSWORD` (default `changeme`) on both sides.
 - **Production:** a single multi-stage `Dockerfile` builds the Next.js standalone
-  server and the Python backend into one image; the entrypoint starts the
-  frontend (Node) and the backend (uvicorn) together. Targeted at Railway.
+  server and the Python backend (with Chromium for crawl4ai) into one image
+  that runs as a non-root user. Its entrypoint, `start.sh`, runs Next on
+  127.0.0.1:3000 and uvicorn on :8000 (which proxies page requests to Next), and
+  exits non-zero as soon as either process dies so the platform restarts the
+  container; a `HEALTHCHECK` polls `/health`. CI builds and boots this image on
+  every run. Targeted at Railway.
   Neo4j connection binding (IPv6) has bitten deploys before — verify the bolt
   URI/host when changing DB or deploy config.
 
@@ -154,8 +162,11 @@ stay responsive.
 All settings load through `intel_platform.config.Settings` (pydantic-settings);
 business logic never reads `os.environ` directly. The full config surface lives
 in [`.env.example`](../.env.example). Before any real deployment: set a strong,
-non-default `JWT_SECRET` and admin password, and turn on `REQUIRE_SECURE_AUTH`
-(which refuses to start with the built-in development defaults). See the
+non-default `JWT_SECRET` (at least 32 bytes), admin password and
+`ENCRYPTION_KEY`, and turn on `REQUIRE_SECURE_AUTH`, which refuses to start on
+short or default secrets, a missing encryption key, an admin account whose
+stored password is still `admin`, or MCP enabled ([SECURITY.md](../SECURITY.md)
+lists the exact rules). See the
 [Security section of the README](../README.md#configuration--security) and the
-self-commissioned [code review](./code-review-2026-03-22.md) for the full
-hardening picture.
+self-commissioned code reviews ([2026-03-22](./code-review-2026-03-22.md),
+[2026-09-30](./code-review-2026-09-30.md)) for the full hardening picture.

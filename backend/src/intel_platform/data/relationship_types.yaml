@@ -67,7 +67,13 @@ relationship_types:
     confidence_default: 0.7
 
 # Verb-to-relationship mapping for dependency-parse extraction.
-# Keys are verb lemmas; values are relationship types.
+# Keys are verb lemmas; values are relationship types. The parse links a verb's
+# subject to its direct object ("APT29 deployed SUNBURST" -> APT29, SUNBURST),
+# so a mapping must read correctly as subject -[TYPE]-> object.
+#
+# Each lemma appears ONCE. YAML silently keeps the last of two duplicate keys,
+# so a second entry overrides the first with nothing to say so
+# (tests/test_relationship_types_yaml.py enforces this).
 verb_mappings:
   # TARGETS
   attack: TARGETS
@@ -95,7 +101,6 @@ verb_mappings:
   # LOCATED_AT
   locate: LOCATED_AT
   base: LOCATED_AT
-  station: LOCATED_AT
   headquarter: LOCATED_AT
   position: LOCATED_AT
   # BELONGS_TO
@@ -125,7 +130,7 @@ verb_mappings:
   deliver: SUPPLIED_BY
   ship: SUPPLIED_BY
   # DEPLOYED_AT
-  deploy: DEPLOYED_AT
+  # `deploy` is under USES: "X deployed Y" names what X used, not where it went.
   station: DEPLOYED_AT
   move: DEPLOYED_AT
 

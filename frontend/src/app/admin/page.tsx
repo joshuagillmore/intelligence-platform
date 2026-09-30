@@ -1,7 +1,9 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
-import { healthApi, projectsApi, adminApi, exportApi, type Project } from '@/lib/api';
+import { healthApi, projectsApi, adminApi, exportApi, isAdminSession, type Project } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errorMessages';
 
 interface HealthData {
   status: string;
@@ -57,7 +59,25 @@ const PROVIDERS = [
   { value: 'cohere', label: 'Cohere', color: 'text-rose-400' },
 ] as const;
 
+type AdminCard = 'projects' | 'config' | 'proxy' | 'vpn' | 'models' | 'keys' | 'enrichment';
+
 export default function AdminPage() {
+  const router = useRouter();
+  // null until checked after mount (localStorage is not available on the
+  // server). The backend enforces admin on every route here; this only keeps
+  // an analyst from landing on a page of 403s.
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  useEffect(() => {
+    const admin = isAdminSession();
+    setIsAdmin(admin);
+    if (!admin) router.replace('/');
+  }, [router]);
+
+  // Why each card failed to load, if it did. A failed card says so instead of
+  // showing a plausible default ("Direct", "No API keys", "Auto-enrich off").
+  const [cardErrors, setCardErrors] = useState<Partial<Record<AdminCard, string | null>>>({});
+  const [proxyLoaded, setProxyLoaded] = useState(false);
+  const [enrichLoaded, setEnrichLoaded] = useState(false);
   const [health, setHealth] = useState<HealthData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -98,73 +118,94 @@ export default function AdminPage() {
     }
   }, []);
 
+  const setCardError = useCallback((card: AdminCard, message: string | null) => {
+    setCardErrors(prev => ({ ...prev, [card]: message }));
+  }, []);
+
   const loadProjects = useCallback(async () => {
     try {
       const res = await projectsApi.list();
       setProjects(res.data);
-    } catch {
+      setCardError('projects', null);
+    } catch (e) {
       setProjects([]);
+      setCardError('projects', getErrorMessage(e));
     }
-  }, []);
+  }, [setCardError]);
 
   const loadConfig = useCallback(async () => {
     try {
       const res = await adminApi.config();
       setConfig(res.data);
-    } catch {
+      setCardError('config', null);
+    } catch (e) {
       setConfig(null);
+      setCardError('config', getErrorMessage(e));
     }
-  }, []);
+  }, [setCardError]);
 
   const loadProxy = useCallback(async () => {
     setProxyLoading(true);
     try {
       const res = await adminApi.getProxy();
-      setProxy(res.data || { mode: 'direct' });
-    } catch {
-      setProxy({ mode: 'direct' });
+      if (!res.data?.mode) throw new Error('The backend did not report an egress mode.');
+      setProxy(res.data);
+      setProxyLoaded(true);
+      setCardError('proxy', null);
+    } catch (e) {
+      // Never assume "direct": saving that over a Tor or VPN setting would
+      // silently send collection out unproxied. Saving stays disabled until the
+      // real mode has been read.
+      setProxyLoaded(false);
+      setCardError('proxy', getErrorMessage(e));
     } finally {
       setProxyLoading(false);
     }
-  }, []);
+  }, [setCardError]);
 
   const loadVpnStatus = useCallback(async () => {
     setVpnStatusLoading(true);
     try {
       const res = await adminApi.getVpnStatus();
       setVpnStatus(res.data);
-    } catch {
-      // Sidecar unreachable (e.g. not running under docker compose --profile vpn) —
-      // degrade gracefully instead of erroring the page.
-      setVpnStatus({ running: false, reachable: false });
+      setCardError('vpn', null);
+    } catch (e) {
+      // The status call itself failed: we do not know the tunnel's state, so
+      // do not show one.
+      setVpnStatus(null);
+      setCardError('vpn', getErrorMessage(e));
     } finally {
       setVpnStatusLoading(false);
     }
-  }, []);
+  }, [setCardError]);
 
   const loadModels = useCallback(async () => {
     setModelsLoading(true);
     try {
       const res = await adminApi.listModels();
       setModels(res.data.models || []);
-    } catch {
+      setCardError('models', null);
+    } catch (e) {
       setModels([]);
+      setCardError('models', getErrorMessage(e));
     } finally {
       setModelsLoading(false);
     }
-  }, []);
+  }, [setCardError]);
 
   const loadKeys = useCallback(async () => {
     setKeysLoading(true);
     try {
       const res = await adminApi.listApiKeys();
       setStoredKeys(res.data.keys || []);
-    } catch {
+      setCardError('keys', null);
+    } catch (e) {
       setStoredKeys([]);
+      setCardError('keys', getErrorMessage(e));
     } finally {
       setKeysLoading(false);
     }
-  }, []);
+  }, [setCardError]);
 
   async function addKey() {
     if (!newKeyValue.trim() || !newKeyLabel.trim()) return;
@@ -221,6 +262,7 @@ export default function AdminPage() {
   }
 
   async function saveProxy() {
+    if (!proxyLoaded) return;
     setProxySaving(true);
     try {
       await adminApi.updateProxy({ mode: proxy.mode });
@@ -253,8 +295,15 @@ export default function AdminPage() {
       ]);
       setEnrichAuto(!!cfg.data?.auto_enabled);
       setEnrichProviders(provs.data?.providers || []);
-    } catch { /* non-fatal */ }
-  }, []);
+      setEnrichLoaded(true);
+      setCardError('enrichment', null);
+    } catch (e) {
+      // "Off" is a setting, not a default for "unknown": keep the toggle
+      // disabled until the real value has been read.
+      setEnrichLoaded(false);
+      setCardError('enrichment', getErrorMessage(e));
+    }
+  }, [setCardError]);
 
   async function saveEnrichment(next: boolean) {
     setEnrichSaving(true);
@@ -270,6 +319,7 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
+    if (!isAdmin) return;
     loadHealth();
     loadProjects();
     loadConfig();
@@ -277,7 +327,7 @@ export default function AdminPage() {
     loadModels();
     loadKeys();
     loadEnrichment();
-  }, [loadHealth, loadProjects, loadConfig, loadProxy, loadModels, loadKeys, loadEnrichment]);
+  }, [isAdmin, loadHealth, loadProjects, loadConfig, loadProxy, loadModels, loadKeys, loadEnrichment]);
 
   useEffect(() => {
     if (toast) {
@@ -288,11 +338,11 @@ export default function AdminPage() {
 
   // Poll VPN status while the Collection Egress card has VPN mode selected/visible.
   useEffect(() => {
-    if (proxy.mode !== 'vpn') return;
+    if (!isAdmin || proxy.mode !== 'vpn') return;
     loadVpnStatus();
     const interval = setInterval(loadVpnStatus, 10000);
     return () => clearInterval(interval);
-  }, [proxy.mode, loadVpnStatus]);
+  }, [isAdmin, proxy.mode, loadVpnStatus]);
 
   async function deleteProject(project: Project) {
     if (!confirm(`Are you sure you want to delete project "${project.name}"? This action cannot be undone.`)) return;
@@ -308,29 +358,52 @@ export default function AdminPage() {
   const totalEntities = projects.reduce((sum, p) => sum + (p.entity_count || 0), 0);
   const totalRelationships = projects.reduce((sum, p) => sum + (p.relationship_count || 0), 0);
   const totalDocuments = projects.reduce((sum, p) => sum + (p.document_count || 0), 0);
+  // Project totals are unknown, not zero, when the project list failed.
+  const projectFigure = (n: number) => (cardErrors.projects ? '—' : n);
+
+  const CardError = ({ card }: { card: AdminCard }) =>
+    cardErrors[card] ? (
+      <p role="alert" className="text-red-400 text-sm mb-3">Could not load: {cardErrors[card]}</p>
+    ) : null;
+
+  if (!isAdmin) {
+    // Checking (first paint, same on server and client) or redirecting.
+    return (
+      <div className="flex">
+        <Sidebar />
+        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
+          <h2 className="text-2xl font-bold mb-6">Administration</h2>
+          <p className="text-gray-500 text-sm">
+            {isAdmin === false ? 'Admin only. Redirecting…' : 'Checking access…'}
+          </p>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex">
       <Sidebar />
       <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
         <h2 className="text-2xl font-bold mb-6">Administration</h2>
+        <CardError card="projects" />
 
         {/* API Statistics Summary */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-accent-blue">{projects.length}</div>
+            <div className="text-2xl font-bold text-accent-blue">{projectFigure(projects.length)}</div>
             <div className="text-xs text-gray-400 mt-1">Projects</div>
           </div>
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-green-400">{totalEntities}</div>
+            <div className="text-2xl font-bold text-green-400">{projectFigure(totalEntities)}</div>
             <div className="text-xs text-gray-400 mt-1">Total Entities</div>
           </div>
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-purple-400">{totalRelationships}</div>
+            <div className="text-2xl font-bold text-purple-400">{projectFigure(totalRelationships)}</div>
             <div className="text-xs text-gray-400 mt-1">Total Relationships</div>
           </div>
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-amber-400">{totalDocuments}</div>
+            <div className="text-2xl font-bold text-amber-400">{projectFigure(totalDocuments)}</div>
             <div className="text-xs text-gray-400 mt-1">Total Documents</div>
           </div>
         </div>
@@ -406,6 +479,8 @@ export default function AdminPage() {
                   <label className="text-xs text-gray-400 block mb-2">Available Models</label>
                   {modelsLoading ? (
                     <p className="text-gray-500 text-sm">Scanning providers...</p>
+                  ) : cardErrors.models ? (
+                    <CardError card="models" />
                   ) : models.length === 0 ? (
                     <p className="text-gray-500 text-sm">No models found.</p>
                   ) : (
@@ -475,6 +550,8 @@ export default function AdminPage() {
                   <span className="text-sm text-gray-300 font-mono">{config.chunk_size} / {config.chunk_overlap}</span>
                 </div>
               </div>
+            ) : cardErrors.config ? (
+              <CardError card="config" />
             ) : (
               <p className="text-gray-500 text-sm">Loading configuration...</p>
             )}
@@ -553,9 +630,9 @@ export default function AdminPage() {
                   </div>
                 </div>
               ))}
-              {projects.length === 0 && (
-                <p className="text-gray-500 text-sm">No projects available for export.</p>
-              )}
+              {projects.length === 0 && (cardErrors.projects
+                ? <CardError card="projects" />
+                : <p className="text-gray-500 text-sm">No projects available for export.</p>)}
             </div>
           </div>
 
@@ -621,6 +698,8 @@ export default function AdminPage() {
             {/* Stored keys list grouped by provider */}
             {keysLoading ? (
               <p className="text-gray-500 text-sm">Loading keys...</p>
+            ) : cardErrors.keys ? (
+              <CardError card="keys" />
             ) : storedKeys.length === 0 ? (
               <div className="text-center py-6">
                 <p className="text-gray-500 text-sm">No API keys configured.</p>
@@ -698,12 +777,13 @@ export default function AdminPage() {
               Investigate is always available on an entity; auto-enrich runs the cheap keyless
               lookups on newly-seen cyber nodes at ingest. Egress uses the collection proxy below.
             </p>
+            <CardError card="enrichment" />
             <div className="space-y-4">
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={enrichAuto}
-                  disabled={enrichSaving}
+                  disabled={enrichSaving || !enrichLoaded}
                   onChange={(e) => saveEnrichment(e.target.checked)}
                   className="w-4 h-4"
                 />
@@ -715,7 +795,9 @@ export default function AdminPage() {
               <div>
                 <label className="text-xs text-gray-400 block mb-2">Providers</label>
                 {enrichProviders.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No providers loaded.</p>
+                  <p className="text-gray-500 text-sm">
+                    {cardErrors.enrichment ? 'Providers unknown: the list did not load.' : 'No providers loaded.'}
+                  </p>
                 ) : (
                   <div className="space-y-1">
                     {enrichProviders.map((p) => (
@@ -745,6 +827,21 @@ export default function AdminPage() {
             </p>
             {proxyLoading ? (
               <p className="text-gray-500 text-sm">Loading egress configuration...</p>
+            ) : !proxyLoaded ? (
+              // The current mode is unknown. Offering the form would default to
+              // "Direct" and one Save would replace a Tor or VPN setting.
+              <div>
+                <CardError card="proxy" />
+                <p className="text-gray-500 text-sm mb-3">
+                  The current egress mode could not be read, so it cannot be changed here until it loads.
+                </p>
+                <button
+                  onClick={loadProxy}
+                  className="text-xs text-accent-blue hover:text-blue-400"
+                >
+                  Retry
+                </button>
+              </div>
             ) : (
               <div className="space-y-4">
                 <div>
@@ -762,7 +859,7 @@ export default function AdminPage() {
 
                 <button
                   onClick={saveProxy}
-                  disabled={proxySaving}
+                  disabled={proxySaving || !proxyLoaded}
                   className="bg-accent-blue hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors disabled:opacity-50"
                 >
                   {proxySaving ? 'Saving...' : 'Save Egress Mode'}
@@ -833,7 +930,9 @@ export default function AdminPage() {
                         </div>
                       </>
                     ) : (
-                      <p className="text-gray-500 text-sm">Unable to reach VPN status endpoint.</p>
+                      <p className="text-red-400 text-sm">
+                        VPN state unknown: the status endpoint could not be reached{cardErrors.vpn ? ` (${cardErrors.vpn.replace(/\.$/, '')})` : ''}.
+                      </p>
                     )}
                   </div>
                 )}
@@ -852,7 +951,9 @@ export default function AdminPage() {
             <h3 className="text-lg font-semibold text-red-400 mb-4">Project Management</h3>
             <p className="text-gray-500 text-sm mb-4">Manage and delete projects. Deletion is permanent and cannot be undone.</p>
             {projects.length === 0 ? (
-              <p className="text-gray-500 text-sm">No projects found.</p>
+              cardErrors.projects
+                ? <CardError card="projects" />
+                : <p className="text-gray-500 text-sm">No projects found.</p>
             ) : (
               <div className="space-y-2">
                 {projects.map(project => (

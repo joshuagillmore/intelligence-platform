@@ -163,3 +163,64 @@ class TestUnboundedGrowth:
         for s in held:
             endpoint(project_id="p", store=s)
         assert len(cache_mod._cache) == 1
+
+
+class TestTheCapIsACap:
+    """Low -> A: at the cap only *expired* entries were evicted, so a burst of
+    fresh keys grew the cache without bound; and the sync wrapper runs in the
+    threadpool, where eviction iterated the dict while other threads inserted."""
+
+    def test_fresh_entries_beyond_the_cap_are_evicted_oldest_first(self, monkeypatch):
+        monkeypatch.setattr(cache_mod, "_CACHE_MAX_SIZE", 5)
+        calls = []
+
+        @cached(ttl=60)
+        def endpoint(project_id):
+            calls.append(project_id)
+            return project_id
+
+        for i in range(20):
+            endpoint(project_id=f"p{i}")
+        assert len(cache_mod._cache) == 5
+        endpoint(project_id="p19")  # newest: still cached
+        endpoint(project_id="p0")  # oldest: evicted, recomputed
+        assert calls.count("p19") == 1
+        assert calls.count("p0") == 2
+
+    def test_concurrent_inserts_from_the_threadpool_are_safe(self, monkeypatch):
+        import threading
+
+        monkeypatch.setattr(cache_mod, "_CACHE_MAX_SIZE", 8)
+
+        @cached(ttl=60)
+        def endpoint(project_id):
+            return project_id
+
+        errors: list[BaseException] = []
+
+        def worker(n):
+            try:
+                for i in range(400):
+                    endpoint(project_id=f"t{n}-{i}")
+            except BaseException as exc:  # noqa: BLE001 - the assertion is that nothing escapes
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker, args=(n,)) for n in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+        assert len(cache_mod._cache) <= 8
+
+    def test_a_cached_none_is_still_a_hit(self):
+        calls = []
+
+        @cached(ttl=60)
+        def endpoint(project_id):
+            calls.append(project_id)
+            return None
+
+        endpoint(project_id="p")
+        endpoint(project_id="p")
+        assert calls == ["p"]

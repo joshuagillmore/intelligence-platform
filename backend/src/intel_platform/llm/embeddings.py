@@ -13,6 +13,34 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 
+class EmbeddingConfigError(RuntimeError):
+    """The configured embedding provider cannot produce vectors the store accepts.
+
+    Raised by :func:`get_embedding_provider` instead of substituting a
+    different provider: vectors of another width fail in the database, on
+    the caller's session, long after the substitution was made.
+    """
+
+
+# Output widths of models these providers are commonly pointed at.
+# ``dimension()`` is what the factory checks against the column, so a
+# non-default model must not report the default model's width (mxbai-embed-large
+# is 1024, not nomic's 768). An unlisted model keeps its provider's default,
+# and the insert-time width check in vector_search is the backstop.
+_KNOWN_DIMENSIONS = {
+    "text-embedding-3-small": 1536, "text-embedding-3-large": 3072, "text-embedding-ada-002": 1536,
+    "embed-english-v3.0": 1024, "embed-multilingual-v3.0": 1024,
+    "embed-english-light-v3.0": 384, "embed-multilingual-light-v3.0": 384,
+    "nomic-embed-text": 768, "mxbai-embed-large": 1024, "all-minilm": 384,
+    "snowflake-arctic-embed": 1024, "bge-m3": 1024,
+}
+
+
+def _width(model: str, default: int) -> int:
+    # Ollama tags ("nomic-embed-text:latest") do not change the width.
+    return _KNOWN_DIMENSIONS.get(model.split(":", 1)[0], default)
+
+
 class EmbeddingResult(BaseModel):
     embeddings: list[list[float]]
     model: str
@@ -42,7 +70,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         from openai import AsyncOpenAI
         self._client = AsyncOpenAI(api_key=api_key)
         self._model = model
-        self._dim = 1536
+        self._dim = _width(model, 1536)
 
     async def embed(self, texts: list[str], *, input_type: str = "search_document") -> EmbeddingResult:
         response = await self._client.embeddings.create(model=self._model, input=texts)
@@ -61,17 +89,33 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 # Cohere
 # ---------------------------------------------------------------------------
 
+#: Output widths embed-v4 can be asked for (``output_dimension``).
+_COHERE_V4_WIDTHS = (256, 512, 1024, 1536)
+
+
 class CohereEmbeddingProvider(EmbeddingProvider):
-    def __init__(self, api_key: str, model: str = "embed-v4.0"):
+    def __init__(self, api_key: str, model: str = "embed-v4.0", dimension: int | None = None):
         import cohere
         self._client = cohere.AsyncClientV2(api_key=api_key)
         self._model = model
-        self._dim = 1024
+        # embed-v4 produces whichever supported width it is asked for, so it
+        # takes the configured one; v3 models have one native width.
+        if model.startswith("embed-v4") and dimension in _COHERE_V4_WIDTHS:
+            self._dim = dimension
+        else:
+            self._dim = _width(model, 1024)
 
     async def embed(self, texts: list[str], *, input_type: str = "search_document") -> EmbeddingResult:
+        kwargs: dict = {}
+        # embed-v4 returns 1536 dimensions unless told otherwise, while this
+        # provider declared 1024 — so with EMBEDDING_DIMENSIONS=1024 every vector
+        # was wider than the column. Always ask for the declared width. v3
+        # models are natively 1024 (light: 384) and reject the parameter.
+        if self._model.startswith("embed-v4"):
+            kwargs["output_dimension"] = self._dim
         response = await self._client.embed(
             texts=texts, model=self._model, input_type=input_type,
-            embedding_types=["float"],
+            embedding_types=["float"], **kwargs,
         )
         vectors = response.embeddings.float_ or []
         tokens = 0
@@ -96,7 +140,7 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
     def __init__(self, base_url: str = "http://localhost:11434", model: str = "nomic-embed-text"):
         self._base_url = base_url.rstrip("/")
         self._model = model
-        self._dim = 768
+        self._dim = _width(model, 768)
 
     async def embed(self, texts: list[str], *, input_type: str = "search_document") -> EmbeddingResult:
         import httpx
@@ -122,23 +166,45 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
 # ---------------------------------------------------------------------------
 
 def get_embedding_provider() -> EmbeddingProvider:
-    """Instantiate the configured embedding provider."""
+    """Instantiate the configured embedding provider, or refuse.
+
+    Exactly the provider ``EMBEDDING_PROVIDER`` names, and only if its width is
+    ``EMBEDDING_DIMENSIONS`` — the width the pgvector columns were created
+    with. There is deliberately no fallback to another provider: the three
+    produce 1536, 1024 and 768 dimensions, so a substitute's vectors fail in the
+    database instead of here, where the error can say what to change.
+
+    Raises :class:`EmbeddingConfigError`.
+    """
     from intel_platform.config import get_settings
     s = get_settings()
 
-    provider = s.embedding_provider.lower()
+    name = (s.embedding_provider or "").strip().lower()
     model = s.embedding_model or None
+    model_kw = {"model": model} if model else {}
 
-    if provider == "cohere" and s.cohere_api_key:
-        return CohereEmbeddingProvider(api_key=s.cohere_api_key, **({"model": model} if model else {}))
-    if provider == "openai" and s.openai_api_key:
-        return OpenAIEmbeddingProvider(api_key=s.openai_api_key, **({"model": model} if model else {}))
-    if provider == "ollama":
-        return OllamaEmbeddingProvider(base_url=s.ollama_base_url, **({"model": model} if model else {}))
+    if name == "openai":
+        if not s.openai_api_key:
+            raise EmbeddingConfigError("EMBEDDING_PROVIDER=openai but OPENAI_API_KEY is not set")
+        provider: EmbeddingProvider = OpenAIEmbeddingProvider(api_key=s.openai_api_key, **model_kw)
+    elif name == "cohere":
+        if not s.cohere_api_key:
+            raise EmbeddingConfigError("EMBEDDING_PROVIDER=cohere but COHERE_API_KEY is not set")
+        provider = CohereEmbeddingProvider(
+            api_key=s.cohere_api_key, dimension=int(s.embedding_dimensions), **model_kw,
+        )
+    elif name == "ollama":
+        provider = OllamaEmbeddingProvider(base_url=s.ollama_base_url, **model_kw)
+    else:
+        raise EmbeddingConfigError(
+            f"EMBEDDING_PROVIDER={s.embedding_provider!r} is not one of openai, cohere, ollama"
+        )
 
-    # Fallback chain: try any available provider
-    if s.openai_api_key:
-        return OpenAIEmbeddingProvider(api_key=s.openai_api_key)
-    if s.cohere_api_key:
-        return CohereEmbeddingProvider(api_key=s.cohere_api_key)
-    return OllamaEmbeddingProvider(base_url=s.ollama_base_url)
+    expected = int(s.embedding_dimensions)
+    if provider.dimension() != expected:
+        raise EmbeddingConfigError(
+            f"{provider.name()} produces {provider.dimension()}-dimensional vectors but "
+            f"EMBEDDING_DIMENSIONS={expected}. Set EMBEDDING_DIMENSIONS={provider.dimension()} "
+            "(and recreate the embedding tables) or choose a provider of that width."
+        )
+    return provider

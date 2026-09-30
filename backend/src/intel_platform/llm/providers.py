@@ -12,7 +12,77 @@ the functions to avoid import cycles.
 """
 from __future__ import annotations
 
+import logging
+
 from intel_platform.config import settings
+
+logger = logging.getLogger(__name__)
+
+_CLOUD_PROVIDERS = ("cohere", "anthropic", "openai")
+
+
+def _runtime_override() -> tuple[str, str]:
+    """(provider, model) an admin chose at runtime in the LLM hub, else ("", "").
+
+    Distinct from the configured default: choosing a provider in the UI is an
+    explicit act, and it is the one thing precedence rules must never overrule.
+    ``get_active_provider`` merges the two, so the override is read directly.
+    """
+    from intel_platform.api.routes import admin_config
+
+    override = admin_config.get_llm_override() or {}
+    return (
+        (override.get("provider") or "").strip().lower(),
+        (override.get("model") or "").strip(),
+    )
+
+
+def _build_cloud(name: str, key: str, model: str = ""):
+    kw = {"model": model} if model else {}
+    if name == "cohere":
+        from intel_platform.llm.cohere_provider import CohereProvider
+        return CohereProvider(api_key=key, **kw)
+    if name == "anthropic":
+        from intel_platform.llm.anthropic import AnthropicProvider
+        return AnthropicProvider(api_key=key, **kw)
+    if name == "openai":
+        from intel_platform.llm.openai_provider import OpenAIProvider
+        return OpenAIProvider(api_key=key, **kw)
+    return None
+
+
+async def _key_or_env(name: str) -> str | None:
+    """``_resolve_api_key`` (DB, then env), degrading to the env key alone when
+    the key store cannot be read — a Postgres outage should not hide a key
+    that is sitting in the environment."""
+    try:
+        return await _resolve_api_key(name)
+    except Exception:
+        logger.warning("API key store unavailable; using env key for %s if set", name, exc_info=True)
+        # Read at call time, like _cloud_provider_from_env, so callers that
+        # patch intel_platform.config.settings are honoured.
+        from intel_platform.config import settings as current
+
+        return getattr(current, f"{name}_api_key", "") or None
+
+
+async def _first_cloud_provider(preferred: str = "", preferred_model: str = ""):
+    """A cloud provider from DB or env keys: ``preferred`` first (with its model),
+    then cohere -> anthropic -> openai at their default models. None if no key."""
+    order = [preferred] if preferred in _CLOUD_PROVIDERS else []
+    order += [p for p in _CLOUD_PROVIDERS if p not in order]
+    for name in order:
+        key = await _key_or_env(name)
+        if key:
+            return _build_cloud(name, key, preferred_model if name == preferred else "")
+    return None
+
+
+def _collection_preference() -> str:
+    """``collection_llm_preference``: "cloud-first" (default) or "local-first"."""
+    raw = (getattr(settings, "collection_llm_preference", "cloud-first") or "cloud-first")
+    value = raw.strip().lower().replace("_", "-")
+    return "local-first" if value.startswith("local") else "cloud-first"
 
 
 async def _resolve_api_key(provider_name: str) -> str | None:
@@ -55,19 +125,89 @@ def _cloud_provider_from_env():
 
 
 async def _get_collection_provider():
-    """Provider for bulk collection work (source resolution + per-doc summaries).
+    """Provider for bulk collection work (source resolution, per-doc summaries,
+    and the agentic loop's structured steps). The one place collection
+    precedence is decided — ``collection/agentic.py`` should call this rather
+    than re-deriving it.
 
-    Routes to a dedicated, rate-limit-free provider (local Ollama) when
-    ``collection_llm_provider`` is configured, so heavy collection runs don't
-    exhaust a rate-limited cloud key. Falls back to the default provider when
-    unset (e.g. deployments without a local Ollama).
+    In order:
+
+    1. ``collection_llm_provider=ollama`` → local Ollama (``collection_llm_model``),
+       so heavy runs don't exhaust a rate-limited cloud key. Any other non-empty
+       value is an explicit collection choice too and disables step 3.
+    2. The default provider (``_get_provider``: runtime override, DB keys, env).
+    3. If that is Ollama *only because it is the configured default*, and
+       ``collection_llm_preference`` is "cloud-first" (the default), a cloud key
+       from the key store or env replaces it — structured collection output is
+       more reliable from a cloud model. "local-first" turns this off.
+
+    An admin's runtime choice of Ollama is never overridden: that is an explicit
+    act, and swapping it for whichever cloud key exists is what
+    ``_get_agentic_provider`` used to do.
     """
     prov = (getattr(settings, "collection_llm_provider", "") or "").strip()
     if prov == "ollama":
         from intel_platform.llm.ollama import OllamaProvider
         model = (getattr(settings, "collection_llm_model", "") or "").strip() or "qwen2.5:14b"
         return OllamaProvider(base_url=settings.ollama_base_url, model=model)
-    return await _get_provider()
+
+    provider = await _get_provider()
+    if prov or not provider.name().startswith("ollama"):
+        return provider
+    if _runtime_override()[0] == "ollama":
+        logger.info("Collection provider: %s (chosen at runtime)", provider.name())
+        return provider
+    if _collection_preference() == "local-first":
+        return provider
+
+    try:
+        cloud = await _first_cloud_provider()
+    except Exception:
+        logger.warning("Cloud provider lookup failed; collection stays on %s", provider.name(), exc_info=True)
+        return provider
+    if cloud is not None:
+        logger.info("Collection provider: %s (cloud-first over %s)", cloud.name(), provider.name())
+        return cloud
+    return provider
+
+
+async def _get_topics_provider():
+    """Provider for topic-label refinement, or None to keep keyword labels.
+
+    Refinement is one call per node — 31 for a thirty-child tree — which is the
+    same shape as collection work: high volume, low value per call, and the
+    first thing to exhaust a rate-limited cloud key. On a live run every one of
+    31 refinements failed with HTTP 429 from a Cohere trial key (20/min), the
+    endpoint spent 19.3s of a 20.6s response failing, and the analyst saw topics
+    named "wikipedia / wiki / org" — raw TF-IDF keywords off URL fragments.
+
+    In order: ``topics_llm_provider=ollama`` or an admin's runtime choice of
+    Ollama → local Ollama; otherwise a cloud provider — the active one first
+    (runtime override, else ``default_llm_provider``) with its model, then
+    cohere → anthropic → openai — using keys from the key store as well as the
+    environment. None when there is no key, so the caller keeps keyword labels
+    and reports ``label_source`` accordingly; the configured-default Ollama is
+    deliberately not a fallback here.
+    """
+    from intel_platform.config import settings
+
+    override_provider, override_model = _runtime_override()
+    prov = (getattr(settings, "topics_llm_provider", "") or "").strip().lower()
+    if prov == "ollama" or override_provider == "ollama":
+        from intel_platform.llm.ollama import OllamaProvider
+        model = (
+            (getattr(settings, "topics_llm_model", "") or "").strip()
+            or (override_model if override_provider == "ollama" else "")
+            or "qwen2.5:14b"
+        )
+        return OllamaProvider(base_url=settings.ollama_base_url, model=model)
+
+    if override_provider:
+        active, active_model = override_provider, override_model
+    else:
+        active = (getattr(settings, "default_llm_provider", "") or "").strip().lower()
+        active_model = (getattr(settings, "default_llm_model", "") or "").strip()
+    return await _first_cloud_provider(active, active_model)
 
 
 async def _get_extraction_provider():

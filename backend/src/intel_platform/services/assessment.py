@@ -41,6 +41,9 @@ class AssessmentService:
             confidence=1.0,
             source="assessment_service",
             method="analyst",
+            # Contract 16: lets create_relationship match both ends inside the
+            # project on an indexed label rather than scanning every node.
+            project_id=project_id,
         )
         self._store.create_relationship(rel)
         return {
@@ -54,7 +57,11 @@ class AssessmentService:
 
     def get_entity_assessments(self, entity_id: str) -> list[dict]:
         rels = self._store.get_relationships(entity_id)
-        assessment_ids = [r["target_id"] for r in rels if r["rel_type"] == "ASSESSES"]
+        # ASSESSES points assessment -> entity, so from the entity's side the
+        # assessment is the incoming neighbour, not the target.
+        assessment_ids = [
+            r.get("neighbor_id") or r["source_id"] for r in rels if r["rel_type"] == "ASSESSES"
+        ]
         assessments = []
         for aid in assessment_ids:
             a = self._store.get_entity(aid)

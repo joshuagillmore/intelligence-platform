@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,16 +10,31 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
 @router.get("/search")
-def global_search(q: str, project_id: str, limit: int = 50, store: GraphStore = Depends(get_graph_store)):
-    """Search across all entity types, documents, and reports."""
-    results = store.search_entities(project_id=project_id, query=q, limit=limit)
+def global_search(
+    q: str,
+    project_id: str,
+    limit: int = Query(50, ge=1, le=1000),
+    store: GraphStore = Depends(get_graph_store),
+):
+    """Search entity names across all entity types, documents, and reports.
 
-    # Categorize results
+    Every search term must appear in the name. `count` is the rows on this
+    page and `total` the true number of matches (the same filter, not capped
+    by the page size); `total` used to be the page length, so a search capped
+    at 50 always reported 50.
+    """
+    results = store.search_entities(project_id=project_id, query=q, limit=limit)
+    total = store.count_entities(project_id=project_id, query=q)
+
+    # Categorize results; `results` keeps the same rows as one list, in order.
     categorized = {
         "entities": [],
         "documents": [],
         "reports": [],
-        "total": len(results),
+        "results": [],
+        "count": len(results),
+        "total": total,
+        "truncated": total > len(results),
     }
     for r in results:
         etype = r.get("entity_type", "")
@@ -38,6 +53,7 @@ def global_search(q: str, project_id: str, limit: int = 50, store: GraphStore = 
             categorized["reports"].append(entry)
         else:
             categorized["entities"].append(entry)
+        categorized["results"].append(entry)
 
     return categorized
 

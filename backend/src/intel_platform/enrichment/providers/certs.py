@@ -12,7 +12,9 @@ from intel_platform.collection.proxy import ProxiedClient
 from intel_platform.enrichment.base import (
     EnrichmentProvider,
     EnrichmentResult,
+    ProviderError,
     RelatedEntity,
+    fetch_json,
     register_provider,
 )
 
@@ -33,16 +35,11 @@ class CertsProvider(EnrichmentProvider):
         self._client = client or ProxiedClient()
 
     async def lookup(self, value: str, entity_type: str) -> EnrichmentResult:
-        try:
-            resp = await self._client.get(
-                _URL, params={"q": value, "output": "json"}, timeout=20
-            )
-            rows = resp.json()
-        except Exception:
-            return EnrichmentResult(source_url=_URL)
-
+        rows = await fetch_json(
+            self._client, self.name, _URL, params={"q": value, "output": "json"}, timeout=20,
+        )
         if not isinstance(rows, list):
-            return EnrichmentResult(source_url=_URL)
+            raise ProviderError(self.name, "unexpected response shape")
         # crt.sh returns tens of thousands of rows for popular domains — cap to
         # bound memory/CPU on an Investigate.
         rows = rows[:5000]

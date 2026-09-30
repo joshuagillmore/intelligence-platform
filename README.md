@@ -9,7 +9,7 @@ map, across a timeline, and through written intelligence products, with every
 answer grounded in the documents it collected.
 
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.136-009688?logo=fastapi&logoColor=white)
 ![Next.js 14](https://img.shields.io/badge/Next.js-14-000000?logo=nextdotjs&logoColor=white)
 ![Neo4j](https://img.shields.io/badge/Neo4j-5-4581C3?logo=neo4j&logoColor=white)
 ![Postgres + pgvector](https://img.shields.io/badge/Postgres-pgvector-4169E1?logo=postgresql&logoColor=white)
@@ -52,7 +52,9 @@ implementation of that idea, not a mock-up.
 ### Agentic collection
 Give it an objective and it plans sources, runs real web search (ddgs), and
 crawls candidate pages (crawl4ai), feeding results straight into extraction.
-Collection plans are persisted and executed asynchronously via Celery. A shared
+Collection plans are persisted in Postgres and run as asyncio tasks inside the
+API process, so a run survives page reloads but not a backend restart (a run a
+restart killed shows as stalled and can be re-executed). A shared
 SSRF guard validates scheme and host before every outbound fetch — every crawl
 path calls it, so it cannot be sidestepped by a lower-level helper — and
 collection egress can optionally be routed through a VPN or Tor proxy chosen from
@@ -107,7 +109,6 @@ state, keyboard shortcuts, and a mobile-aware shell.
 │ wind · d3 +              │  axios │  • Neo4j        (graph)       │
 │ leaflet                  │        │  • Postgres/pgvector (docs,   │
 └─────────────────────────┘        │    vectors, collection mgmt)  │
-                                    │  • Redis + Celery (async)     │
                                     │  • LLMs: Anthropic/OpenAI/    │
                                     │    Cohere/Ollama (orchestr.)  │
                                     │  • crawl4ai + ddgs collection │
@@ -128,13 +129,13 @@ rationale, LLM orchestration, egress proxy, and request flow), see
 | **Backend** | Python 3.11, FastAPI, `uv`-managed. Async SQLAlchemy + httpx; the synchronous Neo4j driver is offloaded to worker threads so it never blocks the event loop. Pydantic v2. |
 | **Graph** | Neo4j 5 (community): entities, relationships, persisted app state. |
 | **Documents / vectors** | Postgres 16 + pgvector: documents, embeddings, collection-plan state. |
-| **Async** | Redis + Celery for crawls and bulk extraction. |
+| **Async** | asyncio tasks in the API process for collection runs; no separate queue or worker. |
 | **LLMs** | Anthropic, OpenAI, Cohere, Ollama behind one orchestrator; local default `qwen2.5:14b`. |
 | **NLP** | spaCy (`en_core_web_sm`), thefuzz, jellyfish, networkx, python-louvain for graph/entity work. |
 | **Collection** | crawl4ai (crawler) + ddgs (search). |
 | **Geo** | Nominatim + Overpass (keyless), pygeodesy for coordinate/MGRS handling. |
 | **Frontend** | Next.js 14 (App Router), TypeScript, Tailwind, d3 (graph/mind-map), raw Leaflet (map), react-markdown. |
-| **Deploy** | Single multi-stage Dockerfile (frontend + backend in one image); local full stack via `docker compose`. |
+| **Deploy** | Single multi-stage Dockerfile (frontend + backend in one image, run as a non-root user; `start.sh` supervises both processes); local full stack via `docker compose`. |
 
 ## Screenshots
 
@@ -164,7 +165,7 @@ rationale, LLM orchestration, egress proxy, and request flow), see
 ## Quickstart
 
 The recommended path is the full local stack via Docker Compose. It brings up
-Neo4j, Postgres/pgvector, Redis, Ollama, the backend, and the frontend together.
+Neo4j, Postgres/pgvector, Ollama, the backend, and the frontend together.
 
 ```bash
 # 1. Copy the config surface and adjust as needed (defaults work for local dev)
@@ -172,8 +173,8 @@ cp .env.example .env
 
 # 2. Bring up the full stack
 docker compose up
-#   neo4j 7474/7687 · postgres 5432 · redis 6379
-#   ollama 11434 · backend 8000 · frontend 3000
+#   neo4j 7474/7687 · postgres 5432 · ollama 11434
+#   backend 8000 · frontend 3000
 
 # 3. First run only: pull the local model into Ollama
 docker compose exec ollama ollama pull qwen2.5:14b
@@ -197,7 +198,7 @@ vectors and hybrid retrieval falls back to graph-only. Add other cloud keys in
 Running the halves individually (for development):
 
 ```bash
-# Backend  (Python 3.11, uv-managed)
+# Backend  (Python 3.11 via backend/.python-version, uv-managed)
 cd backend && uv run uvicorn intel_platform.api.app:app --reload
 
 # Frontend
@@ -210,6 +211,22 @@ All configuration lives in [`.env.example`](.env.example). Copy it to `.env`
 (gitignored) and edit. Settings load through `intel_platform.config.Settings`
 (pydantic-settings); nothing reads the environment ad hoc.
 
+Two security settings are easy to miss:
+
+- **`ENCRYPTION_KEY`**: a Fernet key used to encrypt provider API keys saved
+  through the admin UI. Generate one with
+  `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+  Without it those keys are stored in **plaintext** (a warning is logged), and
+  `REQUIRE_SECURE_AUTH=true` refuses to start. Keep it stable: changing it makes
+  keys stored under the old one unreadable.
+- **`CORS_ORIGINS`**: comma-separated browser origins allowed to call the API
+  with credentials. Defaults to `http://localhost:3000,http://localhost:8000`;
+  on a deployment, set it to the exact origin(s) the UI is served from.
+
+With Docker Compose, the datastore passwords come from `NEO4J_PASSWORD` and
+`POSTGRES_PASSWORD` (default `changeme`), which compose passes to both the
+datastore containers and the backend's connection settings.
+
 > ### Security: read before you deploy
 >
 > SENTINEL ships with **development defaults meant for local use only**. It also
@@ -217,18 +234,41 @@ All configuration lives in [`.env.example`](.env.example). Copy it to `.env`
 > network:
 >
 > - **Set a strong, non-default `JWT_SECRET`** (never the `.env.example`
->   placeholder) and a strong admin password (`DEFAULT_ADMIN_PASSWORD`).
-> - **Set `REQUIRE_SECURE_AUTH=true`.** With this on, the app refuses to start
->   while any built-in default secret, API key, or admin password is still in
->   place, so an insecure instance fails loudly instead of going live quietly.
-> - **Change every default datastore credential** (Neo4j, Postgres, Redis) from
->   the compose/dev values.
+>   placeholder; at least 32 random bytes), a strong admin password
+>   (`DEFAULT_ADMIN_PASSWORD`), and an `ENCRYPTION_KEY`.
+> - **Set `REQUIRE_SECURE_AUTH=true`.** It turns the checks below from boot
+>   warnings into a refusal to start, so an insecure instance fails loudly
+>   instead of going live quietly.
+> - **Change every default datastore credential** (Neo4j, Postgres) from the
+>   compose/dev values.
 > - Keep the shared SSRF guard (`backend/src/intel_platform/collection/url_guard.py`)
 >   and the enrichment/collection egress-proxy options in mind for anything that
 >   fetches from the open web.
 >
 > Never commit `.env` or real keys. The auth model is intentionally lightweight
 > (single-analyst; see [Status](#status--limitations)).
+
+> With `REQUIRE_SECURE_AUTH=true` the app refuses to start unless every one of
+> these holds (without the flag, the secret and admin-password problems are only
+> logged as warnings at boot):
+>
+> - `JWT_SECRET` is set, is not the shipped placeholder, and is at least 32 bytes.
+> - `API_KEY` is either blank (which switches API-key auth off) or a non-default
+>   value of at least 16 bytes. Any non-blank key authenticates as admin.
+> - `ENCRYPTION_KEY` is set to a valid Fernet key.
+> - No admin account's **stored** password hash verifies against `admin`. This is
+>   checked against the database on every boot, not against the setting: an
+>   instance that once booted with `admin`/`admin` is caught too. If
+>   `DEFAULT_ADMIN_PASSWORD` is set (and is not `admin`), those accounts are given
+>   that password at boot; otherwise the app refuses to start. On an empty
+>   database it will not seed an `admin` user without a non-default
+>   `DEFAULT_ADMIN_PASSWORD`.
+> - `MCP_ENABLED` is not true: the MCP endpoint's tools write to the graph and
+>   spend LLM calls, so it is refused outright under secure auth.
+>
+> A signed-in user changes their own password with
+> `POST /api/auth/change-password` (current password required).
+> Exposure reports go through [SECURITY.md](SECURITY.md).
 
 ## Status & limitations
 
@@ -265,8 +305,9 @@ Honest scope, so there are no surprises:
   (their vectors have to be re-embedded under the new provider anyway).
   Retrieval degrades to graph-only when no embeddings are available.
 
-For the full self-commissioned audit and the fixes it drove, see
-[`docs/code-review-2026-03-22.md`](docs/code-review-2026-03-22.md).
+For the self-commissioned audits and the fixes they drove, see
+[`docs/code-review-2026-03-22.md`](docs/code-review-2026-03-22.md) and
+[`docs/code-review-2026-09-30.md`](docs/code-review-2026-09-30.md).
 
 ## Documentation
 

@@ -1,0 +1,44 @@
+# Weekly dependency updates. Minor and patch bumps are grouped into one PR per
+# ecosystem so the branch count stays near zero (see CLAUDE.md); majors arrive
+# one PR each. Security updates are separate and immediate once "Dependabot
+# security updates" is enabled in the repository settings.
+version: 2
+updates:
+  # Backend. The `uv` ecosystem, not `pip`: pip-mode Dependabot would edit
+  # pyproject.toml without regenerating uv.lock, and CI's `uv sync --locked`
+  # fails on a stale lock.
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      backend-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # mcp 2.x removes mcp.server.fastmcp, which mcp/server.py imports.
+      - dependency-name: mcp
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      frontend-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Next 14 -> 15+ is a planned migration on its own branch, not a bump.
+      - dependency-name: next
+        update-types: [version-update:semver-major]
+      - dependency-name: eslint-config-next
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
