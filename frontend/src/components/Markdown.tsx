@@ -1,7 +1,10 @@
 'use client';
 
+import { memo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+const REMARK_PLUGINS = [remarkGfm];
 
 interface MarkdownProps {
   content: string;
@@ -108,12 +111,17 @@ const components: Components = {
   },
 };
 
-export default function Markdown({ content, className }: MarkdownProps) {
+function Markdown({ content, className }: MarkdownProps) {
   return (
     <div className={className}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
         {content}
       </ReactMarkdown>
     </div>
   );
 }
+
+// Memoized: parsing is the expensive part and depends only on the props. The
+// assistant panel keeps its input state beside the thread, so without this
+// every keystroke re-parsed every message in it.
+export default memo(Markdown);
