@@ -87,7 +87,7 @@ def _model_that_follows_the_prompt(reply: dict):
     """A _structured_generate stand-in that behaves like the real one: the model
     answers in the shape the prompt asked for, and the call fails when that
     shape lacks a key the caller requires."""
-    async def fake(provider, messages, system, expected_keys=None, max_retries=3):
+    async def fake(provider, messages, system, expected_keys=None, max_retries=3, errors=None):
         if expected_keys and any(k not in reply for k in expected_keys):
             return None
         return dict(reply)

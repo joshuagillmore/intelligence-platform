@@ -166,6 +166,15 @@ async def _is_relevant(content: str, pir: str, label: str, provider) -> bool:
     Judged on the head of the document — enough to tell a subject from a street
     index, without paying to send the whole thing.
     """
+    return await _relevance_verdict(content, pir, label, provider) is not False
+
+
+async def _relevance_verdict(content: str, pir: str, label: str, provider) -> bool | None:
+    """:func:`_is_relevant`, but None when the screen could not run.
+
+    The caller keeps the document either way; None lets it say how many
+    documents went unscreened, which a provider outage otherwise hides.
+    """
     head = (content or "")[:2500]
     if len(head) < 200:
         return True
@@ -188,9 +197,9 @@ async def _is_relevant(content: str, pir: str, label: str, provider) -> bool:
             temperature=0.0,
             max_tokens=10,
         )
-    except Exception:
-        logger.debug("Relevance screen unavailable for %s — keeping", label[:80], exc_info=True)
-        return True
+    except Exception as exc:
+        logger.warning("Relevance screen unavailable for %s (%s) — keeping", label[:80], type(exc).__name__)
+        return None
 
     verdict = (result.content or "").strip().upper()
     # Only an explicit OFFTOPIC discards. Silence or anything unrecognised keeps.
@@ -209,7 +218,7 @@ async def _extract_entities(text: str, doc_id: str, mode: str):
     return extract_entities_nlp(text, doc_id)
 
 
-async def _structured_generate(provider, messages, system, expected_keys=None, max_retries=3):
+async def _structured_generate(provider, messages, system, expected_keys=None, max_retries=3, errors=None):
     """Generate a structured JSON response with retry logic for unreliable models.
 
     Args:
@@ -218,6 +227,9 @@ async def _structured_generate(provider, messages, system, expected_keys=None, m
         system: System prompt
         expected_keys: Optional list of keys the JSON must contain (e.g., ["urls"])
         max_retries: Max attempts (default 3)
+        errors: Optional list that receives the type name of each provider
+            error, so a caller can say "the model was unavailable" rather than
+            "the reply could not be parsed" — they need different fixes.
 
     Returns:
         Parsed dict or None if all attempts fail.
@@ -258,6 +270,8 @@ async def _structured_generate(provider, messages, system, expected_keys=None, m
 
         except Exception as e:
             logger.warning("Structured generate attempt %d failed: %s", attempt + 1, e)
+            if errors is not None:
+                errors.append(type(e).__name__)
             if attempt < max_retries - 1:
                 await asyncio.sleep(1)
 
@@ -391,6 +405,7 @@ async def resolve_sources(plan, sources, db, provider, max_results: int = 10):
             # generation only when search returns nothing.
             config = await _resolve_via_search(provider, pir, source, max_results)
             grounded = config is not None
+            model_errors: list[str] = []
             if not config:
                 config = await _structured_generate(
                     provider,
@@ -399,8 +414,11 @@ async def resolve_sources(plan, sources, db, provider, max_results: int = 10):
                     )}],
                     system=RESOLVE_SYSTEM,
                     expected_keys=expected,
+                    errors=model_errors,
                 )
             if not config:
+                if model_errors:
+                    raise ValueError(f"Model unavailable for source resolution ({model_errors[-1]})")
                 raise ValueError("All JSON parse attempts failed for source resolution")
 
             # Validate URLs — filter out obviously bad ones
@@ -567,6 +585,14 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
     # Pages that fetched but carried no usable content, with the reason. A page
     # dropped without explanation is indistinguishable from one never found.
     rejected_pages: list[tuple[str, str]] = []
+    # Model work that did not happen. Each step is non-fatal by design, which is
+    # exactly why it must be counted: a provider outage otherwise reads as a
+    # source that simply had nothing in it.
+    chunks_failed = 0
+    chunks_degraded = 0
+    degrade_reasons: set[str] = set()
+    relevance_unchecked = 0
+    summaries_failed = 0
 
     for record in records:
         content = record.get("content", "")
@@ -609,7 +635,10 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
         # source that *succeeds* costs more than one that fails.
         if provider is not None:
             pir_text = plan.refined_pir or plan.pir or plan.requirement or ""
-            if pir_text and not await _is_relevant(content, pir_text, title or url, provider):
+            verdict = await _relevance_verdict(content, pir_text, title or url, provider) if pir_text else True
+            if verdict is None:
+                relevance_unchecked += 1  # kept: the screen fails open
+            elif verdict is False:
                 db.add(CollectionActivity(
                     plan_id=plan.id, source_id=source.id,
                     event="doc_irrelevant",
@@ -628,8 +657,11 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
                 summary = await summarize_document(content, provider)
                 if summary:
                     summary_json = json.dumps(summary)
+                else:
+                    summaries_failed += 1  # summarize_document logs its own reason
             except Exception as e:
-                logger.debug("Summarization failed for %s: %s", url or title, e)
+                summaries_failed += 1
+                logger.warning("Summarization failed for %s (%s)", url or title, type(e).__name__)
 
         # One bound for both storage and extraction. Previously the Document
         # kept 50k chars while extraction chunked the *whole* page: a live crawl
@@ -679,13 +711,24 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
         all_entities = []
         all_rels = []
         chunks_done = 0
+        doc_failed = 0
+        doc_degraded = 0
         for chunk in chunks:
             try:
-                ents, rels = await _extract_entities(chunk["content"], doc.id, extraction_mode)
+                extraction = await _extract_entities(chunk["content"], doc.id, extraction_mode)
+                ents, rels = extraction
                 all_entities.extend(ents)
                 all_rels.extend(rels)
+                # An LLM/hybrid chunk the model could not do falls back to NLP
+                # and says so on the result (ExtractionResult.degraded).
+                if getattr(extraction, "degraded", False):
+                    doc_degraded += 1
+                    reason = str(getattr(extraction, "reason", "") or "").strip()
+                    if reason:
+                        degrade_reasons.add(reason[:80])
             except Exception as e:
-                logger.debug("Extraction failed for chunk: %s", e)
+                doc_failed += 1
+                logger.warning("Extraction failed for a chunk of %s (%s)", doc_label, type(e).__name__)
             chunks_done += 1
             # A heartbeat often enough that a stalled run is distinguishable
             # from a slow one, rare enough not to write a row per chunk.
@@ -700,13 +743,20 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
                 ))
                 await db.commit()
 
+        chunks_failed += doc_failed
+        chunks_degraded += doc_degraded
+        extracted = (
+            f"{doc_label} · {len(all_entities)} entities, "
+            f"{len(all_rels)} relationships from {len(chunks)} chunks"
+        )
+        if doc_failed:
+            extracted += f" · {doc_failed} chunk(s) failed extraction"
+        if doc_degraded:
+            extracted += f" · {doc_degraded} chunk(s) fell back to NLP"
         db.add(CollectionActivity(
             plan_id=plan.id, source_id=source.id,
             event="doc_extracted",
-            message=(
-                f"{doc_label} · {len(all_entities)} entities, "
-                f"{len(all_rels)} relationships from {len(chunks)} chunks"
-            ),
+            message=extracted[:480],
         ))
         await db.commit()
 
@@ -766,6 +816,11 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
         "chunks_embedded": total_chunks_embedded,
         "embed_failures": embed_failures,
         "rejected_pages": rejected_pages,
+        "chunks_failed": chunks_failed,
+        "chunks_degraded": chunks_degraded,
+        "degrade_reasons": sorted(degrade_reasons),
+        "relevance_unchecked": relevance_unchecked,
+        "summaries_failed": summaries_failed,
         "records": result.records,  # For evaluate phase
     }
 
@@ -786,6 +841,7 @@ async def evaluate_results(source, plan, acquire_result, provider):
         content = r.get("content", "")[:500]
         summaries.append(f"- {title}: {content}...")
 
+    model_errors: list[str] = []
     evaluation = await _structured_generate(
         provider,
         messages=[{"role": "user", "content": EVALUATE_USER.format(
@@ -797,6 +853,7 @@ async def evaluate_results(source, plan, acquire_result, provider):
         )}],
         system=EVALUATE_SYSTEM,
         expected_keys=["satisfied"],
+        errors=model_errors,
     )
     if evaluation:
         # Ensure defaults
@@ -806,7 +863,11 @@ async def evaluate_results(source, plan, acquire_result, provider):
     # Parse failure must NOT be reported as satisfied — that would silently
     # mark an unassessed collection as complete and bias the loop toward false
     # success. Treat an unparseable evaluation as not-yet-satisfied.
-    return {"satisfied": False, "follow_up_urls": [], "notes": "Could not parse evaluation after retries"}
+    if model_errors:
+        notes = f"Could not evaluate: model unavailable ({model_errors[-1]})"
+    else:
+        notes = "Could not parse evaluation after retries"
+    return {"satisfied": False, "follow_up_urls": [], "notes": notes}
 
 
 def _page_urls(config: dict | None) -> set[str]:
@@ -1135,6 +1196,18 @@ async def _run_agentic_loop(
                     detail += f", {embedded} chunks indexed"
                 if embed_failed:
                     detail += f" — {embed_failed} doc(s) NOT indexed for semantic search"
+                # What the model could not do, so an outage is not read as a
+                # source with nothing in it.
+                if acquire_result.get("chunks_failed"):
+                    detail += f" — {acquire_result['chunks_failed']} chunk(s) failed extraction"
+                if acquire_result.get("chunks_degraded"):
+                    why = ", ".join(acquire_result.get("degrade_reasons") or [])
+                    detail += f" — {acquire_result['chunks_degraded']} chunk(s) fell back to NLP"
+                    detail += f" ({why})" if why else ""
+                if acquire_result.get("relevance_unchecked"):
+                    detail += f" — relevance not checked for {acquire_result['relevance_unchecked']} doc(s)"
+                if acquire_result.get("summaries_failed"):
+                    detail += f" — {acquire_result['summaries_failed']} summary(ies) failed"
 
                 db.add(CollectionActivity(
                     plan_id=plan.id, source_id=source.id,

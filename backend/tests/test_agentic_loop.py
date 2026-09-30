@@ -329,6 +329,131 @@ class TestAcquireSourceCountsWhatItKept:
 
 
 # ---------------------------------------------------------------------------
+# Contract 14: a provider failure is recorded, never swallowed
+# ---------------------------------------------------------------------------
+
+class LLMProviderError(RuntimeError):
+    """Stand-in for llm.base.LLMProviderError (WP-C): what Ollama now raises."""
+
+
+REPORT = "The Fordow facility is operated by the Atomic Energy Organization of Iran. " * 5
+
+
+class _DownProvider:
+    def name(self):
+        return "ollama:qwen2.5:14b"
+
+    async def generate(self, **kwargs):
+        raise LLMProviderError("model 'qwen2.5:14b' not found")
+
+
+class TestProviderFailuresAreRecorded:
+    @pytest.fixture
+    def one_page(self, monkeypatch):
+        from intel_platform.connectors.base import AcquireResult
+
+        class Connector:
+            async def acquire(self, config):
+                page = {"url": "https://example.org/report", "title": "Report", "content": REPORT}
+                return AcquireResult(success=True, record_count=1, records=[page])
+
+        async def no_embed(chunks, doc_id, project_id, db):
+            return 0
+
+        monkeypatch.setattr(agentic, "get_connector", lambda t: Connector())
+        monkeypatch.setattr(agentic, "rejection_reason", lambda url, content, title="": "")
+        monkeypatch.setattr("intel_platform.services.vector_search.embed_and_store_chunks", no_embed)
+        source = _source("api_feed", {"base_url": "https://example.org/api"})
+        return source
+
+    async def test_failed_extraction_is_counted_and_logged(self, monkeypatch, one_page):
+        async def extraction_down(text, doc_id, mode):
+            raise LLMProviderError("model not found")
+
+        monkeypatch.setattr(agentic, "_extract_entities", extraction_down)
+        session = FakeSession(None)
+        store = SimpleNamespace(create_entity=lambda e: None)
+
+        out = await agentic.acquire_source(one_page, _plan([one_page]), session, store, "hybrid")
+
+        assert out["chunks_failed"] >= 1
+        assert any("failed" in m for m in session.messages("doc_extracted"))
+
+    async def test_a_chunk_that_fell_back_to_nlp_is_recorded(self, monkeypatch, one_page):
+        class ExtractionResult(tuple):
+            """Shape of services.extraction.ExtractionResult (WP-C): a 2-tuple
+            that also says whether the model was bypassed."""
+            degraded = True
+            reason = "LLMProviderError"
+
+        async def degraded(text, doc_id, mode):
+            return ExtractionResult(([{"name": "Fordow", "entity_type": "Facility"}], []))
+
+        monkeypatch.setattr(agentic, "_extract_entities", degraded)
+        monkeypatch.setattr(agentic, "build_graph_from_extractions", lambda *a, **kw: {})
+        session = FakeSession(None)
+        store = SimpleNamespace(create_entity=lambda e: None)
+
+        out = await agentic.acquire_source(one_page, _plan([one_page]), session, store, "hybrid")
+
+        assert out["chunks_degraded"] >= 1
+        assert out["degrade_reasons"] == ["LLMProviderError"]
+        assert any("fell back to NLP" in m for m in session.messages("doc_extracted"))
+
+    async def test_relevance_and_summary_outages_are_counted(self, monkeypatch, one_page):
+        async def no_extract(text, doc_id, mode):
+            return [], []
+
+        monkeypatch.setattr(agentic, "_extract_entities", no_extract)
+        stored = []
+        store = SimpleNamespace(create_entity=lambda e: stored.append(e))
+
+        out = await agentic.acquire_source(
+            one_page, _plan([one_page]), FakeSession(None), store, provider=_DownProvider(),
+        )
+
+        assert len(stored) == 1, "the relevance screen still fails open"
+        assert out["relevance_unchecked"] == 1
+        assert out["summaries_failed"] == 1
+
+    async def test_the_source_line_says_what_did_not_run(self, wired):
+        async def acquire(n):
+            out = _acquired()
+            out.update(chunks_failed=3, relevance_unchecked=1, summaries_failed=1)
+            return out
+
+        wired.acquire = acquire
+        session = await _run(_plan([_source()]))
+        [line] = session.messages("source_acquired")
+        assert "3 chunk(s) failed extraction" in line
+        assert "relevance not checked" in line
+
+    async def test_resolution_says_the_model_was_unavailable(self, monkeypatch):
+        async def no_search(*a, **kw):
+            return None
+
+        monkeypatch.setattr(agentic, "_resolve_via_search", no_search)
+        monkeypatch.setattr(agentic.asyncio, "sleep", _no_sleep)
+        source = _source("web_scrape", {})
+        await agentic.resolve_sources(_plan([source]), [source], FakeSession(None), _DownProvider())
+
+        assert source.collection_status == "failed"
+        assert "LLMProviderError" in source.last_error
+        assert "parse" not in source.last_error.lower()
+
+    async def test_evaluation_says_the_model_was_unavailable(self, monkeypatch):
+        monkeypatch.setattr(agentic.asyncio, "sleep", _no_sleep)
+        source = _source()
+        out = await agentic.evaluate_results(source, _plan([source]), _acquired(), _DownProvider())
+        assert out["satisfied"] is False
+        assert "LLMProviderError" in out["notes"]
+
+
+async def _no_sleep(*_a, **_kw):
+    return None
+
+
+# ---------------------------------------------------------------------------
 # R-12: the loop honours PAUSED / ARCHIVED and never writes over them
 # ---------------------------------------------------------------------------
 
