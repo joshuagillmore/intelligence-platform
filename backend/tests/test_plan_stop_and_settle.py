@@ -138,6 +138,14 @@ class TestExecutePlanHonoursTheStatus:
         await coro
         assert plan.status == "ARCHIVED"
 
+    async def test_a_plan_deleted_mid_run_is_not_written(self, run):
+        plan = _plan(2)
+        db, coro = run(plan, statuses=["ACTIVE", None])
+        status = await coro
+        assert run.collected == ["s0"]
+        assert status["status"] == "completed" and status["stopped_on_status"] == "DELETED"
+        assert db.commits == 0 and plan.status == "ACTIVE"
+
     async def test_a_clean_run_completes(self, run):
         plan = _plan(2)
         _db, coro = run(plan, statuses=["ACTIVE"])

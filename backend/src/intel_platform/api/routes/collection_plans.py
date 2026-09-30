@@ -1446,6 +1446,9 @@ async def get_activity(
         CollectionActivity.plan_id == _parse_uuid(plan_id, "plan_id")
     )
     if since:
+        # An unencoded "+00:00" offset arrives as " 00:00" once the query
+        # string is decoded; restore it rather than refusing the poll.
+        since = re.sub(r" (\d{2}:\d{2})$", r"+\1", since.strip())
         try:
             since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
         except ValueError:

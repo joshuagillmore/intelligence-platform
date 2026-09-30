@@ -302,6 +302,11 @@ class TestActivityIsPaged:
         compiled = db.stmt.compile()
         assert " ASC" in str(compiled) and 50 in compiled.params.values()
 
+    async def test_an_offset_whose_plus_was_decoded_to_a_space_is_accepted(self):
+        db = _StmtDb([])
+        await cp.get_activity(str(uuid.uuid4()), since="2026-09-30T12:00:00.123456 00:00", limit=5, db=db)
+        assert db.stmt is not None
+
     async def test_a_malformed_since_is_rejected_not_ignored(self):
         with pytest.raises(HTTPException) as err:
             await cp.get_activity(str(uuid.uuid4()), since="yesterday", limit=50, db=_StmtDb([]))

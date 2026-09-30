@@ -253,11 +253,11 @@ async def execute_plan(
             # Settle the plan. Re-read first: the analyst may have paused or
             # archived it while the last source ran, and that must stand.
             every_source_failed = attempted > 0 and status["sources_completed"] == 0
-            plan.status = final_plan_status(
-                await _read_plan_status(db, plan.id), failed=every_source_failed,
-            )
-            plan.updated_at = datetime.now(timezone.utc)
-            await db.commit()
+            current = await _read_plan_status(db, plan.id)
+            if current is not None:   # deleted mid-run: nothing left to settle
+                plan.status = final_plan_status(current, failed=every_source_failed)
+                plan.updated_at = datetime.now(timezone.utc)
+                await db.commit()
 
             status["status"] = "completed"
             status["plan_status"] = plan.status
