@@ -63,6 +63,28 @@ def test_env_example_loads_as_a_settings_file():
     assert s.neo4j_uri
 
 
+def test_env_example_blank_embedding_model_is_blank(monkeypatch):
+    """I-2: `EMBEDDING_MODEL=   # blank = ...` parsed as the comment text, so the
+    quickstart asked the provider for a model named '# blank = provider default'."""
+    monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
+    monkeypatch.delenv("EMBEDDING_PROVIDER", raising=False)
+    s = Settings(_env_file=str(REPO_ROOT / ".env.example"))
+    assert s.embedding_model == ""
+    assert s.embedding_provider == "openai"
+
+
+def test_no_env_example_value_carries_a_comment():
+    """Inline comments are parsed differently by python-dotenv and compose; a
+    value in .env.example must never depend on either stripping one."""
+    from dotenv import dotenv_values
+
+    leaked = {k: v for k, v in dotenv_values(REPO_ROOT / ".env.example").items() if v and "#" in v}
+    assert leaked == {}
+    raw = (REPO_ROOT / ".env.example").read_text(encoding="utf-8").splitlines()
+    inline = [line for line in raw if not line.startswith("#") and "=" in line and " #" in line]
+    assert inline == []
+
+
 @pytest.mark.parametrize("field,default", [
     ("jwt_secret", "intel-platform-dev-secret-change-in-production"),
     ("encryption_key", ""),
