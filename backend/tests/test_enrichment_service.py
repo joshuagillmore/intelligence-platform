@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from intel_platform.enrichment import base as base_mod
+from intel_platform.enrichment import service as service_mod
+from intel_platform.enrichment.cache import RateLimiter
 from intel_platform.enrichment.base import (
     EnrichmentProvider,
     EnrichmentResult,
@@ -25,6 +27,13 @@ def _isolated_registry():
     yield
     base_mod.PROVIDER_REGISTRY.clear()
     base_mod.PROVIDER_REGISTRY.update(saved)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_shared_limiter(monkeypatch):
+    """The limiter is process-wide by design (E-2); give each test its own so
+    provider names reused across tests cannot throttle one another."""
+    monkeypatch.setattr(service_mod, "_RATE_LIMITER", RateLimiter(), raising=False)
 
 
 def _cache_miss():
@@ -333,3 +342,41 @@ async def test_apply_strips_protected_identity_keys():
     assert "id" not in props
     assert "project_id" not in props
     assert "entity_type" not in props
+
+
+# --- E-2: one rate limiter per process, not per request ---------------------
+
+async def test_rate_limit_is_shared_across_service_instances():
+    # Provider quotas (ip-api 45/min, Nominatim 1/s) are per client IP. The
+    # route and the auto-enrich hook build a new EnrichmentService per call, so
+    # a limiter owned by the service never throttled anything across requests.
+    class _QuotaProvider(EnrichmentProvider):
+        name = "quotaprov"
+        supported_types = {"IPAddress"}
+        rate = 0.001     # effectively no refill within the test
+        capacity = 1.0
+
+        async def lookup(self, value, entity_type):
+            return EnrichmentResult(properties={"x": 1})
+
+    register_provider(_QuotaProvider)
+    entity = {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+
+    first = EnrichmentService(_store_with_entity(entity), write_related=MagicMock(), cache=_cache_miss())
+    await first.enrich_entity("e1")  # spends the only token
+
+    second = EnrichmentService(_store_with_entity(entity), write_related=MagicMock(), cache=_cache_miss())
+    assert second.limiter is first.limiter
+    assert second.limiter.try_acquire("quotaprov", rate=0.001, capacity=1.0) is False
+
+
+def test_route_and_hook_services_use_the_shared_limiter():
+    from intel_platform.api.routes import enrichment as enrichment_route
+
+    route_service = enrichment_route._service(MagicMock())
+    assert route_service.limiter is EnrichmentService(MagicMock()).limiter
+
+
+def test_explicit_limiter_still_wins():
+    own = RateLimiter()
+    assert EnrichmentService(MagicMock(), limiter=own).limiter is own

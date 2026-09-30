@@ -38,6 +38,13 @@ _PROTECTED_KEYS = frozenset({
     "created_at", "source_doc_id",
 })
 
+# One limiter for the whole process. Provider quotas (ip-api 45/min, Nominatim
+# 1/s, NVD's keyless window) are per client IP, and the route and auto-enrich
+# hook build a new EnrichmentService per call — a limiter owned by the service
+# was new every request and never throttled anything. Read at construction, so
+# tests can swap it.
+_RATE_LIMITER = RateLimiter()
+
 
 def _result_to_cache(result: EnrichmentResult) -> dict:
     """Serialize a full result so a cache hit can rebuild AND reapply it."""
@@ -68,7 +75,7 @@ class EnrichmentService:
                  available_keys: frozenset[str] | set[str] = frozenset()):
         self.store = store
         self.cache = cache
-        self.limiter = limiter or RateLimiter()
+        self.limiter = limiter if limiter is not None else _RATE_LIMITER
         self.available_keys = available_keys
         # None -> use the built-in graph writer; injectable for tests.
         self._write_related_fn = write_related
