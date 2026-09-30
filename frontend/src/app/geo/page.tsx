@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
@@ -89,16 +89,22 @@ export default function GeoPage() {
   // Nearby OSM features (Overpass) around the selected geotarget.
   const [nearbyFeatures, setNearbyFeatures] = useState<Array<{ name: string; category: string; lat: number; lon: number }>>([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
+  // The location the side panel is showing now; responses for any other one
+  // (a slow request overtaken by a newer click) are dropped.
+  const selectedLocRef = useRef<string | null>(null);
   async function loadNearby() {
     if (!selectedLocation) return;
+    const forId = selectedLocation.id;
     setNearbyLoading(true);
     try {
-      const { data } = await geoApiExtra.nearby(selectedLocation.id, 3000);
+      const { data } = await geoApiExtra.nearby(forId, 3000);
+      if (selectedLocRef.current !== forId) return;
       setNearbyFeatures(data.features || []);
     } catch {
+      if (selectedLocRef.current !== forId) return;
       setNearbyFeatures([]);
     } finally {
-      setNearbyLoading(false);
+      if (selectedLocRef.current === forId) setNearbyLoading(false);
     }
   }
 
@@ -198,22 +204,30 @@ export default function GeoPage() {
 
   const handleLocationClick = useCallback(async (loc: GeoLocation) => {
     if (selectedLocation?.id === loc.id) {
+      selectedLocRef.current = null;
       setSelectedLocation(null);
       setSelectedRels([]);
       setNearbyFeatures([]);
+      setRelsLoading(false);
+      setNearbyLoading(false);
       return;
     }
+    selectedLocRef.current = loc.id;
     setSelectedLocation(loc);
     setSelectedRels([]);
     setNearbyFeatures([]);
+    setNearbyLoading(false);
     setRelsLoading(true);
     try {
       const res = await entitiesApi.get(loc.id);
+      // A quick second click must not get the first location's relationships.
+      if (selectedLocRef.current !== loc.id) return;
       setSelectedRels(res.data?.relationships || []);
     } catch {
+      if (selectedLocRef.current !== loc.id) return;
       setSelectedRels([]);
     } finally {
-      setRelsLoading(false);
+      if (selectedLocRef.current === loc.id) setRelsLoading(false);
     }
   }, [selectedLocation]);
 
@@ -299,9 +313,11 @@ export default function GeoPage() {
       setEntityTimeline({ events: [], buckets: [], date_range: null });
       return;
     }
+    let cancelled = false; // a newer selection supersedes this request
     setTimelineLoading(true);
     geoApi.entityTimeline(selectedLocation.id, activeProject.id)
       .then(({ data }) => {
+        if (cancelled) return;
         setEntityTimeline({
           events: data.events || [],
           buckets: data.buckets || [],
@@ -312,13 +328,17 @@ export default function GeoPage() {
           setTemporalEnd(data.date_range.end?.slice(0, 10) || '');
         }
       })
-      .catch(() => setEntityTimeline({ events: [], buckets: [], date_range: null }))
-      .finally(() => setTimelineLoading(false));
+      .catch(() => { if (!cancelled) setEntityTimeline({ events: [], buckets: [], date_range: null }); })
+      .finally(() => { if (!cancelled) setTimelineLoading(false); });
+    return () => { cancelled = true; };
   }, [selectedLocation?.id, activeProject]);
 
   const trafficBars = entityTimeline.buckets.length > 0
     ? entityTimeline.buckets.map(b => b.count)
     : [0];
+  // Scale by the busiest bucket: a fixed divisor of 9 drew any bucket above 9
+  // taller than the chart.
+  const trafficMax = Math.max(...trafficBars, 1);
 
   // Temporal Window: filter the selected location's timeline events by From/To
   const displayedTimelineEvents = entityTimeline.events.filter(evt => {
@@ -717,9 +737,9 @@ export default function GeoPage() {
                         key={i}
                         className="flex-1 rounded-sm"
                         style={{
-                          height: `${(v / 9) * 100}%`,
+                          height: `${(v / trafficMax) * 100}%`,
                           background: C.primary,
-                          opacity: 0.6 + (v / 9) * 0.4,
+                          opacity: 0.6 + (v / trafficMax) * 0.4,
                         }}
                       />
                     ))}
