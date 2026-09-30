@@ -6,6 +6,9 @@ representative API payload to the right properties/edges.
 import json
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from intel_platform.enrichment.base import ProviderError
 from intel_platform.enrichment.providers.certs import CertsProvider
 from intel_platform.enrichment.providers.dns import DNSProvider
 from intel_platform.enrichment.providers.email import EmailProvider
@@ -17,6 +20,7 @@ from intel_platform.enrichment.providers.rdap import RDAPProvider
 
 def _resp(payload):
     resp = MagicMock()
+    resp.status_code = 200
     resp.json = MagicMock(return_value=payload)
     return resp
 
@@ -25,6 +29,14 @@ def _client(get_impl):
     client = MagicMock()
     client.get = AsyncMock(side_effect=get_impl)
     return client
+
+
+@pytest.fixture(autouse=True)
+def _direct_egress(monkeypatch):
+    # geoip consults the collection egress mode; these fixtures run direct.
+    from intel_platform.enrichment.providers import geoip
+
+    monkeypatch.setattr(geoip, "_egress_mode", AsyncMock(return_value="direct"), raising=False)
 
 
 # --- DNS --------------------------------------------------------------------
@@ -65,6 +77,30 @@ async def test_geoip_handles_failure_status():
     assert result.properties == {}
 
 
+async def test_geoip_is_skipped_over_tor(monkeypatch):
+    # ip-api's keyless endpoint is plain HTTP: through a Tor exit the exit node
+    # sees which IP is being investigated and can rewrite the answer.
+    from intel_platform.enrichment.providers import geoip
+
+    monkeypatch.setattr(geoip, "_egress_mode", AsyncMock(return_value="tor"))
+    client = _client(lambda *a, **k: _resp({"status": "success", "as": "AS1"}))
+
+    result = await GeoIPProvider(client=client).lookup("8.8.8.8", "IPAddress")
+    assert result.skipped == "plain-HTTP lookup not sent over Tor"
+    assert result.properties == {}
+    client.get.assert_not_called()
+
+
+async def test_geoip_runs_over_vpn(monkeypatch):
+    from intel_platform.enrichment.providers import geoip
+
+    monkeypatch.setattr(geoip, "_egress_mode", AsyncMock(return_value="vpn"))
+    client = _client(lambda *a, **k: _resp({"status": "success", "as": "AS15169 Google LLC"}))
+
+    result = await GeoIPProvider(client=client).lookup("8.8.8.8", "IPAddress")
+    assert result.properties["asn"] == "AS15169 Google LLC"
+
+
 # --- KEV --------------------------------------------------------------------
 
 async def test_kev_hit_marks_known_exploited():
@@ -75,7 +111,8 @@ async def test_kev_hit_marks_known_exploited():
 
     result = await KEVProvider(client=_client(get)).lookup("CVE-2021-44228", "Vulnerability")
     assert result.properties["known_exploited"] is True
-    assert result.properties["severity"] == "critical"
+    assert result.properties["kev_severity"] == "critical"
+    assert "severity" not in result.properties  # derived by the service, not owned by KEV
     assert result.properties["kev_date_added"] == "2021-12-10"
 
 
@@ -87,6 +124,39 @@ async def test_kev_miss_marks_not_exploited():
 
     result = await KEVProvider(client=_client(get)).lookup("CVE-2021-44228", "Vulnerability")
     assert result.properties["known_exploited"] is False
+
+
+# --- E-3: KEV/NVD are keyed by CVE id; a name that is not one asserts nothing
+
+async def test_kev_non_cve_value_asserts_nothing():
+    # "Log4Shell" is not in the KEV catalog by that name; answering
+    # known_exploited: false for it would be a claim the lookup never made.
+    _reset_catalog()
+    client = _client(lambda *a, **k: _resp({"vulnerabilities": []}))
+
+    result = await KEVProvider(client=client).lookup("Log4Shell", "Vulnerability")
+    assert result.skipped == "no CVE id"
+    assert result.properties == {}
+    client.get.assert_not_called()
+
+
+async def test_nvd_non_cve_value_asserts_nothing():
+    client = _client(lambda *a, **k: _resp({"vulnerabilities": []}))
+
+    result = await NVDProvider(client=client).lookup("Log4Shell", "Vulnerability")
+    assert result.skipped == "no CVE id"
+    assert result.properties == {}
+    client.get.assert_not_called()
+
+
+async def test_kev_normalises_a_lowercase_cve_id():
+    _reset_catalog()
+
+    async def get(url, timeout=30):
+        return _resp({"vulnerabilities": [{"cveID": "CVE-2021-44228", "dateAdded": "2021-12-10"}]})
+
+    result = await KEVProvider(client=_client(get)).lookup("cve-2021-44228", "Vulnerability")
+    assert result.properties["known_exploited"] is True
 
 
 # --- NVD --------------------------------------------------------------------
@@ -104,7 +174,8 @@ async def test_nvd_extracts_cvss_description_products():
 
     result = await NVDProvider(client=_client(get)).lookup("CVE-2021-44228", "Vulnerability")
     assert result.properties["cvss_score"] == 10.0
-    assert result.properties["severity"] == "critical"
+    assert result.properties["cvss_severity"] == "critical"
+    assert "severity" not in result.properties  # derived by the service, not owned by NVD
     assert result.properties["description"] == "Log4j RCE"
     assert "apache log4j" in result.properties["affected_products"]
 
@@ -225,9 +296,9 @@ async def test_email_without_domain_is_empty():
     assert result.properties == {}
 
 
-async def test_email_tolerates_malformed_mx():
-    # A wrong-shaped DoH Answer (string/non-dict elements) must not raise — the
-    # domain still resolves, has_mx just comes back False.
+async def test_email_malformed_mx_is_an_error_not_no_mx():
+    # A wrong-shaped DoH Answer is not "this domain has no MX": has_mx: false
+    # would be written and cached for a week on the strength of a bad reply.
     async def get(url, params=None, headers=None, timeout=10):
         if "gravatar" in url:
             r = MagicMock()
@@ -235,24 +306,45 @@ async def test_email_tolerates_malformed_mx():
             return r
         return _resp({"Answer": "not-a-list"})
 
-    result = await EmailProvider(client=_client(get)).lookup("a@b.com", "EmailAddress")
-    assert result.properties["email_domain"] == "b.com"
+    with pytest.raises(ProviderError):
+        await EmailProvider(client=_client(get)).lookup("a@b.com", "EmailAddress")
+
+
+async def test_email_nxdomain_is_a_real_no_mx():
+    # NXDOMAIN (Status 3, no Answer) is an answer: the domain cannot take mail.
+    async def get(url, params=None, headers=None, timeout=10):
+        if "gravatar" in url:
+            r = MagicMock()
+            r.status_code = 404
+            return r
+        return _resp({"Status": 3})
+
+    result = await EmailProvider(client=_client(get)).lookup("a@nope.invalid", "EmailAddress")
     assert result.properties["has_mx"] is False
 
 
-# --- malformed JSON must not raise out of lookup (clean empty result) -------
+async def test_dns_servfail_is_an_error():
+    async def get(url, params=None, headers=None, timeout=10):
+        return _resp({"Status": 2})  # SERVFAIL
 
-async def test_providers_tolerate_malformed_json():
+    with pytest.raises(ProviderError) as info:
+        await DNSProvider(client=_client(get)).lookup("evil.com", "Domain")
+    assert info.value.reason == "dns rcode 2"
+
+
+# --- a body of the wrong shape is an error, not an empty answer -------------
+
+async def test_providers_reject_wrong_shaped_json():
     async def bad_get(url, params=None, headers=None, timeout=10):
         return _resp(None)  # not the expected dict/list shape
 
-    for provider_cls, etype in (
-        (DNSProvider, "Domain"),
-        (GeoIPProvider, "IPAddress"),
-        (NVDProvider, "Vulnerability"),
-        (RDAPProvider, "IPAddress"),
-        (CertsProvider, "Domain"),
+    for provider_cls, etype, value in (
+        (DNSProvider, "Domain", "evil.com"),
+        (GeoIPProvider, "IPAddress", "8.8.8.8"),
+        (NVDProvider, "Vulnerability", "CVE-2021-44228"),
+        (RDAPProvider, "IPAddress", "8.8.8.8"),
+        (CertsProvider, "Domain", "evil.com"),
     ):
-        result = await provider_cls(client=_client(bad_get)).lookup("x", etype)
-        assert result.properties == {}
-        assert result.related == []
+        with pytest.raises(ProviderError) as info:
+            await provider_cls(client=_client(bad_get)).lookup(value, etype)
+        assert info.value.reason == "unexpected response shape"

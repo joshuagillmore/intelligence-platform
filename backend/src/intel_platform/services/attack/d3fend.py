@@ -7,9 +7,11 @@ bindings to ``[{id, label}]``, and cache the result in Postgres
 (:class:`~intel_platform.db.models.AttackD3fendCache`) with a TTL so a repeat
 lookup is a single indexed read rather than a re-fetch.
 
-Every fetch/parse path **degrades to an empty list** — a D3FEND outage, a 404
-(no mapping for that technique), or a malformed body yields
-``{"countermeasures": []}``, never a 500. Egress goes through the collection
+A 404 (no mapping for that technique) or an empty ``bindings`` list is a real
+"none" and is cached. A D3FEND outage, a malformed body, or a body without the
+``off_to_def.results.bindings`` structure (a schema change) is *not* cached and
+returns ``{"countermeasures": [], "degraded": true}`` — never a 500, and never
+stored as "no countermeasures". Egress goes through the collection
 :class:`ProxiedClient` (SSRF-guarded, proxy-aware) like the other keyless
 lookups.
 
@@ -19,12 +21,18 @@ Release — see ``data/attack/ATTRIBUTION.md``.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 from intel_platform.collection.proxy import ProxiedClient
 from intel_platform.config import settings
 
 logger = logging.getLogger(__name__)
+
+# An ATT&CK technique or sub-technique id. The id is interpolated into the
+# outbound D3FEND URL, so nothing else may reach it.
+TECHNIQUE_ID_PATTERN = r"^T\d{4}(\.\d{3})?$"
+_TECHNIQUE_ID_RE = re.compile(TECHNIQUE_ID_PATTERN)
 
 
 def _now() -> datetime:
@@ -33,7 +41,7 @@ def _now() -> datetime:
 
 # --- Parsing (pure; no network) --------------------------------------------
 
-def parse_countermeasures(payload: object) -> list[dict]:
+def parse_countermeasures(payload: object) -> list[dict] | None:
     """Extract distinct ``{id, label, name}`` countermeasures from a D3FEND response.
 
     The response is SPARQL-style: ``off_to_def.results.bindings`` is a list of
@@ -42,20 +50,24 @@ def parse_countermeasures(payload: object) -> list[dict]:
     either, and de-duplicate by id (a technique can map to a countermeasure via
     several paths). ``name`` is the d3f: local name parsed from the ``def_tech``
     URI (e.g. ``…#DataInventory``) — the canonical URL slug, since the short id
-    (``D3-DI``) does not resolve as a slug; empty if the URI is absent. Any shape
-    surprise degrades to ``[]``.
+    (``D3-DI``) does not resolve as a slug; empty if the URI is absent.
+
+    Returns ``None`` when ``off_to_def.results.bindings`` is not there as a list:
+    that is a reply we cannot read (a schema change, an error object), not "no
+    countermeasures", and must not be cached as one. An empty ``bindings`` list
+    is the real "none" and returns ``[]``.
     """
     if not isinstance(payload, dict):
-        return []
+        return None
     off_to_def = payload.get("off_to_def")
     if not isinstance(off_to_def, dict):
-        return []
+        return None
     results = off_to_def.get("results")
     if not isinstance(results, dict):
-        return []
+        return None
     bindings = results.get("bindings")
     if not isinstance(bindings, list):
-        return []
+        return None
 
     out: list[dict] = []
     seen: set[str] = set()
@@ -85,8 +97,9 @@ async def _fetch_countermeasures(tid: str, client: ProxiedClient | None) -> list
 
     Returns the parsed list on a clean 200 (possibly empty) and ``[]`` on a 404
     (a stable "no mapping" answer, worth caching). Returns ``None`` to signal a
-    *degraded* fetch (network error, non-2xx, malformed body) — the caller then
-    returns ``[]`` without poisoning the cache, so a later call retries.
+    *degraded* fetch (network error, non-2xx, malformed body, or a body without
+    the bindings structure) — the caller then returns ``[]`` marked degraded
+    without poisoning the cache, so a later call retries.
     """
     url = f"{settings.d3fend_api_base.rstrip('/')}/{tid}.json"
     client = client or ProxiedClient()
@@ -103,7 +116,10 @@ async def _fetch_countermeasures(tid: str, client: ProxiedClient | None) -> list
     except Exception:
         logger.warning("D3FEND response unusable for %s", tid, exc_info=True)
         return None
-    return parse_countermeasures(payload)
+    parsed = parse_countermeasures(payload)
+    if parsed is None:
+        logger.warning("D3FEND response for %s has no off_to_def.results.bindings", tid)
+    return parsed
 
 
 # --- Cache (Postgres; TTL from config) -------------------------------------
@@ -159,11 +175,13 @@ async def get_countermeasures(
     """Return ``{"countermeasures": [{id, label}]}`` for a technique.
 
     Serves a fresh cache hit without a network call; otherwise fetches, caches,
-    and returns. Every failure path degrades to ``{"countermeasures": []}`` — this
-    never raises, so the route never 500s on a D3FEND outage.
+    and returns. Every failure path returns ``{"countermeasures": [],
+    "degraded": True}`` uncached — distinguishable from a real "none" — and this
+    never raises, so the route never 500s on a D3FEND outage. An id that is not
+    ``T####`` / ``T####.###`` is never put into the outbound URL.
     """
     tid = (technique_id or "").strip().upper()
-    if not tid:
+    if not _TECHNIQUE_ID_RE.match(tid):
         return {"countermeasures": []}
     if ttl_days is None:
         ttl_days = int(getattr(settings, "attack_d3fend_ttl_days", 30) or 30)
@@ -174,8 +192,8 @@ async def get_countermeasures(
             return {"countermeasures": cached}
 
         countermeasures = await _fetch_countermeasures(tid, client)
-        if countermeasures is None:  # degraded fetch — return [] without caching
-            return {"countermeasures": []}
+        if countermeasures is None:  # degraded fetch — nothing cached
+            return {"countermeasures": [], "degraded": True}
 
         try:
             await _upsert_cache(session, tid, countermeasures)
@@ -186,4 +204,4 @@ async def get_countermeasures(
     except Exception:
         # Last-resort guard (e.g. a cache read blowing up) — never surface it.
         logger.warning("D3FEND countermeasure lookup failed for %s", tid, exc_info=True)
-        return {"countermeasures": []}
+        return {"countermeasures": [], "degraded": True}

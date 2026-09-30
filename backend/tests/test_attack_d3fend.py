@@ -90,12 +90,18 @@ def test_parse_skips_bindings_missing_id_or_label():
     assert d3fend.parse_countermeasures(payload) == [{"id": "D3-G", "label": "Good", "name": "Good"}]
 
 
-def test_parse_malformed_or_empty_returns_empty():
-    assert d3fend.parse_countermeasures({}) == []
-    assert d3fend.parse_countermeasures({"off_to_def": {}}) == []
-    assert d3fend.parse_countermeasures({"off_to_def": {"results": {}}}) == []
-    assert d3fend.parse_countermeasures({"off_to_def": {"results": {"bindings": "nope"}}}) == []
-    assert d3fend.parse_countermeasures("not a dict") == []
+def test_parse_without_the_bindings_structure_is_none():
+    # A reply without off_to_def.results.bindings is not "no countermeasures";
+    # it is a reply we cannot read (a schema change, an error object).
+    assert d3fend.parse_countermeasures({}) is None
+    assert d3fend.parse_countermeasures({"off_to_def": {}}) is None
+    assert d3fend.parse_countermeasures({"off_to_def": {"results": {}}}) is None
+    assert d3fend.parse_countermeasures({"off_to_def": {"results": {"bindings": "nope"}}}) is None
+    assert d3fend.parse_countermeasures("not a dict") is None
+
+
+def test_parse_empty_bindings_is_a_real_no_countermeasures():
+    assert d3fend.parse_countermeasures(_payload([])) == []
 
 
 # --- Fetch + cache flow ----------------------------------------------------
@@ -155,9 +161,38 @@ def test_network_error_degrades_to_empty_uncached():
     client = _mock_client(raise_exc=RuntimeError("d3fend unreachable"))
 
     result = _run(d3fend.get_countermeasures(session, TID, client=client))
-    assert result == {"countermeasures": []}
+    assert result == {"countermeasures": [], "degraded": True}
     session.add.assert_not_called()   # a transient failure must not poison the cache
     session.commit.assert_not_called()
+
+
+def test_a_reply_without_bindings_is_not_cached_as_no_countermeasures():
+    # A D3FEND schema change used to be cached for 30 days as "no countermeasures".
+    session = _mock_session(cached_row=None)
+    client = _mock_client(payload={"off_to_def": {"head": {"vars": []}, "results": {}}})
+
+    result = _run(d3fend.get_countermeasures(session, TID, client=client))
+    assert result == {"countermeasures": [], "degraded": True}
+    session.add.assert_not_called()
+    session.commit.assert_not_called()
+
+
+def test_empty_bindings_are_cached_as_no_countermeasures():
+    session = _mock_session(cached_row=None)
+    client = _mock_client(payload=_payload([]))
+
+    result = _run(d3fend.get_countermeasures(session, TID, client=client))
+    assert result == {"countermeasures": []}
+    session.add.assert_called_once()
+
+
+def test_a_malformed_technique_id_is_never_put_in_the_url():
+    session = _mock_session(cached_row=None)
+    client = _mock_client(payload=_payload([]))
+    for tid in ("../../api/offensive-technique", "T1566/../../x", "T15661", "T1566.01", "1566"):
+        result = _run(d3fend.get_countermeasures(session, tid, client=client))
+        assert result == {"countermeasures": []}
+    client.get.assert_not_called()
 
 
 def test_malformed_body_degrades_to_empty_uncached():
@@ -170,7 +205,7 @@ def test_malformed_body_degrades_to_empty_uncached():
     client.get = AsyncMock(return_value=resp)
 
     result = _run(d3fend.get_countermeasures(session, TID, client=client))
-    assert result == {"countermeasures": []}
+    assert result == {"countermeasures": [], "degraded": True}
     session.add.assert_not_called()
 
 

@@ -39,6 +39,57 @@ class EnrichmentResult:
     related: list[RelatedEntity] = field(default_factory=list)  # new nodes + edges
     raw: dict = field(default_factory=dict)             # audit payload (cached)
     source_url: str = ""                                # evidence for writes
+    # Non-empty when the provider declined to look this value up (e.g. KEV for
+    # a Vulnerability with no CVE id). The service records it as
+    # {"status": "skipped", "reason": skipped} and neither applies nor caches
+    # anything: a skipped lookup asserts nothing about the node.
+    skipped: str = ""
+
+
+class ProviderError(RuntimeError):
+    """A lookup that produced no answer: transport failure, non-2xx, or a body
+    that is not the shape the provider reads.
+
+    Distinct from an empty ``EnrichmentResult``, which means the source answered
+    and had nothing to say. The service records this as ``status: "error"`` with
+    ``reason`` and neither applies nor caches anything, so an outage is never
+    stored as "no records" for the provider's TTL. ``reason`` is a short,
+    fixed-vocabulary string that is safe to return to API clients; the
+    underlying exception is chained for server-side logs only.
+    """
+
+    def __init__(self, provider: str, reason: str) -> None:
+        super().__init__(f"{provider}: {reason}")
+        self.provider = provider
+        self.reason = reason
+
+
+async def fetch(client, provider: str, url: str, *, allow: tuple[int, ...] = (), **kwargs):
+    """GET ``url`` through ``client``, raising ``ProviderError`` on any failure.
+
+    Transport errors and non-2xx statuses both raise. ``allow`` names extra
+    statuses the caller reads as a real answer (Gravatar's 404 means "no
+    avatar", not "unavailable").
+    """
+    try:
+        resp = await client.get(url, **kwargs)
+    except Exception as exc:
+        raise ProviderError(provider, "transport error") from exc
+    status = getattr(resp, "status_code", None)
+    if not isinstance(status, int):
+        raise ProviderError(provider, "no http status")
+    if not (200 <= status < 300 or status in allow):
+        raise ProviderError(provider, f"http {status}")
+    return resp
+
+
+async def fetch_json(client, provider: str, url: str, **kwargs):
+    """``fetch`` + parse the body as JSON, raising ``ProviderError`` if it is not."""
+    resp = await fetch(client, provider, url, **kwargs)
+    try:
+        return resp.json()
+    except Exception as exc:
+        raise ProviderError(provider, "unparseable body") from exc
 
 
 class EnrichmentProvider(abc.ABC):

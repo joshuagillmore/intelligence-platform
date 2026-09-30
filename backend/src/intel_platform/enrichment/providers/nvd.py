@@ -14,8 +14,11 @@ from intel_platform.config import settings
 from intel_platform.enrichment.base import (
     EnrichmentProvider,
     EnrichmentResult,
+    ProviderError,
+    fetch_json,
     register_provider,
 )
+from intel_platform.enrichment.observables import cve_id
 
 _URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 _MAX_PRODUCTS = 25
@@ -85,17 +88,18 @@ class NVDProvider(EnrichmentProvider):
         self._client = client or ProxiedClient()
 
     async def lookup(self, value: str, entity_type: str) -> EnrichmentResult:
+        value = cve_id(value)
+        if not value:
+            return EnrichmentResult(skipped="no CVE id")
         headers = {"apiKey": settings.nvd_api_key} if settings.nvd_api_key else None
-        try:
-            resp = await self._client.get(_URL, params={"cveId": value}, headers=headers, timeout=20)
-            data = resp.json()
-        except Exception:
-            return EnrichmentResult(source_url=_URL)
-
-        if not isinstance(data, dict):
-            return EnrichmentResult(source_url=_URL)
-        vulns = data.get("vulnerabilities") or []
+        data = await fetch_json(
+            self._client, self.name, _URL, params={"cveId": value}, headers=headers, timeout=20,
+        )
+        vulns = data.get("vulnerabilities") if isinstance(data, dict) else None
+        if not isinstance(vulns, list):
+            raise ProviderError(self.name, "unexpected response shape")
         if not vulns:
+            # NVD answered and has no record of this id.
             return EnrichmentResult(raw=data, source_url=_URL)
 
         cve = vulns[0].get("cve", {})
@@ -112,7 +116,9 @@ class NVDProvider(EnrichmentProvider):
         if score is not None:
             props["cvss_score"] = score
         if severity:
-            props["severity"] = severity.lower()
+            # NVD's own key; the service derives the node's `severity` from this
+            # and KEV's `kev_severity`, so neither overwrites the other.
+            props["cvss_severity"] = severity.lower()
         if products:
             props["affected_products"] = products
         if cwe_ids:

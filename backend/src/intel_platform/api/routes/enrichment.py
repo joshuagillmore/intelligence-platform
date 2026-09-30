@@ -10,10 +10,15 @@ collection egress (VPN/Tor), never the LLM path.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -89,23 +94,33 @@ async def refresh(
 
 @router.get("/enrichment/entities/{entity_id}")
 async def get_enrichment(entity_id: str, store: GraphStore = Depends(get_graph_store)):
-    """Return the cached enrichment view without hitting any provider."""
+    """Return the cached enrichment view without hitting any provider.
+
+    ``cached`` holds only providers that have a cached payload for this
+    observable — ``{}`` when nothing is cached. A provider with no entry (or an
+    unreadable one) is absent rather than ``null``, so a client cannot mistake
+    a miss for a cached result.
+    """
     import intel_platform.enrichment.providers  # noqa: F401  (register providers)
     from intel_platform.enrichment.base import get_providers_for
     from intel_platform.enrichment.cache import EnrichmentCache
-    from intel_platform.enrichment.observables import refang
+    from intel_platform.enrichment.service import observable_for
 
-    entity = store.get_entity(entity_id)
+    entity = await asyncio.to_thread(store.get_entity, entity_id)  # sync driver: off the loop
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
 
-    observable = refang(entity.get("name", "")).strip()
+    # Same key the service caches under (a Vulnerability's CVE id, not its name).
+    observable = observable_for(entity)
     cache = EnrichmentCache()
     providers = get_providers_for(entity.get("entity_type", ""), _available_keys())
-    cached: dict[str, dict | None] = {}
+    cached: dict[str, dict] = {}
     for provider in providers:
         try:
-            cached[provider.name] = await cache.get(provider.name, observable)
+            payload = await cache.get(provider.name, observable)
         except Exception:
-            cached[provider.name] = None
+            logger.warning("enrichment cache read failed for %s", provider.name, exc_info=True)
+            continue
+        if payload is not None:
+            cached[provider.name] = payload
     return {"entity_id": entity_id, "observable": observable, "cached": cached}
