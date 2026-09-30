@@ -50,7 +50,10 @@ interface SearchedEntity {
 interface ReportHistoryItem {
   id: string;
   reportType: string;
+  /** The report_type value it was generated as (not the label). */
+  reportTypeValue: string;
   entities: string[];
+  entityIds: string[];
   content: string;
   timestamp: Date;
 }
@@ -75,6 +78,10 @@ interface ProductContext {
   sourceId: string;
   title: string;
   reportTypeLabel: string;
+  /** What Save stores for this product. Read from the product itself, never
+   *  from the generation form, which may since have been changed. */
+  reportTypeValue: string;
+  entityIds: string[];
   entities: string[];
   generatedAt: Date;
 }
@@ -316,10 +323,13 @@ function ProductsPageContent() {
       // Add to history
       const historyId = Date.now().toString();
       const draftedAt = new Date();
+      const entityIds = selectedEntities.map(e => e.id);
       setReportHistory(prev => [{
         id: historyId,
         reportType: rt?.label || reportType,
+        reportTypeValue: reportType,
         entities: selectedEntities.map(e => e.name),
+        entityIds,
         content,
         timestamp: draftedAt,
       }, ...prev]);
@@ -330,6 +340,8 @@ function ProductsPageContent() {
         sourceId: `draft:${historyId}`,
         title: `${rt?.label || reportType} — ${activeProject.name}`,
         reportTypeLabel: rt?.label || reportType,
+        reportTypeValue: reportType,
+        entityIds,
         entities: selectedEntities.map(e => e.name),
         generatedAt: draftedAt,
       });
@@ -359,15 +371,17 @@ function ProductsPageContent() {
   }
 
   async function saveReport() {
-    if (!generatedReport || !activeProject || !saveTitle.trim()) return;
+    if (!generatedReport || !activeProject || !saveTitle.trim() || !productContext) return;
     setSaveLoading(true);
     try {
+      // Save what is on screen: the viewed product's own type and entities,
+      // not whatever the generation form holds now.
       await reportsApi.save({
         project_id: activeProject.id,
         title: saveTitle,
         content: generatedReport,
-        report_type: reportType,
-        entity_ids: selectedEntities.map(e => e.id),
+        report_type: productContext.reportTypeValue,
+        entity_ids: productContext.entityIds,
       });
       // The draft now has an analyst-given title — carry it into the export header.
       const savedTitle = saveTitle;
@@ -424,6 +438,8 @@ function ProductsPageContent() {
       sourceId,
       title: report.title,
       reportTypeLabel: getReportTypeLabel(report.report_type),
+      reportTypeValue: report.report_type,
+      entityIds: report.entity_ids || [],
       entities: [],
       generatedAt: report.created_at ? new Date(report.created_at) : new Date(),
     });
@@ -513,6 +529,8 @@ function ProductsPageContent() {
       sourceId: `history:${item.id}`,
       title: `${item.reportType} — ${activeProject?.name ?? ''}`.trim().replace(/\s+—\s*$/, ''),
       reportTypeLabel: item.reportType,
+      reportTypeValue: item.reportTypeValue,
+      entityIds: item.entityIds,
       entities: item.entities,
       generatedAt: item.timestamp,
     });
