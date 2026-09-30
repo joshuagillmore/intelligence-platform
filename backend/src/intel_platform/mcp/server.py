@@ -12,8 +12,18 @@ import asyncio
 import inspect
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
-mcp = FastMCP("Intelligence Platform")
+# mcp >= 1.30 rejects any Host header it was not told about (its own
+# DNS-rebinding defence, aimed at bare localhost servers). This server is only
+# ever reached through the authenticated ASGI wrapper in ``transport.py``,
+# mounted inside the FastAPI app behind Railway's edge, where the Host is the
+# deploy domain and not something we can enumerate here. Bearer auth is the
+# guard; the host check would only turn every deployment into a 421.
+mcp = FastMCP(
+    "Intelligence Platform",
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
 
 _MIN_HOPS, _MAX_HOPS = 1, 4
 
