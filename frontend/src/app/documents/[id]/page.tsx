@@ -3,9 +3,8 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Markdown from '@/components/Markdown';
-import api, { analysisApi } from '@/lib/api';
+import api, { analysisApi, entitiesApi } from '@/lib/api';
 import { TYPE_COLOR_HEX } from '@/lib/entityStyles';
-import { useProject } from '@/lib/ProjectContext';
 import { useNotifications } from '@/components/NotificationProvider';
 import { getErrorMessage } from '@/lib/errorMessages';
 
@@ -26,6 +25,8 @@ interface DocData {
   highlights: Highlight[];
   entity_count: number;
   summary_json?: string;
+  /** Not sent by GET /documents/{id} today; read if a later backend adds it. */
+  project_id?: string;
 }
 
 interface DocSummary {
@@ -78,7 +79,6 @@ export default function DocumentViewer() {
   const params = useParams();
   const router = useRouter();
   const docId = params.id as string;
-  const { activeProject } = useProject();
   const { addNotification } = useNotifications();
   const [doc, setDoc] = useState<DocData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,13 +103,29 @@ export default function DocumentViewer() {
       .finally(() => setLoading(false));
   }, [docId, addNotification]);
 
+  /** The project this document belongs to, which need not be the active one
+   *  (a search or citation link can open another project's document). The
+   *  document route does not return it; the node does. */
+  async function documentProjectId(): Promise<string> {
+    if (doc?.project_id) return doc.project_id;
+    const res = await entitiesApi.get(docId);
+    const pid = res.data?.entity?.project_id;
+    if (typeof pid !== 'string' || !pid) throw new Error("Could not determine this document's project.");
+    return pid;
+  }
+
   async function evaluateSource() {
-    if (!docId || !activeProject) return;
+    if (!docId) return;
     setEvaluating(true);
     try {
+      // Grade it against its own project's corpus: corroboration is measured
+      // against the other documents in that project, and the rating is written
+      // back there.
+      const projectId = await documentProjectId();
       const res = await analysisApi.sourceEvaluation({
-        project_id: activeProject.id,
+        project_id: projectId,
         document_ids: [docId],
+        limit: 1,
         apply_ratings: true,
       });
       setEvaluation(res.data.analysis);
@@ -231,10 +247,8 @@ export default function DocumentViewer() {
             <span className="text-xs text-gray-500">{doc.entity_count} entities</span>
             <button
               onClick={evaluateSource}
-              disabled={evaluating || !activeProject}
-              title={activeProject
-                ? 'Grade this source on the NATO Admiralty scale and save the rating to the document'
-                : 'Select a project first'}
+              disabled={evaluating}
+              title="Grade this source on the NATO Admiralty scale and save the rating to the document"
               className="ml-auto flex-none inline-flex items-center gap-1 text-xs bg-navy-700 hover:bg-navy-600 text-gray-300 border border-navy-600 px-3 py-1.5 rounded-md disabled:opacity-40 transition-colors"
             >
               <span className="material-symbols-outlined text-sm">verified_user</span>
