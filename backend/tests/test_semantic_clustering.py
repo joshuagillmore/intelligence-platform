@@ -1,7 +1,6 @@
 """Tests for semantic clustering and mind map export."""
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -14,10 +13,6 @@ from intel_platform.services.document_clustering import (
     build_tfidf,
     cluster_semantic,
 )
-
-
-def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 # ---------------------------------------------------------------------------
@@ -43,22 +38,22 @@ def _mock_embedding_provider(dim: int = 384):
 
 
 class TestClusterSemantic:
-    def test_empty_documents(self):
-        result = run(cluster_semantic([], "proj-1"))
+    async def test_empty_documents(self):
+        result = await cluster_semantic([], "proj-1")
         tree, doc_map, kw_map = result
         assert tree is None
 
-    def test_single_document_falls_back_to_tfidf(self):
+    async def test_single_document_falls_back_to_tfidf(self):
         """Single document should fall back to TF-IDF (which handles chunking)."""
         docs = [("doc-1", "This is a test document about machine learning and artificial intelligence.")]
 
         with patch("intel_platform.llm.embeddings.get_embedding_provider", return_value=_mock_embedding_provider()):
-            tree, doc_map, kw_map = run(cluster_semantic(docs, "proj-1"))
+            tree, doc_map, kw_map = await cluster_semantic(docs, "proj-1")
 
         assert tree is not None
         assert "doc-1" in tree.get("doc_ids", [])
 
-    def test_multiple_documents_produces_hierarchy(self):
+    async def test_multiple_documents_produces_hierarchy(self):
         """Multiple documents should produce a hierarchical tree."""
         docs = [
             ("doc-1", "Machine learning algorithms for classification and regression tasks in data science."),
@@ -70,7 +65,7 @@ class TestClusterSemantic:
         ]
 
         with patch("intel_platform.llm.embeddings.get_embedding_provider", return_value=_mock_embedding_provider()):
-            tree, doc_map, kw_map = run(cluster_semantic(docs, "proj-1"))
+            tree, doc_map, kw_map = await cluster_semantic(docs, "proj-1")
 
         assert tree is not None
         assert tree["count"] == 6
@@ -98,7 +93,7 @@ class TestClusterSemantic:
         assert broad_k < med_k < det_k
         assert broad_d < med_d < det_d
 
-    def test_fallback_to_tfidf_when_no_provider(self):
+    async def test_fallback_to_tfidf_when_no_provider(self):
         """Should fall back to TF-IDF when embedding provider unavailable."""
         docs = [
             ("doc-1", "Machine learning for classification."),
@@ -106,11 +101,11 @@ class TestClusterSemantic:
         ]
 
         with patch("intel_platform.llm.embeddings.get_embedding_provider", side_effect=RuntimeError("no provider")):
-            tree, doc_map, kw_map = run(cluster_semantic(docs, "proj-1"))
+            tree, doc_map, kw_map = await cluster_semantic(docs, "proj-1")
 
         assert tree is not None  # Should produce TF-IDF result, not crash
 
-    def test_fallback_to_tfidf_when_embedding_fails(self):
+    async def test_fallback_to_tfidf_when_embedding_fails(self):
         """Should fall back to TF-IDF when embedding API fails."""
         docs = [
             ("doc-1", "Machine learning for classification."),
@@ -121,11 +116,11 @@ class TestClusterSemantic:
         provider.embed = AsyncMock(side_effect=RuntimeError("API error"))
 
         with patch("intel_platform.llm.embeddings.get_embedding_provider", return_value=provider):
-            tree, doc_map, kw_map = run(cluster_semantic(docs, "proj-1"))
+            tree, doc_map, kw_map = await cluster_semantic(docs, "proj-1")
 
         assert tree is not None
 
-    def test_doc_map_populated(self):
+    async def test_doc_map_populated(self):
         """doc_map should map node IDs to document IDs."""
         docs = [
             ("doc-1", "First document about topic A."),
@@ -134,7 +129,7 @@ class TestClusterSemantic:
         ]
 
         with patch("intel_platform.llm.embeddings.get_embedding_provider", return_value=_mock_embedding_provider()):
-            tree, doc_map, kw_map = run(cluster_semantic(docs, "proj-1"))
+            tree, doc_map, kw_map = await cluster_semantic(docs, "proj-1")
 
         inner_map = doc_map.get("proj-1", {})
         assert len(inner_map) > 0
@@ -144,7 +139,7 @@ class TestClusterSemantic:
             all_mapped_docs.update(doc_ids)
         assert all_mapped_docs == {"doc-1", "doc-2", "doc-3"}
 
-    def test_keywords_populated(self):
+    async def test_keywords_populated(self):
         """kw_map should have keywords for each node."""
         docs = [
             ("doc-1", "Machine learning algorithms for classification."),
@@ -153,7 +148,7 @@ class TestClusterSemantic:
         ]
 
         with patch("intel_platform.llm.embeddings.get_embedding_provider", return_value=_mock_embedding_provider()):
-            tree, doc_map, kw_map = run(cluster_semantic(docs, "proj-1"))
+            tree, doc_map, kw_map = await cluster_semantic(docs, "proj-1")
 
         inner_kw = kw_map.get("proj-1", {})
         assert len(inner_kw) > 0

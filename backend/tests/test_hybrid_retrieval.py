@@ -1,15 +1,10 @@
 """Tests for hybrid retrieval — RRF merge of graph and vector results."""
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
 from intel_platform.services.hybrid_retrieval import HybridRetriever, _rrf_merge, _RRF_K
-
-
-def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +127,7 @@ def _mock_graph_pipeline():
 
 
 class TestHybridRetriever:
-    def test_retrieve_combines_graph_and_vector(self):
+    async def test_retrieve_combines_graph_and_vector(self):
         pipeline = _mock_graph_pipeline()
         session = MagicMock()
 
@@ -144,7 +139,7 @@ class TestHybridRetriever:
         with patch("intel_platform.services.hybrid_retrieval.vector_search", new_callable=AsyncMock) as mock_vs:
             mock_vs.return_value = vec_results
             retriever = HybridRetriever(pipeline, session)
-            result = run(retriever.retrieve("APT29 malware", "proj-1"))
+            result = await retriever.retrieve("APT29 malware", "proj-1")
 
         assert result["node_count"] == 2
         assert result["edge_count"] == 1
@@ -154,20 +149,20 @@ class TestHybridRetriever:
         assert "APT29 deployed SUNBURST" in result["context"]
         assert len(result["merged_ranking"]) > 0
 
-    def test_retrieve_graph_only_when_vector_fails(self):
+    async def test_retrieve_graph_only_when_vector_fails(self):
         pipeline = _mock_graph_pipeline()
         session = MagicMock()
 
         with patch("intel_platform.services.hybrid_retrieval.vector_search", new_callable=AsyncMock) as mock_vs:
             mock_vs.side_effect = RuntimeError("DB down")
             retriever = HybridRetriever(pipeline, session)
-            result = run(retriever.retrieve("test", "proj-1"))
+            result = await retriever.retrieve("test", "proj-1")
 
         assert result["vector_results"] == []
         assert "Graph Context" in result["context"]
         assert "Semantically Similar" not in result["context"]
 
-    def test_retrieve_with_no_graph_results(self):
+    async def test_retrieve_with_no_graph_results(self):
         pipeline = MagicMock()
         pipeline.understand_query.return_value = {"query": "test", "target_entities": []}
         pipeline.retrieve_context.return_value = {
@@ -186,13 +181,13 @@ class TestHybridRetriever:
         with patch("intel_platform.services.hybrid_retrieval.vector_search", new_callable=AsyncMock) as mock_vs:
             mock_vs.return_value = vec_results
             retriever = HybridRetriever(pipeline, session)
-            result = run(retriever.retrieve("obscure query", "proj-1"))
+            result = await retriever.retrieve("obscure query", "proj-1")
 
         assert len(result["vector_results"]) == 1
         assert result["node_count"] == 0
         assert "Relevant text from vector search" in result["context"]
 
-    def test_merged_ranking_includes_both_sources(self):
+    async def test_merged_ranking_includes_both_sources(self):
         pipeline = _mock_graph_pipeline()
         session = MagicMock()
 
@@ -206,7 +201,7 @@ class TestHybridRetriever:
         with patch("intel_platform.services.hybrid_retrieval.vector_search", new_callable=AsyncMock) as mock_vs:
             mock_vs.return_value = vec_results
             retriever = HybridRetriever(pipeline, session)
-            result = run(retriever.retrieve("test", "proj-1"))
+            result = await retriever.retrieve("test", "proj-1")
 
         ranking = result["merged_ranking"]
         doc_ids = {r["document_id"] for r in ranking}

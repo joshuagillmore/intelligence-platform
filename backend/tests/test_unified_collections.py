@@ -1,14 +1,7 @@
 """Tests for the unified collection system — PIR → Plan → Execute flow."""
 from __future__ import annotations
 
-import asyncio
-
-
 from intel_platform.llm.base import LLMResponse
-
-
-def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 # ---------------------------------------------------------------------------

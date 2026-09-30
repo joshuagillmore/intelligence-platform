@@ -5,7 +5,6 @@ layer and verify the service logic (batching, error handling, data flow).
 """
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 
@@ -15,10 +14,6 @@ from intel_platform.services.vector_search import (
     embed_and_store_chunks,
     delete_document_embeddings,
 )
-
-
-def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 def _mock_provider(dim: int = 1536, num_texts: int = 1) -> MagicMock:
@@ -50,14 +45,14 @@ def _mock_session() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 class TestEmbedAndStoreChunks:
-    def test_stores_correct_number_of_chunks(self):
+    async def test_stores_correct_number_of_chunks(self):
         chunks = [{"content": f"chunk {i}"} for i in range(5)]
         session = _mock_session()
         provider = _mock_provider()
 
-        count = run(embed_and_store_chunks(
+        count = await embed_and_store_chunks(
             chunks, "doc-1", "proj-1", session, provider=provider,
-        ))
+        )
 
         assert count == 5
         session.add_all.assert_called_once()
@@ -68,12 +63,12 @@ class TestEmbedAndStoreChunks:
         assert rows[0].embedding_model == "mock:test-model"
         session.flush.assert_called_once()
 
-    def test_empty_chunks_returns_zero(self):
+    async def test_empty_chunks_returns_zero(self):
         session = _mock_session()
-        count = run(embed_and_store_chunks([], "doc-1", "proj-1", session))
+        count = await embed_and_store_chunks([], "doc-1", "proj-1", session)
         assert count == 0
 
-    def test_chunk_index_preserved(self):
+    async def test_chunk_index_preserved(self):
         chunks = [
             {"content": "a", "chunk_index": 10},
             {"content": "b", "chunk_index": 20},
@@ -81,23 +76,23 @@ class TestEmbedAndStoreChunks:
         session = _mock_session()
         provider = _mock_provider()
 
-        run(embed_and_store_chunks(chunks, "doc-1", "proj-1", session, provider=provider))
+        await embed_and_store_chunks(chunks, "doc-1", "proj-1", session, provider=provider)
 
         rows = session.add_all.call_args[0][0]
         assert rows[0].chunk_index == 10
         assert rows[1].chunk_index == 20
 
-    def test_chunk_index_defaults_to_sequential(self):
+    async def test_chunk_index_defaults_to_sequential(self):
         chunks = [{"content": "a"}, {"content": "b"}, {"content": "c"}]
         session = _mock_session()
         provider = _mock_provider()
 
-        run(embed_and_store_chunks(chunks, "doc-1", "proj-1", session, provider=provider))
+        await embed_and_store_chunks(chunks, "doc-1", "proj-1", session, provider=provider)
 
         rows = session.add_all.call_args[0][0]
         assert [r.chunk_index for r in rows] == [0, 1, 2]
 
-    def test_embedding_failure_returns_zero(self):
+    async def test_embedding_failure_returns_zero(self):
         """If embedding API fails, return 0 instead of crashing."""
         provider = MagicMock()
         provider.embed = AsyncMock(side_effect=RuntimeError("API down"))
@@ -106,12 +101,12 @@ class TestEmbedAndStoreChunks:
         session = _mock_session()
         chunks = [{"content": "text"}]
 
-        count = run(embed_and_store_chunks(chunks, "doc-1", "proj-1", session, provider=provider))
+        count = await embed_and_store_chunks(chunks, "doc-1", "proj-1", session, provider=provider)
 
         assert count == 0
         session.add_all.assert_not_called()
 
-    def test_vector_count_mismatch_returns_zero(self):
+    async def test_vector_count_mismatch_returns_zero(self):
         """If provider returns wrong number of vectors, return 0."""
         provider = MagicMock()
         provider.name.return_value = "mock:test"
@@ -124,29 +119,29 @@ class TestEmbedAndStoreChunks:
         session = _mock_session()
         chunks = [{"content": "a"}, {"content": "b"}]  # 2 chunks
 
-        count = run(embed_and_store_chunks(chunks, "doc-1", "proj-1", session, provider=provider))
+        count = await embed_and_store_chunks(chunks, "doc-1", "proj-1", session, provider=provider)
 
         assert count == 0
 
-    def test_batching_for_large_inputs(self):
+    async def test_batching_for_large_inputs(self):
         """Chunks exceeding _EMBED_BATCH_SIZE should be split into batches."""
         num_chunks = _EMBED_BATCH_SIZE + 10
         chunks = [{"content": f"chunk {i}"} for i in range(num_chunks)]
         session = _mock_session()
         provider = _mock_provider()
 
-        count = run(embed_and_store_chunks(chunks, "doc-1", "proj-1", session, provider=provider))
+        count = await embed_and_store_chunks(chunks, "doc-1", "proj-1", session, provider=provider)
 
         assert count == num_chunks
         # Should have been called twice (96 + 10)
         assert provider.embed.call_count == 2
 
-    def test_metadata_passed_through(self):
+    async def test_metadata_passed_through(self):
         chunks = [{"content": "text", "metadata": {"source_url": "https://example.com"}}]
         session = _mock_session()
         provider = _mock_provider()
 
-        run(embed_and_store_chunks(chunks, "doc-1", "proj-1", session, provider=provider))
+        await embed_and_store_chunks(chunks, "doc-1", "proj-1", session, provider=provider)
 
         rows = session.add_all.call_args[0][0]
         assert rows[0].metadata_ == {"source_url": "https://example.com"}
@@ -157,22 +152,22 @@ class TestEmbedAndStoreChunks:
 # ---------------------------------------------------------------------------
 
 class TestDeleteDocumentEmbeddings:
-    def test_delete_returns_count(self):
+    async def test_delete_returns_count(self):
         session = _mock_session()
         mock_result = MagicMock()
         mock_result.rowcount = 5
         session.execute = AsyncMock(return_value=mock_result)
 
-        count = run(delete_document_embeddings("doc-1", session))
+        count = await delete_document_embeddings("doc-1", session)
 
         assert count == 5
         session.flush.assert_called_once()
 
-    def test_delete_no_rows(self):
+    async def test_delete_no_rows(self):
         session = _mock_session()
         mock_result = MagicMock()
         mock_result.rowcount = 0
         session.execute = AsyncMock(return_value=mock_result)
 
-        count = run(delete_document_embeddings("doc-1", session))
+        count = await delete_document_embeddings("doc-1", session)
         assert count == 0

@@ -1,16 +1,11 @@
 """Tests for agentic collection connectors — WebScrape, RSS, API."""
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from intel_platform.connectors.base import CONNECTOR_REGISTRY
-
-
-def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +62,7 @@ class TestWebScrapeConnector:
         config = c.configure({"url": "https://example.com", "max_pages": 100})
         assert config["max_pages"] == 50
 
-    def test_acquire_success(self):
+    async def test_acquire_success(self):
         from intel_platform.connectors.web_scrape import WebScrapeConnector
         c = WebScrapeConnector()
 
@@ -77,7 +72,7 @@ class TestWebScrapeConnector:
             instance = MockScraper.return_value
             instance.scrape_url = AsyncMock(return_value=mock_result)
 
-            result = run(c.acquire({"url": "https://example.com", "timeout": 10}))
+            result = await c.acquire({"url": "https://example.com", "timeout": 10})
 
         assert result.success
         assert result.record_count == 1
@@ -85,7 +80,7 @@ class TestWebScrapeConnector:
         assert result.records[0]["content"] == "Hello world"
         assert result.records[0]["url"] == "https://example.com"
 
-    def test_acquire_failure(self):
+    async def test_acquire_failure(self):
         from intel_platform.connectors.web_scrape import WebScrapeConnector
         c = WebScrapeConnector()
 
@@ -93,15 +88,15 @@ class TestWebScrapeConnector:
             instance = MockScraper.return_value
             instance.scrape_url = AsyncMock(side_effect=RuntimeError("Connection refused"))
 
-            result = run(c.acquire({"url": "https://unreachable.example.com"}))
+            result = await c.acquire({"url": "https://unreachable.example.com"})
 
         assert not result.success
         assert "Connection refused" in result.error
 
-    def test_acquire_no_url(self):
+    async def test_acquire_no_url(self):
         from intel_platform.connectors.web_scrape import WebScrapeConnector
         c = WebScrapeConnector()
-        result = run(c.acquire({}))
+        result = await c.acquire({})
         assert not result.success
 
 
@@ -130,7 +125,7 @@ class TestRSSFeedConnector:
         config = c.configure({"feed_url": "https://x.com/feed", "max_items": 1000})
         assert config["max_items"] == 500
 
-    def test_acquire_parses_feed(self):
+    async def test_acquire_parses_feed(self):
         """Test feed parsing with mocked feedparser."""
         from intel_platform.connectors.rss_feed import RSSFeedConnector
         c = RSSFeedConnector()
@@ -163,25 +158,25 @@ class TestRSSFeedConnector:
             instance = MockClient.return_value
             instance.fetch_text = AsyncMock(return_value="<rss>mock</rss>")
 
-            result = run(c.acquire({"feed_url": "https://feeds.example.com/rss"}))
+            result = await c.acquire({"feed_url": "https://feeds.example.com/rss"})
 
         assert result.success
         assert result.record_count == 2
         assert result.records[0]["title"] == "Article 1"
         assert result.records[0]["content"] == "First article content"
 
-    def test_acquire_no_feed_url(self):
+    async def test_acquire_no_feed_url(self):
         from intel_platform.connectors.rss_feed import RSSFeedConnector
         c = RSSFeedConnector()
-        result = run(c.acquire({}))
+        result = await c.acquire({})
         assert not result.success
 
-    def test_acquire_without_feedparser_installed(self):
+    async def test_acquire_without_feedparser_installed(self):
         """When feedparser isn't installed, acquire should return a clear error."""
         from intel_platform.connectors.rss_feed import RSSFeedConnector
         c = RSSFeedConnector()
         with patch.dict("sys.modules", {"feedparser": None}):
-            result = run(c.acquire({"feed_url": "https://feeds.example.com/rss"}))
+            result = await c.acquire({"feed_url": "https://feeds.example.com/rss"})
         # Should fail gracefully with a message about feedparser
         assert not result.success
         assert "feedparser" in result.error.lower()
@@ -217,7 +212,7 @@ class TestAPIFeedConnector:
         with pytest.raises(ValueError, match="auth_type"):
             c.configure({"base_url": "https://api.example.com", "auth_type": "oauth"})
 
-    def test_acquire_json_response(self):
+    async def test_acquire_json_response(self):
         from intel_platform.connectors.api_feed import APIFeedConnector
         c = APIFeedConnector()
 
@@ -230,11 +225,11 @@ class TestAPIFeedConnector:
             instance = MockClient.return_value
             instance.get = AsyncMock(return_value=mock_resp)
 
-            result = run(c.acquire({
+            result = await c.acquire({
                 "base_url": "https://api.example.com",
                 "endpoint": "v1/entities",
                 "response_path": "data",
-            }))
+            })
 
         assert result.success
         assert result.record_count == 2
@@ -262,10 +257,10 @@ class TestAPIFeedConnector:
         })
         assert headers["X-API-Key"] == "key123"
 
-    def test_acquire_no_url(self):
+    async def test_acquire_no_url(self):
         from intel_platform.connectors.api_feed import APIFeedConnector
         c = APIFeedConnector()
-        result = run(c.acquire({}))
+        result = await c.acquire({})
         assert not result.success
 
 

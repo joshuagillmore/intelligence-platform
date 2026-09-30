@@ -1,7 +1,6 @@
 """Tests for embedding providers and the factory function."""
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
@@ -12,10 +11,6 @@ from intel_platform.llm.embeddings import (
     OpenAIEmbeddingProvider,
     get_embedding_provider,
 )
-
-
-def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 # ---------------------------------------------------------------------------
@@ -38,7 +33,7 @@ class TestOpenAIEmbeddingProvider:
             provider = OpenAIEmbeddingProvider(api_key="k", model="text-embedding-3-large")
             assert provider.name() == "openai:text-embedding-3-large"
 
-    def test_embed_calls_api(self):
+    async def test_embed_calls_api(self):
         mock_client = MagicMock()
         mock_item = MagicMock()
         mock_item.embedding = [0.1] * 1536
@@ -49,7 +44,7 @@ class TestOpenAIEmbeddingProvider:
 
         with patch("openai.AsyncOpenAI", return_value=mock_client):
             provider = OpenAIEmbeddingProvider(api_key="k")
-            result = run(provider.embed(["hello world"]))
+            result = await provider.embed(["hello world"])
 
         assert len(result.embeddings) == 1
         assert len(result.embeddings[0]) == 1536
@@ -59,7 +54,7 @@ class TestOpenAIEmbeddingProvider:
             model="text-embedding-3-small", input=["hello world"],
         )
 
-    def test_embed_batch(self):
+    async def test_embed_batch(self):
         mock_client = MagicMock()
         items = [MagicMock(embedding=[0.1] * 1536) for _ in range(3)]
         mock_response = MagicMock()
@@ -69,7 +64,7 @@ class TestOpenAIEmbeddingProvider:
 
         with patch("openai.AsyncOpenAI", return_value=mock_client):
             provider = OpenAIEmbeddingProvider(api_key="k")
-            result = run(provider.embed(["a", "b", "c"]))
+            result = await provider.embed(["a", "b", "c"])
 
         assert len(result.embeddings) == 3
 
@@ -89,7 +84,7 @@ class TestCohereEmbeddingProvider:
             provider = CohereEmbeddingProvider(api_key="k")
             assert provider.dimension() == 1024
 
-    def test_embed_passes_input_type(self):
+    async def test_embed_passes_input_type(self):
         mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.embeddings.float_ = [[0.2] * 1024]
@@ -100,12 +95,12 @@ class TestCohereEmbeddingProvider:
             provider = CohereEmbeddingProvider(api_key="k")
 
             # Index-time call
-            run(provider.embed(["text"], input_type="search_document"))
+            await provider.embed(["text"], input_type="search_document")
             call_kwargs = mock_client.embed.call_args.kwargs
             assert call_kwargs["input_type"] == "search_document"
 
             # Query-time call
-            run(provider.embed(["query"], input_type="search_query"))
+            await provider.embed(["query"], input_type="search_query")
             call_kwargs = mock_client.embed.call_args.kwargs
             assert call_kwargs["input_type"] == "search_query"
 
@@ -123,7 +118,7 @@ class TestOllamaEmbeddingProvider:
         provider = OllamaEmbeddingProvider()
         assert provider.dimension() == 768
 
-    def test_embed_calls_api(self):
+    async def test_embed_calls_api(self):
 
         mock_response = MagicMock()
         mock_response.json.return_value = {"embeddings": [[0.3] * 768]}
@@ -137,7 +132,7 @@ class TestOllamaEmbeddingProvider:
             mock_cls.return_value = mock_client
 
             provider = OllamaEmbeddingProvider(base_url="http://test:11434")
-            result = run(provider.embed(["text"]))
+            result = await provider.embed(["text"])
 
         assert len(result.embeddings) == 1
         assert len(result.embeddings[0]) == 768
