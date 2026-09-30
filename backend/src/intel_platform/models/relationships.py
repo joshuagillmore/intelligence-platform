@@ -18,6 +18,11 @@ class Relationship(BaseModel):
     source_id: str
     target_id: str
     rel_type: str
+    # The project both endpoints belong to. When set, the store matches the
+    # endpoints inside that project (an edge can never join two projects) and
+    # stamps the edge with it. Empty for callers that have not passed it yet,
+    # which keep the old unscoped match.
+    project_id: str = ""
     confidence: float = 0.5
     source: str = ""
     method: str = ""

@@ -500,6 +500,9 @@ def build_graph_from_extractions(
         rel = Relationship(
             source_id=source_id, target_id=target_id,
             rel_type=rel_data["rel_type"],
+            # Both endpoints were resolved inside this project; the store
+            # matches them there and stamps the edge with it.
+            project_id=project_id,
             confidence=confidence,
             source=rel_data.get("source", ""), method=rel_data.get("method", ""),
             # Carry the source-sentence evidence through to the edge (was dropped

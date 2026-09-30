@@ -283,19 +283,29 @@ class GraphStore:
     def create_relationship(self, rel) -> dict:
         if rel.rel_type not in self.VALID_REL_TYPES:
             raise ValueError(f"Invalid relationship type: {rel.rel_type}")
-        props = self._serialize_props(rel.model_dump(exclude={"source_id", "target_id", "rel_type"}))
+        project_id = getattr(rel, "project_id", "") or ""
+        props = self._serialize_props(
+            rel.model_dump(exclude={"source_id", "target_id", "rel_type", "project_id"})
+        )
+        # With a project, both endpoints are matched inside it: an edge can
+        # never join two projects, and the edge is stamped with its project.
+        scope = ""
+        if project_id:
+            props["project_id"] = project_id
+            scope = "AND a.project_id = $project_id AND b.project_id = $project_id"
         with self._driver.session() as session:
             # Corroboration: the same claim asserted by a second document is not a
             # second edge, it is the same edge with more support. Previously every
             # assertion created a duplicate, so corroboration_count sat at 1
             # forever and the graph accumulated near-identical edges.
             existing = session.run(
-                """
-                MATCH (a {id: $source_id})-[r]->(b {id: $target_id})
-                WHERE type(r) = $rel_type
+                f"""
+                MATCH (a {{id: $source_id}})-[r]->(b {{id: $target_id}})
+                WHERE type(r) = $rel_type {scope}
                 RETURN r LIMIT 1
                 """,
                 source_id=rel.source_id, target_id=rel.target_id, rel_type=rel.rel_type,
+                project_id=project_id,
             ).single()
 
             if existing:
@@ -344,26 +354,30 @@ class GraphStore:
                     # disagreement is carried by corroboration_agreement.
                     "polarity": prior_polarity,
                 }
+                if project_id:
+                    update["project_id"] = project_id
                 result = session.run(
-                    """
-                    MATCH (a {id: $source_id})-[r]->(b {id: $target_id})
-                    WHERE type(r) = $rel_type
+                    f"""
+                    MATCH (a {{id: $source_id}})-[r]->(b {{id: $target_id}})
+                    WHERE type(r) = $rel_type {scope}
                     SET r += $update
                     RETURN type(r) as rel_type, r as rel
                     """,
                     source_id=rel.source_id, target_id=rel.target_id,
                     rel_type=rel.rel_type, update=self._serialize_props(update),
+                    project_id=project_id,
                 )
             else:
                 result = session.run(
-                    """
-                    MATCH (a {id: $source_id})
-                    MATCH (b {id: $target_id})
+                    f"""
+                    MATCH (a {{id: $source_id}})
+                    MATCH (b {{id: $target_id}})
+                    WHERE true {scope}
                     CALL apoc.create.relationship(a, $rel_type, $props, b) YIELD rel
                     RETURN type(rel) as rel_type, rel
                     """,
                     source_id=rel.source_id, target_id=rel.target_id,
-                    rel_type=rel.rel_type, props=props,
+                    rel_type=rel.rel_type, props=props, project_id=project_id,
                 )
             record = result.single()
             rel_data = dict(record["rel"]) if record else {}
