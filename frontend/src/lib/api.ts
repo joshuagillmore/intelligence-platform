@@ -867,11 +867,16 @@ export const reportsApi = {
     api.post('/reports', data),
   // Grounded generation: retrieves real graph + document evidence for the selected
   // entities via the Graph-RAG pipeline before drafting, instead of a bare LLM call.
+  // `requirement` (PIR text) or `pir_id` makes the requirement the subject of the
+  // product; without one it is only "tell me about these entities". Answers 503
+  // "LLM provider unavailable" when no model could draft it.
   generate: (data: {
     project_id: string;
     report_type: string;
     skill_name: string;
     entity_ids: string[];
+    requirement?: string;
+    pir_id?: string;
     include_evidence?: boolean;
     probability_assessments?: boolean;
   }) => api.post('/reports/generate', data),
