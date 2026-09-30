@@ -17,7 +17,7 @@ import { getErrorMessage } from '@/lib/errorMessages';
 import { collapseToCommunities } from '@/lib/graphLayout';
 import { useNotifications } from '@/components/NotificationProvider';
 import Markdown from '@/components/Markdown';
-import { filterGraph, createRequestSequencer } from './graphFilters';
+import { filterGraph, createRequestSequencer, useDebouncedValue } from './graphFilters';
 
 interface Entity {
   id: string;
@@ -93,6 +93,9 @@ const ENTITY_TYPES = ['All', 'Person', 'Organization', 'Location', 'ThreatActor'
 // putting 5,486 buttons in the DOM helps nobody. The panel now says which it is.
 const ENTITY_PANEL_LIMIT = 500;
 
+// The entity search waits for typing to pause before it asks the server.
+const SEARCH_DEBOUNCE_MS = 300;
+
 const TYPE_LABELS: Record<string, string> = {
   TTP: 'Tactics, Techniques & Procedures',
   IPAddress: 'IP Address',
@@ -166,6 +169,10 @@ function NetworkPageInner() {
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
   const [entityRelationships, setEntityRelationships] = useState<Relationship[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
+  // Only the latest entity search may write the list; a slow response to an
+  // earlier keystroke is dropped.
+  const entitySeqRef = useRef(createRequestSequencer());
   const [typeFilter, setTypeFilter] = useState('All');
   const [activeTypeFilters, setActiveTypeFilters] = useState<Set<string>>(new Set());
   const [typeFilterOpen, setTypeFilterOpen] = useState(false);
@@ -293,22 +300,25 @@ function NetworkPageInner() {
 
   const loadEntities = useCallback(async () => {
     if (!activeProject) return;
+    const token = entitySeqRef.current.next();
     try {
       const res = await entitiesApi.search(
         activeProject.id,
-        searchQuery || undefined,
+        debouncedSearchQuery || undefined,
         typeFilter === 'All' ? undefined : typeFilter,
         ENTITY_PANEL_LIMIT,
       );
+      if (!entitySeqRef.current.isCurrent(token)) return;
       setEntities(res.data);
       // The panel groups what it received under type headings, and those counts
       // read as totals. On a 5,486-entity project it was grouping the first 50
       // and captioning them "Organization (6)" beside a graph holding 156.
       setEntityTotal(totalFrom(res));
     } catch (e) {
+      if (!entitySeqRef.current.isCurrent(token)) return;
       console.error('Failed to load entities', e);
     }
-  }, [activeProject, searchQuery, typeFilter]);
+  }, [activeProject, debouncedSearchQuery, typeFilter]);
 
   // Event-date distribution for the chronology brush. Re-fetched when the
   // bucket changes; the selection is cleared because bin keys differ between
@@ -524,22 +534,32 @@ function NetworkPageInner() {
     setRelEvidenceOpen(prev => ({ ...prev, [relIndex]: !prev[relIndex] }));
   }
 
+  // Project-level loads. Kept apart from the entity search below: they used to
+  // share one effect with it, so every keystroke re-fetched the graph and five
+  // analytics endpoints and unmounted the canvas while the graph reloaded.
   useEffect(() => {
     loadGraph();
-    loadEntities();
     loadStatistics();
     loadCommunities();
     loadSnapshots();
     loadStructuralHoles();
-  }, [loadGraph, loadEntities, loadStatistics, loadCommunities, loadSnapshots, loadStructuralHoles]);
+  }, [loadGraph, loadStatistics, loadCommunities, loadSnapshots, loadStructuralHoles]);
 
-  // Auto-select entity from URL param (e.g., from Cyber "View in Graph")
+  // The entity list alone follows the (debounced) search and type filter.
   useEffect(() => {
-    if (selectParam && graphNodes.length > 0) {
-      const node = graphNodes.find(n => n.id === selectParam);
-      if (node) {
-        selectEntity({ id: node.id, name: node.name, entity_type: node.entity_type });
-      }
+    loadEntities();
+  }, [loadEntities]);
+
+  // Auto-select entity from URL param (e.g., from Cyber "View in Graph").
+  // Consumed once per distinct param value: re-applying it whenever graphNodes
+  // changed snapped the selection back to it after the analyst had moved on.
+  const consumedSelectRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectParam || graphNodes.length === 0 || consumedSelectRef.current === selectParam) return;
+    consumedSelectRef.current = selectParam;
+    const node = graphNodes.find(n => n.id === selectParam);
+    if (node) {
+      selectEntity({ id: node.id, name: node.name, entity_type: node.entity_type });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectParam, graphNodes]);
