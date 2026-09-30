@@ -487,7 +487,8 @@ async def _extract(text: str, doc_id: str, mode: str):
         return await extract_entities_hybrid(text, doc_id)
     else:
         from intel_platform.services.extraction import extract_entities_nlp
-        return extract_entities_nlp(text, doc_id)
+        # spaCy is synchronous and CPU-bound; keep it off the event loop.
+        return await asyncio.to_thread(extract_entities_nlp, text, doc_id)
 
 
 async def _log_acquisition(

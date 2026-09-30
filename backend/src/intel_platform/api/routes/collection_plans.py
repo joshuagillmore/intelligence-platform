@@ -1159,6 +1159,34 @@ async def delete_source(plan_id: str, source_id: str, db: AsyncSession = Depends
 # File upload → ingest through collection plan
 # ---------------------------------------------------------------------------
 
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB for structured data
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+
+async def _read_upload_capped(file: UploadFile, cap: int) -> bytes:
+    """The upload's bytes, refused with 400 as soon as they pass `cap`.
+
+    `await file.read()` read the whole upload into memory before comparing it
+    with the cap, so the cap bounded nothing. Starlette has already spooled the
+    request body to a temporary file; this reads it back a chunk at a time and
+    stops at the cap, so memory is bounded by the cap rather than by whatever a
+    client chose to send. A declared size over the cap is refused without
+    reading at all. The whole file is still returned as bytes because the
+    file_upload connector parses from bytes.
+    """
+    too_large = HTTPException(400, f"File too large. Max: {cap // (1024 * 1024)}MB")
+    if file.size is not None and file.size > cap:
+        raise too_large
+    buf = bytearray()
+    while True:
+        chunk = await file.read(_UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            return bytes(buf)
+        if len(buf) + len(chunk) > cap:
+            raise too_large
+        buf.extend(chunk)
+
+
 @router.post("/collection-plans/{plan_id}/sources/{source_id}/upload")
 async def upload_file_to_source(
     plan_id: str,
@@ -1184,11 +1212,8 @@ async def upload_file_to_source(
     if source.source_type != SourceType.FILE_UPLOAD:
         raise HTTPException(400, "Source is not a file_upload type")
 
-    # Read and validate file
-    MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB for structured data
-    file_bytes = await file.read()
-    if len(file_bytes) > MAX_FILE_SIZE:
-        raise HTTPException(400, f"File too large. Max: {MAX_FILE_SIZE // (1024*1024)}MB")
+    # Read and validate file, refusing an oversized one while reading it.
+    file_bytes = await _read_upload_capped(file, _MAX_UPLOAD_BYTES)
 
     safe_name = re.sub(r'[^\w\-.]', '_', file.filename or 'upload')
     file_format = detect_format(safe_name)
@@ -1249,9 +1274,12 @@ async def upload_file_to_source(
     relationships_created = 0
     document_id = ""
 
+    # The Neo4j driver, spaCy and the graph build are synchronous. Each runs in
+    # a worker thread (contract 15): on the event loop, one 10 MB upload stalled
+    # every other request, the health check included, for its whole length.
     if routing.get("extract_entities", True) or routing.get("store_documents", True):
         # Convert structured records to text for entity extraction
-        text_content = _records_to_text(result.records, safe_name)
+        text_content = await asyncio.to_thread(_records_to_text, result.records, safe_name)
 
         if routing.get("store_documents", True):
             doc = Document(
@@ -1260,11 +1288,13 @@ async def upload_file_to_source(
                 reliability_rating=reliability_rating,
                 project_id=plan.project_id,
             )
-            store.create_entity(doc)
+            await asyncio.to_thread(store.create_entity, doc)
             document_id = doc.id
 
         if routing.get("extract_entities", True):
-            chunks = ingest_text(text_content, settings.chunk_size, settings.chunk_overlap)
+            chunks = await asyncio.to_thread(
+                ingest_text, text_content, settings.chunk_size, settings.chunk_overlap,
+            )
             all_entities = []
             all_rels = []
             for chunk in chunks:
@@ -1273,7 +1303,8 @@ async def upload_file_to_source(
                 all_rels.extend(rels)
 
             if all_entities or all_rels:
-                build_result = build_graph_from_extractions(
+                build_result = await asyncio.to_thread(
+                    build_graph_from_extractions,
                     store, all_entities, all_rels, plan.project_id,
                     source_doc_id=document_id or None,
                 )
@@ -1552,4 +1583,5 @@ async def _extract(text: str, doc_id: str, mode: str):
         from intel_platform.services.extraction import extract_entities_hybrid
         return await extract_entities_hybrid(text, doc_id)
     else:
-        return extract_entities_nlp(text, doc_id)
+        # spaCy is synchronous and CPU-bound (contract 15).
+        return await asyncio.to_thread(extract_entities_nlp, text, doc_id)
