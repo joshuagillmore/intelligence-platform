@@ -650,32 +650,46 @@ def _has_hash_context(text: str, match_start: int, match_end: int) -> bool:
     return bool(HASH_CONTEXT_KEYWORDS.search(window))
 
 
-#: Tokens carrying a defang marker: ``evil[.]com``, ``hxxp://x.com``,
-#: ``a[at]b.com``, ``10[.]0[.]0[.]1``. Deliberately loose — it only has to
-#: find the token, which is then refanged and normalised.
-_DEFANGED_TOKEN = re.compile(
-    r"""(?:hxxps?://\S+)|(?:[A-Za-z0-9.\-]+(?:\[\.\]|\(\.\)|\[dot\]|\[at\])[A-Za-z0-9.\-\[\]()]*)""",
+#: A defang marker — every form ``enrichment.observables.refang`` reverses:
+#: a bracketed, parenthesised or braced dot, at or colon (``[.] (.) {.} [dot]
+#: (dot) [at] (at) [@] [:] (:)``), or an ``hxxp`` scheme. Listing fewer than
+#: refang handles meant ``evil{.}com`` or ``ops(at)evil(dot)com`` were refanged
+#: into indicators but not counted as defanged.
+_DEFANG_MARKER = re.compile(
+    r"[\[\(\{]\s*(?:\.|dot|@|at|:)\s*[\]\)\}]|h[x]{2}ps?(?::|[\[\(\{]\s*:\s*[\]\)\}])//",
     re.IGNORECASE,
 )
+_NON_SPACE_RUN = re.compile(r"\S+")
+#: Trailing punctuation that ends a URL match rather than belonging to it.
+_URL_TRAILING = ".,;:!?)]}'\""
 
 
 def _defanged_values(raw_text: str) -> set[str]:
     """Values the author defanged, refanged and normalised for comparison.
 
-    Returns both full URLs and bare hosts, so a host defanged only inside a URL
-    (``hxxps://evil[.]com/gate.php``) still counts as asserted.
+    Works on the whole whitespace-delimited token carrying a marker, so a
+    defanged host inside an otherwise ordinary URL (``http://evil[.]com/gate.php``)
+    records the URL as well as the host — the old detector stopped at the host,
+    and the URL was then discarded as an undefanged citation. Values are read
+    back out of the refanged token with the same patterns the extractor uses,
+    so what is recorded here compares equal to what is extracted there.
     """
     found: set[str] = set()
-    for match in _DEFANGED_TOKEN.finditer(raw_text or ""):
-        value = refang(match.group()).rstrip(".,;:!?)]}'\"").lower()
-        if not value:
+    for run in _NON_SPACE_RUN.finditer(raw_text or ""):
+        token = run.group()
+        if not _DEFANG_MARKER.search(token):
             continue
-        found.add(value)
-        # Also record the bare host, so the Domain check can see the assertion
-        # that was made about a URL.
-        host = value.split("://", 1)[-1].split("/", 1)[0].split("@")[-1]
-        if "." in host:
-            found.add(host)
+        value = refang(token)
+        for m in URL_PATTERN.finditer(value):
+            found.add(m.group().rstrip(_URL_TRAILING).lower())
+        for m in EMAIL_PATTERN.finditer(value):
+            found.add(m.group().lower())
+        # Hosts, including the host of every URL and address above, so the
+        # Domain check sees the assertion made about them.
+        for m in _get_domain_pattern().finditer(value):
+            found.add(m.group().lower())
+        for m in IP_PATTERN.finditer(value):
+            found.add(m.group())
     return found
 
 
@@ -699,6 +713,45 @@ def _is_sourcing_not_content(name: str, start: int, url_spans: list[tuple[int, i
     if name in defanged:
         return False
     return any(s <= start < e for s, e in url_spans)
+
+
+def _drop_model_sourcing(entities: list[dict], raw_text: str) -> list[dict]:
+    """Apply the sourcing rule above to the model's Domain and URL entities.
+
+    The regex pass has always declined to mint a host that only appears inside
+    a hyperlink, or an undefanged URL; the model, reading the same citation,
+    minted both. Here the same rule judges what it returns:
+
+    - a URL survives only if the author defanged it;
+    - a host survives if it is defanged, or appears at least once outside a
+      link. A host the text never states is not judged — the model may have
+      normalised it — and is kept.
+    """
+    if not any(e.get("entity_type") in ("Domain", "URL") for e in entities):
+        return entities
+    defanged = _defanged_values(raw_text)
+    text = refang(raw_text or "").lower()
+    url_spans = [m.span() for m in URL_PATTERN.finditer(text)]
+
+    def _only_inside_links(host: str) -> bool:
+        # A dot may precede the host (so bbc.com is found in www.bbc.com); a
+        # label character may not (so evil.com is not found in notevil.com).
+        pattern = re.compile(r"(?<![a-z0-9-])" + re.escape(host) + r"(?![a-z0-9-])")
+        starts = [m.start() for m in pattern.finditer(text)]
+        return bool(starts) and all(any(s <= p < e for s, e in url_spans) for p in starts)
+
+    kept = []
+    for e in entities:
+        etype = e.get("entity_type")
+        value = refang(str(e.get("name", ""))).strip().lower()
+        if etype == "URL" and value.rstrip(_URL_TRAILING) not in defanged:
+            logger.debug("Dropping model URL %r: an undefanged link is provenance", e.get("name"))
+            continue
+        if etype == "Domain" and value not in defanged and _only_inside_links(value):
+            logger.debug("Dropping model Domain %r: it appears only inside links", e.get("name"))
+            continue
+        kept.append(e)
+    return kept
 
 
 def _extract_cyber_entities(text: str, doc_id: str, raw_text: str | None = None) -> list[dict]:
@@ -762,7 +815,7 @@ def _extract_cyber_entities(text: str, doc_id: str, raw_text: str | None = None)
     # defanged one (hxxps://evil[.]com/gate.php) is the exception, because
     # writing it that way is an assertion that it is an indicator.
     for match in URL_PATTERN.finditer(text):
-        url = match.group().rstrip('.,;:!?)]}\'"')
+        url = match.group().rstrip(_URL_TRAILING)
         if not url or url in seen or url.lower() not in deliberately_defanged:
             continue
         seen.add(url)
@@ -1364,6 +1417,9 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
     if skipped:
         logger.warning("LLM extraction for doc %s skipped %d malformed item(s)", doc_id, skipped)
 
+    # The same provenance rule the regex pass applies (G-8): a citation link
+    # is not an indicator because the model, rather than a regex, read it.
+    entities = _drop_model_sourcing(entities, text)
     _apply_type_hints(entities)
     _link_event_dates(entities, relationships)
     return entities, relationships, skipped
