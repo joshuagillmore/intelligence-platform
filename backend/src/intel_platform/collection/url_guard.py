@@ -63,15 +63,22 @@ _DIGITS = {
 
 
 def _is_private_ip(ip_str: str) -> bool:
-    """Check if an IP address is private, loopback, or link-local."""
+    """True for any address that is not a public unicast address.
+
+    Checking private/loopback/link-local/reserved one by one missed the CGNAT
+    range 100.64.0.0/10 — Alibaba Cloud's metadata service at 100.100.100.200,
+    Tailscale nodes, carrier-internal hosts — and multicast. `is_global` is the
+    positive statement; multicast and reserved are added because Python counts
+    some of those as global.
+    """
     try:
-        addr = ipaddress.ip_address(ip_str)
+        addr = ipaddress.ip_address(ip_str.strip("[]"))
     except ValueError:
         return False
     mapped = getattr(addr, "ipv4_mapped", None)
     if mapped is not None:  # ::ffff:127.0.0.1 is 127.0.0.1
         addr = mapped
-    return addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved
+    return not addr.is_global or addr.is_multicast or addr.is_reserved
 
 
 def _ipv4_number(part: str) -> int | None:

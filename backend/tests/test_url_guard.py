@@ -57,6 +57,26 @@ def test_allows_ordinary_public_https_url():
     assert is_safe_url("https://8.8.8.8/")
 
 
+class TestNonGlobalRanges:
+    """Low -> C: only private/loopback/link-local/reserved were blocked, so the
+    CGNAT range (100.64.0.0/10: Alibaba Cloud metadata at 100.100.100.200,
+    Tailscale nodes, carrier-internal hosts) and multicast passed."""
+
+    @pytest.mark.parametrize("url", [
+        "http://100.100.100.200/latest/meta-data/",
+        "http://100.64.0.1/",
+        "http://224.0.0.251/",
+        "http://[ff02::1]/",
+        "http://[64:ff9b::7f00:1]/",
+    ])
+    def test_non_global_addresses_are_unsafe(self, url):
+        assert not is_safe_url(url)
+
+    def test_a_host_resolving_into_cgnat_is_unsafe(self, dns):
+        dns.table["tailnet.example.org"] = ["100.101.102.103"]
+        assert not is_safe_url("https://tailnet.example.org/")
+
+
 class TestResolution:
     def test_unresolvable_host_is_unsafe(self, dns):
         """A lookup failure used to be swallowed and the URL passed. The fetcher

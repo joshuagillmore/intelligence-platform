@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import logging
 from typing import Any, Callable
 from urllib.parse import urlsplit
@@ -10,7 +9,7 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from crawl4ai import ProxyConfig as Crawl4aiProxyConfig
 
 from intel_platform.collection.proxy import get_active_proxy_config
-from intel_platform.collection.url_guard import is_safe_url_async
+from intel_platform.collection.url_guard import _is_private_ip, is_safe_url_async
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +45,8 @@ def _make_run_cfg(timeout_ms: int = 30000, proxy: Crawl4aiProxyConfig | None = N
 
 
 def _is_internal_address(ip: str) -> bool:
-    try:
-        addr = ipaddress.ip_address(ip.strip("[]"))
-    except ValueError:
-        return False
-    return not addr.is_global
+    """The guard's own rule, applied to the address Chromium connected to."""
+    return _is_private_ip(ip)
 
 
 class _BrowserGuard:
