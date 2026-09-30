@@ -218,39 +218,11 @@ export default function DataSourcesPage() {
     setSummaryLoading(true);
     setSummary(null);
     try {
-      const url = topicsApi.summarizeUrl(nodeId);
-      const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ project_id: activeProject.id, level: 'topic' }),
-      });
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('No response body');
-
-      const decoder = new TextDecoder();
-      let fullText = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        // Parse SSE events
-        for (const line of chunk.split('\n')) {
-          if (line.startsWith('data: ')) {
-            const payload = line.slice(6);
-            if (payload === '[DONE]') break;
-            fullText += payload;
-            setSummary(fullText);
-          }
-        }
-      }
+      const fullText = await topicsApi.streamSummary(
+        nodeId,
+        { project_id: activeProject.id, level: 'topic' },
+        setSummary,
+      );
 
       if (fullText) {
         setSummaryCache((prev: Record<string, string>) => ({ ...prev, [nodeId]: fullText }));
@@ -258,8 +230,8 @@ export default function DataSourcesPage() {
       } else {
         setSummary('No summary content returned.');
       }
-    } catch {
-      setSummary('Unable to generate summary at this time.');
+    } catch (e) {
+      setSummary(`Unable to generate summary: ${getErrorMessage(e)}`);
     } finally {
       setSummaryLoading(false);
     }

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { createSummaryStreamParser, type SummaryStreamEvent } from './sse';
 
 // Use relative URL so it works on both localhost and Railway (same-origin)
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
@@ -741,6 +742,60 @@ export const topicsApi = {
     api.get('/topics', { params: { project_id: projectId, method, granularity } }),
   context: (entityId: string, projectId: string) => api.get(`/topics/${entityId}`, { params: { project_id: projectId } }),
   summarizeUrl: (entityId: string) => `${API_BASE}/api/topics/${entityId}/summarize`,
+  /** Stream an LLM summary of a topic node (server-sent events; see `lib/sse`).
+   *  `onText` receives the text so far as events arrive. Resolves with the full
+   *  summary only once the stream says `[DONE]`; rejects on an HTTP error, an
+   *  `{"error"}` event, a malformed payload, or a stream that stops early, so a
+   *  failure can never be mistaken for (or cached as) a summary. */
+  streamSummary: async (
+    entityId: string,
+    body: { project_id: string; level?: string },
+    onText?: (textSoFar: string) => void,
+  ): Promise<string> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const response = await fetch(topicsApi.summarizeUrl(entityId), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(`Summary request failed (${response.status}).`);
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('The summary response had no body.');
+
+    const decoder = new TextDecoder();
+    const parser = createSummaryStreamParser();
+    let text = '';
+    let finished = false;
+    const apply = (events: SummaryStreamEvent[]) => {
+      for (const event of events) {
+        if (event.type === 'error') throw new Error(event.message);
+        if (event.type === 'done') {
+          finished = true;
+          return;
+        }
+        text += event.text;
+        onText?.(text);
+      }
+    };
+    try {
+      while (!finished) {
+        const { done, value } = await reader.read();
+        if (done) {
+          apply(parser.push(decoder.decode()));
+          apply(parser.end());
+          break;
+        }
+        apply(parser.push(decoder.decode(value, { stream: true })));
+      }
+    } finally {
+      reader.cancel().catch(() => undefined);
+    }
+    if (!finished) throw new Error('The summary stream ended before it finished.');
+    return text;
+  },
 
   // Node editing
   updateNode: (nodeId: string, data: { project_id: string; name?: string; description?: string; parent_id?: string }) =>
