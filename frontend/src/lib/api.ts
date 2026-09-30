@@ -39,6 +39,23 @@ api.interceptors.response.use(
   }
 );
 
+/** Whether the signed-in user is an admin, per the role stored at login.
+ *  UI gating only: the backend enforces admin on every admin route, this just
+ *  keeps analysts from being offered buttons that can only 403. */
+export function isAdminSession(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem('auth_role') === 'admin';
+  } catch {
+    return false;
+  }
+}
+
+/** True for an axios error the backend answered with `status`. */
+export function isHttpStatus(error: unknown, status: number): boolean {
+  return axios.isAxiosError(error) && error.response?.status === status;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -277,7 +294,10 @@ export const attackApi = {
     api.post<{ mapped: number }>('/attack/resolve', null, { params: { project_id: projectId } }),
   // (Admin) Embed all ATT&CK techniques into pgvector for RAG mapping. One-time,
   // idempotent, and slow (~30-90s for 697 techniques).
-  embed: () => api.post<{ embedded: number }>('/attack/embed'),
+  // `embedded: 0` comes with a machine `reason` and a human `detail` saying why
+  // (no techniques ingested, no provider, rate-limited) — never read a bare 0
+  // as success.
+  embed: () => api.post<{ embedded: number; reason?: string; detail?: string }>('/attack/embed'),
   // RAG+LLM map the project's TTP entities that lack an explicit T-code. Slow for
   // many TTPs. Returns how many were mapped vs. skipped.
   map: (projectId: string) =>

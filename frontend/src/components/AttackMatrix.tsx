@@ -9,7 +9,10 @@ import {
   AttackReport,
   AttackTechniqueCell,
   AttackTechniqueDetail,
+  isAdminSession,
+  isHttpStatus,
 } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errorMessages';
 import { TYPE_BADGE_CLASS } from '@/lib/entityStyles';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import Markdown from '@/components/Markdown';
@@ -127,6 +130,12 @@ export default function AttackMatrix({
   const [downloading, setDownloading] = useState(false);
   const [showOnlyCovered, setShowOnlyCovered] = useState(false);
   const [expandedTechniques, setExpandedTechniques] = useState<Record<string, boolean>>({});
+  // Ingest, re-sync and embed are admin routes; analysts are not offered them.
+  // Read after mount: localStorage is not available during server render.
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    setIsAdmin(isAdminSession());
+  }, []);
 
   // Technique detail drawer
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -165,11 +174,18 @@ export default function AttackMatrix({
 
   async function handleIngest() {
     setIngesting(true);
+    setMapNote(null);
     try {
       await attackApi.ingest();
       await loadMatrix();
-    } catch {
-      setError(true);
+    } catch (e) {
+      // Report the failed action; the matrix itself loaded fine and must stay.
+      setMapNote({
+        text: isHttpStatus(e, 403)
+          ? 'Admin only: ask an administrator to load or re-sync the ATT&CK dataset.'
+          : `ATT&CK ingest failed: ${getErrorMessage(e)}`,
+        tone: 'warn',
+      });
     } finally {
       setIngesting(false);
     }
@@ -211,7 +227,9 @@ export default function AttackMatrix({
         // aren't embedded yet. Point the analyst at the one-time Embed step.
         setNeedsEmbed(true);
         setMapNote({
-          text: `No TTPs were mapped. If you haven't embedded techniques yet, run "Embed techniques" first, then map again.`,
+          text: isAdmin
+            ? `No TTPs were mapped. If you haven't embedded techniques yet, run "Embed techniques" first, then map again.`
+            : 'No TTPs were mapped. The ATT&CK techniques may not be embedded yet; ask an administrator to run "Embed techniques", then map again.',
           tone: 'warn',
         });
       } else {
@@ -231,13 +249,27 @@ export default function AttackMatrix({
     setMapNote(null);
     try {
       const res = await attackApi.embed();
-      setNeedsEmbed(false);
+      const { embedded, reason, detail } = res.data;
+      if (embedded > 0) {
+        setNeedsEmbed(false);
+        setMapNote({
+          text: `Embedded ${embedded} techniques. You can now map TTPs with AI.`,
+          tone: 'ok',
+        });
+      } else {
+        // A zero is a failure with a reason, not "done": nothing was embedded.
+        setMapNote({
+          text: `No techniques were embedded. ${detail || reason || 'Embedding produced no rows.'}`,
+          tone: 'warn',
+        });
+      }
+    } catch (e) {
       setMapNote({
-        text: `Embedded ${res.data.embedded} techniques. You can now map TTPs with AI.`,
-        tone: 'ok',
+        text: isHttpStatus(e, 403)
+          ? 'Admin only: ask an administrator to embed the ATT&CK techniques.'
+          : 'Embedding failed. Check the backend embedding provider and try again.',
+        tone: 'warn',
       });
-    } catch {
-      setMapNote({ text: 'Embedding failed. Check the backend embedding provider and try again.', tone: 'warn' });
     } finally {
       setEmbedding(false);
     }
@@ -449,16 +481,25 @@ export default function AttackMatrix({
           the full tactics-and-techniques matrix. This downloads the dataset server-side and may
           take up to a minute.
         </p>
-        <button
-          onClick={handleIngest}
-          disabled={ingesting}
-          className="mt-5 flex items-center gap-2 px-4 py-2.5 text-sm rounded-md font-medium transition-colors disabled:opacity-60"
-          style={{ backgroundColor: ACCENT, color: '#0e1321' }}
-          aria-label="Ingest MITRE ATT&CK data"
-        >
-          {ingesting && <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>}
-          {ingesting ? 'Ingesting ATT&CK data…' : 'Ingest ATT&CK data'}
-        </button>
+        {isAdmin ? (
+          <button
+            onClick={handleIngest}
+            disabled={ingesting}
+            className="mt-5 flex items-center gap-2 px-4 py-2.5 text-sm rounded-md font-medium transition-colors disabled:opacity-60"
+            style={{ backgroundColor: ACCENT, color: '#0e1321' }}
+            aria-label="Ingest MITRE ATT&CK data"
+          >
+            {ingesting && <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>}
+            {ingesting ? 'Ingesting ATT&CK data…' : 'Ingest ATT&CK data'}
+          </button>
+        ) : (
+          <p className="text-sm text-gray-400 mt-4">Ask an administrator to load the ATT&CK dataset.</p>
+        )}
+        {mapNote && (
+          <p role="status" className="text-xs mt-3" style={{ color: mapNote.tone === 'warn' ? '#fcd34d' : '#93c5fd' }}>
+            {mapNote.text}
+          </p>
+        )}
       </div>
     );
   }
@@ -544,7 +585,9 @@ export default function AttackMatrix({
           </button>
 
           {/* One-time admin: embed techniques into pgvector so AI mapping has
-              candidates. Highlighted when a map came back empty (likely un-embedded). */}
+              candidates. Highlighted when a map came back empty (likely un-embedded).
+              Embed and re-sync are admin routes, so analysts are not offered them. */}
+          {isAdmin && (<>
           <button
             onClick={handleEmbed}
             disabled={embedding}
@@ -575,6 +618,10 @@ export default function AttackMatrix({
             <span className={`material-symbols-outlined text-[14px] ${ingesting ? 'animate-spin' : ''}`}>sync</span>
             {ingesting ? 'Syncing…' : `Re-sync${matrix?.version ? ` • v${matrix.version}` : ''}`}
           </button>
+          </>)}
+          {!isAdmin && matrix?.version && (
+            <span className="px-1 text-[11px] text-gray-500">ATT&CK v{matrix.version}</span>
+          )}
         </div>
       </div>
 
