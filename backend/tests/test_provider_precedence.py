@@ -25,8 +25,15 @@ from intel_platform.llm.ollama import OllamaProvider
 def cfg(monkeypatch):
     """Pin every setting these functions read. Ambient config must not leak in:
     crawl4ai and litellm call load_dotenv() at import, which can pull a
-    developer's real .env into the environment mid-suite."""
-    from intel_platform.config import get_settings
+    developer's real .env into the environment mid-suite.
+
+    Pinned on the ``settings`` proxy as well as the Settings instance: a test
+    that ``monkeypatch.setattr``s the proxy leaves an attribute on it after
+    undo (restored by setting the value read through ``__getattr__``), and
+    that attribute shadows the instance for the rest of the run.
+    ``setitem`` on ``vars(proxy)`` deletes on undo what was not there.
+    """
+    from intel_platform.config import get_settings, settings as proxy
 
     s = get_settings()
 
@@ -34,6 +41,7 @@ def cfg(monkeypatch):
         base = dict(
             default_llm_provider="ollama", default_llm_model="qwen2.5:14b",
             collection_llm_provider="", collection_llm_model="",
+            collection_llm_preference="cloud-first",
             topics_llm_provider="", topics_llm_model="",
             ollama_base_url="http://ollama.test:11434",
             anthropic_api_key="", openai_api_key="", cohere_api_key="",
@@ -41,6 +49,7 @@ def cfg(monkeypatch):
         base.update(kw)
         for k, v in base.items():
             monkeypatch.setitem(s.__dict__, k, v)
+            monkeypatch.setitem(vars(proxy), k, v)
         return s
 
     monkeypatch.setitem(admin_config._llm_override, "provider", "")

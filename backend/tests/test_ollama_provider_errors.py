@@ -87,8 +87,21 @@ class TestGenerate:
         assert r.input_tokens == 3 and r.output_tokens == 1
 
 
+def _num_ctx_setting(monkeypatch, value=None):
+    """Pin (or remove) ollama_num_ctx on both the proxy and the instance, so
+    neither an ambient OLLAMA_NUM_CTX nor another test's residue decides it."""
+    from intel_platform.config import get_settings, settings as proxy
+
+    for d in (vars(proxy), get_settings().__dict__):
+        if value is None:
+            monkeypatch.delitem(d, "ollama_num_ctx", raising=False)
+        else:
+            monkeypatch.setitem(d, "ollama_num_ctx", value)
+
+
 class TestContextWindow:
-    async def test_num_ctx_defaults_to_16384(self):
+    async def test_num_ctx_defaults_to_16384(self, monkeypatch):
+        _num_ctx_setting(monkeypatch, None)
         seen: dict = {}
 
         def handler(req: httpx.Request) -> httpx.Response:
@@ -99,11 +112,9 @@ class TestContextWindow:
         assert seen["options"]["num_ctx"] == 16384
 
     async def test_num_ctx_follows_the_setting(self, monkeypatch):
-        from intel_platform.config import get_settings
-
         # Not yet a Settings field (config.py is another package's); the
-        # provider reads it with getattr, so plant it on the instance.
-        monkeypatch.setitem(get_settings().__dict__, "ollama_num_ctx", 8192)
+        # provider reads it with getattr, so plant it directly.
+        _num_ctx_setting(monkeypatch, 8192)
         seen: dict = {}
 
         def handler(req: httpx.Request) -> httpx.Response:
@@ -113,7 +124,8 @@ class TestContextWindow:
         await _provider(handler).generate(MSGS)
         assert seen["options"]["num_ctx"] == 8192
 
-    async def test_stream_sends_num_ctx_too(self):
+    async def test_stream_sends_num_ctx_too(self, monkeypatch):
+        _num_ctx_setting(monkeypatch, None)
         seen: dict = {}
 
         def handler(req: httpx.Request) -> httpx.Response:

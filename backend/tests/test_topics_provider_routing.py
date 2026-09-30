@@ -31,8 +31,12 @@ def cfg(monkeypatch):
     changes: crawl4ai and litellm call load_dotenv() at import, which can pull
     a developer's real .env (TOPICS_LLM_PROVIDER=ollama, say) into the process
     and made these tests order-dependent.
+
+    Pinned on the ``settings`` proxy as well as the Settings instance: a test
+    that ``monkeypatch.setattr``s the proxy leaves an attribute on it after
+    undo, which shadows the instance for the rest of the run.
     """
-    from intel_platform.config import get_settings
+    from intel_platform.config import get_settings, settings as proxy
 
     s = get_settings()
     monkeypatch.setitem(admin_config._llm_override, "provider", "")
@@ -47,6 +51,7 @@ def cfg(monkeypatch):
         base.update(kw)
         for k, v in base.items():
             monkeypatch.setitem(s.__dict__, k, v)
+            monkeypatch.setitem(vars(proxy), k, v)
         return s
     return _set
 
