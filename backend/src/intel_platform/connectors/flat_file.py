@@ -327,8 +327,11 @@ def parse_excel(raw: bytes, config: dict) -> AcquireResult:
         try:
             wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
         except (InvalidFileException, Exception) as e:
+            # The library's message describes its internals (archive members,
+            # zip structure), not the analyst's file; it goes to the log.
+            logger.info("Excel file could not be opened: %s", e)
             return AcquireResult(
-                success=False, error=f"Invalid Excel file: {e}")
+                success=False, error=f"Invalid Excel file ({type(e).__name__}); is it an .xlsx workbook?")
 
         sheet_names = wb.sheetnames
         sheet_name = config.get("sheet_name") or sheet_names[0]
@@ -988,8 +991,10 @@ class FlatFileConnector(SourceConnector):
             # event loop it stalls every request the API is serving meanwhile.
             return await asyncio.to_thread(_parse, file_bytes, file_format, config)
         except Exception as e:
+            # Unexpected, so the text is whatever the failing code said —
+            # paths, internals. Logged in full; the client gets the kind.
             logger.exception("Flat file parse error: %s", e)
-            return AcquireResult(success=False, error=str(e))
+            return AcquireResult(success=False, error=f"The file could not be parsed ({type(e).__name__}).")
 
 
 def _parse(file_bytes: bytes, file_format: str, config: dict[str, Any]) -> AcquireResult:

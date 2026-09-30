@@ -138,6 +138,27 @@ class TestNumbersAreNotFormulas:
             assert flat_file._sanitize_cell(value) == value, value
 
 
+class TestParseErrorsDoNotLeakInternals:
+    """An upload's error went back to the API client as raw exception text."""
+
+    async def test_an_unexpected_parser_error_is_described_not_quoted(self, monkeypatch):
+        def boom(raw, config):
+            raise RuntimeError("cannot open /srv/app/.cache/tmp-9f2c: permission denied")
+
+        monkeypatch.setattr(flat_file, "parse_csv", boom)
+        result = await FlatFileConnector().acquire({"file_bytes": b"a,b\n", "file_format": "csv"})
+
+        assert not result.success
+        assert "/srv/app" not in result.error
+        assert "RuntimeError" in result.error
+
+    def test_an_invalid_workbook_names_the_problem_not_the_library_message(self):
+        result = parse_excel(b"definitely not a zip archive", {})
+        assert not result.success
+        assert result.error.startswith("Invalid Excel file")
+        assert "is not a zip file" not in result.error, "the library's own message reached the client"
+
+
 class TestParsingLeavesTheEventLoop:
     async def test_acquire_parses_in_a_worker_thread(self, monkeypatch):
         seen = {}
