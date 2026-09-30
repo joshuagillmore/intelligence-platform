@@ -75,14 +75,14 @@ class TokenResponse(BaseModel):
 def login(req: LoginRequest, request: Request):
     from intel_platform.api.middleware import client_ip
     ip = client_ip(request)
-    check_login_rate_limit(ip)
+    check_login_rate_limit(ip, req.username)
 
     user = authenticate_user(req.username, req.password)
     if not user:
-        record_failed_login(ip)
+        record_failed_login(ip, req.username)
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    clear_failed_logins(ip)
+    clear_failed_logins(ip, req.username)
     token = create_access_token(user["username"], user["role"])
     return TokenResponse(
         access_token=token,
@@ -121,9 +121,9 @@ def change_password(
 
     from intel_platform.api.middleware import client_ip
     ip = client_ip(request)
-    check_login_rate_limit(ip)
+    check_login_rate_limit(ip, username)
     if not authenticate_user(username, req.current_password):
-        record_failed_login(ip)
+        record_failed_login(ip, username)
         # 403, not 401: the frontend treats 401 as an expired session and signs out.
         raise HTTPException(status_code=403, detail="Current password is incorrect")
     if req.new_password == req.current_password:
@@ -131,5 +131,5 @@ def change_password(
 
     if not set_password(username, req.new_password):
         raise HTTPException(status_code=404, detail="User not found")
-    clear_failed_logins(ip)
+    clear_failed_logins(ip, username)
     return {"status": "ok", "username": username}

@@ -11,20 +11,33 @@ logger = logging.getLogger("intel_platform.requests")
 def client_ip(request: Request) -> str:
     """Best-effort client IP for rate limiting / logging.
 
-    Honors the LEFTMOST X-Forwarded-For entry ONLY when TRUST_PROXY_HEADERS is
-    set (behind a trusted reverse proxy such as Railway). Without that, the
-    header is attacker-controlled and would let anyone evade per-IP limits by
-    sharing/spoofing it, so we fall back to the socket peer address.
+    Honors X-Forwarded-For ONLY when TRUST_PROXY_HEADERS is set, and then reads
+    it from the RIGHT: each proxy appends the address it received the request
+    from, so the entry TRUSTED_PROXY_HOPS from the end is the one the nearest
+    trusted proxy wrote. Everything to its left is whatever the client sent —
+    reading the leftmost entry let anyone choose their own address per request
+    and brute force the login without limit. A header with fewer entries than
+    the configured hops was not written by that chain, so it falls back to the
+    socket peer, as does an untrusted header.
     """
     from intel_platform.config import settings
 
-    if settings.trust_proxy_headers:
-        forwarded = request.headers.get("x-forwarded-for", "")
-        if forwarded:
-            first = forwarded.split(",")[0].strip()
-            if first:
-                return first
-    return request.client.host if request.client else "unknown"
+    peer = request.client.host if request.client else "unknown"
+    if not settings.trust_proxy_headers:
+        return peer
+    hops = int(getattr(settings, "trusted_proxy_hops", 1) or 0)
+    if hops < 1:
+        return peer
+    # A proxy may add its own header line instead of extending the existing one,
+    # so every line counts, in order.
+    entries = [
+        part.strip()
+        for line in request.headers.getlist("x-forwarded-for")
+        for part in line.split(",")
+    ]
+    if len(entries) < hops:
+        return peer
+    return entries[-hops] or peer
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):

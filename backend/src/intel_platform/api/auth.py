@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
 import time
-from collections import defaultdict
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -28,32 +28,59 @@ TOKEN_EXPIRE_HOURS = 24
 
 security = HTTPBearer(auto_error=False)
 
+# Failures are counted per username and per client address. Per username is what
+# stops guessing one account's password, and does not lock out everyone who
+# shares an address (every client behind an untrusted proxy does). Per address,
+# at a higher ceiling, is what stops one client spraying many usernames.
 MAX_LOGIN_ATTEMPTS = 5
+MAX_LOGIN_ATTEMPTS_PER_IP = 20
 LOGIN_LOCKOUT_SECONDS = 300
-_failed_logins: dict[str, list[float]] = defaultdict(list)
+# Every distinct spoofed address or invented username is a new key, so the table
+# has a hard size; the least recently failed keys are dropped first.
+_MAX_TRACKED_KEYS = 10_000
+_failed_logins: OrderedDict[str, list[float]] = OrderedDict()
 
 
-def check_login_rate_limit(client_ip: str) -> None:
-    """Block login attempts after too many failures from the same IP."""
+def _recent_failures(key: str, now: float) -> list[float]:
+    times = [t for t in _failed_logins.get(key, ()) if now - t < LOGIN_LOCKOUT_SECONDS]
+    if times:
+        _failed_logins[key] = times
+    else:
+        _failed_logins.pop(key, None)
+    return times
+
+
+def check_login_rate_limit(client_ip: str, username: str | None = None) -> None:
+    """Refuse a login attempt for a username, or from an address, that has failed too often."""
     now = time.time()
-    # Prune old entries
-    _failed_logins[client_ip] = [
-        t for t in _failed_logins[client_ip]
-        if now - t < LOGIN_LOCKOUT_SECONDS
-    ]
-    if len(_failed_logins[client_ip]) >= MAX_LOGIN_ATTEMPTS:
+    too_many = len(_recent_failures(f"ip:{client_ip}", now)) >= MAX_LOGIN_ATTEMPTS_PER_IP
+    if username is not None:
+        too_many = too_many or len(_recent_failures(f"user:{username}", now)) >= MAX_LOGIN_ATTEMPTS
+    if too_many:
         raise HTTPException(
             status_code=429,
             detail="Too many failed login attempts. Try again later.",
         )
 
 
-def record_failed_login(client_ip: str) -> None:
-    _failed_logins[client_ip].append(time.time())
+def record_failed_login(client_ip: str, username: str | None = None) -> None:
+    now = time.time()
+    keys = [f"ip:{client_ip}"] + ([f"user:{username}"] if username is not None else [])
+    for key in keys:
+        _failed_logins.setdefault(key, []).append(now)
+        _failed_logins.move_to_end(key)
+    while len(_failed_logins) > _MAX_TRACKED_KEYS:
+        _failed_logins.popitem(last=False)
 
 
-def clear_failed_logins(client_ip: str) -> None:
-    _failed_logins.pop(client_ip, None)
+def clear_failed_logins(client_ip: str, username: str | None = None) -> None:
+    """Forget a username's failures after it signs in successfully.
+
+    The address count is deliberately kept: clearing it on any success would let
+    a client holding one valid account reset its budget between sprays.
+    """
+    if username is not None:
+        _failed_logins.pop(f"user:{username}", None)
 
 
 def jwt_secret_problem(secret: str) -> str | None:

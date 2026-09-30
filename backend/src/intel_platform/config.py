@@ -25,8 +25,11 @@ class Settings(BaseSettings):
     # Trust X-Forwarded-For for the client IP used by rate limiting / login
     # throttling. OFF by default: only enable behind a trusted reverse proxy
     # (e.g. Railway), otherwise clients can spoof the header to evade limits.
-    # When on, the LEFTMOST X-Forwarded-For entry is used.
+    # When on, the entry trusted_proxy_hops from the RIGHT is used: the one the
+    # nearest trusted proxy appended. Set it to the number of proxies in front
+    # of the app (1 for Railway's edge alone).
     trust_proxy_headers: bool = False
+    trusted_proxy_hops: int = 1
     # Security hardening: when true, refuse to start with the built-in default
     # JWT secret / API key / admin password. Set REQUIRE_SECURE_AUTH=true on any
     # public or deployed instance.
