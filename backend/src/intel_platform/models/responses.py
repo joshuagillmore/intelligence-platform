@@ -63,3 +63,7 @@ class HealthResponse(BaseModel):
     neo4j_connected: bool
     ollama_connected: bool = False
     version: str = "0.1.0"
+    # "ok", or the reason embeddings cannot be stored (vector column width
+    # differs from EMBEDDING_DIMENSIONS). Not part of `status`: graph-only
+    # retrieval still works, but an operator must be able to see it.
+    embeddings: str = "ok"

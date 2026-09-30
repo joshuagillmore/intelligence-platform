@@ -187,7 +187,11 @@ class TopicTreeService:
 
     def _build_entity_branches(self, non_docs: list[dict], graph_data: dict) -> list[dict]:
         """Theme, type, geography and actor branches. CPU work: run off the loop."""
-        entity_map = {e.get("id", ""): e for e in non_docs}
+        # A project scan can hand back bookkeeping nodes (a Watchlist entry
+        # carries project_id but no entity id); they are not entities and
+        # must not take the whole tree down with a KeyError.
+        non_docs = [e for e in non_docs if e.get("id")]
+        entity_map = {e["id"]: e for e in non_docs}
 
         # Build NetworkX graph for community detection
         G = nx.Graph()

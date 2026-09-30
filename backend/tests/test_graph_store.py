@@ -89,3 +89,33 @@ def test_list_projects(graph_store):
     graph_store.create_project(name="Proj A", description="", classification_level="UNCLASSIFIED", priority="low")
     projects = graph_store.list_projects()
     assert len(projects) >= 1
+
+
+def test_bookkeeping_nodes_are_not_entities(graph_store):
+    """A Watchlist entry is stored as a node carrying project_id but no entity
+    id. The label-less project scan returned it from search_entities, and the
+    topic tree then died on ``e["id"]`` the moment an analyst watched anything.
+    Scans go through the :Entity label now, which bookkeeping nodes never get."""
+    from intel_platform.models.entities import Organization
+    from intel_platform.services.topics import TopicTreeService
+
+    pid = "test-proj-bookkeeping"
+    org = Organization(name="Volt Typhoon", project_id=pid)
+    graph_store.create_entity(org)
+    with graph_store._driver.session() as session:
+        session.run(
+            "MERGE (w:Watchlist {project_id: $pid, entity_id: $eid}) ON CREATE SET w.created_at = datetime()",
+            pid=pid, eid=org.id,
+        )
+
+    found = graph_store.search_entities(project_id=pid, limit=100)
+    assert [e["name"] for e in found] == ["Volt Typhoon"]
+    assert graph_store.get_project_stats(pid)["entity_count"] == 1
+
+    # Belt and braces: even an id-less dict must not take the tree down.
+    svc = TopicTreeService(graph_store)
+    branches = svc._build_entity_branches(
+        [dict(org.model_dump()), {"project_id": pid, "entity_id": org.id}],
+        graph_store.get_full_graph(project_id=pid, limit=100),
+    )
+    assert isinstance(branches, list)

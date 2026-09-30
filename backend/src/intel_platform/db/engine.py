@@ -62,6 +62,55 @@ _DATA_REPAIRS = (
 )
 
 
+# Set by init_db when the vector columns in Postgres were created at a
+# different width from EMBEDDING_DIMENSIONS. Read by /health. A width mismatch
+# does not stop the app (graph-only retrieval still works) but every embedding
+# insert fails, so it must be visible somewhere other than a log line.
+VECTOR_WIDTH_PROBLEM: str | None = None
+
+
+def vector_width_problem(configured: int, actual: dict[str, int | None]) -> str | None:
+    """Describe a mismatch between the configured embedding width and the
+    columns that exist, or None when they agree.
+
+    ``actual`` maps table name -> the column's declared vector width (None when
+    the table or column is absent, which is not a mismatch).
+    """
+    wrong = {t: w for t, w in actual.items() if w is not None and w != configured}
+    if not wrong:
+        return None
+    cols = ", ".join(f"{t}.embedding is vector({w})" for t, w in sorted(wrong.items()))
+    return (
+        f"EMBEDDING_DIMENSIONS={configured} but {cols}. Every embedding insert will fail "
+        f"until they agree: set EMBEDDING_DIMENSIONS to the column width, or (on an empty "
+        f"table) ALTER COLUMN embedding TYPE vector({configured})."
+    )
+
+
+async def _check_vector_width(logger) -> None:
+    """Compare the live vector columns with the configured width."""
+    global VECTOR_WIDTH_PROBLEM
+    from sqlalchemy import text
+    from intel_platform.config import get_settings
+    from intel_platform.db.models import Base
+
+    tables = [t.name for t in Base.metadata.sorted_tables if _uses_pgvector(t)]
+    if not tables:
+        return
+    actual: dict[str, int | None] = {}
+    async with get_engine().connect() as conn:
+        for name in tables:
+            row = (await conn.execute(text(
+                "SELECT atttypmod FROM pg_attribute WHERE attrelid = to_regclass(:tbl) "
+                "AND attname = 'embedding' AND NOT attisdropped"
+            ), {"tbl": name})).first()
+            # pgvector stores the dimension count directly in atttypmod.
+            actual[name] = int(row[0]) if row and row[0] is not None and row[0] > 0 else None
+    VECTOR_WIDTH_PROBLEM = vector_width_problem(get_settings().embedding_dimensions, actual)
+    if VECTOR_WIDTH_PROBLEM:
+        logger.error(VECTOR_WIDTH_PROBLEM)
+
+
 def _uses_pgvector(table) -> bool:
     try:
         from pgvector.sqlalchemy import Vector
@@ -99,6 +148,12 @@ async def init_db():
         )
     async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all, tables=tables)
+
+    if vector_ok:
+        try:
+            await _check_vector_width(logger)
+        except Exception as exc:
+            logger.warning("Could not verify vector column width: %s", exc)
 
     # Each statement runs in its own transaction: a failure in Postgres aborts the
     # whole transaction, so one bad statement must not take the others with it.

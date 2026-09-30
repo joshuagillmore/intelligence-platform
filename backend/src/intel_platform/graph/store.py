@@ -194,7 +194,7 @@ class GraphStore:
         with self._driver.session() as session:
             result = session.run(
                 """
-                MATCH (n) WHERE n.project_id = $project_id AND (
+                MATCH (n:Entity) WHERE n.project_id = $project_id AND (
                     n.entity_category = 'Location' OR n.entity_type = 'Location'
                     OR (n.latitude IS NOT NULL AND n.longitude IS NOT NULL)
                     OR (n.entity_type = 'IPAddress' AND n.geolocation IS NOT NULL AND n.geolocation <> '')
@@ -214,7 +214,7 @@ class GraphStore:
         the fulltext top-N can miss a high-frequency name like "Russia", which
         would spawn duplicate roll-up nodes. Optional entity_type narrows it.
         """
-        cypher = "MATCH (n) WHERE n.project_id = $project_id AND toLower(n.name) = toLower($name)"
+        cypher = "MATCH (n:Entity) WHERE n.project_id = $project_id AND toLower(n.name) = toLower($name)"
         params: dict = {"project_id": project_id, "name": name}
         if entity_type:
             cypher += " AND n.entity_type = $entity_type"
@@ -231,7 +231,7 @@ class GraphStore:
         it accompanies — the count is what tells the analyst the list is
         truncated, and a count of something else would be worse than none.
         """
-        cypher = "MATCH (n) WHERE n.project_id = $project_id"
+        cypher = "MATCH (n:Entity) WHERE n.project_id = $project_id"
         params: dict = {"project_id": project_id}
         if entity_type:
             cypher += " AND n.entity_type = $entity_type"
@@ -257,7 +257,7 @@ class GraphStore:
         self, project_id: str, query: str = "", entity_type: str | None = None,
         limit: int = 50, offset: int = 0,
     ) -> list[dict]:
-        cypher = "MATCH (n) WHERE n.project_id = $project_id"
+        cypher = "MATCH (n:Entity) WHERE n.project_id = $project_id"
         params: dict = {"project_id": project_id, "limit": limit, "offset": offset}
         if entity_type:
             cypher += " AND n.entity_type = $entity_type"
@@ -631,7 +631,7 @@ class GraphStore:
             # truncated one without a separate count.
             nodes_result = session.run(
                 """
-                MATCH (n) WHERE n.project_id = $project_id
+                MATCH (n:Entity) WHERE n.project_id = $project_id
                 OPTIONAL MATCH (n)-[r]-()
                 WITH n, count(r) AS degree
                 ORDER BY degree DESC, n.id
@@ -770,7 +770,7 @@ class GraphStore:
         with self._driver.session() as session:
             result = session.run(
                 """
-                MATCH (n {project_id: $pid}) WHERE NOT n:Project AND n.created_at IS NOT NULL
+                MATCH (n:Entity {project_id: $pid}) WHERE NOT n:Project AND n.created_at IS NOT NULL
                 RETURN n.created_at as created_at ORDER BY n.created_at DESC LIMIT 1
                 """,
                 pid=project_id,
@@ -787,7 +787,7 @@ class GraphStore:
         with self._driver.session() as session:
             result = session.run(
                 """
-                OPTIONAL MATCH (n {project_id: $pid}) WHERE NOT n:Project
+                OPTIONAL MATCH (n:Entity {project_id: $pid}) WHERE NOT n:Project
                 WITH count(n) as entity_count
                 OPTIONAL MATCH (d:Document {project_id: $pid})
                 WITH entity_count, count(d) as doc_count

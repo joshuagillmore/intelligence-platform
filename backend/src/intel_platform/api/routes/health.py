@@ -99,4 +99,9 @@ def health_check():
     else:
         status = "degraded"
 
-    return HealthResponse(status=status, neo4j_connected=neo4j_ok, ollama_connected=ollama_ok)
+    from intel_platform.db import engine as db_engine
+
+    return HealthResponse(
+        status=status, neo4j_connected=neo4j_ok, ollama_connected=ollama_ok,
+        embeddings=db_engine.VECTOR_WIDTH_PROBLEM or "ok",
+    )
