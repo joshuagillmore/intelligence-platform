@@ -46,10 +46,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    # <1.4: 1.4 stops leaving a current event loop after async tests, and 13 test
-    # files still call asyncio.get_event_loop().run_until_complete (65 failures).
-    # Lift once those are converted to async tests.
-    "pytest-asyncio>=0.23,<1.4",
+    "pytest-asyncio>=0.23",
     "httpx>=0.27",
     "ruff>=0.4",
 ]
