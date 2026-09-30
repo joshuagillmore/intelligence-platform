@@ -2,7 +2,19 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from intel_platform.collection import agentic
+from intel_platform.collection.proxy import ProxyConfig
+
+
+@pytest.fixture(autouse=True)
+def direct_mode(monkeypatch):
+    """Pin the proxy mode: reading it from an absent Postgres cost 60 s a test."""
+    async def _direct():
+        return ProxyConfig(mode="direct")
+
+    monkeypatch.setattr("intel_platform.collection.proxy.get_active_proxy_config", _direct)
 
 
 def _src(source_type="web_scrape"):
