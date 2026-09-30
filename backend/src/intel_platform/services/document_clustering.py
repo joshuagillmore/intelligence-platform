@@ -899,22 +899,24 @@ async def refine_labels_with_llm(
                     temperature=0.2,
                     max_tokens=256,
                 )
-            content = result.content.strip()
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0]
+            # The first JSON object in the reply, however it is presented
+            # (fenced, after a sentence, behind a bold label). `{}` = none.
+            from intel_platform.services.llm_output import json_object
 
-            import json
-            data = json.loads(content.strip())
-            llm_name = data.get("topic_name", "").strip()
-            llm_summary = data.get("summary", "").strip()
-
-            if llm_name:
-                node["llm_label"] = llm_name
-                node["name"] = llm_name
-            if llm_summary:
-                node["summary"] = llm_summary
+            data = json_object(result.content or "")
+            llm_name = data.get("topic_name") if data else None
+            if not isinstance(llm_name, str) or not llm_name.strip():
+                # No name is not a refinement. Counting it as one let a tree of
+                # keyword labels report label_source "llm".
+                logger.warning("Topic label refinement for node %s returned no topic_name", node.get("id"))
+                failed.append(node.get("id"))
+                return
+            llm_name = llm_name.strip()
+            node["llm_label"] = llm_name
+            node["name"] = llm_name
+            llm_summary = data.get("summary")
+            if isinstance(llm_summary, str) and llm_summary.strip():
+                node["summary"] = llm_summary.strip()
             refined.append(node.get("id"))
         except Exception as exc:
             # Keep the keyword label, but say so — a swallowed exception here
