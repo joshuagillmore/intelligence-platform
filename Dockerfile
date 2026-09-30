@@ -32,6 +32,18 @@ RUN uv sync --no-dev --locked
 # prunes it. start.sh uses `uv run`, which does not prune — verified.
 RUN uv pip install --python .venv/bin/python https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 
+# Chromium for crawl4ai's headless crawler (collection/crawler.py). Without it
+# every crawl fails at browser launch. Installed explicitly through playwright
+# so a failed download fails the build: crawl4ai-setup catches the error from
+# its own playwright call and only logs a warning, so on its own it can exit 0
+# with no browser. CRAWL4AI_MODE=api then skips setup's second (--force)
+# chromium download and its patchright install (the crawler never uses
+# undetected mode), leaving only its home-directory and database init.
+# PLAYWRIGHT_BROWSERS_PATH is a shared location rather than root's ~/.cache,
+# and is read again at runtime to find the browser.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+RUN .venv/bin/playwright install --with-deps chromium     && CRAWL4AI_MODE=api .venv/bin/crawl4ai-setup
+
 # Copy frontend standalone build
 COPY --from=frontend-build /app/frontend/.next/standalone /app/frontend-server
 COPY --from=frontend-build /app/frontend/.next/static /app/frontend-server/.next/static
