@@ -1,6 +1,22 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from intel_platform.collection.proxy import ProxyConfig
+
+# IP-literal hosts: they resolve to themselves, so the SSRF pre-filter vets them
+# without a DNS query and these tests make no network request.
+GOOD = "https://93.184.216.34/good"
+BAD = "https://93.184.216.35/bad"
+
+
+@pytest.fixture(autouse=True)
+def direct_mode(monkeypatch):
+    """Pin the proxy mode so crawl_urls does not wait on Postgres to read it."""
+    async def _direct():
+        return ProxyConfig(mode="direct")
+
+    monkeypatch.setattr("intel_platform.collection.crawler.get_active_proxy_config", _direct)
+
 
 @pytest.mark.asyncio
 async def test_crawl_urls_returns_documents():
@@ -8,7 +24,8 @@ async def test_crawl_urls_returns_documents():
 
     mock_result = MagicMock()
     mock_result.success = True
-    mock_result.url = "https://example.com"
+    mock_result.url = GOOD
+    mock_result.redirected_url = GOOD
     mock_result.markdown = MagicMock()
     mock_result.markdown.raw_markdown = "# Hello World\nSome content here."
     mock_result.markdown.fit_markdown = "Some content here."
@@ -22,10 +39,10 @@ async def test_crawl_urls_returns_documents():
         instance.__aexit__ = AsyncMock(return_value=False)
         instance.arun_many = AsyncMock(return_value=[mock_result])
 
-        docs = await crawl_urls(["https://example.com"])
+        docs = await crawl_urls([GOOD])
 
     assert len(docs) == 1
-    assert docs[0]["url"] == "https://example.com"
+    assert docs[0]["url"] == GOOD
     assert docs[0]["title"] == "Example Page"
     assert "content" in docs[0]
     assert docs[0]["word_count"] > 0
@@ -37,7 +54,8 @@ async def test_crawl_urls_skips_failures():
 
     success = MagicMock()
     success.success = True
-    success.url = "https://good.com"
+    success.url = GOOD
+    success.redirected_url = GOOD
     success.markdown = MagicMock()
     success.markdown.raw_markdown = "Good content"
     success.markdown.fit_markdown = "Good content"
@@ -47,7 +65,7 @@ async def test_crawl_urls_skips_failures():
 
     failure = MagicMock()
     failure.success = False
-    failure.url = "https://bad.com"
+    failure.url = BAD
     failure.error_message = "Timeout"
 
     with patch("intel_platform.collection.crawler.AsyncWebCrawler") as MockCrawler:
@@ -56,10 +74,10 @@ async def test_crawl_urls_skips_failures():
         instance.__aexit__ = AsyncMock(return_value=False)
         instance.arun_many = AsyncMock(return_value=[success, failure])
 
-        docs = await crawl_urls(["https://good.com", "https://bad.com"])
+        docs = await crawl_urls([GOOD, BAD])
 
     assert len(docs) == 1
-    assert docs[0]["url"] == "https://good.com"
+    assert docs[0]["url"] == GOOD
 
 
 @pytest.mark.asyncio

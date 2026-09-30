@@ -8,6 +8,7 @@ security watch-out for this repo.
 """
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
 import socket
@@ -69,6 +70,41 @@ def is_safe_url(url: str) -> bool:
     """Non-raising form of :func:`validate_url` for filtering batches of URLs."""
     try:
         validate_url(url)
+        return True
+    except ValueError:
+        return False
+
+
+async def validate_url_async(url: str) -> None:
+    """:func:`validate_url` for coroutines: the lookup runs off the event loop.
+
+    `socket.getaddrinfo` blocks, and the browser's request hook calls this for
+    every request a page makes, so resolving inline would stall every other
+    request the API is serving.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Unsupported URL scheme: {parsed.scheme}")
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("URL has no hostname")
+    if hostname in _BLOCKED_HOSTNAMES:
+        raise ValueError("URLs pointing to internal services are not allowed")
+
+    loop = asyncio.get_running_loop()
+    try:
+        resolved_ips = await loop.getaddrinfo(hostname, None, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        return  # DNS failure — let the fetcher surface the error
+    for _family, _type, _proto, _canonname, sockaddr in resolved_ips:
+        if _is_private_ip(sockaddr[0]):
+            raise ValueError("URL resolves to a private/internal IP address")
+
+
+async def is_safe_url_async(url: str) -> bool:
+    """Non-raising form of :func:`validate_url_async`."""
+    try:
+        await validate_url_async(url)
         return True
     except ValueError:
         return False
