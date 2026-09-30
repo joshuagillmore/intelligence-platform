@@ -468,6 +468,11 @@ async def _acquire_urls_concurrent(connector, config, urls, *, db, plan, source,
             single_config = {**config, "url": url}
             try:
                 r = await connector.acquire(single_config)
+                if getattr(r, "success", True) is False and not (r.records or []):
+                    # Connectors report a failed fetch by returning, not
+                    # raising. Treated as "fetched, 0 records", the reason —
+                    # an SSRF refusal, a timeout — never reached the trail.
+                    raise RuntimeError(getattr(r, "error", "") or "fetch failed")
                 recs = r.records or []
                 words = sum(len((rec.get("content", "") or "").split()) for rec in recs)
                 async with db_lock:

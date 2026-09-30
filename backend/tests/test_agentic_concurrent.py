@@ -188,6 +188,30 @@ class TestAcquireUrlsConcurrent:
         assert connector.max_active == 1
 
 
+class TestAReturnedFailureIsAFailure:
+    """WebScrapeConnector returns success=False rather than raising. The fan-out
+    only looked for exceptions, so a page the SSRF guard refused was logged as
+    "url_fetched · 0 rec" and its reason (redirect_unsafe) never reached the
+    trail."""
+
+    async def test_unsuccessful_result_is_logged_as_failed_with_its_reason(self):
+        from intel_platform.connectors.base import AcquireResult
+
+        class Refusing:
+            async def acquire(self, config):
+                return AcquireResult(success=False, error=f"Rejected {config['url']}: redirect_unsafe")
+
+        db = FakeDB()
+        plan, source = _make_plan_source()
+        records, errors = await _acquire_urls_concurrent(
+            Refusing(), {}, ["https://a.example.com/"], db=db, plan=plan, source=source, concurrency=2,
+        )
+
+        assert records == []
+        assert len(errors) == 1 and "redirect_unsafe" in errors[0]
+        assert _events(db) == ["url_fetching", "url_failed"]
+
+
 class TestFanOutWithTheRealConnectors:
     """The fan-out hands each URL to the connector as `{**config, "url": u}`.
 
