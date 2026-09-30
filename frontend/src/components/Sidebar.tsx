@@ -3,8 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
-import { clearAllAssistantThreads } from '@/lib/AssistantContext';
-import { collectionsApi, watchlistApi, healthApi } from '@/lib/api';
+import { collectionsApi, watchlistApi, healthApi, clearSession } from '@/lib/api';
 import { useNotifications, useNotificationCount } from '@/components/NotificationProvider';
 import { APP_NAME, APP_VERSION } from '@/lib/branding';
 import { readHealth, type HealthLevel } from '@/lib/health';
@@ -149,14 +148,10 @@ export default function Sidebar() {
   }
 
   function handleSignOut() {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
-    localStorage.removeItem('auth_role');
-    // Assistant threads hold RAG answers and verbatim source-document
-    // excerpts — analyst content that must not outlive the session on a
-    // shared workstation. Drop the selected project with them.
-    clearAllAssistantThreads();
-    localStorage.removeItem('activeProject');
+    // Token, identity, selected project and assistant threads (RAG answers,
+    // verbatim excerpts) must not outlive the session on a shared workstation.
+    // The full navigation also drops the in-memory copies.
+    clearSession();
     window.location.href = '/login';
   }
 

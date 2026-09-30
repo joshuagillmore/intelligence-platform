@@ -23,18 +23,49 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+/** Keys that belong to one analyst's session. */
+const SESSION_KEYS = ['auth_token', 'auth_user', 'auth_role', 'activeProject'];
+/** Per-project assistant threads (see `AssistantContext`): RAG answers and
+ *  verbatim source-document excerpts. */
+const ASSISTANT_THREAD_PREFIX = 'assistant_thread:';
+
+/**
+ * Forget everything the current analyst's session left in this browser: the
+ * token and identity, the selected project, and every assistant thread. Called
+ * on sign-out, on a 401, and before storing a new login, because workstations
+ * are shared and none of it may carry over to the next analyst. Per-browser
+ * display preferences (layout choices) are kept.
+ */
+export function clearSession(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const storage = window.localStorage;
+    const threads: string[] = [];
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (key && key.startsWith(ASSISTANT_THREAD_PREFIX)) threads.push(key);
+    }
+    for (const key of [...SESSION_KEYS, ...threads]) storage.removeItem(key);
+  } catch {
+    /* storage unavailable (private mode, blocked site data): nothing to clear */
+  }
+}
+
+/** A 401 means the session is over: clear it and send the analyst to log in. */
+function handleUnauthorized(): void {
+  if (typeof window === 'undefined') return;
+  clearSession();
+  // Only redirect if not already on login page
+  if (!window.location.pathname.includes('/login')) {
+    window.location.href = '/login';
+  }
+}
+
 // Redirect to login on 401
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('auth_user');
-      // Only redirect if not already on login page
-      if (!window.location.pathname.includes('/login')) {
-        window.location.href = '/login';
-      }
-    }
+    if (error.response?.status === 401) handleUnauthorized();
     return Promise.reject(error);
   }
 );
@@ -781,6 +812,7 @@ export const topicsApi = {
       },
       body: JSON.stringify(body),
     });
+    if (response.status === 401) handleUnauthorized();
     if (!response.ok) throw new Error(`Summary request failed (${response.status}).`);
     const reader = response.body?.getReader();
     if (!reader) throw new Error('The summary response had no body.');

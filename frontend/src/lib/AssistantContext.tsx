@@ -99,6 +99,8 @@ const AssistantContext = createContext<AssistantContextValue>({
 
 /** Keep stored threads small — localStorage is a shared 5MB budget. */
 const MAX_STORED_MESSAGES = 40;
+// `clearSession()` in lib/api removes every key with this prefix at sign-out,
+// on a 401 and at login; keep the two in step.
 const STORAGE_PREFIX = 'assistant_thread:';
 
 function storageKey(projectId: string | null): string {
@@ -136,15 +138,6 @@ function pruneThreads(keepKey?: string) {
       if (key.startsWith(STORAGE_PREFIX) && key !== keepKey) localStorage.removeItem(key);
     }
   } catch { /* storage unavailable */ }
-}
-
-/**
- * Drop every persisted assistant thread. Called on logout — these threads hold
- * RAG answers and verbatim source-document excerpts, which must not outlive the
- * session on a shared analyst workstation.
- */
-export function clearAllAssistantThreads() {
-  pruneThreads();
 }
 
 function writeThread(projectId: string | null, messages: AssistantMessage[]) {
