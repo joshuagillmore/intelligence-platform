@@ -454,6 +454,62 @@ async def _no_sleep(*_a, **_kw):
 
 
 # ---------------------------------------------------------------------------
+# Contract 15: blocking work leaves the event loop; contract 17: dropped
+# attributes are logged
+# ---------------------------------------------------------------------------
+
+class TestBlockingWorkLeavesTheLoop:
+    """The sync Neo4j driver and spaCy ran on the API's event loop: one 40-edge
+    document stalled /health and every other request while it was written."""
+
+    async def test_store_extraction_and_graph_build_run_in_threads(self, monkeypatch, caplog):
+        import logging
+        import threading
+
+        from intel_platform.connectors.base import AcquireResult
+
+        threads: dict[str, object] = {}
+
+        class Connector:
+            async def acquire(self, config):
+                page = {"url": "https://example.org/report", "title": "Report", "content": REPORT}
+                return AcquireResult(success=True, record_count=1, records=[page])
+
+        def nlp(text, doc_id):
+            threads["nlp"] = threading.current_thread()
+            return [{"name": "Fordow", "entity_type": "Facility"}], []
+
+        def build(store, ents, rels, project_id, source_doc_id=None):
+            threads["build"] = threading.current_thread()
+            return {"entities_created": 1, "relationships_created": 0, "dropped_attributes": 2}
+
+        async def no_embed(chunks, doc_id, project_id, db):
+            return 0
+
+        def create_entity(entity):
+            threads["store"] = threading.current_thread()
+
+        monkeypatch.setattr(agentic, "get_connector", lambda t: Connector())
+        monkeypatch.setattr(agentic, "rejection_reason", lambda url, content, title="": "")
+        monkeypatch.setattr("intel_platform.services.extraction.extract_entities_nlp", nlp)
+        monkeypatch.setattr(agentic, "build_graph_from_extractions", build)
+        monkeypatch.setattr("intel_platform.services.vector_search.embed_and_store_chunks", no_embed)
+        source = _source("api_feed", {"base_url": "https://example.org/api"})
+
+        with caplog.at_level(logging.WARNING, logger="intel_platform.collection.agentic"):
+            out = await agentic.acquire_source(
+                source, _plan([source]), FakeSession(None), SimpleNamespace(create_entity=create_entity), "nlp",
+            )
+
+        main = threading.main_thread()
+        assert threads["store"] is not main
+        assert threads["nlp"] is not main
+        assert threads["build"] is not main
+        assert out["entities_created"] == 1
+        assert any("dropped" in r.getMessage() and "2" in r.getMessage() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
 # R-12: the loop honours PAUSED / ARCHIVED and never writes over them
 # ---------------------------------------------------------------------------
 

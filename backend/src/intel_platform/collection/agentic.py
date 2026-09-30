@@ -215,7 +215,8 @@ async def _extract_entities(text: str, doc_id: str, mode: str):
     elif mode == "hybrid":
         from intel_platform.services.extraction import extract_entities_hybrid
         return await extract_entities_hybrid(text, doc_id)
-    return extract_entities_nlp(text, doc_id)
+    # spaCy is CPU-bound and synchronous; on the loop it stalls every request.
+    return await asyncio.to_thread(extract_entities_nlp, text, doc_id)
 
 
 async def _structured_generate(provider, messages, system, expected_keys=None, max_retries=3, errors=None):
@@ -687,7 +688,8 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
             project_id=plan.project_id,
             summary_json=summary_json,
         )
-        store.create_entity(doc)
+        # The Neo4j driver is synchronous: every store call leaves the loop.
+        await asyncio.to_thread(store.create_entity, doc)
         accepted += 1
 
         # Chunk and extract
@@ -761,12 +763,20 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
         await db.commit()
 
         if all_entities or all_rels:
-            build_result = build_graph_from_extractions(
+            build_result = await asyncio.to_thread(
+                build_graph_from_extractions,
                 store, all_entities, all_rels, plan.project_id,
                 source_doc_id=doc.id,
             )
             total_entities += build_result.get("entities_created", 0)
             total_rels += build_result.get("relationships_created", 0)
+            dropped = build_result.get("dropped_attributes", 0)
+            if dropped:
+                # Invalid model-emitted attributes are dropped field by field
+                # rather than failing the document's graph build.
+                logger.warning(
+                    "Graph build for %s dropped %d invalid attribute value(s)", doc_label, dropped,
+                )
 
         # Embed the chunks for semantic search. This step existed only on the
         # plan_executor path, which is not the one collections actually run —

@@ -196,6 +196,37 @@ class TestLegacyRunnerStatus:
         assert result["status"] == "SUCCESS"
         assert _status(graph_store, cid) == "SUCCESS"
 
+    async def test_blocking_work_runs_off_the_event_loop(self, graph_store, monkeypatch):
+        import threading
+
+        cid = _collection(graph_store)
+        threads = {}
+
+        def search(description, max_results=10, proxy=None):
+            threads["search"] = threading.current_thread()
+            return [{"url": PAGE["url"]}]
+
+        def nlp(text, doc_id):
+            threads["nlp"] = threading.current_thread()
+            return [], []
+
+        original_create = graph_store.create_entity
+
+        def create_entity(entity):
+            threads["store"] = threading.current_thread()
+            return original_create(entity)
+
+        monkeypatch.setattr(graph_store, "create_entity", create_entity)
+        with patch("intel_platform.collection.runner.web_search", side_effect=search), \
+             patch("intel_platform.collection.runner.crawl_urls", new=AsyncMock(return_value=[PAGE])), \
+             patch("intel_platform.collection.runner.extract_entities_nlp", side_effect=nlp):
+            await CollectionRunner(graph_store).execute(cid, "test-legacy-runner", _items(1))
+
+        main = threading.main_thread()
+        assert threads["search"] is not main, "web_search sleeps on rate limits"
+        assert threads["nlp"] is not main
+        assert threads["store"] is not main
+
     async def test_content_is_bounded_by_max_document_chars(self, graph_store, monkeypatch):
         monkeypatch.setattr(settings, "max_document_chars", 100)
         cid = _collection(graph_store)

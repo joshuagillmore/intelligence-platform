@@ -9,6 +9,7 @@ Kept for backwards compatibility — new code should use /collection-plans.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -194,7 +195,8 @@ async def execute_collection(
     store: GraphStore = Depends(get_graph_store),
 ):
     """Execute an approved collection plan: search -> crawl -> ingest -> extract."""
-    coll = get_collection(task_id, store)
+    # An async handler: the sync Neo4j read runs in a thread, not on the loop.
+    coll = await asyncio.to_thread(get_collection, task_id, store)
     if task_id in _running_collections:
         raise HTTPException(status_code=409, detail="Collection is already running")
 
@@ -213,14 +215,7 @@ async def execute_collection(
             )
         except Exception:
             logger.exception("Collection execution failed: %s", task_id)
-            now = datetime.now(timezone.utc).isoformat()
-            with store._driver.session() as session:
-                session.run(
-                    "MATCH (c:Collection {id: $id}) "
-                    "SET c.status = CASE WHEN c.status = 'REVOKED' THEN c.status ELSE 'FAILURE' END, "
-                    "c.updated_at = $now",
-                    id=task_id, now=now,
-                )
+            await asyncio.to_thread(_mark_failed, store, task_id)
         finally:
             _running_collections.discard(task_id)
 
@@ -228,6 +223,18 @@ async def execute_collection(
     background_tasks.add_task(_run)
 
     return {"collection_id": task_id, "status": "STARTED"}
+
+
+def _mark_failed(store: GraphStore, task_id: str) -> None:
+    """Record a crashed run as FAILURE, unless the analyst cancelled it."""
+    now = datetime.now(timezone.utc).isoformat()
+    with store._driver.session() as session:
+        session.run(
+            "MATCH (c:Collection {id: $id}) "
+            "SET c.status = CASE WHEN c.status = 'REVOKED' THEN c.status ELSE 'FAILURE' END, "
+            "c.updated_at = $now",
+            id=task_id, now=now,
+        )
 
 
 @router.get("/collections/{task_id}/progress")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -35,7 +36,9 @@ class CollectionRunner:
         on_progress: callable = None,
     ) -> dict:
         # A new run replaces whatever an earlier one left, including REVOKED.
-        self._update_status(collection_id, "STARTED", new_run=True)
+        # Every store call here is the sync Neo4j driver, so it runs in a
+        # thread: on the loop it stalls every request the API is serving.
+        await asyncio.to_thread(self._update_status, collection_id, "STARTED", new_run=True)
         approved_items = [item for item in plan if item.get("approved", False)]
         total_items = len(approved_items)
 
@@ -54,7 +57,7 @@ class CollectionRunner:
         for idx, item in enumerate(approved_items):
             # Cancel sets REVOKED; before this check nothing read it, so every
             # item still ran and SUCCESS was written over the cancellation.
-            if self._read_status(collection_id) == REVOKED:
+            if await asyncio.to_thread(self._read_status, collection_id) == REVOKED:
                 cancelled = True
                 logger.info("Collection %s cancelled after %d of %d item(s)", collection_id, idx, total_items)
                 break
@@ -65,8 +68,8 @@ class CollectionRunner:
             item_docs = 0
 
             try:
-                # Stage 1: Search
-                urls = self._search_for_item(item_desc, source_type, proxy_url)
+                # Stage 1: Search (sync, and it sleeps on rate limits)
+                urls = await asyncio.to_thread(self._search_for_item, item_desc, source_type, proxy_url)
                 all_urls.extend(urls)
 
                 # Stage 2: Crawl
@@ -98,8 +101,8 @@ class CollectionRunner:
 
             # Update progress
             progress = (idx + 1) / total_items if total_items > 0 else 1.0
-            self._update_status(
-                collection_id, "PROGRESS",
+            await asyncio.to_thread(
+                self._update_status, collection_id, "PROGRESS",
                 progress=progress, documents_acquired=total_docs_crawled,
             )
             if on_progress:
@@ -114,8 +117,8 @@ class CollectionRunner:
         else:
             status = "SUCCESS"
 
-        self._update_status(
-            collection_id, status,
+        await asyncio.to_thread(
+            self._update_status, collection_id, status,
             progress=1.0 if status != REVOKED else (items_run / total_items if total_items else 1.0),
             documents_acquired=total_docs_crawled,
         )
@@ -158,7 +161,7 @@ class CollectionRunner:
             project_id=project_id,
             source_doc_id=collection_id,
         )
-        self._store.create_entity(doc)
+        await asyncio.to_thread(self._store.create_entity, doc)
 
         chunks = ingest_text(content, chunk_size=settings.chunk_size, overlap=settings.chunk_overlap)
 
@@ -172,13 +175,20 @@ class CollectionRunner:
                 from intel_platform.services.extraction import extract_entities_hybrid
                 ents, rels = await extract_entities_hybrid(chunk["content"], doc.id)
             else:
-                ents, rels = extract_entities_nlp(chunk["content"], doc.id)
+                ents, rels = await asyncio.to_thread(extract_entities_nlp, chunk["content"], doc.id)
             all_entities.extend(ents)
             all_relationships.extend(rels)
 
-        return build_graph_from_extractions(
+        result = await asyncio.to_thread(
+            build_graph_from_extractions,
             self._store, all_entities, all_relationships, project_id, source_doc_id=doc.id,
         )
+        if result.get("dropped_attributes"):
+            logger.warning(
+                "Graph build for %s dropped %d invalid attribute value(s)",
+                doc_data.get("url", "?"), result["dropped_attributes"],
+            )
+        return result
 
     def _read_status(self, collection_id: str) -> str | None:
         with self._store._driver.session() as session:
