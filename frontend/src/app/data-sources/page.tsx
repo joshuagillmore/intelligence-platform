@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { useNotifications } from '@/components/NotificationProvider';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
@@ -99,6 +99,13 @@ const entityTypeColor = (type: string) => {
   if (t.includes('threat') || t.includes('malware') || t.includes('vulnerability')) return 'bg-red-900/40 text-red-300 border-red-700/50';
   return 'bg-gray-900/40 text-gray-300 border-gray-700/50';
 };
+
+/** The tree cut off below `depth` levels (for "Collapse all"). */
+function collapseTree(node: TreeNode, depth: number): TreeNode {
+  return depth <= 0
+    ? { ...node, children: [] }
+    : { ...node, children: (node.children || []).map((c) => collapseTree(c, depth - 1)) };
+}
 
 function getStoredLayout(): LayoutMode {
   if (typeof window === 'undefined') return 'radial';
@@ -336,10 +343,13 @@ export default function DataSourcesPage() {
   }, []);
 
   const [treeCollapsed, setTreeCollapsed] = useState(false);
-  const collapseTree = (node: TreeNode, depth: number): TreeNode =>
-    depth <= 0
-      ? { ...node, children: [] }
-      : { ...node, children: (node.children || []).map((c) => collapseTree(c, depth - 1)) };
+  // Memoized: building the collapsed tree inline produced a new object on every
+  // render, and the mind map rebuilds (losing zoom and expansion) whenever its
+  // data changes identity, so with "Collapse all" on, every click rebuilt it.
+  const mindMapData = useMemo(
+    () => (treeCollapsed ? collapseTree(topicTree, 1) : topicTree),
+    [treeCollapsed, topicTree],
+  );
 
   const handleExpandAll = useCallback(() => {
     setTreeCollapsed(false);
@@ -484,7 +494,7 @@ export default function DataSourcesPage() {
               </div>
             ) : topicTree.children && topicTree.children.length > 0 ? (
               <TopicMindMap
-                data={treeCollapsed ? collapseTree(topicTree, 1) : topicTree}
+                data={mindMapData}
                 onNodeClick={handleTopicClick}
                 selectedNodeId={selectedNodeId}
                 layout={layout}
