@@ -818,15 +818,16 @@ async def refine_labels_with_llm(
     refine only touches that node's own dict entries, so the per-node LLM
     calls run concurrently (Semaphore-gated) instead of one at a time.
     """
-    # Shared, env-based cloud-provider selection (cohere → anthropic → openai).
-    # Returns None when no cloud key is configured, in which case we keep the
-    # existing keyword labels rather than refine.
+    # Shared provider selection: topics_llm_provider / the admin's runtime
+    # choice, then a cloud key from the key store or env. Returns None when no
+    # cloud key is configured, in which case we keep the existing keyword
+    # labels rather than refine.
     from intel_platform.llm.providers import _get_topics_provider
 
     # Honours topics_llm_provider, so a deployment whose cloud key is
     # rate-limited can point refinement at local Ollama instead of silently
     # serving keyword labels. Returns None when neither is available.
-    provider = _get_topics_provider()
+    provider = await _get_topics_provider()
     if not provider:
         # Keyword labels are a legitimate result, but they must be
         # distinguishable from refined ones: an analyst reading "vessel cable

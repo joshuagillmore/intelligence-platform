@@ -1,5 +1,4 @@
 """Tests for document clustering and LLM label refinement."""
-import os
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from intel_platform.services.document_clustering import (
@@ -8,6 +7,20 @@ from intel_platform.services.document_clustering import (
     build_tfidf,
     refine_labels_with_llm,
 )
+
+
+def _topics_provider(provider):
+    """Route refinement to ``provider`` (None = no provider configured).
+
+    Refinement's provider choice is tested in test_topics_provider_routing.py
+    and test_provider_precedence.py; here only refinement itself is under test,
+    so the resolver is replaced rather than the settings and SDK classes
+    beneath it (which let ambient keys and a loaded .env leak in).
+    """
+    async def _resolve():
+        return provider
+
+    return patch("intel_platform.llm.providers._get_topics_provider", _resolve)
 
 
 # ---------------------------------------------------------------------------
@@ -169,21 +182,7 @@ async def test_refine_labels_no_provider():
     }
     doc_pairs = [("doc1", "Iran nuclear sanctions text")]
 
-    # Ensure no API keys are configured. `intel_platform.config.settings` is a
-    # proxy over an `lru_cache`d Settings singleton (by design — see
-    # config.py), so patching `os.environ` here would be a no-op if anything
-    # earlier in the process already touched `settings` (e.g. in a real
-    # environment where ANTHROPIC_API_KEY etc. are set as ambient host env
-    # vars for other tooling): the cached instance would keep the real keys
-    # regardless of this test's env patch, silently making a real LLM call.
-    # Patch `settings` directly instead, matching the other tests in this
-    # file (test_refine_labels_with_mocked_provider, ..._llm_failure_...).
-    mock_settings = MagicMock()
-    mock_settings.cohere_api_key = ""
-    mock_settings.anthropic_api_key = ""
-    mock_settings.openai_api_key = ""
-
-    with patch("intel_platform.config.settings", mock_settings):
+    with _topics_provider(None):
         result = await refine_labels_with_llm(tree_node, doc_pairs)
 
     # Name should be unchanged (no provider available)
@@ -209,14 +208,8 @@ async def test_refine_labels_with_mocked_provider():
     mock_provider = AsyncMock()
     mock_provider.generate = AsyncMock(return_value=mock_response)
 
-    mock_settings = MagicMock()
-    mock_settings.anthropic_api_key = "test-key"
-    mock_settings.cohere_api_key = ""
-    mock_settings.openai_api_key = ""
-
-    with patch("intel_platform.config.settings", mock_settings):
-        with patch("intel_platform.llm.anthropic.AnthropicProvider", return_value=mock_provider):
-            result = await refine_labels_with_llm(tree_node, doc_pairs)
+    with _topics_provider(mock_provider):
+        result = await refine_labels_with_llm(tree_node, doc_pairs)
 
     assert result["name"] == "Iranian Nuclear Sanctions"
     assert result["llm_label"] == "Iranian Nuclear Sanctions"
@@ -239,14 +232,8 @@ async def test_refine_labels_llm_failure_keeps_original():
     mock_provider = AsyncMock()
     mock_provider.generate = AsyncMock(side_effect=Exception("API error"))
 
-    mock_settings = MagicMock()
-    mock_settings.anthropic_api_key = "test-key"
-    mock_settings.cohere_api_key = ""
-    mock_settings.openai_api_key = ""
-
-    with patch("intel_platform.config.settings", mock_settings):
-        with patch("intel_platform.llm.anthropic.AnthropicProvider", return_value=mock_provider):
-            result = await refine_labels_with_llm(tree_node, doc_pairs)
+    with _topics_provider(mock_provider):
+        result = await refine_labels_with_llm(tree_node, doc_pairs)
 
     assert result["name"] == "iran / nuclear / sanctions"
 
@@ -285,14 +272,8 @@ async def test_refine_labels_recursive():
     mock_provider = AsyncMock()
     mock_provider.generate = mock_generate
 
-    mock_settings = MagicMock()
-    mock_settings.anthropic_api_key = "test-key"
-    mock_settings.cohere_api_key = ""
-    mock_settings.openai_api_key = ""
-
-    with patch("intel_platform.config.settings", mock_settings):
-        with patch("intel_platform.llm.anthropic.AnthropicProvider", return_value=mock_provider):
-            result = await refine_labels_with_llm(tree_node, doc_pairs)
+    with _topics_provider(mock_provider):
+        result = await refine_labels_with_llm(tree_node, doc_pairs)
 
     assert call_count == 2
     assert "Refined Topic" in result["name"]
@@ -311,7 +292,10 @@ async def test_refine_labels_skips_non_topic_nodes():
     doc_pairs = []
 
     # Even with a provider, non-topic nodes should be skipped
-    with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "", "COHERE_API_KEY": "", "OPENAI_API_KEY": ""}, clear=False):
+    provider = AsyncMock()
+    provider.generate = AsyncMock(side_effect=AssertionError("non-topic node sent to the LLM"))
+    with _topics_provider(provider):
         result = await refine_labels_with_llm(tree_node, doc_pairs)
+    provider.generate.assert_not_called()
 
     assert result["name"] == "Source Documents"
