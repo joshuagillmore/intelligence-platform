@@ -977,6 +977,45 @@ KNOWN_MALWARE = {
 }
 
 
+_LEADING_DETERMINER = re.compile(r"^(?:the|a|an)\s+", re.IGNORECASE)
+
+
+def _strip_determiner(name: str) -> str:
+    return _LEADING_DETERMINER.sub("", name).strip()
+
+
+def _mention_spans(sent_text: str, entities: list[dict]) -> list[tuple[int, int, dict]]:
+    """Where each entity is mentioned in the sentence, as (start, end, entity)."""
+    spans = []
+    for e in entities:
+        name = e.get("name") or ""
+        if not name:
+            continue
+        for m in re.finditer(r"(?<!\w)" + re.escape(name) + r"(?!\w)", sent_text):
+            spans.append((m.start(), m.end(), e))
+    return spans
+
+
+def _entity_for_token(token, sent, spans: list[tuple[int, int, dict]]) -> dict | None:
+    """The entity a dependency token refers to, or None.
+
+    The token must be part of an entity mention ("Service" in "Russian Foreign
+    Intelligence Service"), or head a phrase containing one ("Hackers from
+    APT29", "by APT29"). Substring tests are not enough: ``"it" in "Citrix"``
+    bound a pronoun subject to Citrix.
+    """
+    offset = token.idx - sent.start_char
+    containing = [s for s in spans if s[0] <= offset < s[1]]
+    if containing:
+        return max(containing, key=lambda s: s[1] - s[0])[2]
+    lo = token.left_edge.idx - sent.start_char
+    hi = token.right_edge.idx + len(token.right_edge.text) - sent.start_char
+    inside = [s for s in spans if lo <= s[0] and s[1] <= hi]
+    if inside:
+        return min(inside, key=lambda s: s[0])[2]
+    return None
+
+
 def _postprocess_entities(entities: list[dict]) -> list[dict]:
     """Fix common spaCy misclassifications for intelligence documents."""
     # Load from YAML (with fallback to hardcoded module constants)
@@ -1000,7 +1039,7 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         # Strip leading determiners spaCy glues onto ORG/LOC spans ("the Russian
         # Foreign Intelligence Service" -> "Russian Foreign Intelligence Service")
         # — inflates false positives and breaks dedup against the canonical name.
-        stripped = re.sub(r"^(?:the|a|an)\s+", "", name, flags=re.IGNORECASE).strip()
+        stripped = _strip_determiner(name)
         if stripped and stripped != name:
             name = stripped
             e["name"] = name
@@ -1222,16 +1261,21 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         sent_text = sent.text
         sent_entities_list = []
 
-        # spaCy-detected entities in this sentence
+        # spaCy-detected entities in this sentence. Looked up by the name the
+        # entity ended up with: postprocessing strips determiners and quotes,
+        # and a lookup by the raw span text missed every entity it renamed.
         for ent in sent.ents:
             name = ent.text.strip()
-            if name in seen_names:
-                sent_entities_list.append(seen_names[name])
+            match = seen_names.get(name) or seen_names.get(_strip_determiner(name.strip("'\"")))
+            if match is not None and match not in sent_entities_list:
+                sent_entities_list.append(match)
 
         # Regex-extracted entities that appear in this sentence text
         for e in entities:
             if e.get("method") == "regex" and e["name"] in sent_text and e not in sent_entities_list:
                 sent_entities_list.append(e)
+
+        mention_spans = _mention_spans(sent_text, sent_entities_list)
 
         # ── Stage A: Dependency-parse relationship extraction ──
         # Find the root verb and its subject/object via dependency labels
@@ -1248,16 +1292,10 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             obj_ent = None
             for child in token.children:
                 if child.dep_ in ("nsubj", "nsubjpass", "agent") and not subj_ent:
-                    # Find which entity this token belongs to
-                    for e in sent_entities_list:
-                        if child.text in e["name"] or e["name"] in sent_text[child.idx - sent.start_char:child.idx - sent.start_char + len(e["name"]) + 20]:
-                            subj_ent = e
-                            break
+                    # Which entity this token refers to, by position, not substring
+                    subj_ent = _entity_for_token(child, sent, mention_spans)
                 elif child.dep_ in ("dobj", "pobj", "attr") and not obj_ent:
-                    for e in sent_entities_list:
-                        if child.text in e["name"] or e["name"] in sent_text[child.idx - sent.start_char:child.idx - sent.start_char + len(e["name"]) + 20]:
-                            obj_ent = e
-                            break
+                    obj_ent = _entity_for_token(child, sent, mention_spans)
 
             if subj_ent and obj_ent and subj_ent["name"] != obj_ent["name"]:
                 _add_rel(subj_ent["name"], obj_ent["name"], rel_type_from_verb, 0.7, sent_text)
