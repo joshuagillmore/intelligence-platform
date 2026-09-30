@@ -544,8 +544,14 @@ def build_graph_from_extractions(
     rels_retired = 0
     dropped_types: dict[str, int] = {}
     for rel_data in relationships:
-        source_id = name_to_id.get(rel_data["source_name"])
-        target_id = name_to_id.get(rel_data["target_name"])
+        # Endpoint names are cleaned exactly as entity names were, since
+        # name_to_id is keyed by the cleaned name. They were not, so
+        # "**Yi Peng 3**" became a node named "Yi Peng 3" while every edge
+        # naming "**Yi Peng 3**" was dropped as never extracted.
+        source_name = _clean_entity_name(rel_data["source_name"])
+        target_name = _clean_entity_name(rel_data["target_name"])
+        source_id = name_to_id.get(source_name)
+        target_id = name_to_id.get(target_name)
         if not source_id or not target_id:
             # An OCCURRED_ON edge whose Date endpoint was absorbed is redundant
             # by design — the date now lives on the entity — so it is retired,
@@ -553,8 +559,8 @@ def build_graph_from_extractions(
             # never extracted, which was silent and is how event dating stayed
             # broken across a 15-run campaign.
             if rel_data.get("rel_type") == "OCCURRED_ON" and (
-                rel_data["source_name"] in absorbed_names
-                or rel_data["target_name"] in absorbed_names
+                source_name in absorbed_names
+                or target_name in absorbed_names
             ):
                 rels_retired += 1
             else:
