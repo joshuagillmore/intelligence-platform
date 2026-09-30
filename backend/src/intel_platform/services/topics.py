@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import copy
 import hashlib
 import json
 import logging
@@ -36,17 +37,156 @@ def _sse_text_frames(text: str):
         yield "data: " + json.dumps(text[i:i + _SSE_SLICE_CHARS]) + "\n\n"
 
 
+def apply_topic_edits(tree: dict, edits: list) -> dict:
+    """The algorithmic tree with an analyst's `TopicEdit` rows applied.
+
+    The rename, add and delete endpoints wrote rows nothing read, so every edit
+    vanished on the next load. Applied here, after the tree is built, as an
+    overlay: the algorithmic tree stays cacheable and the overlay is re-read on
+    every request, so an edit shows immediately without invalidating the cache
+    (and in every worker, not just the one that took the edit).
+
+    `edits` are applied in order (callers pass them oldest first): ``add``
+    places a user node under `parent_id` (at the root if that node no longer
+    exists, rather than losing it); ``rename``/``move`` set a non-empty name or
+    description and re-parent when `parent_id` is set; ``delete`` removes the
+    node and its subtree. Algorithmic ids are not stable across rebuilds, so an
+    edit whose node is gone is counted in ``edits_unmatched`` rather than
+    silently dropped.
+
+    Returns a new tree; the input is not mutated, since it is the cached one.
+    """
+    out = copy.deepcopy(tree) if edits else dict(tree)
+    applied = unmatched = 0
+
+    def locate(node: dict, node_id: str, parent: dict | None = None):
+        if node.get("id") == node_id:
+            return node, parent
+        for child in node.get("children") or []:
+            found = locate(child, node_id, node)
+            if found:
+                return found
+        return None
+
+    for edit in edits:
+        kind = (getattr(edit, "edit_type", "") or "").lower()
+        node_id = getattr(edit, "node_id", "") or ""
+        parent_id = getattr(edit, "parent_id", "") or ""
+
+        if kind == "add":
+            if locate(out, node_id):
+                unmatched += 1   # already present; a second add would duplicate it
+                continue
+            host = locate(out, parent_id) if parent_id else None
+            target = host[0] if host else out
+            target.setdefault("children", []).append({
+                "id": node_id,
+                "name": getattr(edit, "name", "") or "Untitled topic",
+                "description": getattr(edit, "description", "") or "",
+                "entity_type": "user_topic",
+                "user_created": True,
+                "children": [],
+                "count": 0,
+            })
+            applied += 1
+            continue
+
+        found = locate(out, node_id)
+        if not found:
+            unmatched += 1
+            continue
+        node, parent = found
+
+        if kind == "delete":
+            if parent is None:
+                unmatched += 1   # the root is not deletable
+                continue
+            parent["children"] = [c for c in parent.get("children", []) if c is not node]
+            applied += 1
+            continue
+
+        if kind in ("rename", "move"):
+            if parent_id and parent_id != (parent or {}).get("id"):
+                new_parent = locate(out, parent_id)
+                # Never under itself or its own descendant — that would detach
+                # the subtree from the tree entirely.
+                if not new_parent or parent is None or locate(node, parent_id):
+                    unmatched += 1
+                    continue
+                parent["children"] = [c for c in parent.get("children", []) if c is not node]
+                new_parent[0].setdefault("children", []).append(node)
+            if getattr(edit, "name", ""):
+                node["name"] = edit.name
+            if getattr(edit, "description", ""):
+                node["description"] = edit.description
+            node["edited"] = True
+            applied += 1
+            continue
+
+        unmatched += 1   # an edit type this overlay does not know
+
+    out["edits_applied"] = applied
+    out["edits_unmatched"] = unmatched
+    return out
+
+
 class TopicTreeService:
     def __init__(self, store: GraphStore):
         self._store = store
 
     async def build_topic_tree(self, project_id: str, method: str = "tfidf", granularity: str = "medium") -> dict:
-        """Build a deep hierarchical topic tree using graph community structure."""
-        entities = self._store.search_entities(project_id=project_id, limit=10000)
-        graph_data = self._store.get_full_graph(project_id=project_id, limit=10000)
+        """Build a deep hierarchical topic tree using graph community structure.
+
+        The store reads (synchronous driver, up to 10,000 entities and the full
+        graph), tf-idf clustering and community detection all run in worker
+        threads. On the event loop a cold build stalled every other request,
+        the health check included, for its whole duration (~20 s measured).
+        """
+        entities, graph_data, full_docs = await asyncio.to_thread(self._load_tree_inputs, project_id)
 
         documents = [e for e in entities if e.get("entity_type") == "Document"]
         non_docs = [e for e in entities if e.get("entity_type") not in SYSTEM_ENTITY_TYPES]
+
+        tree = {
+            "name": "Knowledge Base",
+            "id": "root",
+            "entity_count": len(non_docs),
+            "document_count": len(documents),
+            "children": [],
+        }
+
+        # Topics (document content clustering)
+        topic_branch = await self._build_topic_branch(full_docs, project_id, method=method, granularity=granularity)
+        if topic_branch and topic_branch.get("children"):
+            tree["children"].extend(topic_branch.get("children", []))
+            # Surfaced at the root because that is what a caller reads. Topic
+            # names drive what an analyst clicks into; whether they came from a
+            # model or from raw keyword extraction is part of the answer.
+            for field in ("label_source", "labels_refined", "labels_failed"):
+                tree[field] = topic_branch.get(field)
+
+        # Entity-based branches — only shown when enough content entities exist
+        if non_docs:
+            tree["children"].extend(
+                await asyncio.to_thread(self._build_entity_branches, non_docs, graph_data)
+            )
+
+        # Detect cross-cutting themes: documents appearing in multiple topic clusters
+        cross_references = self._detect_cross_references(project_id, full_docs)
+        if cross_references:
+            tree["cross_references"] = cross_references
+
+        return tree
+
+    def _load_tree_inputs(self, project_id: str) -> tuple[list[dict], dict, list[dict]]:
+        """Every store read the tree needs, in one worker-thread call."""
+        entities = self._store.search_entities(project_id=project_id, limit=10000)
+        graph_data = self._store.get_full_graph(project_id=project_id, limit=10000)
+        full_docs = self._store.search_entities(project_id=project_id, entity_type="Document", limit=500)
+        return entities, graph_data, full_docs
+
+    def _build_entity_branches(self, non_docs: list[dict], graph_data: dict) -> list[dict]:
+        """Theme, type, geography and actor branches. CPU work: run off the loop."""
         entity_map = {e.get("id", ""): e for e in non_docs}
 
         # Build NetworkX graph for community detection
@@ -58,54 +198,21 @@ class TopicTreeService:
             if sid in entity_map and tid in entity_map:
                 G.add_edge(sid, tid)
 
-        tree = {
-            "name": "Knowledge Base",
-            "id": "root",
-            "entity_count": len(non_docs),
-            "document_count": len(documents),
-            "children": [],
-        }
-
-        # Topics (document content clustering)
-        full_docs = self._store.search_entities(project_id=project_id, entity_type="Document", limit=500)
-        topic_branch = await self._build_topic_branch(full_docs, project_id, method=method, granularity=granularity)
-        if topic_branch and topic_branch.get("children"):
-            tree["children"].extend(topic_branch.get("children", []))
-            # Surfaced at the root because that is what a caller reads. Topic
-            # names drive what an analyst clicks into; whether they came from a
-            # model or from raw keyword extraction is part of the answer.
-            for field in ("label_source", "labels_refined", "labels_failed"):
-                tree[field] = topic_branch.get(field)
-
-        # Entity-based branches — only shown when enough content entities exist
         MIN_ENTITY_BRANCH_SIZE = 3
-        if non_docs:
+        candidates = [
             # Thematic clusters via community detection on the entity graph
-            theme_branch = self._build_theme_branch(G, entity_map, non_docs)
-            if theme_branch.get("children") and theme_branch.get("count", 0) >= MIN_ENTITY_BRANCH_SIZE:
-                tree["children"].append(theme_branch)
-
+            self._build_theme_branch(G, entity_map, non_docs),
             # Entities grouped by type (Person, Organization, Location, etc.)
-            type_branch = self._build_type_branch(non_docs)
-            if type_branch.get("children") and type_branch.get("count", 0) >= MIN_ENTITY_BRANCH_SIZE:
-                tree["children"].append(type_branch)
-
+            self._build_type_branch(non_docs),
             # Geographic regions
-            geo_branch = self._build_geo_branch(non_docs)
-            if geo_branch.get("children") and geo_branch.get("count", 0) >= MIN_ENTITY_BRANCH_SIZE:
-                tree["children"].append(geo_branch)
-
+            self._build_geo_branch(non_docs),
             # Key actors and organizations
-            actor_branch = self._build_actor_branch(non_docs, G)
-            if actor_branch.get("children") and actor_branch.get("count", 0) >= MIN_ENTITY_BRANCH_SIZE:
-                tree["children"].append(actor_branch)
-
-        # Detect cross-cutting themes: documents appearing in multiple topic clusters
-        cross_references = self._detect_cross_references(project_id, full_docs)
-        if cross_references:
-            tree["cross_references"] = cross_references
-
-        return tree
+            self._build_actor_branch(non_docs, G),
+        ]
+        return [
+            b for b in candidates
+            if b.get("children") and b.get("count", 0) >= MIN_ENTITY_BRANCH_SIZE
+        ]
 
     def _detect_cross_references(
         self, project_id: str, documents: list,
@@ -157,7 +264,8 @@ class TopicTreeService:
             from intel_platform.services.document_clustering import cluster_semantic
             tree_node, doc_map, kw_map = await cluster_semantic(doc_pairs, project_id, granularity=granularity)
         else:
-            tree_node, doc_map, kw_map = cluster_documents(doc_pairs, project_id)
+            # tf-idf clustering is CPU work; keep it off the event loop.
+            tree_node, doc_map, kw_map = await asyncio.to_thread(cluster_documents, doc_pairs, project_id)
         if tree_node is None:
             return None
 
