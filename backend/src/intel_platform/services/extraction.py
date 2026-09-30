@@ -1278,6 +1278,28 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
         return extract_entities_nlp(text, doc_id)
 
 
+# Indicator types that are only ever the same entity when the value is the same.
+# A copy of EXACT_MATCH_TYPES in graph_builder.resolve_entity_name, where it is a
+# function local and so cannot be imported — keep the two in step.
+_EXACT_MATCH_TYPES = frozenset({
+    "IPAddress", "Domain", "URL", "EmailAddress", "Hash", "Vulnerability", "TTP",
+})
+
+
+def _merge_key(name: str) -> str:
+    """The normalised value two extractions of one entity share."""
+    return (name or "").strip().lower()
+
+
+def _exact_match_only(entity: dict) -> bool:
+    """Whether an entity may merge only on an identical value, never a fuzzy one.
+
+    Regex output is a literal value lifted from the text (an address, a hash,
+    a CVE id, a designation); a near-identical one is a different value.
+    """
+    return entity.get("method") == "regex" or entity.get("entity_type") in _EXACT_MATCH_TYPES
+
+
 async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], list[dict]]:
     """Run both NLP and LLM extraction, merge results. LLM results take priority."""
     import jellyfish
@@ -1292,26 +1314,35 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], l
     # LLM already covers the semantic ones, so unioning them back in just
     # re-introduces the precision-killing noise the NLP-only pass fought.
     merged_entities = list(llm_entities)
-    llm_name_list = [e["name"].lower() for e in llm_entities]
-
-    def _match_llm(name_lower: str) -> str | None:
-        if name_lower in llm_name_list:
-            return name_lower
-        for n in llm_name_list:
-            if jellyfish.jaro_winkler_similarity(name_lower, n) >= 0.92:
-                return n
-        return None
+    # Exact lookup over every LLM entity; fuzzy lookup only over LLM entities
+    # whose type tolerates it. Indicators are matched by value or not at all:
+    # 185.220.101.42/.43 score 0.971 Jaro-Winkler, CVE-2024-3400/3401 0.969 and
+    # T1566.001/.002 0.956, all above the threshold that suits semantic names.
+    llm_by_key: dict[str, dict] = {}
+    fuzzy_pool: list[tuple[str, dict]] = []
+    for llm_e in llm_entities:
+        key = _merge_key(llm_e.get("name", ""))
+        llm_by_key.setdefault(key, llm_e)
+        if not _exact_match_only(llm_e):
+            fuzzy_pool.append((key, llm_e))
+    # NLP names already kept. Deliberately *not* part of the fuzzy pool: adding
+    # them there is what let each sibling indicator match the one kept before it.
+    kept_nlp_keys: set[str] = set()
 
     for e in nlp_entities:
-        e_lower = e["name"].lower()
-        match = _match_llm(e_lower)
+        key = _merge_key(e.get("name", ""))
+        match = llm_by_key.get(key)
+        if match is None and not _exact_match_only(e):
+            for pool_key, candidate in fuzzy_pool:
+                if jellyfish.jaro_winkler_similarity(key, pool_key) >= 0.92:
+                    match = candidate
+                    break
         if match is not None:
             # Found by both — merge NLP attributes/confidence into the LLM entity.
-            for llm_e in merged_entities:
-                if llm_e["name"].lower() == match:
-                    llm_e["confidence"] = max(llm_e.get("confidence", 0), e.get("confidence", 0))
-                    _merge_attributes(llm_e, e)
-                    break
+            match["confidence"] = max(match.get("confidence", 0), e.get("confidence", 0))
+            _merge_attributes(match, e)
+            continue
+        if key in kept_nlp_keys:
             continue
         # Unmatched NLP entity: keep deterministic regex IOCs, plus high-signal
         # spaCy entities the LLM missed — known-list matches or repeated mentions
@@ -1319,7 +1350,7 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], l
         # the one-off spaCy over-extraction (base confidence 0.7 / short 0.5).
         if e.get("method") == "regex" or e.get("confidence", 0) >= 0.8:
             merged_entities.append(e)
-            llm_name_list.append(e_lower)
+            kept_nlp_keys.add(key)
 
     # ── Relationships ─────────────────────────────────────────────────────
     # LLM relations are typed + evidence-backed — primary. From NLP keep only
