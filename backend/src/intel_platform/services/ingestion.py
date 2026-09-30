@@ -13,6 +13,28 @@ def _split_sentences(text: str) -> list[str]:
     return [s.strip() for s in parts if s.strip()]
 
 
+_WHITESPACE_RE = re.compile(r"\s")
+
+
+def _overlap_tail(text: str, overlap: int) -> str:
+    """The last ~``overlap`` characters of ``text``, starting on a word boundary.
+
+    A plain ``text[-overlap:]`` starts wherever the count lands, and the carried
+    fragment is then read as a token of its own: "host18.evilcorp-servers.com"
+    cut to "8.evilcorp-servers.com" was minted as a Domain. The partial first
+    word is dropped instead; a tail with no boundary at all carries nothing.
+    """
+    if overlap <= 0 or not text:
+        return ""
+    if len(text) <= overlap:
+        return text
+    tail = text[-overlap:]
+    if text[-overlap - 1].isspace():
+        return tail.lstrip()
+    boundary = _WHITESPACE_RE.search(tail)
+    return tail[boundary.end():].lstrip() if boundary else ""
+
+
 def chunk_text(text: str, chunk_size: int = 1200, overlap: int = 200) -> list[str]:
     if not text.strip():
         return []
@@ -44,7 +66,8 @@ def chunk_text(text: str, chunk_size: int = 1200, overlap: int = 200) -> list[st
                         if len(sub_chunk) + len(word) + 1 > chunk_size:
                             if sub_chunk:
                                 chunks.append(sub_chunk)
-                            sub_chunk = sub_chunk[-overlap:] + " " + word if overlap and sub_chunk else word
+                            carried = _overlap_tail(sub_chunk, overlap)
+                            sub_chunk = f"{carried} {word}" if carried else word
                         else:
                             sub_chunk = f"{sub_chunk} {word}" if sub_chunk else word
                     current_chunk = sub_chunk
@@ -54,11 +77,10 @@ def chunk_text(text: str, chunk_size: int = 1200, overlap: int = 200) -> list[st
                         if len(sub_chunk) + len(sentence) + 1 > chunk_size:
                             if sub_chunk:
                                 chunks.append(sub_chunk)
-                            # Overlap: carry the last N chars into the next chunk
-                            if overlap and sub_chunk:
-                                sub_chunk = sub_chunk[-overlap:] + " " + sentence
-                            else:
-                                sub_chunk = sentence
+                            # Overlap: carry the last ~N chars into the next
+                            # chunk, from a word boundary.
+                            carried = _overlap_tail(sub_chunk, overlap)
+                            sub_chunk = f"{carried} {sentence}" if carried else sentence
                         else:
                             sub_chunk = f"{sub_chunk} {sentence}" if sub_chunk else sentence
                     current_chunk = sub_chunk

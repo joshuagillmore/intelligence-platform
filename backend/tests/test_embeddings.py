@@ -152,6 +152,7 @@ class TestGetEmbeddingProvider:
         mock_settings = MagicMock()
         mock_settings.embedding_provider = "openai"
         mock_settings.embedding_model = ""
+        mock_settings.embedding_dimensions = 1536
         mock_settings.openai_api_key = "test-key"
         mock_settings.cohere_api_key = ""
         mock_settings.ollama_base_url = "http://localhost:11434"
@@ -165,6 +166,7 @@ class TestGetEmbeddingProvider:
         mock_settings = MagicMock()
         mock_settings.embedding_provider = "cohere"
         mock_settings.embedding_model = ""
+        mock_settings.embedding_dimensions = 1024
         mock_settings.cohere_api_key = "test-key"
         mock_settings.openai_api_key = ""
         mock_settings.ollama_base_url = "http://localhost:11434"
@@ -178,6 +180,7 @@ class TestGetEmbeddingProvider:
         mock_settings = MagicMock()
         mock_settings.embedding_provider = "ollama"
         mock_settings.embedding_model = "mxbai-embed-large"
+        mock_settings.embedding_dimensions = 1024  # mxbai-embed-large's real width
         mock_settings.cohere_api_key = ""
         mock_settings.openai_api_key = ""
         mock_settings.ollama_base_url = "http://localhost:11434"
@@ -185,19 +188,26 @@ class TestGetEmbeddingProvider:
         with patch("intel_platform.config.get_settings", return_value=mock_settings):
             provider = get_embedding_provider()
             assert provider.name() == "ollama:mxbai-embed-large"
+            assert provider.dimension() == 1024
 
-    def test_fallback_chain(self):
+    def test_no_fallback_to_a_provider_of_another_width(self):
+        """This used to return Cohere (1024) for a column sized for OpenAI
+        (1536); the mismatch then failed in the database (G-9)."""
+        import pytest
+
+        from intel_platform.llm.embeddings import EmbeddingConfigError
+
         mock_settings = MagicMock()
         mock_settings.embedding_provider = "openai"
         mock_settings.embedding_model = ""
+        mock_settings.embedding_dimensions = 1536
         mock_settings.openai_api_key = ""  # not configured
         mock_settings.cohere_api_key = "fallback-key"
         mock_settings.ollama_base_url = "http://localhost:11434"
 
         with patch("intel_platform.config.get_settings", return_value=mock_settings), \
-             patch("cohere.AsyncClientV2"):
-            provider = get_embedding_provider()
-            assert "cohere" in provider.name()
+             patch("cohere.AsyncClientV2"), pytest.raises(EmbeddingConfigError):
+            get_embedding_provider()
 
 
 # ---------------------------------------------------------------------------

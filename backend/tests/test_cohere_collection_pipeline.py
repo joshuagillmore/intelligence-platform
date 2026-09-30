@@ -54,48 +54,36 @@ def _records_to_text(records: list[dict], source_name: str) -> str:
     return "\n".join(lines)
 
 
-def _parse_llm_response(content: str, doc_id: str):
-    """Parse an LLM response into entities and relationships.
+class _CannedReply:
+    """A provider that answers every call with one canned (mocked Cohere) reply."""
 
-    This mirrors the exact parsing logic in extract_entities_llm() so we can
-    test the full pipeline without importing modules that require neo4j/FastAPI.
+    def __init__(self, content: str):
+        self._content = content
+
+    def name(self) -> str:
+        return "cohere:command-a-03-2025"
+
+    async def generate(self, **_kw) -> LLMResponse:
+        return LLMResponse(content=self._content, model="command-a-03-2025")
+
+
+def _parse_llm_response(content: str, doc_id: str, text: str = ""):
+    """Parse a model reply with the real extraction parser.
+
+    These tests used to run a *copy* of the parsing in extract_entities_llm,
+    and the copy had drifted from it (finding I-11): it kept raw relationship
+    types, could not find JSON after a sentence, and raised where the real
+    code degrades. The reply is now fed through extract_entities_llm itself,
+    by a provider that returns it, so what is tested is what runs. ``text`` is
+    the chunk the reply is about; the real parser uses it to judge provenance.
     """
-    # Find JSON in response (may be wrapped in markdown code blocks)
-    if "```json" in content:
-        content = content.split("```json")[1].split("```")[0]
-    elif "```" in content:
-        content = content.split("```")[1].split("```")[0]
+    from intel_platform.services.extraction import extract_entities_llm
 
-    data = json.loads(content.strip())
-
-    entities = []
-    for e in data.get("entities", []):
-        entity = {
-            "name": e.get("name", ""),
-            "entity_type": e.get("entity_type", "Person"),
-            "source": doc_id,
-            "method": "llm",
-            "confidence": float(e.get("confidence", 0.85)),
-            "aliases": e.get("aliases", []),
-        }
-        attrs = e.get("attributes", {})
-        if attrs:
-            entity["attributes"] = attrs
-        entities.append(entity)
-
-    relationships = []
-    for r in data.get("relationships", []):
-        relationships.append({
-            "source_name": r.get("source_entity", r.get("source", "")),
-            "target_name": r.get("target_entity", r.get("target", "")),
-            "rel_type": r.get("relationship_type", r.get("rel_type", "ASSOCIATED_WITH")),
-            "confidence": float(r.get("confidence", 0.7)),
-            "source": doc_id,
-            "method": "llm",
-            "evidence": r.get("evidence", ""),
-        })
-
-    return entities, relationships
+    with patch(
+        "intel_platform.llm.providers._get_extraction_provider",
+        new=AsyncMock(return_value=_CannedReply(content)),
+    ):
+        return run(extract_entities_llm(text, doc_id))
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +227,7 @@ class TestCohereCSVPipeline:
                 system="You are an entity extraction assistant.",
                 temperature=0.2,
             ))
-            entities, rels = _parse_llm_response(response.content, "test-doc-001")
+            entities, rels = _parse_llm_response(response.content, "test-doc-001", chunk["content"])
             all_entities.extend(entities)
             all_rels.extend(rels)
 
@@ -314,7 +302,7 @@ class TestCohereJSONPipeline:
             messages=[{"role": "user", "content": f"Extract entities:\n\n{text}"}],
             system="Entity extraction",
         ))
-        entities, relationships = _parse_llm_response(response.content, "test-doc-002")
+        entities, relationships = _parse_llm_response(response.content, "test-doc-002", text)
 
         # Step 4: Verify threat actor extraction
         entity_map = {e["name"]: e for e in entities}
@@ -383,7 +371,7 @@ class TestCohereExcelPipeline:
         response = run(mock_provider.generate(
             messages=[{"role": "user", "content": f"Extract entities:\n\n{text}"}],
         ))
-        entities, rels = _parse_llm_response(response.content, "test-doc-003")
+        entities, rels = _parse_llm_response(response.content, "test-doc-003", text)
 
         # Verify entity types
         entity_types = {e["entity_type"] for e in entities}
@@ -406,9 +394,20 @@ class TestCohereFailureHandling:
     """Test the pipeline handles various Cohere response formats."""
 
     def test_cohere_returns_malformed_json(self):
-        """When Cohere returns non-JSON, parsing should raise and caller handles fallback."""
-        with pytest.raises(json.JSONDecodeError):
-            _parse_llm_response(COHERE_MALFORMED_RESPONSE.content, "test-doc")
+        """Non-JSON from Cohere degrades the chunk to NLP, and says so."""
+        result = _parse_llm_response(
+            COHERE_MALFORMED_RESPONSE.content, "test-doc", "APT28 targeted NATO systems in Brussels.",
+        )
+        assert result.degraded is True
+        assert result.method == "nlp"
+        assert result.reason
+
+    def test_cohere_json_after_a_sentence_is_parsed(self):
+        """The shape the copied parser could not read: prose, then the object."""
+        content = "Here are the entities I extracted:\n\n" + COHERE_MARKDOWN_WRAPPED_RESPONSE.content.strip("`json\n")
+        result = _parse_llm_response(content, "test-doc")
+        assert result.degraded is False and result.method == "llm"
+        assert [e["name"] for e in result[0]] == ["Fancy Bear"]
 
     def test_cohere_returns_empty_results(self):
         """When Cohere finds no entities, pipeline should return empty lists."""
@@ -453,6 +452,9 @@ class TestCohereFailureHandling:
         })
         entities, rels = _parse_llm_response(content, "test-doc")
         assert rels[0]["evidence"] == "A and B signed a partnership agreement in Q1 2024"
+        # A type the graph does not accept collapses, as it does in production;
+        # the copied parser passed PARTNERS_WITH through untouched.
+        assert rels[0]["rel_type"] == "ASSOCIATED_WITH"
 
 
 # ---------------------------------------------------------------------------
@@ -584,7 +586,7 @@ class TestCohereMultiFormatPipeline:
             response = run(mock_provider.generate(
                 messages=[{"role": "user", "content": text}],
             ))
-            entities, rels = _parse_llm_response(response.content, f"{fmt_name}-doc")
+            entities, rels = _parse_llm_response(response.content, f"{fmt_name}-doc", text)
 
             assert len(entities) > 0, f"No entities from {fmt_name}"
             assert any(e["entity_type"] == "IPAddress" for e in entities)

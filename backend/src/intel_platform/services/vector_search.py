@@ -41,18 +41,22 @@ async def embed_and_store_chunks(
     """Embed chunks and insert into chunk_embeddings. Returns count stored.
 
     Each chunk dict must have 'content' and optionally 'chunk_index'.
-    If embedding fails, logs a warning and returns 0 (non-fatal).
+    If embedding or storing fails, logs a warning and returns 0 (non-fatal).
+
+    The rows are written inside a SAVEPOINT on the caller's session. That
+    session is often shared — an agentic run keeps its activity trail on it —
+    and a failed flush outside a savepoint left it needing a rollback, so every
+    later write in the run raised PendingRollbackError and the trail was lost.
     """
     if not chunks:
         return 0
-
-    if provider is None:
-        provider = get_embedding_provider()
 
     texts = [c["content"] for c in chunks]
     all_vectors: list[list[float]] = []
 
     try:
+        if provider is None:
+            provider = get_embedding_provider()
         # Batch embedding calls
         for i in range(0, len(texts), _EMBED_BATCH_SIZE):
             batch = texts[i : i + _EMBED_BATCH_SIZE]
@@ -64,6 +68,17 @@ async def embed_and_store_chunks(
 
     if len(all_vectors) != len(chunks):
         logger.warning("Embedding count mismatch: %d vectors for %d chunks", len(all_vectors), len(chunks))
+        return 0
+
+    # A vector the column cannot hold fails in the database, on the caller's
+    # session. Refuse it here, where the error can name both widths.
+    bad_width = next((len(v) for v in all_vectors if len(v) != _EMBEDDING_DIM), None)
+    if bad_width is not None:
+        logger.warning(
+            "Not storing embeddings for document %s: %s returned %d-wide vectors, "
+            "chunk_embeddings expects %d (EMBEDDING_DIMENSIONS)",
+            document_id, provider.name(), bad_width, _EMBEDDING_DIM,
+        )
         return 0
 
     rows = []
@@ -78,8 +93,14 @@ async def embed_and_store_chunks(
             metadata_=chunk.get("metadata", {}),
         ))
 
-    session.add_all(rows)
-    await session.flush()
+    try:
+        async with session.begin_nested():
+            session.add_all(rows)
+            await session.flush()
+    except Exception:
+        # The savepoint is rolled back; the caller's transaction is intact.
+        logger.warning("Storing embeddings failed for document %s", document_id, exc_info=True)
+        return 0
     return len(rows)
 
 
@@ -116,10 +137,11 @@ async def vector_search(
             return []
         query_vec = query_vector
     else:
-        if provider is None:
-            provider = get_embedding_provider()
-
         try:
+            # Inside the try: the factory refuses a misconfigured width rather
+            # than substituting a provider, and a search must degrade, not raise.
+            if provider is None:
+                provider = get_embedding_provider()
             result = await provider.embed([query], input_type="search_query")
             query_vec = result.embeddings[0]
         except Exception:

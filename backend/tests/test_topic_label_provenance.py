@@ -92,10 +92,14 @@ def _tree(n_children: int = 12) -> dict:
 @pytest.fixture
 def patched(monkeypatch):
     def _install(provider):
-        monkeypatch.setattr(dc, "_cloud_provider_from_env", lambda: provider, raising=False)
-        monkeypatch.setattr(
-            "intel_platform.llm.providers._cloud_provider_from_env", lambda: provider, raising=False
-        )
+        # Patch the resolver refinement actually calls. Patching the helper
+        # beneath it left the result to ambient config: with a developer's
+        # .env loaded (crawl4ai and litellm call load_dotenv() at import),
+        # TOPICS_LLM_PROVIDER=ollama routed these tests to a real Ollama.
+        async def _resolve():
+            return provider
+
+        monkeypatch.setattr("intel_platform.llm.providers._get_topics_provider", _resolve)
 
         class _Loader:
             def get_system_prompt(self, *_a, **_kw):
