@@ -5,8 +5,10 @@ selectable proxy (Off / VPN / Tor). LLM and cloud API calls must NEVER use
 this — they always go out direct.
 
 The active mode is persisted in Postgres (AppSetting "collection_proxy_mode")
-so it survives restarts. Any error resolving the mode degrades to DIRECT — a
-proxy-config problem must never crash a crawl.
+so it survives restarts. A failure to *read* the mode keeps the last mode read,
+or degrades to DIRECT with a warning when none is known. A mode that is
+selected but has no proxy address configured fails closed
+(`ProxyUnavailableError`): collecting in the clear would defeat the choice.
 """
 from __future__ import annotations
 
@@ -98,6 +100,10 @@ def _pinned_transport() -> httpx.AsyncHTTPTransport:
 VALID_PROXY_MODES = ("direct", "vpn", "tor")
 
 
+class ProxyUnavailableError(RuntimeError):
+    """A proxy mode is selected but cannot be used; collection must not go direct."""
+
+
 class ProxyConfig:
     def __init__(self, mode: str = "direct", proxy_url: str = "", tor_port: int = 9050):
         self.mode = mode  # direct | vpn | tor | proxy
@@ -115,11 +121,13 @@ class ProxyConfig:
         else:
             return None  # direct (and any unknown mode) -> no proxy
         if url is None:
-            # The operator chose an egress this deployment has no address for,
-            # so traffic goes out direct. That must never happen quietly.
-            logger.warning(
-                "Collection proxy mode %r is selected but no proxy URL is configured; "
-                "collection egress is DIRECT", self.mode,
+            # The operator chose an egress this deployment has no address for.
+            # Going out direct instead defeats the choice (a Tor-mode crawl in
+            # the clear), so refuse: the fetch fails and says why.
+            logger.error("Collection proxy mode %r is selected but no proxy URL is configured", self.mode)
+            raise ProxyUnavailableError(
+                f"Collection proxy mode {self.mode!r} is selected but no proxy URL is configured; "
+                "refusing to collect without it"
             )
         return url
 

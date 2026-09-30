@@ -167,13 +167,21 @@ async def test_an_unknown_stored_mode_is_a_warning(monkeypatch, caplog):
     assert any("tor-bridges" in r.getMessage() for r in caplog.records)
 
 
-def test_a_selected_proxy_with_no_url_is_a_warning(monkeypatch, caplog):
-    import logging
+@pytest.mark.parametrize("mode, setting", [("tor", "tor_socks_proxy"), ("vpn", "vpn_http_proxy")])
+def test_a_selected_proxy_with_no_url_fails_closed(monkeypatch, mode, setting):
+    """The operator chose Tor or the VPN; going out direct instead is the one
+    outcome that defeats the choice. Refuse to fetch rather than warn and leak."""
+    monkeypatch.setattr(proxy_mod.settings, setting, "")
+    with pytest.raises(proxy_mod.ProxyUnavailableError):
+        ProxyConfig(mode=mode).get_proxy_url()
+    with pytest.raises(proxy_mod.ProxyUnavailableError):
+        ProxyConfig(mode=mode).get_client_kwargs()
 
+
+async def test_a_proxied_client_refuses_rather_than_leaking(monkeypatch):
     monkeypatch.setattr(proxy_mod.settings, "tor_socks_proxy", "")
-    with caplog.at_level(logging.WARNING, logger="intel_platform.collection.proxy"):
-        assert ProxyConfig(mode="tor").get_proxy_url() is None
-    assert any("DIRECT" in r.getMessage() for r in caplog.records)
+    with pytest.raises(proxy_mod.ProxyUnavailableError):
+        await proxy_mod.ProxiedClient(ProxyConfig(mode="tor")).get("https://example.org/")
 
 
 # ---------------------------------------------------------------------------
