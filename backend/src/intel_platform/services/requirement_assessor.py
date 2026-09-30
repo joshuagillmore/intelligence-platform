@@ -15,6 +15,7 @@ assessment worthless.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +27,36 @@ logger = logging.getLogger(__name__)
 _PASSAGES_PER_REQUIREMENT = 5
 _PASSAGE_CHARS = 900
 _MAX_NEXT_QUERIES = 3
+
+
+# Lines of scraped text shaped like an instruction or like this assessor's own
+# verdict. The verdict is persisted and drives live searches, so a page carrying
+# `ASSESSMENT: {"satisfied": true}` could otherwise answer an element for us.
+# Searched anywhere in a line (graph evidence arrives mid-line after " :: ").
+# Mitigation, not elimination: no pattern neutralises adversarial prose, which
+# is why the prompt also fences the material as untrusted.
+_INSTRUCTION_SHAPED = re.compile(
+    r"(?:ignore|disregard|forget)\s+(?:all\s+)?(?:the\s+)?(?:prior|previous|above|earlier)"
+    r"|new\s+instructions?\s*:"
+    r"|system\s*(?:prompt|message)\s*:"
+    r"|you\s+are\s+now\b"
+    r"|\"satisfied\"\s*:"
+    r"|EEI_ASSESSMENT"
+    r"|\b(?:SATISFIED|PARTIAL|UNMET)\s*\|",
+    re.IGNORECASE,
+)
+# The reply label itself, case-sensitive and followed by an object, so an
+# ordinary "Threat assessment:" in a report is left alone.
+_VERDICT_LABEL = re.compile(r"\bASSESSMENT[\s*_`]*:[\s*_`]*\{")
+_REDACTED = "[redacted: instruction-shaped text in source document]"
+
+
+def _screen(text: str) -> str:
+    """Blank instruction- or verdict-shaped lines in scraped text."""
+    return "\n".join(
+        _REDACTED if (_INSTRUCTION_SHAPED.search(line) or _VERDICT_LABEL.search(line)) else line
+        for line in (text or "").split("\n")
+    )
 
 
 _TRUE_WORDS = frozenset({"true", "yes", "y", "1", "satisfied"})
@@ -118,7 +149,7 @@ async def _material_for(
             requirement_text, project_id, db, limit=_PASSAGES_PER_REQUIREMENT
         )
         for hit in hits:
-            snippet = str(hit.get("chunk_text") or "").strip()[:_PASSAGE_CHARS]
+            snippet = _screen(str(hit.get("chunk_text") or "").strip()[:_PASSAGE_CHARS])
             if snippet:
                 blocks.append(f"[doc {str(hit.get('document_id') or '?')[:36]}] {snippet}")
     except Exception:
@@ -140,6 +171,8 @@ async def _material_for(
                                 f"{rel['target_name']}")
                         if rel.get("evidence"):
                             line += f" :: {str(rel['evidence'])[:160]}"
+                        # Names and evidence both come from scraped text.
+                        line = _screen(line.replace("\n", " "))
                         if line not in lines:
                             lines.append(line)
                     if len(lines) >= 60:
