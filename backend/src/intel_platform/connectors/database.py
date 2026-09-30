@@ -62,7 +62,11 @@ class DatabaseConnector(SourceConnector):
             return HealthStatus(status=ConnectorHealth.UNHEALTHY, last_error=str(e))
 
     async def acquire(self, config: dict[str, Any], since: datetime | None = None) -> AcquireResult:
-        urls = config.get("urls", [])
+        # The agentic fan-out calls this once per URL as `{**config, "url": u}`.
+        # Reading the whole `urls` list on each of those calls fetched N URLs N
+        # times over, and every duplicate page then counted as corroboration.
+        single = config.get("url")
+        urls = [single] if isinstance(single, str) and single else config.get("urls", [])
         max_pages = config.get("max_pages", 10)
 
         if not urls:
