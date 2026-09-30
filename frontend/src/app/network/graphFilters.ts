@@ -219,7 +219,10 @@ export function graphTruncationNote(truncated: boolean, shown: number, total: nu
 
 // ─── Entity properties panel ──────────────────────────────────────────────────
 
-const PROPERTY_SKIP = new Set(['id', 'name', 'entity_type', 'properties', 'content']);
+// The header already shows id/name/type; project_id is the same on every row
+// of the view; `properties` is the nested bag entityFields has already spread;
+// a Document's `content` is the whole text.
+const PROPERTY_SKIP = new Set(['id', 'name', 'entity_type', 'project_id', 'properties', 'content']);
 const PROPERTY_MAX_CHARS = 300;
 
 /**

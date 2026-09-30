@@ -19,7 +19,7 @@ import { useNotifications } from '@/components/NotificationProvider';
 import Markdown from '@/components/Markdown';
 import {
   filterGraph, createRequestSequencer, useDebouncedValue, mapWithConcurrency,
-  normaliseGraphEdge, graphTruncationNote,
+  normaliseGraphEdge, graphTruncationNote, displayProperties,
 } from './graphFilters';
 
 interface Entity {
@@ -847,7 +847,8 @@ function NetworkPageInner() {
         message: `Assessment for ${selectedEntity.name} complete.`,
       });
     } catch {
-      setAiResult('Failed to generate assessment.');
+      // Includes the 503 the route raises when no model can run. Reported by
+      // the notification only — aiResult renders as if it were analysis.
       updateNotification(notifId, {
         type: 'error',
         title: 'Assessment Failed',
@@ -861,7 +862,12 @@ function NetworkPageInner() {
   async function generateAssessmentFromModal() {
     if (!activeProject || multiSelected.length === 0) return;
     setAssessLoading(true);
+    // A failure is reported and the modal stays open; it is never written into
+    // aiResult, which renders whatever it holds as if it were analysis.
+    const fail = (message: string) =>
+      addNotification({ type: 'error', title: 'Assessment Failed', message });
     try {
+      let result: string | undefined;
       // For multiple entities (community/group), generate a community overview
       if (multiSelected.length > 1) {
         const entityNames = multiSelected.map(e => `${e.name} (${e.entity_type})`).join(', ');
@@ -890,8 +896,11 @@ function NetworkPageInner() {
           [{ role: 'user', content: communityPrompt }],
           'threat_assessment'
         );
-        const result = llmRes.data.response || llmRes.data.content || JSON.stringify(llmRes.data);
-        setAiResult(result);
+        // model "none" is the route's no-provider reply, whose content is a
+        // configuration message rather than an assessment.
+        if (llmRes.data?.model !== 'none') {
+          result = llmRes.data?.response || llmRes.data?.content;
+        }
       } else {
         // Single entity: use standard assessment
         const entity = multiSelected[0];
@@ -901,14 +910,20 @@ function NetworkPageInner() {
           judgment: assessJudgment || undefined,
           probability: assessProbability,
         });
-        setAiResult(res.data.assessment || res.data.error || 'No response');
+        // A failed generation is a 503 now; older backends sent 200 {error}.
+        if (!res.data?.error) result = res.data?.assessment;
       }
+      if (!result) {
+        fail('No assessment was generated. Check the LLM configuration and try again.');
+        return;
+      }
+      setAiResult(result);
       setAssessModalOpen(false);
       setAssessJudgment('');
       setAssessProbability(0.5);
       setAssessAnalyst('');
-    } catch {
-      setAiResult('Failed to generate community assessment.');
+    } catch (e) {
+      fail(getErrorMessage(e));
     } finally {
       setAssessLoading(false);
     }
@@ -1139,6 +1154,9 @@ function NetworkPageInner() {
   const maxVals = getMaxValues();
   // The statistics endpoint counts the same node population /graph samples.
   const truncationNote = graphTruncationNote(graphTruncated, graphNodes.length, stats?.total_nodes);
+  // Through entityFields: the entity routes flatten node fields onto the
+  // object, so reading only `.properties` showed nothing for most entities.
+  const propertyRows = selectedEntity ? displayProperties(selectedEntity) : [];
   const sortArrow = (key: SortKey) => sortKey === key ? (sortAsc ? ' ▲' : ' ▼') : '';
 
   return (
@@ -2157,14 +2175,14 @@ function NetworkPageInner() {
                   </span>
                 </div>
 
-                {selectedEntity.properties && Object.keys(selectedEntity.properties).length > 0 && (
+                {propertyRows.length > 0 && (
                   <div>
                     <h4 className="text-sm font-semibold text-gray-400 mb-2">Properties</h4>
                     <div className="space-y-1">
-                      {Object.entries(selectedEntity.properties).map(([key, value]) => (
-                        <div key={key} className="text-xs">
+                      {propertyRows.map(([key, value]) => (
+                        <div key={key} className="text-xs break-words">
                           <span className="text-gray-500">{key}:</span>{' '}
-                          <span className="text-gray-300">{String(value)}</span>
+                          <span className="text-gray-300">{value}</span>
                         </div>
                       ))}
                     </div>

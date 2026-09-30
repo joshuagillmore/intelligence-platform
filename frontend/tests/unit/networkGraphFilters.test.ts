@@ -226,9 +226,9 @@ describe('displayProperties (entityFields for the properties panel)', () => {
     expect(rows.geolocation).toBe('{"lat":1,"lon":2}');
   });
 
-  it('skips header fields, empty values and document content, and truncates long text', () => {
+  it('skips header fields, the project id, empty values and document content, and truncates long text', () => {
     const rows = Object.fromEntries(displayProperties({
-      id: 'd1', name: 'Doc', entity_type: 'Document',
+      id: 'd1', name: 'Doc', entity_type: 'Document', project_id: 'p-1',
       content: 'x'.repeat(10_000), summary: 'y'.repeat(1_000), empty: '', missing: null,
     }));
     expect(Object.keys(rows)).toEqual(['summary']);
