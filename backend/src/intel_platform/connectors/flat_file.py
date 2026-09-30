@@ -430,6 +430,9 @@ def _check_json_depth(obj: Any, max_depth: int = 20, current: int = 0) -> bool:
     return True
 
 
+_UNPARSED = object()
+
+
 def _sanitize_json_value(val: Any) -> Any:
     """Sanitize JSON values — prevent formula injection in string values."""
     if isinstance(val, str):
@@ -458,32 +461,53 @@ def parse_json(raw: bytes, config: dict) -> AcquireResult:
             error=f"JSON content exceeds {MAX_JSON_SIZE // (1024*1024)}MB limit.")
 
     records = []
-    is_jsonl = config.get("jsonl", False)
+    lines_skipped = 0
 
-    if is_jsonl or ("\n" in text and text.lstrip().startswith("{")):
+    # Whole-document JSON first. Guessing JSONL from "starts with { and has a
+    # newline" read every pretty-printed object as JSONL, failed on every
+    # line, and reported a successful upload of zero records. JSONL is what a
+    # file is when it does *not* parse whole — including one named .jsonl that
+    # is really a pretty-printed document.
+    whole: Any = _UNPARSED
+    whole_error: json.JSONDecodeError | None = None
+    try:
+        whole = json.loads(text)
+    except json.JSONDecodeError as e:
+        whole_error = e
+
+    looks_like_jsonl = "\n" in text and text.lstrip().startswith("{")
+    is_jsonl = whole is _UNPARSED and (config.get("jsonl", False) or looks_like_jsonl)
+
+    if is_jsonl:
         # JSONL: one JSON object per line
         lines = text.splitlines()
         if len(lines) > MAX_ROWS:
             return AcquireResult(
                 success=False,
                 error=f"JSONL file exceeds maximum row limit of {MAX_ROWS:,}.")
+        non_blank = 0
         for line_num, line in enumerate(lines, 1):
             line = line.strip()
             if not line:
                 continue
+            non_blank += 1
             try:
                 obj = json.loads(line)
-                if isinstance(obj, dict):
-                    obj = _sanitize_json_value(obj)
-                    obj["_row_number"] = line_num
-                    records.append(obj)
             except json.JSONDecodeError:
+                lines_skipped += 1
                 continue
+            if isinstance(obj, dict):
+                obj = _sanitize_json_value(obj)
+                obj["_row_number"] = line_num
+                records.append(obj)
+        if non_blank and lines_skipped == non_blank:
+            return AcquireResult(
+                success=False,
+                error=f"None of the {non_blank} lines parsed as JSON; the file is neither JSON nor JSONL.")
+    elif whole is _UNPARSED:
+        return AcquireResult(success=False, error=f"Invalid JSON: {whole_error}")
     else:
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError as e:
-            return AcquireResult(success=False, error=f"Invalid JSON: {e}")
+        data = whole
 
         # Depth check to prevent JSON bomb
         if not _check_json_depth(data):
@@ -561,7 +585,7 @@ def parse_json(raw: bytes, config: dict) -> AcquireResult:
         schema_info=schema_info,
         profiling=profiling,
         preview_rows=records[:MAX_PREVIEW_ROWS],
-        metadata={"format": "jsonl" if is_jsonl else "json"},
+        metadata={"format": "jsonl" if is_jsonl else "json", "lines_skipped": lines_skipped},
     )
 
 

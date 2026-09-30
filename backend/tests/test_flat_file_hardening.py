@@ -78,6 +78,42 @@ class TestExcelDeclaredDimensions:
         assert "cells" in result.error
 
 
+class TestJsonIsNotMistakenForJsonl:
+    """Any text starting with "{" that contained a newline was read as JSONL, so
+    a pretty-printed object failed on every line — and was reported as a
+    successful upload of zero records."""
+
+    PRETTY = b'{\n  "source": "registry",\n  "records": [\n    {"name": "A", "lat": -33.9},\n' \
+             b'    {"name": "B", "lat": 51.5}\n  ]\n}\n'
+
+    def test_pretty_printed_object_with_records(self):
+        result = flat_file.parse_json(self.PRETTY, {})
+        assert result.success
+        assert result.record_count == 2
+
+    def test_pretty_printed_flat_object(self):
+        result = flat_file.parse_json(b'{\n  "name": "Fordow",\n  "country": "Iran"\n}', {})
+        assert result.success and result.record_count == 1
+
+    def test_real_jsonl_still_reads_as_jsonl(self):
+        result = flat_file.parse_json(b'{"a": 1}\n{"a": 2}\n{"a": 3}\n', {})
+        assert result.record_count == 3
+
+    def test_jsonl_where_every_line_fails_is_a_failure(self):
+        result = flat_file.parse_json(b"{not json\n{also not\n", {"jsonl": True})
+        assert not result.success
+        assert "line" in result.error.lower()
+
+    def test_skipped_jsonl_lines_are_counted(self):
+        result = flat_file.parse_json(b'{"a": 1}\n{broken\n{"a": 3}\n', {"jsonl": True})
+        assert result.success and result.record_count == 2
+        assert result.metadata.get("lines_skipped") == 1
+
+    async def test_pretty_json_named_jsonl_is_still_read(self):
+        result = await FlatFileConnector().acquire({"file_bytes": self.PRETTY, "filename": "export.jsonl"})
+        assert result.success and result.record_count == 2
+
+
 class TestParsingLeavesTheEventLoop:
     async def test_acquire_parses_in_a_worker_thread(self, monkeypatch):
         seen = {}
