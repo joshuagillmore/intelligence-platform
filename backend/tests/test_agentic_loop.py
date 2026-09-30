@@ -119,9 +119,9 @@ def wired(monkeypatch):
     return state
 
 
-async def _run(plan):
+async def _run(plan, **kwargs):
     session = FakeSession(plan)
-    await agentic.run_agentic_loop(plan.id, _factory(session), lambda: None, _provider)
+    await agentic.run_agentic_loop(plan.id, _factory(session), lambda: None, _provider, **kwargs)
     return session
 
 
@@ -203,3 +203,90 @@ class TestFollowUps:
         wired.evaluations = [{"satisfied": "false", "follow_up_urls": ["https://news.example.org/lead"], "notes": ""}]
         await _run(_plan([_source()]))
         assert len(wired.acquire_calls) == 2, "the lead was skipped as if the source were satisfied"
+
+
+# ---------------------------------------------------------------------------
+# C-10: a page the content gate refuses spends no budget
+# ---------------------------------------------------------------------------
+
+def _rejected_only():
+    out = _acquired(records=1, accepted=0)
+    out["entities_created"] = 0
+    out["relationships_created"] = 0
+    out["rejected_pages"] = [("https://example.org/login", "login or paywall page")]
+    return out
+
+
+class TestContentGateSpendsNoBudget:
+    async def test_a_source_with_nothing_usable_is_not_a_success(self, wired):
+        async def acquire(n):
+            return _rejected_only()
+
+        wired.acquire = acquire
+        source = _source("web_scrape", {"urls": ["https://example.org/login"]}, name="Walled")
+        session = await _run(_plan([source]))
+
+        assert source.collection_status == "failed"
+        assert "login or paywall" in source.last_error
+        assert "source_succeeded" not in session.events()
+
+    async def test_the_next_source_gets_the_budget(self, wired):
+        async def acquire(n):
+            return _rejected_only() if n == 1 else _acquired()
+
+        wired.acquire = acquire
+        walled = _source("web_scrape", {"urls": ["https://example.org/login"]}, name="Walled")
+        good = _source("web_scrape", {"urls": ["https://example.org/report"]}, name="Good")
+        # source_limit=2 leaves a planned budget of 1 (one held for re-tasking).
+        session = await _run(_plan([walled, good]), source_limit=2)
+
+        assert good.collection_status == "succeeded", "a refused page spent the only planned slot"
+        assert "source_skipped" not in session.events()
+
+
+class TestAcquireSourceCountsWhatItKept:
+    @pytest.fixture
+    def quiet(self, monkeypatch):
+        async def no_extract(text, doc_id, mode):
+            return [], []
+
+        async def no_embed(chunks, doc_id, project_id, db):
+            return 0
+
+        monkeypatch.setattr(agentic, "_extract_entities", no_extract)
+        monkeypatch.setattr("intel_platform.services.vector_search.embed_and_store_chunks", no_embed)
+
+    def _connector(self, records):
+        from intel_platform.connectors.base import AcquireResult
+
+        class Connector:
+            async def acquire(self, config):
+                return AcquireResult(success=True, record_count=len(records), records=records)
+
+        return Connector()
+
+    async def test_a_refused_page_is_not_accepted(self, monkeypatch, quiet):
+        page = {"url": "https://example.org/login", "title": "Sign in", "content": "Please sign in to continue. " * 20}
+        monkeypatch.setattr(agentic, "get_connector", lambda t: self._connector([page]))
+        monkeypatch.setattr(agentic, "rejection_reason", lambda url, content, title="": "login or paywall page")
+        stored = []
+        store = SimpleNamespace(create_entity=lambda e: stored.append(e))
+        source = _source("api_feed", {"base_url": "https://example.org/api"})
+
+        out = await agentic.acquire_source(source, _plan([source]), FakeSession(None), store)
+        assert out["accepted_count"] == 0
+        assert stored == []
+        assert out["rejected_pages"] == [("https://example.org/login", "login or paywall page")]
+
+    async def test_a_kept_page_is_accepted(self, monkeypatch, quiet):
+        text = "The Fordow facility is operated by the Atomic Energy Organization of Iran. " * 5
+        page = {"url": "https://example.org/report", "title": "Report", "content": text}
+        monkeypatch.setattr(agentic, "get_connector", lambda t: self._connector([page]))
+        monkeypatch.setattr(agentic, "rejection_reason", lambda url, content, title="": "")
+        stored = []
+        store = SimpleNamespace(create_entity=lambda e: stored.append(e))
+        source = _source("api_feed", {"base_url": "https://example.org/api"})
+
+        out = await agentic.acquire_source(source, _plan([source]), FakeSession(None), store)
+        assert out["accepted_count"] == 1
+        assert len(stored) == 1

@@ -374,7 +374,20 @@ async def _collect_for_element(
                 result = await acquire_source(
                     source, plan, db, store, extraction_mode,
                     provider=provider, max_results=RESULTS_PER_QUERY,
-                )
+                ) or {}
+                if not result.get("accepted_count", result.get("record_count", 0)):
+                    # Fetched, but the content gate kept nothing (a captcha, a
+                    # login wall, an off-topic page). That spends no budget and
+                    # is not a source added — it used to log "collected: 1
+                    # record(s), 0 entities" and count against the element.
+                    reasons = ", ".join(sorted({r for _u, r in result.get("rejected_pages") or []})) or "no content"
+                    source.collection_status = "failed"
+                    source.last_error = f"No usable content ({reasons})"[:500]
+                    _log(db, plan.id, "requirement_source_rejected",
+                         f"Re-tasked source yielded nothing usable ({reasons[:120]}) — {url[:140]}",
+                         source_id=source.id)
+                    await db.commit()
+                    continue
                 # Record the outcome the way the planned pass does. Without
                 # this a re-tasked source sat at "pending / 0 records" forever
                 # while its content was demonstrably in the graph — the plan
@@ -384,10 +397,11 @@ async def _collect_for_element(
                 source.last_success_at = datetime.now(timezone.utc)
                 source.total_records_acquired = (
                     source.total_records_acquired or 0
-                ) + (result or {}).get("record_count", 0)
+                ) + result.get("record_count", 0)
                 _log(db, plan.id, "requirement_source_acquired",
-                     f"Re-tasked source collected: {(result or {}).get('record_count', 0)} "
-                     f"record(s), {(result or {}).get('entities_created', 0)} entities "
+                     f"Re-tasked source collected: "
+                     f"{result.get('accepted_count', result.get('record_count', 0))} "
+                     f"record(s), {result.get('entities_created', 0)} entities "
                      f"— {url[:140]}", source_id=source.id)
                 await db.commit()
                 added += 1

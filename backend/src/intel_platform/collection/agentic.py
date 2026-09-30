@@ -632,6 +632,10 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
     total_chars = 0
     total_chunks_embedded = 0
     embed_failures = 0
+    # Records that became Documents. The loops spend budget on this, not on
+    # records fetched: a captcha wall is a record, and counting it spent a
+    # source on nothing while the trail said "collected".
+    accepted = 0
     # Pages that fetched but carried no usable content, with the reason. A page
     # dropped without explanation is indistinguishable from one never found.
     rejected_pages: list[tuple[str, str]] = []
@@ -639,6 +643,7 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
     for record in result.records:
         content = record.get("content", "")
         if not content or len(content) < 50:
+            rejected_pages.append((record.get("url", ""), "too little text"))
             continue
 
         # A login page, a captcha wall or an empty shell still returns 200 with a
@@ -661,6 +666,7 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
         # Clean scraped content to remove navigation, boilerplate, ads
         content = _clean_scraped_content(content)
         if not content or len(content) < 50:
+            rejected_pages.append((record.get("url", ""), "only navigation or boilerplate"))
             continue
 
         total_chars += len(content)
@@ -683,6 +689,7 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
                 ))
                 await db.commit()
                 logger.info("Skipping off-topic document: %s", (title or url)[:120])
+                rejected_pages.append((url, "off-topic"))
                 continue
 
         # Per-document structured summary (non-fatal): summary/key_facts/sentiment/topics.
@@ -719,6 +726,7 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
             summary_json=summary_json,
         )
         store.create_entity(doc)
+        accepted += 1
 
         # Chunk and extract
         chunk_size = getattr(settings, 'chunk_size', 1200)
@@ -807,7 +815,8 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
     acq_log = AcquisitionLog(
         source_id=source.id,
         plan_id=plan.id,
-        result="SUCCESS" if result.record_count > 0 else "PARTIAL",
+        # SKIPPED: fetched, but the content gate kept nothing.
+        result="SUCCESS" if accepted else ("SKIPPED" if result.record_count else "PARTIAL"),
         record_count=result.record_count,
         source_type=source.source_type,
         source_config_snapshot=source.config or {},
@@ -820,6 +829,7 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
 
     return {
         "record_count": result.record_count,
+        "accepted_count": accepted,
         "total_chars": total_chars,
         "entities_created": total_entities,
         "relationships_created": total_rels,
@@ -1075,14 +1085,40 @@ async def run_agentic_loop(
                 ent_count = acquire_result.get("entities_created", 0)
                 rel_count = acquire_result.get("relationships_created", 0)
                 rec_count = acquire_result.get("record_count", 0)
+                rejected = acquire_result.get("rejected_pages") or []
+
+                if not acquire_result.get("accepted_count", rec_count):
+                    # Fetched, but nothing usable: a login wall, a captcha, an
+                    # off-topic page. The content gate decides before a source
+                    # is spent, so this one goes back to the budget and the
+                    # next queued source gets its slot. Recorded as a failure
+                    # with the reason, never as "acquired".
+                    attempted -= 1
+                    reasons = ", ".join(sorted({r for _u, r in rejected})) or "no content"
+                    source.collection_status = "failed"
+                    source.last_failure_at = datetime.now(timezone.utc)
+                    source.last_error = f"No usable content ({reasons})"[:500]
+                    db.add(CollectionActivity(
+                        plan_id=plan.id, source_id=source.id,
+                        event="source_failed",
+                        message=(
+                            f"No usable content: {rec_count} page(s) fetched, none kept "
+                            f"({reasons}); budget not spent"
+                        )[:480],
+                    ))
+                    failed += 1
+                    await db.commit()
+                    continue
 
                 # Report embeddings in the trail: a document that made it into
                 # the graph but not into the index is findable by name and
                 # invisible to semantic search, and nothing else would say so.
                 embedded = acquire_result.get("chunks_embedded", 0)
                 embed_failed = acquire_result.get("embed_failures", 0)
-                rejected = acquire_result.get("rejected_pages") or []
-                detail = f"Acquired {rec_count} docs, {ent_count} entities, {rel_count} relationships"
+                kept = acquire_result.get("accepted_count", rec_count)
+                detail = f"Acquired {kept} docs, {ent_count} entities, {rel_count} relationships"
+                if kept != rec_count:
+                    detail += f" ({rec_count} fetched)"
                 if embedded:
                     detail += f", {embedded} chunks indexed"
                 if embed_failed:

@@ -417,6 +417,7 @@ class TestRetaskedSourcesAreFlushedBeforeBeingLogged:
 
         async def fake_acquire(source, plan, db, store, mode, provider=None, max_results=3):
             acquired.append(source.name)
+            return {"record_count": 1, "accepted_count": 1}
 
         db = _FkEnforcingDB([], plan=_plan(), pir=_pir(["a?"]))
         row = _requirement(0, "a?")
@@ -713,7 +714,8 @@ class TestRetaskedSourceOutcomeIsRecorded:
         assert captured["source"].collection_status == "failed"
 
     async def test_record_count_survives_a_result_without_one(self, wired):
-        """acquire_source returning None or a bare dict must not crash the pass."""
+        """acquire_source returning None must not crash the pass. Nothing was
+        reported collected, so nothing is counted as added (C-10)."""
         async def acquire(source, plan, db, store, mode, provider=None, max_results=3):
             return None
 
@@ -721,4 +723,24 @@ class TestRetaskedSourceOutcomeIsRecorded:
         added = await rl._collect_for_element(
             db, _plan(), _requirement(0, "a?"), ["q"], None, object(), acquire, "nlp", None,
         )
-        assert added == 1
+        assert added == 0
+
+    async def test_a_page_the_content_gate_refused_spends_no_budget(self, wired):
+        """A captcha wall used to log "collected: 1 record(s), 0 entities" and
+        count as a source added, spending budget on nothing."""
+        captured = {}
+
+        async def acquire(source, plan, db, store, mode, provider=None, max_results=3):
+            captured["source"] = source
+            return {"record_count": 1, "accepted_count": 0, "entities_created": 0,
+                    "rejected_pages": [("https://example.com/a", "anti-bot interstitial")]}
+
+        db = _FkEnforcingDB([], plan=_plan(), pir=_pir(["a?"]))
+        added = await rl._collect_for_element(
+            db, _plan(), _requirement(0, "a?"), ["q"], None, object(), acquire, "nlp", None,
+        )
+        assert added == 0
+        assert captured["source"].collection_status == "failed"
+        events = [getattr(a, "event", None) for a in db.added]
+        assert "requirement_source_rejected" in events
+        assert "requirement_source_acquired" not in events
