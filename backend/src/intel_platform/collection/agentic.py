@@ -1009,11 +1009,80 @@ async def _follow_up(source, plan, db, store, extraction_mode, provider, acquire
 # Main entry point: run_agentic_loop
 # ---------------------------------------------------------------------------
 
+_PLAN_FAILED = "FAILED"
+
+
+def _final_status(current: str | None, *, failed: bool) -> str:
+    """The status a run leaves its plan in.
+
+    PAUSED and ARCHIVED are the analyst's decisions and a run never writes over
+    them. Uses plan_executor.final_plan_status when it exists so both paths
+    share the rule; the fallback is the same rule.
+    """
+    try:
+        from intel_platform.services.plan_executor import final_plan_status
+    except ImportError:
+        final_plan_status = None
+    if final_plan_status is not None:
+        return final_plan_status(current, failed=failed)
+    if current in (PlanStatus.PAUSED, PlanStatus.ARCHIVED):
+        return current
+    return _PLAN_FAILED if failed else PlanStatus.COMPLETED
+
+
+async def _record_plan_failed(db_factory, plan_id, reason: str) -> None:
+    """Write the failure through a fresh session.
+
+    The run's own session may be what broke (a failed flush poisons it), so it
+    is not reused. The message names the exception type only: the activity
+    trail is served to the UI, and exception text carries internals.
+    """
+    try:
+        async with db_factory() as db:
+            plan = await db.get(CollectionPlan, plan_id)
+            if plan is None:
+                return
+            plan.status = _final_status(plan.status, failed=True)
+            plan.updated_at = datetime.now(timezone.utc)
+            db.add(CollectionActivity(plan_id=plan_id, event="plan_failed", message=reason[:480]))
+            await db.commit()
+    except Exception:
+        logger.exception("Could not record the failure of plan %s", plan_id)
+
+
 async def run_agentic_loop(
     plan_id, db_factory, get_store, get_provider,
     max_results_per_source: int = 10, source_limit: int | None = None,
 ):
     """Background task: resolve, acquire, and evaluate all sources in a plan.
+
+    Runs as an asyncio task with nothing awaiting it, so nothing else would see
+    an exception: a crashed run read "running" for the stall window, then
+    "stalled", never "failed". Any failure is recorded as ``plan_failed`` and
+    not re-raised. Cancellation is recorded too and then propagated, so the
+    task still reports itself cancelled.
+    """
+    try:
+        await _run_agentic_loop(
+            plan_id, db_factory, get_store, get_provider,
+            max_results_per_source=max_results_per_source, source_limit=source_limit,
+        )
+    except asyncio.CancelledError:
+        logger.warning("Agentic loop for plan %s was cancelled", plan_id)
+        await _record_plan_failed(db_factory, plan_id, "Collection run was cancelled before it finished")
+        raise
+    except Exception as exc:
+        logger.exception("Agentic loop for plan %s failed", plan_id)
+        await _record_plan_failed(
+            db_factory, plan_id, f"Collection run failed ({type(exc).__name__}); see server logs",
+        )
+
+
+async def _run_agentic_loop(
+    plan_id, db_factory, get_store, get_provider,
+    max_results_per_source: int = 10, source_limit: int | None = None,
+):
+    """The body of :func:`run_agentic_loop`.
 
     Args:
         plan_id: UUID of the collection plan

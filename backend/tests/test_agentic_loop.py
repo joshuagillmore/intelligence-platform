@@ -326,3 +326,53 @@ class TestAcquireSourceCountsWhatItKept:
 
         await agentic.acquire_source(source, _plan([source]), FakeSession(None), store)
         assert stored[0].url == "https://example.org/report"
+
+
+# ---------------------------------------------------------------------------
+# R-3: a crashed run says it failed
+# ---------------------------------------------------------------------------
+
+class TestACrashIsRecorded:
+    """With no top-level handler a crash left the plan "running" for 600 s,
+    then "stalled", never "failed", and the exception went nowhere."""
+
+    @pytest.fixture
+    def resolve_raises(self, monkeypatch):
+        async def boom(plan, sources, db, provider, max_results=10):
+            raise RuntimeError("secret internal detail: connection string postgres://u:p@db")
+
+        monkeypatch.setattr(agentic, "resolve_sources", boom)
+
+    async def test_a_crash_writes_plan_failed_and_does_not_escape(self, resolve_raises):
+        plan = _plan([_source()])
+        session = await _run(plan)  # must not raise
+
+        assert "plan_failed" in session.events()
+        assert plan.status == "FAILED"
+        assert "plan_completed" not in session.events()
+
+    async def test_the_failure_message_does_not_carry_exception_text(self, resolve_raises):
+        session = await _run(_plan([_source()]))
+        [message] = session.messages("plan_failed")
+        assert "postgres://" not in message
+        assert "RuntimeError" in message
+
+    async def test_a_paused_plan_stays_paused(self, resolve_raises):
+        plan = _plan([_source()])
+        plan.status = "PAUSED"
+        session = await _run(plan)
+        assert "plan_failed" in session.events()
+        assert plan.status == "PAUSED", "a crash must not overwrite the analyst's pause"
+
+    async def test_cancellation_is_recorded_and_still_propagates(self, monkeypatch):
+        import asyncio
+
+        async def cancelled(plan, sources, db, provider, max_results=10):
+            raise asyncio.CancelledError()
+
+        monkeypatch.setattr(agentic, "resolve_sources", cancelled)
+        plan = _plan([_source()])
+        session = FakeSession(plan)
+        with pytest.raises(asyncio.CancelledError):
+            await agentic.run_agentic_loop(plan.id, _factory(session), lambda: None, _provider)
+        assert "plan_failed" in session.events()
