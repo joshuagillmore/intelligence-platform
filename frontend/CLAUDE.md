@@ -1,7 +1,7 @@
 # Frontend — Analyst UI
 
-Next.js **14** (App Router) · TypeScript · Tailwind · **npm**. The analyst-facing
-workbench over the backend API. The product name is **SENTINEL** — keep it
+Next.js **14** (App Router) · TypeScript · Tailwind · **npm** · Node **22** (CI and
+every Docker image). The analyst-facing workbench over the backend API. The product name is **SENTINEL** — keep it
 consistent in UI copy; shared name/version/tagline constants live in
 `src/lib/branding.ts`. See the root `CLAUDE.md` for architecture, branching, and
 deploy.
@@ -59,4 +59,4 @@ restyling — don't mix the two systems in one branch.
 
 ## Definition of done
 
-`npm run lint` clean **and** `npm run build` succeeds.
+`npm run lint` clean **and** `npm run build` succeeds **and** `npm run test` passes.
