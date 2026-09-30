@@ -113,6 +113,153 @@ def test_refuses_to_build_under_require_secure_auth():
         platform_mcp.build_authenticated_app(_settings(require_secure_auth=True))
 
 
+# --- tools: scoping (contract 2), off-loop store calls (contract 15) ---------
+
+def _on_event_loop() -> bool:
+    import asyncio
+    try:
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
+
+
+class _FakeStore:
+    """GraphStore stand-in: records each call's arguments and thread."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, dict]] = []
+        self.on_loop: list[bool] = []
+
+    def _record(self, name, **kwargs):
+        self.calls.append((name, kwargs))
+        self.on_loop.append(_on_event_loop())
+
+    def get_entity(self, entity_id):
+        self._record("get_entity", entity_id=entity_id)
+        return {"id": entity_id, "project_id": "proj-of-entity"}
+
+    def get_subgraph(self, entity_id, hops=1, project_id=None):
+        self._record("get_subgraph", entity_id=entity_id, hops=hops, project_id=project_id)
+        return {"nodes": [{"id": entity_id}, {"id": "shared"}], "edges": []}
+
+    def find_shortest_path(self, entity_id_1, entity_id_2, project_id=None):
+        self._record("find_shortest_path", project_id=project_id)
+        return {"nodes": [], "edges": [], "path_length": 0}
+
+    def search_entities(self, project_id=None, query="", entity_type=None, limit=20):
+        self._record("search_entities", project_id=project_id)
+        return [{"id": "e1"}]
+
+    def create_entity(self, model):
+        self._record("create_entity")
+        return {"id": model.id}
+
+
+class _LegacyStore(_FakeStore):
+    """The store before contract 2 lands: no project_id parameter."""
+
+    def get_subgraph(self, entity_id, hops=1):
+        self._record("get_subgraph", entity_id=entity_id, hops=hops)
+        return {"nodes": [], "edges": []}
+
+
+@pytest.fixture
+def fake_store(monkeypatch):
+    store = _FakeStore()
+    monkeypatch.setattr(mcp_server, "_store", lambda: store)
+    return store
+
+
+def _subgraph_calls(store):
+    return [kwargs for name, kwargs in store.calls if name == "get_subgraph"]
+
+
+@pytest.mark.parametrize("requested,expected", [(50, 4), (4, 4), (2, 2), (0, 1), (-3, 1)])
+async def test_get_subgraph_clamps_hops(fake_store, requested, expected):
+    await mcp_server.get_subgraph("e1", hops=requested, project_id="proj-a")
+    assert _subgraph_calls(fake_store)[0]["hops"] == expected
+
+
+async def test_get_subgraph_is_scoped_to_the_given_project(fake_store):
+    await mcp_server.get_subgraph("e1", hops=2, project_id="proj-a")
+    assert _subgraph_calls(fake_store)[0]["project_id"] == "proj-a"
+
+
+async def test_get_subgraph_defaults_to_the_entitys_own_project(fake_store):
+    # Unscoped traversal crossed shared ATT&CK nodes into other projects (A-7).
+    await mcp_server.get_subgraph("e1")
+    assert _subgraph_calls(fake_store)[0]["project_id"] == "proj-of-entity"
+
+
+async def test_get_subgraph_works_against_a_store_without_project_scoping(monkeypatch):
+    store = _LegacyStore()
+    monkeypatch.setattr(mcp_server, "_store", lambda: store)
+    result = await mcp_server.get_subgraph("e1", hops=9, project_id="proj-a")
+    assert result == {"nodes": [], "edges": []}
+    assert _subgraph_calls(store) == [{"entity_id": "e1", "hops": 4}]
+
+
+async def test_find_connections_scopes_both_traversals(fake_store):
+    out = await mcp_server.find_connections("e1", "e2", project_id="proj-a")
+    calls = _subgraph_calls(fake_store)
+    assert [c["project_id"] for c in calls] == ["proj-a", "proj-a"]
+    assert all(c["hops"] == 2 for c in calls)
+    assert out["count"] >= 1
+
+
+async def test_find_shortest_path_is_scoped(fake_store):
+    await mcp_server.find_shortest_path("e1", "e2")
+    assert [k for n, k in fake_store.calls if n == "find_shortest_path"] == [{"project_id": "proj-of-entity"}]
+
+
+async def test_graph_tools_call_the_store_off_the_event_loop(fake_store):
+    await mcp_server.search_entities("proj-a", query="x")
+    await mcp_server.get_subgraph("e1", project_id="proj-a")
+    await mcp_server.find_connections("e1", "e2", project_id="proj-a")
+    await mcp_server.find_shortest_path("e1", "e2", project_id="proj-a")
+    assert fake_store.on_loop and not any(fake_store.on_loop)
+
+
+async def test_query_corpus_returns_the_answer_not_a_coroutine(fake_store, monkeypatch):
+    # GraphRAGPipeline.query is async; the sync tool returned it unawaited.
+    import intel_platform.services.graph_rag as graph_rag
+
+    class _Pipeline:
+        def __init__(self, store):
+            pass
+
+        async def query(self, query, project_id):
+            return {"answer": f"{query} @ {project_id}"}
+
+    monkeypatch.setattr(graph_rag, "GraphRAGPipeline", _Pipeline)
+    assert await mcp_server.query_corpus("proj-a", "who") == {"answer": "who @ proj-a"}
+
+
+async def test_ingest_document_builds_the_graph_off_the_event_loop(fake_store, monkeypatch):
+    import intel_platform.services.graph_builder as graph_builder
+    import intel_platform.services.ingestion as ingestion
+
+    build_on_loop: list[bool] = []
+
+    def fake_build(store, entities, rels, project_id, **kwargs):
+        build_on_loop.append(_on_event_loop())
+        return {"entities_created": len(entities)}
+
+    monkeypatch.setattr(graph_builder, "build_graph_from_extractions", fake_build)
+    monkeypatch.setattr(ingestion, "ingest_text", lambda content, *a, **k: [{"content": content}])
+
+    async def fake_extract(text, doc_id, mode):
+        return [{"name": "APT29", "type": "ThreatActor"}], []
+
+    monkeypatch.setattr(mcp_server, "_mcp_extract", fake_extract)
+
+    out = await mcp_server.ingest_document("test-proj", "APT29 did things", extraction_mode="nlp")
+    assert out["entities_created"] == 1
+    assert build_on_loop == [False]
+    assert fake_store.on_loop == [False]  # create_entity for the Document
+
+
 async def test_legacy_get_mcp_app_is_authenticated_too():
     # app.py still calls get_mcp_app() until the api-core package switches to
     # build_authenticated_app; it must never hand out the unauthenticated app.
