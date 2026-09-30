@@ -62,6 +62,19 @@ _CVE_RE = re.compile(r"^CVE-\d{4}-\d{4,}$", re.IGNORECASE)
 _HASH_RE = re.compile(r"^(?:[a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$")
 
 
+_CVE_ID_STRICT = re.compile(r"^CVE-\d{4}-\d{4,}$")
+
+
+def cve_id(value: str) -> str:
+    """``value`` as a canonical (upper-case) CVE id, or ``""`` if it is not one.
+
+    KEV and NVD are keyed by CVE id, so anything else ("Log4Shell", "N/A") must
+    not be looked up as if it were one.
+    """
+    v = refang(value or "").strip().upper()
+    return v if _CVE_ID_STRICT.match(v) else ""
+
+
 def _valid_ip(value: str) -> bool:
     return all(o.isdigit() and 0 <= int(o) <= 255 for o in value.split("."))
 

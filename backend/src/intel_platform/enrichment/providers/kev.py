@@ -19,6 +19,7 @@ from intel_platform.enrichment.base import (
     fetch_json,
     register_provider,
 )
+from intel_platform.enrichment.observables import cve_id
 
 _KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 _CATALOG_TTL = 6 * 3600  # seconds
@@ -70,9 +71,12 @@ class KEVProvider(EnrichmentProvider):
         self._client = client or ProxiedClient()
 
     async def lookup(self, value: str, entity_type: str) -> EnrichmentResult:
+        cve = cve_id(value)
+        if not cve:
+            return EnrichmentResult(skipped="no CVE id")
         catalog = await _get_catalog(self._client)
 
-        entry = catalog.get(value.upper())
+        entry = catalog.get(cve)
         if not entry:
             return EnrichmentResult(properties={"known_exploited": False}, source_url=_KEV_URL)
 

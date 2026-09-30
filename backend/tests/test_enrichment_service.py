@@ -380,3 +380,65 @@ def test_route_and_hook_services_use_the_shared_limiter():
 def test_explicit_limiter_still_wins():
     own = RateLimiter()
     assert EnrichmentService(MagicMock(), limiter=own).limiter is own
+
+
+# --- E-3: a Vulnerability is looked up by its CVE id ------------------------
+
+def _kev_service(monkeypatch, entity, catalog):
+    from intel_platform.enrichment.providers import kev
+
+    kev._reset_catalog()
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json = MagicMock(return_value={"vulnerabilities": catalog})
+    client = MagicMock()
+    client.get = AsyncMock(return_value=resp)
+    monkeypatch.setattr(kev, "ProxiedClient", lambda *a, **k: client)
+    register_provider(kev.KEVProvider)
+    store = _store_with_entity(entity)
+    cache = _cache_miss()
+    return EnrichmentService(store, write_related=MagicMock(), cache=cache), store, cache, client
+
+
+async def test_named_vulnerability_uses_its_cve_id_property(monkeypatch):
+    # Extraction names the node "Log4Shell" and records cve_id; KEV used to be
+    # asked about "LOG4SHELL", answer "not known-exploited", and have that
+    # cached for a day.
+    entity = {
+        "id": "v1", "name": "Log4Shell", "entity_type": "Vulnerability",
+        "project_id": "test-p", "cve_id": "CVE-2021-44228",
+    }
+    svc, store, cache, _ = _kev_service(
+        monkeypatch, entity, [{"cveID": "CVE-2021-44228", "dateAdded": "2021-12-10"}],
+    )
+    out = await svc.enrich_entity("v1", only={"kev"})
+
+    assert out["observable"] == "CVE-2021-44228"
+    assert out["providers"]["kev"]["status"] == "ok"
+    _, props = store.update_entity.call_args_list[0][0]
+    assert props["known_exploited"] is True
+    assert cache.set.await_args[0][1] == "CVE-2021-44228"  # cached under the id
+
+
+async def test_vulnerability_without_a_cve_id_asserts_nothing(monkeypatch):
+    entity = {"id": "v1", "name": "Log4Shell", "entity_type": "Vulnerability", "project_id": "test-p"}
+    svc, store, cache, client = _kev_service(
+        monkeypatch, entity, [{"cveID": "CVE-2021-44228", "dateAdded": "2021-12-10"}],
+    )
+    out = await svc.enrich_entity("v1", only={"kev"})
+
+    assert out["providers"]["kev"] == {"status": "skipped", "reason": "no CVE id"}
+    store.update_entity.assert_not_called()   # nothing written, not even `enriched`
+    cache.set.assert_not_awaited()
+    client.get.assert_not_called()
+
+
+async def test_malformed_cve_id_property_is_not_used(monkeypatch):
+    entity = {
+        "id": "v1", "name": "Log4Shell", "entity_type": "Vulnerability",
+        "project_id": "test-p", "cve_id": "N/A",
+    }
+    svc, store, _, _ = _kev_service(monkeypatch, entity, [])
+    out = await svc.enrich_entity("v1", only={"kev"})
+    assert out["providers"]["kev"]["status"] == "skipped"
+    store.update_entity.assert_not_called()

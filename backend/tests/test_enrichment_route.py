@@ -87,6 +87,34 @@ def test_refresh_400_on_unknown_provider(client, auth_header):
     assert resp.status_code == 400
 
 
+def test_cached_view_reads_a_vulnerability_under_its_cve_id(client, auth_header):
+    # The service caches KEV/NVD under the CVE id (E-3); the read must use the
+    # same key or a named vulnerability never shows its enrichment.
+    from intel_platform.api.app import app
+    from intel_platform.api.deps import get_graph_store
+
+    store = MagicMock()
+    store.get_entity = MagicMock(return_value={
+        "id": "v1", "name": "Log4Shell", "entity_type": "Vulnerability",
+        "project_id": "test-p", "cve_id": "CVE-2021-44228",
+    })
+    seen: list[str] = []
+
+    async def fake_get(self, provider, observable):
+        seen.append(observable)
+        return None
+
+    app.dependency_overrides[get_graph_store] = lambda: store
+    try:
+        with patch("intel_platform.enrichment.cache.EnrichmentCache.get", new=fake_get):
+            resp = client.get("/api/enrichment/entities/v1", headers=auth_header)
+    finally:
+        app.dependency_overrides.pop(get_graph_store, None)
+    assert resp.status_code == 200
+    assert resp.json()["observable"] == "CVE-2021-44228"
+    assert seen and set(seen) == {"CVE-2021-44228"}
+
+
 def test_admin_enrichment_get(client, auth_header):
     with patch("intel_platform.enrichment.hook.auto_enrich_enabled",
                new=AsyncMock(return_value=True)):

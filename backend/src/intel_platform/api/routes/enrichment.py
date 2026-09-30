@@ -93,13 +93,14 @@ async def get_enrichment(entity_id: str, store: GraphStore = Depends(get_graph_s
     import intel_platform.enrichment.providers  # noqa: F401  (register providers)
     from intel_platform.enrichment.base import get_providers_for
     from intel_platform.enrichment.cache import EnrichmentCache
-    from intel_platform.enrichment.observables import refang
+    from intel_platform.enrichment.service import observable_for
 
     entity = store.get_entity(entity_id)
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
 
-    observable = refang(entity.get("name", "")).strip()
+    # Same key the service caches under (a Vulnerability's CVE id, not its name).
+    observable = observable_for(entity)
     cache = EnrichmentCache()
     providers = get_providers_for(entity.get("entity_type", ""), _available_keys())
     cached: dict[str, dict | None] = {}

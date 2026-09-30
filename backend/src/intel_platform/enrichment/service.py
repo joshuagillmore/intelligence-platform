@@ -26,7 +26,7 @@ from intel_platform.enrichment.base import (
     get_providers_for,
 )
 from intel_platform.enrichment.cache import RateLimiter
-from intel_platform.enrichment.observables import refang
+from intel_platform.enrichment.observables import cve_id, refang
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,21 @@ _PROTECTED_KEYS = frozenset({
 # was new every request and never throttled anything. Read at construction, so
 # tests can swap it.
 _RATE_LIMITER = RateLimiter()
+
+
+def observable_for(entity: dict) -> str:
+    """The value providers look up for ``entity``, which also keys the cache.
+
+    Normally the refanged name. A Vulnerability is looked up by its CVE id —
+    the name when the name is one, else a well-formed ``cve_id`` property —
+    because KEV and NVD are keyed by id: "Log4Shell" by name is "not in KEV"
+    for a CVE that is. With neither, the name is returned and the CVE-keyed
+    providers skip it rather than answer for it.
+    """
+    name = refang(entity.get("name", "") or "").strip()
+    if entity.get("entity_type") == "Vulnerability":
+        return cve_id(name) or cve_id(str(entity.get("cve_id") or "")) or name
+    return name
 
 
 def _result_to_cache(result: EnrichmentResult) -> dict:
@@ -112,7 +127,7 @@ class EnrichmentService:
         entity_id = entity.get("id")
         entity_type = entity.get("entity_type", "")
         project_id = entity.get("project_id", "")
-        observable = refang(entity.get("name", "")).strip()
+        observable = observable_for(entity)
         results: dict[str, dict] = {}
 
         if not entity_id:
@@ -179,6 +194,12 @@ class EnrichmentService:
                 "enrichment provider %s raised for %s", provider.name, observable, exc_info=True
             )
             results[provider.name] = {"status": "error", "reason": "lookup failed"}
+            return
+
+        if result.skipped:
+            # The provider declined this value; it asserts nothing, so nothing
+            # is written (not even `enriched`) and nothing is cached.
+            results[provider.name] = {"status": "skipped", "reason": result.skipped}
             return
 
         # per-provider isolation (graph write) — a store failure here must not

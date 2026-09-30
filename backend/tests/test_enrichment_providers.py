@@ -93,6 +93,39 @@ async def test_kev_miss_marks_not_exploited():
     assert result.properties["known_exploited"] is False
 
 
+# --- E-3: KEV/NVD are keyed by CVE id; a name that is not one asserts nothing
+
+async def test_kev_non_cve_value_asserts_nothing():
+    # "Log4Shell" is not in the KEV catalog by that name; answering
+    # known_exploited: false for it would be a claim the lookup never made.
+    _reset_catalog()
+    client = _client(lambda *a, **k: _resp({"vulnerabilities": []}))
+
+    result = await KEVProvider(client=client).lookup("Log4Shell", "Vulnerability")
+    assert result.skipped == "no CVE id"
+    assert result.properties == {}
+    client.get.assert_not_called()
+
+
+async def test_nvd_non_cve_value_asserts_nothing():
+    client = _client(lambda *a, **k: _resp({"vulnerabilities": []}))
+
+    result = await NVDProvider(client=client).lookup("Log4Shell", "Vulnerability")
+    assert result.skipped == "no CVE id"
+    assert result.properties == {}
+    client.get.assert_not_called()
+
+
+async def test_kev_normalises_a_lowercase_cve_id():
+    _reset_catalog()
+
+    async def get(url, timeout=30):
+        return _resp({"vulnerabilities": [{"cveID": "CVE-2021-44228", "dateAdded": "2021-12-10"}]})
+
+    result = await KEVProvider(client=_client(get)).lookup("cve-2021-44228", "Vulnerability")
+    assert result.properties["known_exploited"] is True
+
+
 # --- NVD --------------------------------------------------------------------
 
 async def test_nvd_extracts_cvss_description_products():
@@ -271,13 +304,13 @@ async def test_providers_reject_wrong_shaped_json():
     async def bad_get(url, params=None, headers=None, timeout=10):
         return _resp(None)  # not the expected dict/list shape
 
-    for provider_cls, etype in (
-        (DNSProvider, "Domain"),
-        (GeoIPProvider, "IPAddress"),
-        (NVDProvider, "Vulnerability"),
-        (RDAPProvider, "IPAddress"),
-        (CertsProvider, "Domain"),
+    for provider_cls, etype, value in (
+        (DNSProvider, "Domain", "evil.com"),
+        (GeoIPProvider, "IPAddress", "8.8.8.8"),
+        (NVDProvider, "Vulnerability", "CVE-2021-44228"),
+        (RDAPProvider, "IPAddress", "8.8.8.8"),
+        (CertsProvider, "Domain", "evil.com"),
     ):
         with pytest.raises(ProviderError) as info:
-            await provider_cls(client=_client(bad_get)).lookup("x", etype)
+            await provider_cls(client=_client(bad_get)).lookup(value, etype)
         assert info.value.reason == "unexpected response shape"

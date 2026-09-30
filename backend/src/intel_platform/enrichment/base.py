@@ -39,6 +39,11 @@ class EnrichmentResult:
     related: list[RelatedEntity] = field(default_factory=list)  # new nodes + edges
     raw: dict = field(default_factory=dict)             # audit payload (cached)
     source_url: str = ""                                # evidence for writes
+    # Non-empty when the provider declined to look this value up (e.g. KEV for
+    # a Vulnerability with no CVE id). The service records it as
+    # {"status": "skipped", "reason": skipped} and neither applies nor caches
+    # anything: a skipped lookup asserts nothing about the node.
+    skipped: str = ""
 
 
 class ProviderError(RuntimeError):

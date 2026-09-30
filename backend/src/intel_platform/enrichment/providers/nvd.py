@@ -18,6 +18,7 @@ from intel_platform.enrichment.base import (
     fetch_json,
     register_provider,
 )
+from intel_platform.enrichment.observables import cve_id
 
 _URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 _MAX_PRODUCTS = 25
@@ -87,6 +88,9 @@ class NVDProvider(EnrichmentProvider):
         self._client = client or ProxiedClient()
 
     async def lookup(self, value: str, entity_type: str) -> EnrichmentResult:
+        value = cve_id(value)
+        if not value:
+            return EnrichmentResult(skipped="no CVE id")
         headers = {"apiKey": settings.nvd_api_key} if settings.nvd_api_key else None
         data = await fetch_json(
             self._client, self.name, _URL, params={"cveId": value}, headers=headers, timeout=20,
