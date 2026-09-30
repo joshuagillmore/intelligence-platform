@@ -13,6 +13,7 @@ import {
   isHttpStatus,
 } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
+import { describeMapResult } from '@/lib/attackMapping';
 import { TYPE_BADGE_CLASS } from '@/lib/entityStyles';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import Markdown from '@/components/Markdown';
@@ -146,6 +147,12 @@ export default function AttackMatrix({
   const [d3fend, setD3fend] = useState<AttackD3fendCountermeasure[] | null>(null);
   const [d3fendLoading, setD3fendLoading] = useState(false);
   const [d3fendError, setD3fendError] = useState(false);
+  // The lookup answered but D3FEND itself could not be read (outage or an
+  // upstream shape change): the empty list means "unknown", not "none".
+  const [d3fendDegraded, setD3fendDegraded] = useState(false);
+  // Re-check earlier AI mappings on the next map run (removes ones the model
+  // no longer confirms).
+  const [remapExisting, setRemapExisting] = useState(false);
   // The technique the drawer is showing now. Detail and D3FEND responses for
   // any other technique (a slow response overtaken by a newer click) are
   // dropped instead of landing in this drawer.
@@ -217,30 +224,21 @@ export default function AttackMatrix({
     setMapping(true);
     setMapNote(null);
     try {
-      const res = await attackApi.map(projectId);
-      const { mapped, skipped } = res.data;
-      if (mapped > 0) {
-        setNeedsEmbed(false);
-        setMapNote({
-          text: `AI mapped ${mapped} TTP${mapped === 1 ? '' : 's'} to ATT&CK${skipped ? ` · ${skipped} skipped` : ''}.`,
-          tone: 'ok',
-        });
-        await loadMatrix();
-      } else if (skipped > 0) {
-        // Nothing mapped but TTPs were considered — most likely techniques
-        // aren't embedded yet. Point the analyst at the one-time Embed step.
-        setNeedsEmbed(true);
-        setMapNote({
-          text: isAdmin
-            ? `No TTPs were mapped. If you haven't embedded techniques yet, run "Embed techniques" first, then map again.`
-            : 'No TTPs were mapped. The ATT&CK techniques may not be embedded yet; ask an administrator to run "Embed techniques", then map again.',
-          tone: 'warn',
-        });
-      } else {
-        setMapNote({ text: 'No unmapped TTPs to map — everything with a match is already resolved.', tone: 'ok' });
-      }
-    } catch {
-      setMapNote({ text: 'AI mapping failed. Check the backend LLM/embedding provider and try again.', tone: 'warn' });
+      const res = await attackApi.map(projectId, remapExisting);
+      // The backend attributes every skip to a reason; the note says which,
+      // and only a missing technique catalogue points at the Embed step.
+      const note = describeMapResult(res.data, { isAdmin });
+      setNeedsEmbed(note.needsEmbed);
+      setMapNote({ text: note.text, tone: note.tone });
+      if (res.data.mapped > 0 || (res.data.stale_removed ?? 0) > 0) await loadMatrix();
+    } catch (e) {
+      // 503: no model could run. That is a failure, not "0 mapped".
+      setMapNote({
+        text: isHttpStatus(e, 503)
+          ? 'AI mapping could not run: no LLM provider is available. Configure or start one, then map again.'
+          : `AI mapping failed: ${getErrorMessage(e)}`,
+        tone: 'warn',
+      });
     } finally {
       setMapping(false);
     }
@@ -351,6 +349,7 @@ export default function AttackMatrix({
     setDetailLoading(true);
     // Reset the lazy D3FEND state for the new technique.
     setD3fend(null);
+    setD3fendDegraded(false);
     setD3fendError(false);
     setD3fendLoading(false);
     try {
@@ -370,6 +369,7 @@ export default function AttackMatrix({
     setSelectedId(null);
     setDetail(null);
     setD3fend(null);
+    setD3fendDegraded(false);
     setD3fendError(false);
     setD3fendLoading(false);
   }, []);
@@ -385,6 +385,7 @@ export default function AttackMatrix({
       const res = await attackApi.d3fend(forId);
       if (drawerFor.current !== forId) return;
       setD3fend(res.data.countermeasures || []);
+      setD3fendDegraded(res.data.degraded === true);
     } catch {
       if (drawerFor.current !== forId) return;
       setD3fendError(true);
@@ -568,6 +569,21 @@ export default function AttackMatrix({
             </span>
             {mapping ? 'Mapping…' : 'Map TTPs → ATT&CK (AI)'}
           </button>
+
+          <label
+            className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md cursor-pointer select-none"
+            style={{ color: '#9ca3af' }}
+            title="Also re-check TTPs the AI mapped before, and remove mappings the model no longer confirms"
+          >
+            <input
+              type="checkbox"
+              checked={remapExisting}
+              onChange={(e) => setRemapExisting(e.target.checked)}
+              disabled={mapping}
+              className="accent-accent-periwinkle"
+            />
+            Re-check earlier AI mappings
+          </label>
 
           <button
             onClick={handleDownloadLayer}
@@ -923,6 +939,14 @@ export default function AttackMatrix({
                         <p className="text-xs text-gray-500">
                           Couldn&apos;t load D3FEND countermeasures.{' '}
                           <button onClick={loadD3fend} className="underline hover:brightness-125" style={{ color: ACCENT }}>
+                            Retry
+                          </button>
+                        </p>
+                      ) : d3fendDegraded && d3fend.length === 0 ? (
+                        <p className="text-xs text-yellow-300/80">
+                          D3FEND could not be read just now (the lookup failed or answered in an unexpected
+                          shape), so this is not a &ldquo;none&rdquo;. Nothing was cached.{' '}
+                          <button onClick={loadD3fend} className="underline hover:brightness-125">
                             Retry
                           </button>
                         </p>
