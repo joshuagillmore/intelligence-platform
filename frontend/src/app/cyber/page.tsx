@@ -6,7 +6,7 @@ import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import GraphVisualization from '@/components/GraphVisualization';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { entitiesApi, graphApi, assessApi, entityFields } from '@/lib/api';
+import { entitiesApi, graphApi, assessApi, entityFields, totalFrom } from '@/lib/api';
 import { TYPE_BADGE_CLASS as TYPE_BADGE_STYLES } from '@/lib/entityStyles';
 import { getErrorMessage } from '@/lib/errorMessages';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
@@ -49,6 +49,9 @@ interface GraphEdge {
 }
 
 const IOC_TYPES = ['IPAddress', 'Domain', 'Hash', 'TTP', 'Vulnerability'];
+/** Rows requested per indicator type. The server default is 50, which silently
+ *  truncated every tile on a real project. */
+const IOC_FETCH_LIMIT = 1000;
 
 // TYPE_BADGE_STYLES imported from '@/lib/entityStyles' (single source of truth)
 
@@ -113,8 +116,15 @@ export default function CyberPage() {
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
   const [selectedGraphNode, setSelectedGraphNode] = useState<string | null>(null);
   const [iocsLoading, setIocsLoading] = useState(false);
+  // True match count per indicator type (X-Total-Count), and why any type
+  // failed to load. The tiles are computed over what was loaded, so the page
+  // must say when that is less than everything.
+  const [iocTotals, setIocTotals] = useState<Record<string, number>>({});
+  const [iocErrors, setIocErrors] = useState<Record<string, string>>({});
   const [pageTab, setPageTab] = useState<PageTab>('ioc');
   const [threatActors, setThreatActors] = useState<IOCEntity[]>([]);
+  const [actorTotal, setActorTotal] = useState(0);
+  const [actorError, setActorError] = useState<string | null>(null);
   const [actorRelationships, setActorRelationships] = useState<Record<string, Relationship[]>>({});
   const [expandedActorId, setExpandedActorId] = useState<string | null>(null);
   const [generatingProfile, setGeneratingProfile] = useState<string | null>(null);
@@ -133,14 +143,29 @@ export default function CyberPage() {
   const loadIOCs = useCallback(async () => {
     if (!activeProject) return;
     setIocsLoading(true);
+    // The list endpoint defaults to 50 rows. Ask for a stated page per type and
+    // read the true total from X-Total-Count, so every tile can say what share
+    // of the indicators it was computed over. A type that fails to load is
+    // reported, not silently counted as zero.
+    const results = await Promise.allSettled(
+      IOC_TYPES.map(type => entitiesApi.search(activeProject.id, undefined, type, IOC_FETCH_LIMIT)),
+    );
     const allIocs: IOCEntity[] = [];
-    for (const type of IOC_TYPES) {
-      try {
-        const res = await entitiesApi.search(activeProject.id, undefined, type);
-        allIocs.push(...res.data);
-      } catch { /* type may not exist */ }
-    }
+    const totals: Record<string, number> = {};
+    const errors: Record<string, string> = {};
+    results.forEach((result, i) => {
+      const type = IOC_TYPES[i];
+      if (result.status === 'fulfilled') {
+        const rows: IOCEntity[] = Array.isArray(result.value.data) ? result.value.data : [];
+        allIocs.push(...rows);
+        totals[type] = totalFrom(result.value);
+      } else {
+        errors[type] = getErrorMessage(result.reason);
+      }
+    });
     setIocs(allIocs);
+    setIocTotals(totals);
+    setIocErrors(errors);
     setIocsLoading(false);
   }, [activeProject]);
 
@@ -171,10 +196,16 @@ export default function CyberPage() {
 
   const loadThreatActors = useCallback(async () => {
     if (!activeProject) return;
+    setActorError(null);
     try {
-      const res = await entitiesApi.search(activeProject.id, undefined, 'ThreatActor');
-      setThreatActors(res.data);
-    } catch { /* ignore */ }
+      const res = await entitiesApi.search(activeProject.id, undefined, 'ThreatActor', IOC_FETCH_LIMIT);
+      setThreatActors(Array.isArray(res.data) ? res.data : []);
+      setActorTotal(totalFrom(res));
+    } catch (e) {
+      setThreatActors([]);
+      setActorTotal(0);
+      setActorError(getErrorMessage(e));
+    }
   }, [activeProject]);
 
   useEffect(() => {
@@ -196,6 +227,13 @@ export default function CyberPage() {
     if (activeFilter === 'all') return iocs;
     return iocs.filter(i => i.entity_type === activeFilter);
   }, [iocs, activeFilter]);
+
+  // How many indicators exist versus how many were loaded, over the types
+  // that loaded at all.
+  const iocCoverage = useMemo(() => {
+    const total = Object.values(iocTotals).reduce((sum, n) => sum + n, 0);
+    return { loaded: iocs.length, total: Math.max(total, iocs.length) };
+  }, [iocs, iocTotals]);
 
 
   const severityStats = useMemo(() => {
@@ -385,6 +423,22 @@ export default function CyberPage() {
               <SeverityStatCard label="Enriched" count={`${severityStats.enrichedPct}%`} color="#adc6ff" progressPercent={severityStats.enrichedPct} />
               <SeverityStatCard label="Attributed" count={`${severityStats.attributedPct}%`} color="#adc6ff" subtitle="Mapped to APTs" progressPercent={severityStats.attributedPct} />
             </div>
+
+            {/* What the tiles were computed over, when that is not everything. */}
+            {!iocsLoading && iocCoverage.loaded < iocCoverage.total && (
+              <p className="text-xs text-gray-400 -mt-3 mb-4">
+                Showing {iocCoverage.loaded.toLocaleString()} of {iocCoverage.total.toLocaleString()} indicators; the figures above cover the loaded {iocCoverage.loaded.toLocaleString()}.
+              </p>
+            )}
+            {!iocsLoading && Object.keys(iocErrors).length > 0 && (
+              <div role="alert" className="text-xs text-red-300 -mt-2 mb-4 space-y-0.5">
+                {Object.entries(iocErrors).map(([type, message]) => (
+                  <p key={type}>
+                    Could not load {FILTER_TABS.find(t => t.value === type)?.label ?? type}: {message}. The figures above exclude them.
+                  </p>
+                ))}
+              </div>
+            )}
 
             {/* Filter tabs */}
             <div className="flex gap-1 mb-4 overflow-x-auto">
@@ -589,10 +643,16 @@ export default function CyberPage() {
 
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Threat Actors ({threatActors.length})</h3>
+                <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">
+                  Threat Actors ({actorTotal > threatActors.length ? `${threatActors.length} of ${actorTotal}` : threatActors.length})
+                </h3>
               </div>
 
-              {threatActors.length === 0 ? (
+              {actorError ? (
+              <div role="alert" className="rounded-lg p-8 text-center text-red-300" style={{ backgroundColor: '#1a1f2e', border: '1px solid #313849' }}>
+                <p>Could not load threat actors: {actorError}</p>
+              </div>
+            ) : threatActors.length === 0 ? (
               <div className="rounded-lg p-8 text-center text-gray-500" style={{ backgroundColor: '#1a1f2e', border: '1px solid #313849' }}>
                 <p>No threat actors found in this project.</p>
                 <p className="text-xs mt-1 text-gray-600">Ingest threat intelligence reports to extract threat actor entities.</p>
