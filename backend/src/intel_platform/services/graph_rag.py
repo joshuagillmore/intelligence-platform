@@ -83,7 +83,10 @@ class GraphRAGPipeline:
                     if src:
                         source_doc_ids.add(src)
 
-            subgraph = self._store.get_subgraph(entity_id, hops=max_hops)
+            # Scoped to the project: an unscoped walk crossed shared ATT&CK/CWE
+            # catalog nodes into other projects and pulled their documents
+            # into this project's LLM context.
+            subgraph = self._store.get_subgraph(entity_id, hops=max_hops, project_id=project_id)
             for node in subgraph.get("nodes", []):
                 node_id = node.get("id", "")
                 if node_id and node_id not in seen_node_ids:
@@ -120,7 +123,12 @@ class GraphRAGPipeline:
             if doc_id in seen_node_ids:
                 continue  # Already have it
             doc_node = self._store.get_entity(doc_id)
-            if doc_node and doc_node.get("entity_type") == "Document":
+            # A document from another project never enters this context, even
+            # if a stray source id points at one.
+            if (
+                doc_node and doc_node.get("entity_type") == "Document"
+                and doc_node.get("project_id") == project_id
+            ):
                 content = doc_node.get("content", "")
                 if content:
                     doc_name = doc_node.get("name", doc_id)

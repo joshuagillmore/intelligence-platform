@@ -22,6 +22,39 @@ def _search_terms(query: str) -> list[str]:
     return [t for t in (query or "").lower().split() if t][:_MAX_SEARCH_TERMS]
 
 
+# Shared reference data rather than per-project entities: ATT&CK, CWE/CAPEC and
+# D3FEND. These nodes carry no project_id and every project that maps to them
+# links to the same node, so a project-scoped walk may end on one but must never
+# pass through it — through T1566 lies every other project's phishing TTPs.
+CATALOG_LABELS = (
+    "AttackTechnique", "AttackGroup", "AttackSoftware", "AttackTactic",
+    "AttackMitigation", "Cwe", "Capec", "D3fendTechnique",
+)
+
+# Subgraph walks are clamped to this many hops. The route allowed 5 and the
+# service layer passed anything through, so hops=5 across ATT&CK hubs
+# enumerated paths without end, and a negative value became `[*1..-1]`.
+_MIN_HOPS = 1
+_MAX_HOPS = 4
+# Path enumeration stops here; the result says `truncated` when it did.
+_MAX_SUBGRAPH_PATHS = 5000
+# shortestPath is a bounded breadth-first search, so it keeps its own ceiling.
+_SHORTEST_PATH_MAX_HOPS = 10
+
+
+def _clamp_hops(hops) -> int:
+    try:
+        value = int(hops)
+    except (TypeError, ValueError):
+        value = _MIN_HOPS
+    return max(_MIN_HOPS, min(_MAX_HOPS, value))
+
+
+def _is_catalog(var: str) -> str:
+    """Cypher predicate: `var` carries one of the catalog labels."""
+    return "(" + " OR ".join(f"{var}:{label}" for label in CATALOG_LABELS) + ")"
+
+
 def _validate_label(label: str) -> str:
     """Validate entity label. Must be alphanumeric (Neo4j label requirement)."""
     if not label or not re.match(r'^[A-Za-z][A-Za-z0-9_]*$', label):
@@ -419,17 +452,42 @@ class GraphStore:
                 out.setdefault(record["key"], []).append(self._rel_from_record(record))
             return out
 
-    def get_subgraph(self, entity_id: str, hops: int = 1) -> dict:
+    def get_subgraph(self, entity_id: str, hops: int = 1, project_id: str | None = None) -> dict:
+        """Everything within `hops` of the entity, as nodes and directed edges.
+
+        `hops` is clamped to 1..4. With `project_id`, the start node must be in
+        that project, every other node on a path must be too, and a catalog
+        node (see CATALOG_LABELS) may only end a path. Without it the walk is
+        unscoped, as before. At most `_MAX_SUBGRAPH_PATHS` paths are read;
+        `truncated` says whether that budget cut the walk short.
+        """
+        hops = _clamp_hops(hops)
+        params: dict = {"id": entity_id, "max_paths": _MAX_SUBGRAPH_PATHS}
+        start_scope = path_scope = ""
+        if project_id:
+            params["project_id"] = project_id
+            start_scope = "WHERE start.project_id = $project_id"
+            path_scope = f"""
+                WHERE all(x IN nodes(path) WHERE x.project_id = $project_id OR {_is_catalog('x')})
+                  AND none(x IN nodes(path)[1..-1] WHERE {_is_catalog('x')})
+            """
         with self._driver.session() as session:
             result = session.run(
                 f"""
-                MATCH path = (start {{id: $id}})-[*1..{hops}]-(connected)
-                UNWIND nodes(path) as n
-                WITH collect(DISTINCT n) as nodes, collect(relationships(path)) as all_rels
-                UNWIND all_rels as path_rels
-                UNWIND path_rels as r
-                WITH nodes, collect(DISTINCT r) as rels
+                MATCH (start {{id: $id}}) {start_scope}
+                MATCH path = (start)-[*1..{hops}]-(connected)
+                {path_scope}
+                WITH path LIMIT $max_paths + 1
+                WITH collect(path) AS all_paths
+                WITH all_paths[..$max_paths] AS paths, size(all_paths) > $max_paths AS truncated
+                UNWIND paths AS p
+                UNWIND nodes(p) AS n
+                WITH paths, truncated, collect(DISTINCT n) AS nodes
+                UNWIND paths AS p
+                UNWIND relationships(p) AS r
+                WITH truncated, nodes, collect(DISTINCT r) AS rels
                 RETURN
+                    truncated,
                     [n IN nodes | properties(n)] as nodes,
                     [r IN rels | {{
                         rel_type: type(r),
@@ -438,14 +496,15 @@ class GraphStore:
                         props: properties(r)
                     }}] as edges
                 """,
-                id=entity_id,
+                parameters=params,
             )
             record = result.single()
             if not record:
-                return {"nodes": [], "edges": [], "node_count": 0, "edge_count": 0}
+                return {"nodes": [], "edges": [], "node_count": 0, "edge_count": 0, "truncated": False}
             return {
                 "nodes": record["nodes"], "edges": record["edges"],
                 "node_count": len(record["nodes"]), "edge_count": len(record["edges"]),
+                "truncated": bool(record["truncated"]),
             }
 
     @staticmethod
@@ -517,22 +576,35 @@ class GraphStore:
             return {"nodes": nodes, "edges": edges,
                     "node_count": len(nodes), "edge_count": len(edges)}
 
-    def find_shortest_path(self, entity_id_1: str, entity_id_2: str) -> dict:
+    def find_shortest_path(self, entity_id_1: str, entity_id_2: str, project_id: str | None = None) -> dict:
+        """Shortest undirected path between two entities, up to 10 hops.
+
+        With `project_id`, both ends and every node between them must belong to
+        that project. Both ends are entities, so a catalog node could only ever
+        be interior — which the scoping rule forbids — and none qualify.
+        """
+        params: dict = {"id1": entity_id_1, "id2": entity_id_2}
+        end_scope = path_scope = ""
+        if project_id:
+            params["project_id"] = project_id
+            end_scope = "WHERE a.project_id = $project_id AND b.project_id = $project_id"
+            path_scope = "WHERE all(x IN nodes(path) WHERE x.project_id = $project_id)"
         with self._driver.session() as session:
             result = session.run(
-                """
-                MATCH path = shortestPath((a {id: $id1})-[*..10]-(b {id: $id2}))
+                f"""
+                MATCH (a {{id: $id1}}), (b {{id: $id2}}) {end_scope}
+                MATCH path = shortestPath((a)-[*..{_SHORTEST_PATH_MAX_HOPS}]-(b))
+                {path_scope}
                 RETURN [n IN nodes(path) | properties(n)] as nodes,
-                       [r IN relationships(path) | {
+                       [r IN relationships(path) | {{
                            rel_type: type(r),
                            source_id: startNode(r).id,
                            target_id: endNode(r).id,
                            props: properties(r)
-                       }] as edges,
+                       }}] as edges,
                        length(path) as path_length
                 """,
-                id1=entity_id_1,
-                id2=entity_id_2,
+                parameters=params,
             )
             record = result.single()
             if not record:
