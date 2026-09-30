@@ -59,14 +59,54 @@ def get_entity(entity_id: str, store: GraphStore = Depends(get_graph_store)):
     return {"entity": entity, "relationships": relationships}
 
 
+_NO_SCOPE = (
+    "project_id is required: this entity belongs to no project (a shared catalog "
+    "entry such as an ATT&CK technique), and an unscoped walk crosses into every project"
+)
+
+
+def _traversal_scope(requested: str | None, *entities: dict | None) -> str | None:
+    """The project a traversal is confined to: the caller's, else the entities'.
+
+    ATT&CK/CWE catalog nodes are shared by every project, so an unscoped walk
+    through one reaches other projects' entities (and, through GraphRAG, their
+    documents). The store confines a scoped walk; this picks the scope.
+    """
+    if requested:
+        return requested
+    for entity in entities:
+        if entity and entity.get("project_id"):
+            return entity["project_id"]
+    return None
+
+
 @router.get("/subgraph/{entity_id}")
-def get_subgraph(entity_id: str, hops: int = Query(1, ge=1, le=5), store: GraphStore = Depends(get_graph_store)):
-    return store.get_subgraph(entity_id, hops=hops)
+def get_subgraph(
+    entity_id: str,
+    hops: int = Query(1, ge=1, le=5),
+    project_id: str | None = None,
+    store: GraphStore = Depends(get_graph_store),
+):
+    entity = store.get_entity(entity_id)
+    if not entity:
+        return {"nodes": [], "edges": [], "node_count": 0, "edge_count": 0}
+    scope = _traversal_scope(project_id, entity)
+    if not scope:
+        raise HTTPException(status_code=400, detail=_NO_SCOPE)
+    return store.get_subgraph(entity_id, hops=hops, project_id=scope)
 
 
 @router.get("/paths/{entity_id_1}/{entity_id_2}")
-def find_shortest_path(entity_id_1: str, entity_id_2: str, store: GraphStore = Depends(get_graph_store)):
-    return store.find_shortest_path(entity_id_1, entity_id_2)
+def find_shortest_path(
+    entity_id_1: str,
+    entity_id_2: str,
+    project_id: str | None = None,
+    store: GraphStore = Depends(get_graph_store),
+):
+    scope = _traversal_scope(project_id, store.get_entity(entity_id_1), store.get_entity(entity_id_2))
+    if not scope:
+        raise HTTPException(status_code=400, detail=_NO_SCOPE)
+    return store.find_shortest_path(entity_id_1, entity_id_2, project_id=scope)
 
 
 class MergeEntitiesRequest(BaseModel):
