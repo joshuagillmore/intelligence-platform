@@ -77,11 +77,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         ip = client_ip(request)
         now = time.time()
 
-        # Periodic cleanup of stale IPs (every 5 minutes)
+        # Periodic cleanup of stale IPs (every 5 minutes). Its own loop name: this
+        # loop once reused `ip`, so the request that triggered a cleanup was
+        # checked and counted against the last stale address instead of its own.
         if now - self._last_cleanup > 300:
-            stale = [ip for ip, times in self._requests.items() if not times or now - max(times) > 120]
-            for ip in stale:
-                del self._requests[ip]
+            stale = [addr for addr, times in self._requests.items() if not times or now - max(times) > 120]
+            for addr in stale:
+                del self._requests[addr]
             self._last_cleanup = now
 
         # Clean old entries for this IP
@@ -107,4 +109,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        # API responses are data, never documents: forbid a browser from running
+        # or framing anything in one. Frontend pages arrive through the proxy
+        # with the policy Next.js sets, and /docs needs its scripts, so only the
+        # API is covered, and a policy a route set itself is kept.
+        if request.url.path.startswith(_API_PATHS):
+            response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
         return response
+
+
+_API_PATHS = ("/api/", "/health")
