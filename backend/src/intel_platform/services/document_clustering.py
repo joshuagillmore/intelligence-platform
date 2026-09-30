@@ -7,6 +7,7 @@ Semantic clustering uses the platform's embedding providers + scipy agglomerativ
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import math
 import re
@@ -195,6 +196,15 @@ def kmeans(
 
 MIN_CLUSTER_SIZE = 2
 MAX_DEPTH = 8
+
+
+def _project_seed(project_id: str) -> int:
+    """A k-means seed that is the same for a project in every process.
+
+    ``hash(project_id)`` is salted per process (PYTHONHASHSEED), so a restart
+    reshuffled a project's topic tree — different clusters, different node ids.
+    """
+    return int.from_bytes(hashlib.sha256(project_id.encode("utf-8")).digest()[:4], "big") % (2 ** 31)
 
 
 def _label_cluster(
@@ -506,7 +516,7 @@ def cluster_documents(
             return node, doc_map, kw_map
 
         all_tokenized = [_tokenize(sec) for _, sec in section_pairs]
-        rng = np.random.RandomState(hash(project_id) % (2 ** 31))
+        rng = np.random.RandomState(_project_seed(project_id))
 
         tree = _recursive_cluster(
             vectors=vectors,
@@ -560,7 +570,7 @@ def cluster_documents(
     all_tokenized = [_tokenize(text) for _, text in documents]
     doc_indices = list(range(len(doc_ids)))
 
-    rng = np.random.RandomState(hash(project_id) % (2 ** 31))
+    rng = np.random.RandomState(_project_seed(project_id))
 
     tree = _recursive_cluster(
         vectors=vectors,
