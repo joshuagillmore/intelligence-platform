@@ -107,12 +107,21 @@ class ProxyConfig:
     def get_proxy_url(self) -> str | None:
         """Resolve the egress proxy URL for this mode, or None for direct."""
         if self.mode == "vpn":
-            return settings.vpn_http_proxy or None
-        if self.mode == "tor":
-            return settings.tor_socks_proxy or None
-        if self.mode == "proxy":
-            return self.proxy_url or None
-        return None  # direct (and any unknown mode) -> no proxy
+            url = settings.vpn_http_proxy or None
+        elif self.mode == "tor":
+            url = settings.tor_socks_proxy or None
+        elif self.mode == "proxy":
+            url = self.proxy_url or None
+        else:
+            return None  # direct (and any unknown mode) -> no proxy
+        if url is None:
+            # The operator chose an egress this deployment has no address for,
+            # so traffic goes out direct. That must never happen quietly.
+            logger.warning(
+                "Collection proxy mode %r is selected but no proxy URL is configured; "
+                "collection egress is DIRECT", self.mode,
+            )
+        return url
 
     def get_client_kwargs(self) -> dict:
         """httpx.AsyncClient kwargs for this mode: {"proxy": url} or {}."""
@@ -120,14 +129,23 @@ class ProxyConfig:
         return {"proxy": url} if url else {}
 
 
+# The last mode read successfully. A failed read keeps it rather than dropping
+# to direct: a database blip must not send Tor-mode collection out in the clear.
+_last_known_mode: str | None = None
+
+
 async def get_active_proxy_config() -> ProxyConfig:
     """Read the active collection proxy mode from Postgres.
 
-    Fail-safe: any error (DB down, table missing, unknown value) degrades to
-    DIRECT so a proxy-config issue can never take down web collection.
+    Fail-safe: a proxy-config problem never takes down web collection. A failed
+    read keeps the last mode read successfully in this process; with none known
+    it degrades to DIRECT. An unknown stored value degrades to DIRECT. Every
+    fallback is logged as a warning: egress leaving direct when the operator
+    chose Tor is the one outcome that must never be silent.
     Read fresh each call — collection is not a hot path, so this always
     reflects the latest admin change.
     """
+    global _last_known_mode
     try:
         from sqlalchemy import select
 
@@ -141,11 +159,25 @@ async def get_active_proxy_config() -> ProxyConfig:
             )
             mode = result.scalar_one_or_none()
     except Exception:
-        logger.debug("Could not read collection proxy mode; defaulting to direct", exc_info=True)
+        if _last_known_mode is not None:
+            logger.warning(
+                "Could not read the collection proxy mode; keeping the last known mode %r",
+                _last_known_mode, exc_info=True,
+            )
+            return ProxyConfig(mode=_last_known_mode)
+        logger.warning(
+            "Could not read the collection proxy mode and none is known; collection egress is DIRECT",
+            exc_info=True,
+        )
         return ProxyConfig(mode="direct")
 
-    if mode not in VALID_PROXY_MODES:
+    if mode is None:  # never set: direct is the documented default
+        _last_known_mode = "direct"
         return ProxyConfig(mode="direct")
+    if mode not in VALID_PROXY_MODES:
+        logger.warning("Unknown collection proxy mode %r is stored; collection egress is DIRECT", mode)
+        return ProxyConfig(mode="direct")
+    _last_known_mode = mode
     return ProxyConfig(mode=mode)
 
 

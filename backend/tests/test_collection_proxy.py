@@ -10,6 +10,13 @@ from intel_platform.collection.proxy import ProxyConfig, get_active_proxy_config
 from intel_platform.config import settings
 
 
+@pytest.fixture(autouse=True)
+def _forget_the_last_known_mode(monkeypatch):
+    """The last mode read is process state; a test that reads "vpn" must not
+    leave later tests (in any file) egressing through a VPN."""
+    monkeypatch.setattr(proxy_mod, "_last_known_mode", None)
+
+
 def test_proxy_config_direct():
     config = ProxyConfig(mode="direct")
     assert config.get_client_kwargs() == {}
@@ -108,10 +115,65 @@ async def test_get_active_proxy_config_failsafe_on_db_error(monkeypatch):
     def _boom():
         raise RuntimeError("db unreachable")
 
+    monkeypatch.setattr(proxy_mod, "_last_known_mode", None)  # nothing read yet
     monkeypatch.setattr(engine_mod, "get_session_factory", _boom)
     cfg = await get_active_proxy_config()
     assert cfg.mode == "direct"
     assert cfg.get_client_kwargs() == {}
+
+
+# ---------------------------------------------------------------------------
+# Low -> C: falling back to direct is never silent, and a blip does not
+# drop an operator's Tor/VPN choice
+# ---------------------------------------------------------------------------
+
+def _boom():
+    raise RuntimeError("db unreachable")
+
+
+async def test_a_read_failure_keeps_the_last_known_mode(monkeypatch):
+    import intel_platform.db.engine as engine_mod
+
+    monkeypatch.setattr(proxy_mod, "_last_known_mode", None)
+    monkeypatch.setattr(engine_mod, "get_session_factory", _fake_factory_returning("tor"))
+    assert (await get_active_proxy_config()).mode == "tor"
+
+    monkeypatch.setattr(engine_mod, "get_session_factory", _boom)
+    cfg = await get_active_proxy_config()
+    assert cfg.mode == "tor", "a database blip sent Tor-mode collection out direct"
+
+
+async def test_falling_back_to_direct_is_a_warning(monkeypatch, caplog):
+    import logging
+
+    import intel_platform.db.engine as engine_mod
+
+    monkeypatch.setattr(proxy_mod, "_last_known_mode", None)
+    monkeypatch.setattr(engine_mod, "get_session_factory", _boom)
+    with caplog.at_level(logging.WARNING, logger="intel_platform.collection.proxy"):
+        await get_active_proxy_config()
+    assert any("DIRECT" in r.getMessage() for r in caplog.records)
+
+
+async def test_an_unknown_stored_mode_is_a_warning(monkeypatch, caplog):
+    import logging
+
+    import intel_platform.db.engine as engine_mod
+
+    monkeypatch.setattr(engine_mod, "get_session_factory", _fake_factory_returning("tor-bridges"))
+    with caplog.at_level(logging.WARNING, logger="intel_platform.collection.proxy"):
+        cfg = await get_active_proxy_config()
+    assert cfg.mode == "direct"
+    assert any("tor-bridges" in r.getMessage() for r in caplog.records)
+
+
+def test_a_selected_proxy_with_no_url_is_a_warning(monkeypatch, caplog):
+    import logging
+
+    monkeypatch.setattr(proxy_mod.settings, "tor_socks_proxy", "")
+    with caplog.at_level(logging.WARNING, logger="intel_platform.collection.proxy"):
+        assert ProxyConfig(mode="tor").get_proxy_url() is None
+    assert any("DIRECT" in r.getMessage() for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
