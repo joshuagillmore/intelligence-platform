@@ -84,8 +84,10 @@ def get_active_model() -> str:
     return settings.default_llm_model
 
 
-def _mask_key(key: str) -> str:
-    """Show only the last 4 characters of a key."""
+def _mask_key(key: str | None) -> str:
+    """Show only the last 4 characters of a key; mark one that cannot be decrypted."""
+    if key is None:
+        return "(unreadable)"
     if len(key) <= 4:
         return "****"
     return "*" * (len(key) - 4) + key[-4:]

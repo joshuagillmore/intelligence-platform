@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     # file), so it is for local development only: REQUIRE_SECURE_AUTH refuses to
     # boot on it, on a blank value, or on anything shorter than 32 bytes.
     jwt_secret: str = "intel-platform-dev-secret-change-in-production"
+    # Fernet key for API keys stored in Postgres. Blank = stored in plaintext
+    # (dev only); REQUIRE_SECURE_AUTH refuses to boot without a valid key.
+    encryption_key: str = ""
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     # Per-client request/minute cap. High by default for the single-user

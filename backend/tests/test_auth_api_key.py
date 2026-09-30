@@ -67,6 +67,7 @@ def test_boot_warns_on_default_secrets(monkeypatch, caplog):
     fake = types.SimpleNamespace(
         api_key=auth_module._DEFAULT_API_KEY,
         jwt_secret=_JWT,
+        encryption_key="",
         default_admin_password="",
         require_secure_auth=False,
     )

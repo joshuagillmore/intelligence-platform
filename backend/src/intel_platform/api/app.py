@@ -24,7 +24,14 @@ def _secret_problems() -> list[str]:
     disagree about what counts as insecure.
     """
     from intel_platform.api.auth import api_key_problem, jwt_secret_problem
-    return [p for p in (jwt_secret_problem(settings.jwt_secret), api_key_problem(settings.api_key)) if p]
+    from intel_platform.crypto import encryption_problem
+    return [
+        p for p in (
+            jwt_secret_problem(settings.jwt_secret),
+            api_key_problem(settings.api_key),
+            encryption_problem(settings.encryption_key),
+        ) if p
+    ]
 
 
 def _insecure_defaults() -> list[str]:
@@ -66,8 +73,9 @@ def _enforce_secure_auth() -> None:
         raise RuntimeError(
             "REQUIRE_SECURE_AUTH=true but insecure settings are in use: "
             + "; ".join(problems)
-            + ". Set JWT_SECRET to at least 32 random bytes and API_KEY to at least "
-            "16 random bytes (or blank, to disable API-key auth) before deploying."
+            + ". Set JWT_SECRET to at least 32 random bytes, API_KEY to at least "
+            "16 random bytes (or blank, to disable API-key auth) and ENCRYPTION_KEY to a "
+            "Fernet key before deploying."
         )
 
 
