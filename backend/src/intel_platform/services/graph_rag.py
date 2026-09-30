@@ -4,6 +4,28 @@ import asyncio
 
 from intel_platform.graph.store import GraphStore
 
+# How many source documents one question may look up by id. Entities now
+# record every document that mentions them, so a hub entity can carry
+# hundreds; the context only ever quotes a handful (see assemble_context).
+_MAX_SOURCE_DOCS = 10
+
+
+def source_documents_of(node: dict) -> list[str]:
+    """Every document id that mentions this entity, the first document first.
+
+    `source_doc_id` is the document that created the entity; `source_doc_ids`
+    adds every later document that merged into it. Entities written before the
+    list existed carry only the first.
+    """
+    ids: list[str] = []
+    primary = node.get("source_doc_id", "") or node.get("source", "")
+    if primary:
+        ids.append(primary)
+    for doc_id in node.get("source_doc_ids") or []:
+        if doc_id and doc_id not in ids:
+            ids.append(doc_id)
+    return ids
+
 
 class GraphRAGPipeline:
     """4-stage Graph RAG: understand → retrieve → assemble → generate."""
@@ -68,7 +90,10 @@ class GraphRAGPipeline:
         all_edges = []
         seen_node_ids = set()
         node_name_map: dict[str, str] = {}  # id -> name
-        source_doc_ids: set[str] = set()  # Track source document IDs from entities
+        # Source documents of the entities found, in the order met: the query's
+        # own targets first, then their neighbourhood. A dict, not a set, so the
+        # budget below always keeps the same documents.
+        source_doc_ids: dict[str, None] = {}
 
         for entity in understanding.get("target_entities", []):
             entity_id = entity.get("id", "")
@@ -78,10 +103,8 @@ class GraphRAGPipeline:
                     seen_node_ids.add(entity_id)
                     all_nodes.append(full_entity)
                     node_name_map[entity_id] = full_entity.get("name", entity_id)
-                    # Track source document ID from the entity's 'source_doc_id' property
-                    src = full_entity.get("source_doc_id", "") or full_entity.get("source", "")
-                    if src:
-                        source_doc_ids.add(src)
+                    for src in source_documents_of(full_entity):
+                        source_doc_ids.setdefault(src, None)
 
             # Scoped to the project: an unscoped walk crossed shared ATT&CK/CWE
             # catalog nodes into other projects and pulled their documents
@@ -93,9 +116,8 @@ class GraphRAGPipeline:
                     seen_node_ids.add(node_id)
                     all_nodes.append(node)
                     node_name_map[node_id] = node.get("name", node_id)
-                    src = node.get("source_doc_id", "") or node.get("source", "")
-                    if src:
-                        source_doc_ids.add(src)
+                    for src in source_documents_of(node):
+                        source_doc_ids.setdefault(src, None)
             all_edges.extend(subgraph.get("edges", []))
 
         # Resolve edge names
@@ -117,11 +139,15 @@ class GraphRAGPipeline:
                         "reliability_rating": node.get("reliability_rating", ""),
                     }
 
-        # Strategy 2: Fetch documents by source ID from entity properties
-        # Entities store their source document ID in the 'source' field
+        # Strategy 2: Fetch documents by source ID from entity properties,
+        # at most _MAX_SOURCE_DOCS lookups per question.
+        lookups = 0
         for doc_id in source_doc_ids:
             if doc_id in seen_node_ids:
                 continue  # Already have it
+            if lookups >= _MAX_SOURCE_DOCS:
+                break
+            lookups += 1
             doc_node = self._store.get_entity(doc_id)
             # A document from another project never enters this context, even
             # if a stray source id points at one.

@@ -98,6 +98,10 @@ class GraphStore:
         props = self._serialize_props(entity.model_dump(exclude={"entity_type"}))
         props["entity_type"] = specific_type
         props["entity_category"] = parent_category
+        # Every document that mentions the entity; later ones are appended on
+        # merge by record_entity_source. source_doc_id stays the first.
+        if props.get("source_doc_id"):
+            props["source_doc_ids"] = [props["source_doc_id"]]
         with self._driver.session() as session:
             result = session.run(
                 f"CREATE (n:{labels} $props) RETURN n",
@@ -153,6 +157,33 @@ class GraphStore:
                 from intel_platform.services.graph_cache import graph_cache
                 graph_cache.invalidate(project_id)
         return node
+
+    def record_entity_source(self, entity_id: str, source_doc_id: str) -> None:
+        """Add a document to the entity's `source_doc_ids`, once.
+
+        `source_doc_id` was set only when the entity was created, so a later
+        document that merged into it left no trace and retrieval could only
+        reach the first. An entity written before the list existed starts it
+        from its `source_doc_id`. The first SET takes the node's write lock
+        before the list is read, so concurrent builds cannot drop each
+        other's documents.
+        """
+        if not source_doc_id:
+            return
+        with self._driver.session() as session:
+            session.run(
+                """
+                MATCH (n:Entity {id: $id})
+                SET n._sources_lock = true
+                WITH n, coalesce(
+                    n.source_doc_ids,
+                    CASE WHEN coalesce(n.source_doc_id, '') = '' THEN [] ELSE [n.source_doc_id] END
+                ) AS docs
+                SET n.source_doc_ids = CASE WHEN $doc IN docs THEN docs ELSE docs + $doc END
+                REMOVE n._sources_lock
+                """,
+                id=entity_id, doc=source_doc_id,
+            )
 
     def get_geolocatable_entities(self, project_id: str, limit: int = 2000) -> list[dict]:
         """Nodes that can appear on the map: any Location-category node, an

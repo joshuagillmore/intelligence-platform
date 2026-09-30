@@ -416,6 +416,20 @@ def build_graph_from_extractions(
     batch_names: list[str] = []
     batch_name_to_id: dict[str, str] = {}
     batch_name_to_type: dict[str, str] = {}
+    # (entity id, document id) pairs already on the graph from this build, so
+    # a merge records a document against an entity once, not once per mention.
+    recorded_sources: set[tuple[str, str]] = set()
+
+    def _merged_into(entity_id: str, doc_id: str) -> None:
+        """Record that `doc_id` also mentions an existing entity.
+
+        source_doc_id was set only on create, so a later document merging into
+        the entity left no trace and GraphRAG / hybrid retrieval could only
+        reach the first.
+        """
+        if doc_id and (entity_id, doc_id) not in recorded_sources:
+            recorded_sources.add((entity_id, doc_id))
+            store.record_entity_source(entity_id, doc_id)
 
     for ent_data in entities:
         # Normalise before anything reads the name: the junk check, resolution
@@ -450,12 +464,16 @@ def build_graph_from_extractions(
             absorbed_names.add(name)
             continue
 
+        # The document this mention came from: the extraction's own, or the caller's.
+        entity_doc_id = ent_data.get("source", "") or source_doc_id
+
         # Check intra-batch cache first
         cache_key = f"{name}::{raw_type}"
         if cache_key in _resolution_cache:
             cached = _resolution_cache[cache_key]
             if cached:
                 name_to_id[name] = cached
+                _merged_into(cached, entity_doc_id)
                 merged += 1
                 continue
 
@@ -467,6 +485,7 @@ def build_graph_from_extractions(
         if match:
             name_to_id[name] = batch_name_to_id[match]
             _resolution_cache[cache_key] = batch_name_to_id[match]
+            _merged_into(batch_name_to_id[match], entity_doc_id)
             merged += 1
             continue
 
@@ -483,6 +502,7 @@ def build_graph_from_extractions(
             if match:
                 name_to_id[name] = candidate_name_to_id[match]
                 _resolution_cache[cache_key] = candidate_name_to_id[match]
+                _merged_into(candidate_name_to_id[match], entity_doc_id)
                 merged += 1
                 continue
 
@@ -499,8 +519,6 @@ def build_graph_from_extractions(
 
         # Try to find a Pydantic class for the specific type, then parent category
         cls = ENTITY_TYPE_MAP.get(specific_type) or ENTITY_TYPE_MAP.get(parent_category)
-        # Determine source doc ID from extraction data or caller
-        entity_doc_id = ent_data.get("source", "") or source_doc_id
 
         # Build constructor kwargs, passing through extracted attributes that
         # validate against the model, field by field.
@@ -533,6 +551,7 @@ def build_graph_from_extractions(
             entity = Entity(name=name, entity_type=et, project_id=project_id, source_doc_id=entity_doc_id)
 
         store.create_entity(entity)
+        recorded_sources.add((entity.id, entity_doc_id))
         name_to_id[name] = entity.id
         batch_names.append(name)
         batch_name_to_id[name] = entity.id
