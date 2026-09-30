@@ -207,12 +207,26 @@ async def assess_requirement(
             missing="assessment reply could not be read",
         )
 
+    # Read the verdict, do not coerce it: bool("false") is True, which marked
+    # unanswered elements satisfied whenever a model quoted its boolean.
+    satisfied = model_bool(parsed.get("satisfied"))
+    if satisfied is None:
+        logger.warning("Requirement assessment verdict was not a yes/no: %r", parsed.get("satisfied"))
+        return RequirementAssessment(
+            assessed=False, confidence="unknown",
+            missing="assessment verdict could not be read",
+        )
+
+    raw_queries = parsed.get("next_queries") or []
+    if isinstance(raw_queries, str):
+        # One query written as a string, not a list of its characters.
+        raw_queries = [raw_queries]
     queries = [
-        q.strip() for q in (parsed.get("next_queries") or [])
+        q.strip() for q in (raw_queries if isinstance(raw_queries, list) else [])
         if isinstance(q, str) and q.strip()
     ]
     return RequirementAssessment(
-        satisfied=bool(parsed.get("satisfied")),
+        satisfied=satisfied,
         confidence=str(parsed.get("confidence") or "low")[:16],
         missing=str(parsed.get("missing") or "")[:2000],
         next_queries=queries[:_MAX_NEXT_QUERIES],

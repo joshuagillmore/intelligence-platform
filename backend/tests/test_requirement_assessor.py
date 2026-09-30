@@ -79,6 +79,46 @@ class TestVerdicts:
         assert len(out.next_queries) == ra._MAX_NEXT_QUERIES
 
 
+class TestVerdictValuesAreReadNotCoerced:
+    """R-8: `bool("false")` is True, so a model writing the verdict as a string
+    marked an unanswered element satisfied; a string `next_queries` was
+    iterated per character into one-letter searches."""
+
+    @pytest.mark.parametrize("reply", [
+        'ASSESSMENT: {"satisfied": "false", "confidence": "medium", "missing": "dates", "next_queries": ["q"]}',
+        '**ASSESSMENT:** {"satisfied": "false", "confidence": "medium", "missing": "dates", "next_queries": ["q"]}',
+        '1. ASSESSMENT: {"satisfied": "false", "confidence": "medium", "missing": "dates", "next_queries": ["q"]}',
+        '| ASSESSMENT | {"satisfied": "false", "confidence": "medium", "missing": "dates", "next_queries": ["q"]} |',
+        'Having read the material, here is my verdict.\n'
+        'ASSESSMENT: {"satisfied": "No", "confidence": "medium", "missing": "dates", "next_queries": ["q"]}',
+    ], ids=["plain", "bold", "numbered", "table-row", "prose-prefixed"])
+    async def test_string_no_is_not_satisfied(self, material, reply):
+        out = await ra.assess_requirement("when?", "p1", None, _Provider(reply))
+        assert out.assessed is True
+        assert out.satisfied is False
+        assert out.next_queries == ["q"]
+
+    async def test_string_true_is_satisfied(self, material):
+        out = await ra.assess_requirement("q?", "p1", None, _Provider('ASSESSMENT: {"satisfied": "true"}'))
+        assert out.satisfied is True
+
+    async def test_an_unreadable_verdict_is_not_a_verdict(self, material):
+        out = await ra.assess_requirement(
+            "q?", "p1", None, _Provider('ASSESSMENT: {"satisfied": "partially", "next_queries": ["x"]}'),
+        )
+        assert out.assessed is False
+
+    async def test_a_single_query_string_is_one_query(self, material):
+        p = _Provider('ASSESSMENT: {"satisfied": false, "next_queries": "IAEA Fordow cascade report"}')
+        out = await ra.assess_requirement("q?", "p1", None, p)
+        assert out.next_queries == ["IAEA Fordow cascade report"]
+
+    def test_model_bool(self):
+        assert ra.model_bool("FALSE") is False and ra.model_bool("**true**") is True
+        assert ra.model_bool(0) is False and ra.model_bool(None) is False
+        assert ra.model_bool("maybe") is None
+
+
 class TestFailuresAreNotVerdicts:
     async def test_provider_outage_is_not_an_unsatisfied_verdict(self, material):
         """An outage is not evidence that the element is unanswered. Recording
