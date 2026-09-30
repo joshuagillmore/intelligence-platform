@@ -90,6 +90,16 @@ def _plan(pir_id="pir-1"):
     return SimpleNamespace(id="plan-1", pir_id=pir_id, sources=[])
 
 
+async def _direct_proxy():
+    """Stand-in for `get_active_proxy_config`, which is a coroutine function.
+
+    These stubs used to be sync lambdas, which is why the loop's missing
+    `await` never failed a test: the stub answered the call the code made,
+    not the one the real function requires.
+    """
+    return SimpleNamespace(get_proxy_url=lambda: None)
+
+
 def _pir(eeis):
     return SimpleNamespace(id="pir-1", project_id="p1", eeis=list(eeis))
 
@@ -314,7 +324,7 @@ class TestRetaskedSourcesAreFlushedBeforeBeingLogged:
         monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
         monkeypatch.setattr(
             "intel_platform.collection.proxy.get_active_proxy_config",
-            lambda: SimpleNamespace(get_proxy_url=lambda: None),
+            _direct_proxy,
         )
 
         acquired = []
@@ -332,6 +342,39 @@ class TestRetaskedSourcesAreFlushedBeforeBeingLogged:
 
         assert added == 1, "the re-tasked source should have been acquired"
         assert acquired, "acquire_source was never called"
+
+
+class TestGapSearchHonoursTheProxy:
+    """Re-tasking searches must leave through the configured egress.
+
+    `get_active_proxy_config` is async and was called without `await`; the
+    coroutine has no `get_proxy_url`, the bare `except` set `proxy=None`, and
+    every re-tasking search went out direct even with Tor selected.
+    """
+
+    async def test_tor_mode_reaches_the_search(self, monkeypatch):
+        from intel_platform.collection.proxy import ProxyConfig
+
+        seen = {}
+
+        def fake_search(query, max_results=3, proxy=None):
+            seen["proxy"] = proxy
+            return []
+
+        async def tor_mode():
+            return ProxyConfig(mode="tor")
+
+        monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
+        monkeypatch.setattr("intel_platform.collection.proxy.get_active_proxy_config", tor_mode)
+        monkeypatch.setattr(
+            "intel_platform.collection.proxy.settings.tor_socks_proxy", "socks5h://tor:9050"
+        )
+
+        db = _FkEnforcingDB([], plan=_plan(), pir=_pir(["a?"]))
+        await rl._collect_for_element(
+            db, _plan(), _requirement(0, "a?"), ["q"], None, object(), None, "nlp", None,
+        )
+        assert seen["proxy"] == "socks5h://tor:9050"
 
 
 class TestRetaskedSourceIsAcquirable:
@@ -358,7 +401,7 @@ class TestRetaskedSourceIsAcquirable:
         monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
         monkeypatch.setattr(
             "intel_platform.collection.proxy.get_active_proxy_config",
-            lambda: SimpleNamespace(get_proxy_url=lambda: None),
+            _direct_proxy,
         )
 
         seen = {}
@@ -389,7 +432,7 @@ class TestRetaskedSourceIsAcquirable:
         monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
         monkeypatch.setattr(
             "intel_platform.collection.proxy.get_active_proxy_config",
-            lambda: SimpleNamespace(get_proxy_url=lambda: None),
+            _direct_proxy,
         )
 
         captured = {}
@@ -484,7 +527,7 @@ class TestRetaskedSourceOutcomeIsRecorded:
         monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
         monkeypatch.setattr(
             "intel_platform.collection.proxy.get_active_proxy_config",
-            lambda: SimpleNamespace(get_proxy_url=lambda: None),
+            _direct_proxy,
         )
 
     async def test_a_collected_source_is_marked_succeeded(self, wired):

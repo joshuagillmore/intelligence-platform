@@ -277,10 +277,10 @@ async def _collect_for_element(
         if (s.config or {}).get("url")
     }
 
-    try:
-        proxy = get_active_proxy_config().get_proxy_url()
-    except Exception:
-        proxy = None
+    # get_active_proxy_config already degrades to direct on its own failures,
+    # so nothing here may swallow an error into proxy=None: that silently sent
+    # every re-tasking search out direct even with Tor selected.
+    proxy = (await get_active_proxy_config()).get_proxy_url()
 
     for query in queries:
         if budget is not None and added >= budget:
