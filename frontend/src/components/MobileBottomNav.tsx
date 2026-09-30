@@ -32,6 +32,7 @@ export default function MobileBottomNav() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
   const [role, setRole] = useState('');
   useEffect(() => {
     if (typeof window !== 'undefined') setRole(localStorage.getItem('auth_role') || 'analyst');
@@ -42,10 +43,14 @@ export default function MobileBottomNav() {
     return pathname === href || pathname.startsWith(href + '/');
   }
 
-  // Close menu on outside click
+  // Close menu on outside click. The toggle button is not "outside": its
+  // mousedown used to close the menu and the click that followed re-opened it,
+  // so Close never closed.
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (toggleRef.current?.contains(target)) return;
+      if (menuRef.current && !menuRef.current.contains(target)) {
         setMenuOpen(false);
       }
     }
@@ -99,7 +104,8 @@ export default function MobileBottomNav() {
       <div className="flex justify-around items-center px-2 pb-[env(safe-area-inset-bottom,8px)] pt-2">
         {/* Hamburger menu button */}
         <button
-          onClick={() => setMenuOpen(!menuOpen)}
+          ref={toggleRef}
+          onClick={() => setMenuOpen(open => !open)}
           aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
           aria-expanded={menuOpen}
           className={`flex flex-col items-center justify-center px-3 py-1.5 rounded-xl transition-all active:scale-95 duration-150 ${
