@@ -462,8 +462,12 @@ _LLM_TYPE_CANON = {
     # the hierarchy actually defines under Equipment.
     "ship": "Ship", "submarine": "Submarine", "aircraft": "Aircraft",
     "drone": "Drone", "missile": "Weapon", "radar": "Radar",
-    "satellite": "EquipmentType", "artillery": "Weapon", "vehicle": "EquipmentType",
-    "hardware": "EquipmentType", "tank": "MilitaryAsset",
+    # Satellite/Vehicle/Hardware are graph types in their own right; these had
+    # the same EquipmentType/MilitaryAsset mapping the comment above describes
+    # and landed as Custom. Tank has no type of its own — a tank is a vehicle.
+    # tests/test_llm_type_canon.py fails if a target here is not a graph type.
+    "satellite": "Satellite", "artillery": "Weapon", "vehicle": "Vehicle",
+    "hardware": "Hardware", "tank": "Vehicle",
     # Intelligence docs
     "report": "Document", "assessment": "Document", "briefing": "Document",
 }
