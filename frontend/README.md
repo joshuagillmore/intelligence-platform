@@ -24,7 +24,7 @@ npm run e2e      # playwright — authenticated smoke across the views (tests/e2
 runs standalone; `npm run e2e` needs the full stack up and the demo project
 seeded (`backend/scripts/seed_demo.py`).
 
-For the full stack (backend, Neo4j, Postgres, Redis, Ollama) run
+For the full stack (backend, Neo4j, Postgres, Ollama) run
 `docker compose up` from the repo root instead. See the root
 [`README.md`](../README.md) for the product overview and
 [`CLAUDE.md`](./CLAUDE.md) for frontend architecture and conventions.

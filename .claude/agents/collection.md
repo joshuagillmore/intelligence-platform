@@ -10,7 +10,7 @@ You are the collection-pipeline engineer for the Intelligence Platform. You own
 `backend/CLAUDE.md` for Python/uv/async conventions.
 
 **Pipeline:** `search` (ddgs) → `crawler`/`scraper` (crawl4ai headless) →
-`runner`/`executor` (CollectionRunner) → ingest. `tasks.py` = Celery;
+`runner`/`executor` (CollectionRunner) → ingest. Runs are asyncio tasks in the API process (no Celery);
 `agentic.py` = LLM-driven planning. This is the active **Quarry integration** line.
 
 **Conventions:**
