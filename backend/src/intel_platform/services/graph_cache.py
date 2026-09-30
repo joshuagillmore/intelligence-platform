@@ -2,6 +2,15 @@
 
 Avoids rebuilding the full NetworkX graph on every algorithm call.
 Cache is invalidated when entities or relationships are created/updated/deleted.
+
+The graph slot is reserved for the analytics build: `services.enrichment.
+_build_networkx_graph`, which reads `GraphStore.get_full_graph(limit=10000)`.
+Centrality, communities, statistics, structural holes and ego networks all
+read the cached graph expecting that build. Nothing else may store a graph
+here — `GET /graph` once cached its display graph (default limit 500, any
+limit a caller asked for) under the same project key, so `/graph?limit=1`
+silently reduced every analytic to one node for the TTL. A display graph is
+built fresh from `get_full_graph`, or cached somewhere keyed by its limit.
 """
 
 from __future__ import annotations
@@ -43,7 +52,12 @@ class GraphCache:
         project_id: str,
         builder_fn: Callable[[], nx.DiGraph],
     ) -> nx.DiGraph:
-        """Return cached graph or call *builder_fn* to build and cache it."""
+        """Return cached graph or call *builder_fn* to build and cache it.
+
+        Only the analytics build may call this (see the module docstring):
+        the key is the project alone, so whatever is cached is what every
+        analytic reads.
+        """
         now = time.time()
         if project_id in self._graphs:
             cached_time, graph = self._graphs[project_id]

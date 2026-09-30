@@ -138,6 +138,9 @@ class PlanStatus(str):
     PAUSED = "PAUSED"
     COMPLETED = "COMPLETED"
     ARCHIVED = "ARCHIVED"
+    # Terminal: the run crashed. Written instead of leaving the plan ACTIVE or
+    # reporting it COMPLETED.
+    FAILED = "FAILED"
 
 
 class PirStatus(str):

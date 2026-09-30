@@ -1,8 +1,20 @@
 import logging
 
 from neo4j import Driver
+from neo4j.exceptions import ConstraintError
 
 logger = logging.getLogger(__name__)
+
+# The label every node the store addresses by `id` carries, alongside its type
+# label. Nodes used to carry only their type (Person, Domain, ...), so a lookup
+# by id with no type — `MATCH (a {id: $id})` — could use no index and scanned
+# the whole database; create_relationship did about four per edge. With a
+# unique constraint on Entity.id, those lookups are a single index seek.
+ENTITY_LABEL = "Entity"
+ENTITY_ID_CONSTRAINT = (
+    f"CREATE CONSTRAINT entity_uid IF NOT EXISTS FOR (n:{ENTITY_LABEL}) REQUIRE n.id IS UNIQUE"
+)
+_ENTITY_LABEL_BATCH = 5000
 
 CONSTRAINTS = [
     "CREATE CONSTRAINT entity_id IF NOT EXISTS FOR (n:Person) REQUIRE n.id IS UNIQUE",
@@ -113,10 +125,87 @@ def _sync_entity_name_index(session) -> None:
     session.run(f"DROP INDEX {ENTITY_NAME_INDEX} IF EXISTS")
 
 
+def ensure_entity_label(driver: Driver, batch_size: int = _ENTITY_LABEL_BATCH) -> int:
+    """Give `:Entity` to every entity node that lacks it. Returns how many.
+
+    Idempotent, and safe to run on every boot: nodes written before the label
+    existed get it once, and later runs find nothing to do. An entity node is
+    one with both an `id` and an `entity_type` — everything GraphStore creates.
+    Metadata nodes (an `id` but no `entity_type`) and the ATT&CK/CWE catalog
+    (no `id`) are left alone.
+
+    Candidates are read in one scan, ordered by element id so the outcome is
+    the same on every run, then labelled in batches. Two legacy nodes that
+    share an id cannot both take a label whose id is unique: the first keeps
+    it, the other is logged and left unlabelled (still reachable through the
+    store's by-id fallback) rather than failing startup.
+    """
+    with driver.session() as session:
+        candidates = [
+            record["eid"]
+            for record in session.run(
+                f"""
+                MATCH (n)
+                WHERE n.id IS NOT NULL AND n.entity_type IS NOT NULL AND NOT n:{ENTITY_LABEL}
+                RETURN elementId(n) AS eid ORDER BY eid
+                """
+            )
+        ]
+        if not candidates:
+            return 0
+
+        def _label(tx, eids: list[str]) -> int:
+            return tx.run(
+                f"MATCH (n) WHERE elementId(n) IN $eids SET n:{ENTITY_LABEL} RETURN count(n) AS c",
+                eids=eids,
+            ).single()["c"]
+
+        labelled = 0
+        skipped: list[str] = []
+        for start in range(0, len(candidates), batch_size):
+            batch = candidates[start:start + batch_size]
+            try:
+                labelled += session.execute_write(_label, batch)
+                continue
+            except ConstraintError:
+                pass
+            # A duplicate id in this batch: label one at a time to find it.
+            for eid in batch:
+                try:
+                    labelled += session.execute_write(_label, [eid])
+                except ConstraintError:
+                    node_id = session.run(
+                        "MATCH (n) WHERE elementId(n) = $eid RETURN n.id AS id", eid=eid,
+                    ).single()["id"]
+                    skipped.append(node_id)
+                    logger.warning(
+                        "Left node %s without :%s: another node already holds id %r",
+                        eid, ENTITY_LABEL, node_id,
+                    )
+
+    logger.info(
+        "Added :%s to %d node(s)%s", ENTITY_LABEL, labelled,
+        f"; {len(skipped)} skipped as duplicate ids" if skipped else "",
+    )
+    return labelled
+
+
 def initialize_schema(driver: Driver) -> None:
     with driver.session() as session:
         for stmt in CONSTRAINTS + INDEXES:
             session.run(stmt)
+        # Created before any node is labelled, so ensure_entity_label meets
+        # duplicate ids one at a time instead of failing to create it. Guarded
+        # so a database that already holds :Entity duplicates still boots; the
+        # lookups then scan the label instead of seeking the index.
+        try:
+            # consume() so a failure is raised here, inside the guard, rather
+            # than whenever the driver next touches the session.
+            session.run(ENTITY_ID_CONSTRAINT).consume()
+        except Exception:
+            logger.warning("Could not create the unique constraint on :%s(id)", ENTITY_LABEL, exc_info=True)
+    ensure_entity_label(driver)
+    with driver.session() as session:
         try:
             _sync_entity_name_index(session)
         except Exception:
