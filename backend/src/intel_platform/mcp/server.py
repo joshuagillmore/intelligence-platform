@@ -181,5 +181,12 @@ def get_geo_locations(project_id: str) -> dict:
 
 
 def get_mcp_app():
-    """Get the MCP Starlette app for mounting in FastAPI."""
-    return mcp.streamable_http_app()
+    """Deprecated: use ``intel_platform.mcp.build_authenticated_app(settings)``.
+
+    Kept so an ``app.py`` that still calls this mounts the *authenticated* app;
+    it never returns FastMCP's bare, unauthenticated Starlette app.
+    """
+    from intel_platform.config import settings
+    from intel_platform.mcp.http import build_authenticated_app
+
+    return build_authenticated_app(settings)
