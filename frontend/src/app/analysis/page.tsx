@@ -40,6 +40,12 @@ const TECHNIQUES: Array<{ id: Technique; label: string; icon: string; descriptio
   },
 ];
 
+/** Source evaluation grades a bounded number of documents per run: the
+ *  backend's default when none are selected, and its hard cap (`limit`
+ *  le=25 on /analysis/source-evaluation). */
+const SOURCE_EVAL_DEFAULT = 10;
+const SOURCE_EVAL_MAX = 25;
+
 const PRIORITY_STYLE: Record<string, string> = {
   high: 'bg-threat-high/15 text-threat-high border-threat-high/30',
   medium: 'bg-threat-medium/15 text-threat-medium border-threat-medium/30',
@@ -192,19 +198,26 @@ export default function AnalysisPage() {
     setLoading(true);
     resetResult();
     try {
+      // The backend grades at most `limit` documents, for an explicit selection
+      // too, so ask for as many as were selected (up to its cap).
+      const limit = selectedDocs.length > 0
+        ? Math.min(selectedDocs.length, SOURCE_EVAL_MAX)
+        : SOURCE_EVAL_DEFAULT;
       const res = await analysisApi.sourceEvaluation({
         project_id: activeProject.id,
         document_ids: selectedDocs,
+        limit,
         apply_ratings: applyRatings,
       });
       const d = res.data;
       setOutput(d.analysis);
       setOutputTitle('Source Evaluation');
       setRatings(d.evaluations || []);
+      const considered = selectedDocs.length > 0 ? selectedDocs.length : documents.length;
       setMeta({
         model: d.model,
         tokens: d.tokens_used,
-        note: `${d.documents_evaluated} document(s) graded${d.ratings_applied ? ` · ${d.ratings_applied} rating(s) written back` : ''}`,
+        note: `${d.documents_evaluated} of ${considered} document(s) graded${d.ratings_applied ? ` · ${d.ratings_applied} rating(s) written back` : ''}`,
       });
       if (d.ratings_applied) {
         documentsApi.list(activeProject.id)
@@ -327,8 +340,16 @@ export default function AnalysisPage() {
               {technique === 'sources' && (
                 <div>
                   <label className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 block mb-2">
-                    Documents <span className="text-gray-600 normal-case tracking-normal">(none selected = all)</span>
+                    Documents{' '}
+                    <span className="text-gray-600 normal-case tracking-normal">
+                      (none selected = the {SOURCE_EVAL_DEFAULT} with the most extracted entities; at most {SOURCE_EVAL_MAX} per run)
+                    </span>
                   </label>
+                  {selectedDocs.length > SOURCE_EVAL_MAX && (
+                    <p className="text-[11px] text-threat-medium mb-2">
+                      {selectedDocs.length} selected: only {SOURCE_EVAL_MAX} will be graded in one run.
+                    </p>
+                  )}
                   <div className="max-h-56 overflow-y-auto space-y-1 border border-navy-600 rounded-md p-2 bg-navy-700">
                     {documents.length === 0 && (
                       <p className="text-[11px] text-gray-500 px-1 py-2">No documents held for this project.</p>
