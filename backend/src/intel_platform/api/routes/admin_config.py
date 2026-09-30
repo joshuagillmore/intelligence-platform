@@ -1,6 +1,8 @@
+import uuid
+
 import httpx
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select, update
 
 from intel_platform.api.deps import require_admin
@@ -18,9 +20,18 @@ router = APIRouter(dependencies=[Depends(require_admin)])
 # ---------------------------------------------------------------------------
 
 class ProxyConfigRequest(BaseModel):
-    mode: str = "direct"  # direct | vpn | tor | proxy
+    mode: str = "direct"  # one of VALID_PROXY_MODES: direct | vpn | tor
     proxy_url: str = ""
     tor_port: int = 9050
+
+    @field_validator("mode")
+    @classmethod
+    def _known_mode(cls, v: str) -> str:
+        # Refused, not coerced: saving 'direct' for a mistyped 'tor' answered
+        # 200 while turning egress protection off.
+        if v not in VALID_PROXY_MODES:
+            raise ValueError(f"mode must be one of {', '.join(VALID_PROXY_MODES)}")
+        return v
 
 
 class VpnActionRequest(BaseModel):
@@ -70,6 +81,17 @@ async def _read_proxy_mode() -> str:
 # Helpers
 # ---------------------------------------------------------------------------
 
+def get_llm_override() -> dict | None:
+    """The admin's runtime provider/model choice, or None when none is set.
+
+    Lets callers tell an explicit admin choice from the configured default
+    without reaching into `_llm_override` (llm/providers.py does today).
+    """
+    if not _llm_override["provider"]:
+        return None
+    return dict(_llm_override)
+
+
 def get_active_provider() -> str:
     """Return the currently active LLM provider name."""
     if _llm_override["provider"]:
@@ -84,8 +106,10 @@ def get_active_model() -> str:
     return settings.default_llm_model
 
 
-def _mask_key(key: str) -> str:
-    """Show only the last 4 characters of a key."""
+def _mask_key(key: str | None) -> str:
+    """Show only the last 4 characters of a key; mark one that cannot be decrypted."""
+    if key is None:
+        return "(unreadable)"
     if len(key) <= 4:
         return "****"
     return "*" * (len(key) - 4) + key[-4:]
@@ -218,19 +242,35 @@ async def add_api_key(req: ApiKeyCreateRequest):
 
 @router.put("/admin/api-keys/activate")
 async def activate_api_key(req: ApiKeyActivateRequest):
-    """Set a specific key as the active key for its provider."""
+    """Set a specific key as the active key for its provider.
+
+    Deactivation follows the stored key's own provider. Deactivating by the
+    request's provider and activating the id unchecked left two active keys for
+    one provider whenever the two disagreed, and every key lookup for it then
+    raised.
+    """
+    try:
+        key_id = uuid.UUID(req.key_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="API key not found")
     factory = get_session_factory()
     async with factory() as session:
-        # Deactivate all keys for this provider
+        result = await session.execute(select(ApiKey).where(ApiKey.id == key_id))
+        key = result.scalar_one_or_none()
+        if key is None:
+            raise HTTPException(status_code=404, detail="API key not found")
+        if req.provider and req.provider != key.provider:
+            raise HTTPException(
+                status_code=400, detail=f"That key belongs to provider '{key.provider}', not '{req.provider}'",
+            )
         await session.execute(
             update(ApiKey)
-            .where(ApiKey.provider == req.provider)
+            .where(ApiKey.provider == key.provider)
             .values(is_active=False)
         )
-        # Activate the selected key
         await session.execute(
             update(ApiKey)
-            .where(ApiKey.id == req.key_id)
+            .where(ApiKey.id == key_id)
             .values(is_active=True)
         )
         await session.commit()
@@ -368,7 +408,7 @@ async def get_proxy_config():
 
 @router.put("/admin/proxy")
 async def update_proxy_config(req: ProxyConfigRequest):
-    mode = req.mode if req.mode in VALID_PROXY_MODES else "direct"
+    mode = req.mode
     factory = get_session_factory()
     async with factory() as session:
         result = await session.execute(

@@ -1,12 +1,18 @@
 from __future__ import annotations
 import asyncio
+import threading
 import time
+from collections import OrderedDict
 from functools import wraps
 from typing import Any
 
-_cache: dict[str, tuple[float, Any]] = {}
+# key -> (expires_at, value), oldest insertion first. Sync endpoints run in the
+# threadpool, so every read and write goes through _lock.
+_cache: OrderedDict[str, tuple[float, Any]] = OrderedDict()
+_lock = threading.Lock()
+_MISS = object()
 DEFAULT_TTL = 30  # seconds
-_CACHE_MAX_SIZE = 500  # PERF: cap to prevent unbounded growth
+_CACHE_MAX_SIZE = 500  # a hard cap: past it, expired entries go first, then the oldest
 
 
 def _key_part(value: Any) -> str:
@@ -42,13 +48,34 @@ def _make_key(func, args: tuple, kwargs: dict) -> str:
     return "|".join(parts)
 
 
-def _evict_stale(ttl: int) -> None:
-    """Evict expired entries when cache grows large."""
-    now = time.time()
-    if len(_cache) >= _CACHE_MAX_SIZE:
-        stale = [k for k, (t, _) in _cache.items() if now - t >= ttl]
-        for k in stale:
-            del _cache[k]
+def _lookup(key: str, now: float) -> Any:
+    """The cached value, or _MISS when absent or expired (None is a valid value)."""
+    with _lock:
+        entry = _cache.get(key)
+        if entry is None:
+            return _MISS
+        expires_at, value = entry
+        if now < expires_at:
+            return value
+        del _cache[key]
+        return _MISS
+
+
+def _store(key: str, value: Any, ttl: int, now: float) -> None:
+    """Insert, then hold the cap: drop expired entries, then the oldest.
+
+    The old eviction removed only expired entries, judged by the inserting
+    decorator's TTL, so a burst of fresh keys grew the cache past its cap; and it
+    iterated the dict while threadpool calls inserted into it.
+    """
+    with _lock:
+        _cache[key] = (now + ttl, value)
+        _cache.move_to_end(key)
+        if len(_cache) > _CACHE_MAX_SIZE:
+            for expired in [k for k, (expires_at, _) in _cache.items() if expires_at <= now]:
+                del _cache[expired]
+            while len(_cache) > _CACHE_MAX_SIZE:
+                _cache.popitem(last=False)
 
 
 def cached(ttl: int = DEFAULT_TTL):
@@ -62,13 +89,11 @@ def cached(ttl: int = DEFAULT_TTL):
             async def async_wrapper(*args, **kwargs):
                 key = _make_key(func, args, kwargs)
                 now = time.time()
-                if key in _cache:
-                    cached_time, cached_value = _cache[key]
-                    if now - cached_time < ttl:
-                        return cached_value
+                hit = _lookup(key, now)
+                if hit is not _MISS:
+                    return hit
                 result = await func(*args, **kwargs)
-                _evict_stale(ttl)
-                _cache[key] = (now, result)
+                _store(key, result, ttl, now)
                 return result
             return async_wrapper
         else:
@@ -76,13 +101,11 @@ def cached(ttl: int = DEFAULT_TTL):
             def wrapper(*args, **kwargs):
                 key = _make_key(func, args, kwargs)
                 now = time.time()
-                if key in _cache:
-                    cached_time, cached_value = _cache[key]
-                    if now - cached_time < ttl:
-                        return cached_value
+                hit = _lookup(key, now)
+                if hit is not _MISS:
+                    return hit
                 result = func(*args, **kwargs)
-                _evict_stale(ttl)
-                _cache[key] = (now, result)
+                _store(key, result, ttl, now)
                 return result
             return wrapper
     return decorator
@@ -90,4 +113,5 @@ def cached(ttl: int = DEFAULT_TTL):
 
 def clear_cache():
     """Clear all cached values."""
-    _cache.clear()
+    with _lock:
+        _cache.clear()

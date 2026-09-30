@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from intel_platform.api.deps import get_graph_store, verify_api_key
@@ -13,7 +15,7 @@ class NoteRequest(BaseModel):
     title: str
     content: str
     entity_ids: list[str] = []
-    note_type: str = "observation"  # observation, hypothesis, question, conclusion
+    note_type: Literal["observation", "hypothesis", "question", "conclusion"] = "observation"
 
 
 @router.post("/notebook")
@@ -25,38 +27,55 @@ def create_note(req: NoteRequest, store: GraphStore = Depends(get_graph_store)):
         project_id=req.project_id,
     )
     store.create_entity(note)
+    # Report has no note_type field, so it is written onto the node here; it
+    # used to be echoed in the response and then lost.
+    store.update_entity(note.id, {"note_type": req.note_type})
 
-    # Link to referenced entities
+    # Link to referenced entities, counting only the links actually made.
+    linked = 0
+    unlinked: list[str] = []
     for eid in req.entity_ids:
         try:
-            rel = Relationship(
+            created = store.create_relationship(Relationship(
                 source_id=note.id,
                 target_id=eid,
                 rel_type="MENTIONS",
                 confidence=1.0,
                 source="notebook",
                 method="analyst",
-            )
-            store.create_relationship(rel)
-        except (ValueError, Exception):
-            pass
+                project_id=req.project_id,
+            ))
+        except ValueError:
+            created = None
+        if created:
+            linked += 1
+        else:
+            unlinked.append(eid)
 
     return {
         "note_id": note.id,
         "title": req.title,
         "note_type": req.note_type,
-        "linked_entities": len(req.entity_ids),
+        "linked_entities": linked,
+        "unlinked_entity_ids": unlinked,
     }
 
 
 @router.get("/notebook")
 def list_notes(project_id: str, store: GraphStore = Depends(get_graph_store)):
-    notes = store.search_entities(
-        project_id=project_id, entity_type="Report", limit=100
-    )
-    # Filter to notebook entries only
-    notebook_entries = [n for n in notes if n.get("report_type") == "notebook_entry"]
-    return notebook_entries
+    # Filtered in the query. Fetching the first 100 Reports of every kind by
+    # name and filtering here showed an empty notebook to any project with
+    # enough other reports ahead of its notes in the alphabet.
+    with store._driver.session() as session:
+        result = session.run(
+            """
+            MATCH (n:Report {project_id: $pid})
+            WHERE n.report_type = 'notebook_entry'
+            RETURN n ORDER BY n.created_at DESC
+            """,
+            pid=project_id,
+        )
+        return [dict(record["n"]) for record in result]
 
 
 @router.get("/notebook/{note_id}")
