@@ -199,7 +199,9 @@ def initialize_schema(driver: Driver) -> None:
         # so a database that already holds :Entity duplicates still boots; the
         # lookups then scan the label instead of seeking the index.
         try:
-            session.run(ENTITY_ID_CONSTRAINT)
+            # consume() so a failure is raised here, inside the guard, rather
+            # than whenever the driver next touches the session.
+            session.run(ENTITY_ID_CONSTRAINT).consume()
         except Exception:
             logger.warning("Could not create the unique constraint on :%s(id)", ENTITY_LABEL, exc_info=True)
     ensure_entity_label(driver)

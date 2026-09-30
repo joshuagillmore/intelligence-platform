@@ -44,6 +44,31 @@ class TestSchema:
         assert any(r["properties"] == ["id"] and "UNIQUE" in r["type"] for r in rows)
 
 
+class TestStartupIsNeverBlocked:
+    def test_existing_entity_duplicates_do_not_stop_the_boot(self, schema):
+        """initialize_schema runs unguarded in the app lifespan. If :Entity
+        duplicates already exist the constraint cannot be created; the app
+        must boot anyway and say why lookups are slower."""
+        dup = "test-entity-label-bootdup"
+        with schema.session() as s:
+            s.run("DROP CONSTRAINT entity_uid IF EXISTS").consume()
+        try:
+            with schema.session() as s:
+                s.run(
+                    "CREATE (:Person:Entity {id: $id, entity_type: 'Person', project_id: $p}), "
+                    "(:Organization:Entity {id: $id, entity_type: 'Organization', project_id: $p})",
+                    id=dup, p=PROJECT,
+                ).consume()
+            initialize_schema(schema)
+        finally:
+            with schema.session() as s:
+                s.run("MATCH (n {id: $id}) DETACH DELETE n", id=dup).consume()
+            initialize_schema(schema)
+        with schema.session() as s:
+            names = [r["name"] for r in s.run("SHOW CONSTRAINTS YIELD name")]
+        assert "entity_uid" in names, "the constraint must come back once the duplicates are gone"
+
+
 class TestAppliedOnCreate:
     def test_an_entity_carries_its_type_and_the_shared_label(self, graph_store, neo4j_driver):
         p = Person(name="Marta Lind", project_id=PROJECT)
