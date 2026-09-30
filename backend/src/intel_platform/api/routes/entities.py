@@ -1,8 +1,13 @@
+import logging
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -70,45 +75,116 @@ class MergeEntitiesRequest(BaseModel):
     project_id: str
 
 
+# Keys `get_relationships` adds about the endpoints; everything else on a
+# relationship row is a property of the edge itself.
+_REL_ENDPOINT_KEYS = frozenset({"rel_type", "source_id", "target_id", "source_name", "target_name", "direction"})
+# A relationship type as Neo4j stores it. Checked before a type read from the
+# graph is handed to APOC, although it came from the graph and not a request.
+_REL_TYPE_SHAPE = re.compile(r"[A-Z][A-Z0-9_]*")
+
+
+def _copy_edge_verbatim(store: GraphStore, rel_type: str, props: dict, source_id: str, target_id: str) -> bool:
+    """Recreate an edge with its exact type and properties. False if nothing was created."""
+    if not _REL_TYPE_SHAPE.fullmatch(rel_type or ""):
+        return False
+    with store._driver.session() as session:
+        record = session.run(
+            """
+            MATCH (a {id: $source_id})
+            MATCH (b {id: $target_id})
+            CALL apoc.create.relationship(a, $rel_type, $props, b) YIELD rel
+            RETURN count(rel) AS created
+            """,
+            source_id=source_id, target_id=target_id, rel_type=rel_type,
+            props=store._serialize_props(props),
+        ).single()
+    return bool(record and record["created"])
+
+
+def _transfer_edge(store: GraphStore, rel: dict, source_id: str, target_id: str, project_id: str) -> bool:
+    """Recreate one edge between new endpoints, keeping its type and properties.
+
+    Allowlisted types go through `create_relationship`, so an edge the primary
+    already has is corroborated rather than duplicated. Types outside that
+    allowlist — the ATT&CK/CWE catalog edges (MAPS_TO, HAS_WEAKNESS, ENABLES) —
+    are copied verbatim: the allowlist guards types arriving from requests and
+    model output, and this type is already in the graph. A property the model
+    will not accept also falls back to the verbatim copy, so a merge is never
+    refused over one odd value.
+    """
+    from pydantic import ValidationError
+
+    from intel_platform.models.relationships import Relationship
+
+    rel_type = rel.get("rel_type", "")
+    props = {k: v for k, v in rel.items() if k not in _REL_ENDPOINT_KEYS}
+    if rel_type in store.VALID_REL_TYPES:
+        fields = {k: v for k, v in props.items() if k in Relationship.model_fields}
+        try:
+            created = store.create_relationship(Relationship(
+                source_id=source_id, target_id=target_id, rel_type=rel_type,
+                project_id=project_id, **fields,
+            ))
+            if created:
+                return True
+        except (ValueError, ValidationError):
+            logger.warning("Merge: %s edge did not fit the model; copying it verbatim", rel_type, exc_info=True)
+    try:
+        return _copy_edge_verbatim(store, rel_type, props, source_id, target_id)
+    except Exception:
+        logger.exception("Merge: could not recreate a %s edge %s -> %s", rel_type, source_id, target_id)
+        return False
+
+
 @router.post("/entities/merge")
 def merge_entities(req: MergeEntitiesRequest, store: GraphStore = Depends(get_graph_store)):
-    """Merge multiple entities into one. Relationships are transferred to the primary entity."""
+    """Merge entities into the primary, moving every edge as it was.
+
+    Each edge keeps its direction, type and properties (evidence, provenance,
+    polarity). An entity is deleted only once every one of its edges has been
+    recreated on the primary; otherwise it is kept, and the response says so —
+    deleting it anyway is how edges used to disappear behind a success message.
+    """
     primary = store.get_entity(req.primary_id)
     if not primary:
         raise HTTPException(status_code=404, detail="Primary entity not found")
 
+    merge_set = {mid for mid in req.merge_ids if mid != req.primary_id}
     merged_count = 0
     relationships_transferred = 0
+    dropped_edges = 0
+    not_merged: list[str] = []
+    not_found: list[str] = []
 
     for merge_id in req.merge_ids:
         if merge_id == req.primary_id:
             continue
-        merge_entity = store.get_entity(merge_id)
-        if not merge_entity:
+        if not store.get_entity(merge_id):
+            not_found.append(merge_id)
             continue
 
-        # Transfer all relationships from merge_entity to primary
-        rels = store.get_relationships(merge_id)
-        for rel in rels:
-            target_id = rel.get("target_id", "")
-            if target_id == req.primary_id:
-                continue  # Skip self-referencing
-            from intel_platform.models.relationships import Relationship
-            try:
-                new_rel = Relationship(
-                    source_id=req.primary_id,
-                    target_id=target_id,
-                    rel_type=rel.get("rel_type", "ASSOCIATED_WITH"),
-                    confidence=float(rel.get("confidence", rel.get("props", {}).get("confidence", 0.5))),
-                    source=rel.get("source", rel.get("props", {}).get("source", "")),
-                    method="merge",
-                )
-                store.create_relationship(new_rel)
+        failed = 0
+        for rel in store.get_relationships(merge_id):
+            if "direction" in rel:
+                outgoing = rel["direction"] == "out"
+            else:
+                outgoing = rel.get("source_id") == merge_id
+            other = rel.get("target_id") if outgoing else rel.get("source_id")
+            # An edge to the primary, or to another entity being merged into it,
+            # would become a self-loop on the primary.
+            if other == req.primary_id or other in merge_set:
+                continue
+            source_id, target_id = (req.primary_id, other) if outgoing else (other, req.primary_id)
+            if _transfer_edge(store, rel, source_id, target_id, req.project_id):
                 relationships_transferred += 1
-            except ValueError:
-                pass
+            else:
+                failed += 1
 
-        # Delete the merged entity
+        if failed:
+            dropped_edges += failed
+            not_merged.append(merge_id)
+            logger.warning("Merge: kept %s; %d of its edges could not be moved", merge_id, failed)
+            continue
         store.delete_entity(merge_id)
         merged_count += 1
 
@@ -117,6 +193,10 @@ def merge_entities(req: MergeEntitiesRequest, store: GraphStore = Depends(get_gr
         "primary_name": primary.get("name"),
         "entities_merged": merged_count,
         "relationships_transferred": relationships_transferred,
+        "dropped_edges": dropped_edges,
+        "entities_not_merged": not_merged,
+        "entities_not_found": not_found,
+        "complete": not not_merged and not not_found,
     }
 
 
