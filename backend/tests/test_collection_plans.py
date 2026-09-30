@@ -236,19 +236,108 @@ def _make_xlsx_helper(rows: list[list]) -> bytes:
 # Status Lifecycle Tests
 # ---------------------------------------------------------------------------
 
+class _PlanDb:
+    """Async session stand-in holding one plan."""
+
+    def __init__(self, plan):
+        self.plan = plan
+        self.commits = 0
+
+    async def get(self, _model, pid):
+        return self.plan if pid == self.plan.id else None
+
+    async def commit(self):
+        self.commits += 1
+
+    async def refresh(self, _obj):
+        pass
+
+
+def _lifecycle_plan(status):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        id=uuid.uuid4(), project_id="p1", name="plan", description="", requirement="",
+        pir="", pir_id=None, refined_pir="", status=status, routing_rules={},
+        created_by="t", assigned_to="", schedule_cron="", next_run_at=None,
+        created_at=None, updated_at=None, sources=[],
+    )
+
+
+def _transition(endpoint: str, status: str):
+    """Call a transition endpoint on a plan in `status`: (new status, HTTP code)."""
+    from fastapi import HTTPException
+
+    from intel_platform.api.routes import collection_plans as cp
+
+    plan = _lifecycle_plan(status)
+    try:
+        body = run(getattr(cp, f"{endpoint}_plan")(str(plan.id), db=_PlanDb(plan)))
+    except HTTPException as err:
+        return plan.status, err.status_code
+    return body["status"], 200
+
+
 class TestStatusLifecycle:
-    """Test that collection plan status transitions follow the defined lifecycle."""
+    """The lifecycle the transition endpoints and PUT actually enforce.
 
-    def test_valid_transitions(self):
-        """Test all valid status transitions."""
-        from intel_platform.db.models import PlanStatus
+    This class held one test asserting `PlanStatus.DRAFT in ("DRAFT",
+    PlanStatus.DRAFT)` — true by construction, of any code. It now drives the
+    endpoints.
+    """
 
-        # Draft can transition to Active
-        assert PlanStatus.DRAFT in ("DRAFT", PlanStatus.DRAFT)
-        assert PlanStatus.ACTIVE in ("ACTIVE", PlanStatus.ACTIVE)
-        assert PlanStatus.PAUSED in ("PAUSED", PlanStatus.PAUSED)
-        assert PlanStatus.COMPLETED in ("COMPLETED", PlanStatus.COMPLETED)
-        assert PlanStatus.ARCHIVED in ("ARCHIVED", PlanStatus.ARCHIVED)
+    @pytest.mark.parametrize("endpoint,start,expected", [
+        ("activate", "DRAFT", ("ACTIVE", 200)),
+        ("activate", "PAUSED", ("ACTIVE", 200)),
+        ("activate", "ACTIVE", ("ACTIVE", 400)),
+        ("activate", "ARCHIVED", ("ARCHIVED", 400)),
+        ("pause", "ACTIVE", ("PAUSED", 200)),
+        ("pause", "DRAFT", ("DRAFT", 400)),
+        ("complete", "ACTIVE", ("COMPLETED", 200)),
+        ("complete", "ARCHIVED", ("ARCHIVED", 400)),   # completing must not un-archive
+        ("archive", "ACTIVE", ("ARCHIVED", 200)),
+        ("archive", "COMPLETED", ("ARCHIVED", 200)),
+    ])
+    def test_valid_transitions(self, endpoint, start, expected):
+        assert _transition(endpoint, start) == expected
+
+    def _put(self, start, **fields):
+        from fastapi import HTTPException
+
+        from intel_platform.api.routes import collection_plans as cp
+
+        plan = _lifecycle_plan(start)
+        try:
+            body = run(cp.update_plan(str(plan.id), cp.UpdatePlanRequest(**fields), db=_PlanDb(plan)))
+        except HTTPException as err:
+            return plan.status, err.status_code
+        return body["status"], 200
+
+    def test_put_rejects_an_unknown_status(self):
+        """Any string used to be stored: the column is String(20)."""
+        assert self._put("DRAFT", status="SHIPPED") == ("DRAFT", 400)
+
+    def test_put_cannot_revive_an_archived_plan(self):
+        assert self._put("ARCHIVED", status="ACTIVE") == ("ARCHIVED", 409)
+
+    def test_put_can_still_edit_an_archived_plans_text(self):
+        assert self._put("ARCHIVED", description="note")[1] == 200
+
+    def test_put_accepts_a_known_status(self):
+        assert self._put("DRAFT", status="PAUSED") == ("PAUSED", 200)
+
+    @pytest.mark.parametrize("field,size", [
+        ("name", 257), ("assigned_to", 129), ("schedule_cron", 129), ("status", 21),
+    ])
+    def test_overlong_fields_are_a_validation_error_not_a_500(self, field, size):
+        from pydantic import ValidationError
+
+        from intel_platform.api.routes.collection_plans import CreatePlanRequest, UpdatePlanRequest
+
+        with pytest.raises(ValidationError):
+            UpdatePlanRequest(**{field: "x" * size})
+        with pytest.raises(ValidationError):
+            CreatePlanRequest(**{"project_id": "p", "name": "n", field: "x" * size})
 
 
 # ---------------------------------------------------------------------------

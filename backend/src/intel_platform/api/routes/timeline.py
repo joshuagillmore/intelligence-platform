@@ -23,16 +23,67 @@ _BUCKETS = ("day", "month", "year")
 _SYSTEM_TYPES = frozenset({"Document", "Topic", "Report", "Collection"})
 
 
+_TIMELINE_MAX_PAGE = 5000
+
+
+def _timeline_page(store: GraphStore, project_id: str, limit: int, offset: int) -> tuple[list[dict], int, list[str]]:
+    """One page of the project's timeline, newest first, plus the true total and every type present.
+
+    Ordered in Cypher by ``coalesce(event_datetime, created_at)``. The route
+    used to take `search_entities(limit=500)` — ordered by *name* — and sort
+    that slice by date, so on a large project the timeline was the newest of an
+    alphabetical sample and `count` described the sample. Dates are stored as
+    ISO-8601 strings, which order chronologically as text; an entity with
+    neither date sorts last. Only the fields the timeline shows are returned,
+    never a Document's content.
+
+    `search_entities` takes no ordering, hence the direct read.
+    """
+    with store._driver.session() as session:
+        summary = session.run(
+            """
+            MATCH (n) WHERE n.project_id = $project_id
+            RETURN count(n) AS total, collect(DISTINCT n.entity_type) AS types
+            """,
+            project_id=project_id,
+        ).single()
+        rows = session.run(
+            """
+            MATCH (n) WHERE n.project_id = $project_id
+            WITH n, coalesce(n.event_datetime, n.created_at, '') AS ts
+            ORDER BY ts DESC, n.id
+            SKIP $offset LIMIT $limit
+            RETURN n.id AS id, n.name AS name, n.entity_type AS entity_type,
+                   n.event_datetime AS event_datetime, n.created_at AS created_at,
+                   n.date_precision AS date_precision, n.date_text AS date_text
+            """,
+            project_id=project_id, limit=limit, offset=offset,
+        )
+        entities = [dict(r) for r in rows]
+    total = summary["total"] if summary else 0
+    types = sorted(t for t in (summary["types"] if summary else []) if t)
+    return entities, total, types
+
+
 @router.get("/timeline")
-def get_timeline(project_id: str, store: GraphStore = Depends(get_graph_store)):
-    """Get a timeline of entities and events, ordered by real event date when known.
+def get_timeline(
+    project_id: str,
+    limit: int = Query(500, ge=1, le=_TIMELINE_MAX_PAGE),
+    offset: int = Query(0, ge=0),
+    store: GraphStore = Depends(get_graph_store),
+):
+    """Get a timeline of entities and events, newest first by real event date when known.
 
     Entities with a populated ``event_datetime`` (extraction resolved a real-world
     date from the source text) are timestamped and labeled by that; everything
     else falls back to ``created_at`` (ingestion time) — the same fallback
     pattern geo.py's entity-timeline endpoint uses.
+
+    Returns one page (`count`) of the whole project (`total`), `truncated` when
+    more exist past this page, and `types_present` across the whole project so a
+    type filter can offer every type rather than a fixed list or the page's.
     """
-    entities = store.search_entities(project_id=project_id, limit=500)
+    entities, total, types_present = _timeline_page(store, project_id, limit, offset)
 
     timeline_events = []
     for e in entities:
@@ -54,12 +105,14 @@ def get_timeline(project_id: str, store: GraphStore = Depends(get_graph_store)):
             "date_text": e.get("date_text", ""),
         })
 
-    # Sort by timestamp
-    timeline_events.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-
+    # Already in order: sorted server-side across the whole project.
     return {
         "events": timeline_events,
         "count": len(timeline_events),
+        "total": total,
+        "truncated": offset + len(timeline_events) < total,
+        "types_present": types_present,
+        "offset": offset,
         # Lets a caller tell "this project has nothing" from "this project is
         # not a project" without changing the response shape.
         "project_exists": project_exists(store, project_id),

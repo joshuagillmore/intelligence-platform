@@ -12,7 +12,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +41,7 @@ from intel_platform.services.collection_planner import parse_plan_sources
 from intel_platform.services.extraction import extract_entities_nlp
 from intel_platform.services.graph_builder import build_graph_from_extractions
 from intel_platform.services.ingestion import ingest_text
+from intel_platform.services.llm_output import normalise_line
 
 logger = logging.getLogger(__name__)
 
@@ -66,15 +67,73 @@ _PROCESS_STARTED_AT = datetime.now(timezone.utc)
 # run mid-collection.
 _inflight_runs: dict[uuid.UUID, "asyncio.Task"] = {}
 
+# The latest run this process launched for a plan ended by raising or being
+# cancelled. A crashed run writes no terminal event, so without this the trail
+# read "running" for the whole stall window, then "stalled" — never "failed" —
+# and the execute guard refused the plan meanwhile. Cleared when a new run is
+# registered for the plan.
+_failed_runs: dict[uuid.UUID, str] = {}
+
+# One lock per plan around the execute guard. The guard is check-then-act
+# across awaits (state read, status commit, task launch), so two POSTs could
+# both see "idle" and both start a collection loop.
+_execute_locks: dict[uuid.UUID, asyncio.Lock] = {}
+
+
+def _execute_lock(plan_id: uuid.UUID) -> asyncio.Lock:
+    lock = _execute_locks.get(plan_id)
+    if lock is None:
+        lock = _execute_locks[plan_id] = asyncio.Lock()
+    return lock
+
 
 def register_run(plan_id: uuid.UUID, task) -> None:
     _inflight_runs[plan_id] = task
-    task.add_done_callback(lambda _t, pid=plan_id: _inflight_runs.pop(pid, None))
+    _failed_runs.pop(plan_id, None)
+    task.add_done_callback(lambda t, pid=plan_id: _run_finished(pid, t))
+
+
+def _run_finished(plan_id: uuid.UUID, task) -> None:
+    """Done-callback: unregister the run and record how it ended.
+
+    Only the entry that is still *this* task is touched. A second run
+    registered for the plan replaces the first, and the first one's callback
+    used to pop the second's entry, making a live run invisible to the guard.
+    """
+    if task.cancelled():
+        outcome = "cancelled"
+        logger.warning("Collection run for plan %s was cancelled", plan_id)
+    elif task.exception() is not None:
+        exc = task.exception()
+        outcome = type(exc).__name__
+        # Retrieved and logged here; it used to be discarded, which also left
+        # asyncio to print "Task exception was never retrieved" at shutdown.
+        logger.error("Collection run for plan %s failed", plan_id, exc_info=exc)
+    else:
+        outcome = ""
+    if _inflight_runs.get(plan_id) is not task:
+        return
+    _inflight_runs.pop(plan_id, None)
+    if outcome:
+        _failed_runs[plan_id] = outcome
 
 
 def has_live_run(plan_id: uuid.UUID) -> bool:
     task = _inflight_runs.get(plan_id)
     return task is not None and not task.done()
+
+
+def _in_process_state(plan_id: uuid.UUID) -> str | None:
+    """What this process knows directly about the plan's latest run, if anything.
+
+    Shared by the execute guard and `/execution-status`, in the same order, so
+    what the analyst is shown and what the API enforces cannot disagree.
+    """
+    if has_live_run(plan_id):
+        return "running"
+    if plan_id in _failed_runs:
+        return "failed"
+    return None
 
 
 def run_state_from_events(events) -> str:
@@ -132,8 +191,9 @@ async def current_run_state(db: AsyncSession, plan_id: uuid.UUID) -> str:
     """
     from intel_platform.services.plan_executor import get_execution_status as _mem_status
 
-    if has_live_run(plan_id):
-        return "running"
+    known = _in_process_state(plan_id)
+    if known:
+        return known
     mem = _mem_status(str(plan_id))
     if mem:
         return mem.get("status") or "idle"
@@ -180,89 +240,120 @@ def refinement_system_prompt() -> str:
     )
 
 
-# A line carrying no words — just markdown punctuation. Models emit these
-# constantly ("**" alone on a line, a stray ">", a rule). The old scan treated
-# the first *non-empty* line as the requirement, so a bare "**" was accepted,
-# stripped to "", and the entire response including the model's own critique was
-# stored as the requirement instead.
-_MD_NOISE = re.compile(r"^[\s*_>#\-–—`~|=+.]*$")
-
 # The label the requirement hides behind. "Refined PIR" is the form the prompt
-# asks for; models also answer with "Priority Intelligence Requirement (PIR)"
-# and variations, and the requirement is then further down the reply than the
-# first line of prose.
-_PIR_LABEL = (
-    r"(?:refined\s+)?(?:priority\s+intelligence\s+requirement|pir)"
-    r"(?:\s*\(\s*pir\s*\))?"
+# asks for; models also answer "Priority Intelligence Requirement (PIR)",
+# "Proposed PIR", "Revised requirement", "4. Proposed Refined PIR" as a numbered
+# heading, or a table row. Lines are normalised first (`normalise_line`), so
+# emphasis, blockquotes, headings and list numbering are already gone and the
+# pattern only has to describe the words.
+_PIR_NOUN = r"(?:priority\s+intelligence\s+requirement|pir)(?:\s*\(\s*pir\s*\))?"
+_QUALIFIER = r"(?:proposed|revised|refined|improved|updated|final|rewritten|new)"
+_PIR_LABEL = re.compile(
+    rf"^(?:(?:{_QUALIFIER}[\s,]+)+(?:{_PIR_NOUN}|requirement|version)|{_PIR_NOUN})"
+    r"\s*(?:[:\-–—|]\s*(?P<body>.*))?$",
+    re.IGNORECASE,
 )
-_LABEL_ONLY = re.compile(rf"^[\s*_#>\-]*{_PIR_LABEL}[\s*_]*[:\-–]?[\s*_]*$", re.IGNORECASE)
-_LABEL_INLINE = re.compile(
-    rf"^[\s*_#>\-]*{_PIR_LABEL}[\s*_]*[:\-–][\s*_]*(?P<body>.+)$", re.IGNORECASE
+
+# The prompt's own section names. A reply that opens on one of these is
+# analysis, not a requirement: "### 1. Assessment" was once stored as the PIR
+# and then drove source resolution and the judge. Matched against the whole
+# normalised line, so a requirement that merely begins "Identify …" survives —
+# only the prompt's step text ("IDENTIFY hidden assumptions") is a section.
+_SECTION_HEADING = re.compile(
+    r"^(?:step\s*\d+\s*[:.\-]?\s*)?(?:"
+    r"assess(?:ment)?(?:\s+of\s+(?:the\s+)?(?:original\s+)?(?:pir|requirement))?"
+    r"|assess\s+specificity\b.*"
+    r"|specificity(?:\s*,?\s*(?:and\s+)?(?:measurability|time[-\s]?bound(?:s|edness)?))*"
+    r"|(?:identify\s+)?hidden\s+assumptions?(?:\s*\.\.\.)?|identify\s+hidden\s+assumptions\b.*"
+    r"|break\s*down\b.*|breakdown"
+    r"|(?:\d+\s*[-–]\s*\d+\s+)?essential\s+elements(?:\s+of\s+information)?(?:\s*\(\s*eeis?\s*\))?"
+    r"|eeis?|propose\s+a\s+refined\b.*"
+    r"|analysis|critique|rationale|summary|overview|recommendations?|assumptions?"
+    r")\s*[:.]?$",
+    re.IGNORECASE,
+)
+
+# A line introducing what follows rather than stating it.
+_PREAMBLE = re.compile(
+    r"^(?:here(?:'s|\s+is|\s+are)|below\s+is|sure|certainly|of\s+course|okay|ok\b|great"
+    r"|i(?:'ve|\s+have|'ll|\s+will)|let\s+me|the\s+following)\b",
+    re.IGNORECASE,
 )
 
 
-def _clean_line(line: str) -> str:
-    """Strip the markdown a model wraps a requirement in, leaving the words.
+def _clean_candidate(text: str) -> str:
+    """A normalised line with the quoting a model puts round a requirement removed."""
+    return (text or "").strip().strip('"“”').strip("*_ |").strip()
 
-    Blockquote markers, headings, bullets and emphasis all reached the stored
-    requirement and from there into PIR titles, plan names, and — the damaging
-    part — the text the source resolver searches against. A requirement reading
-    "(Actionable, Specific, Measurable, Time-bounded)** > **" sent collection
-    after intelligence-doctrine PDFs instead of the subject.
+
+def _candidate_kind(text: str) -> str:
+    """Whether a cleaned line is the requirement: "ok", "skip" or "stop".
+
+    "skip" is a line that introduces what follows (a preamble, anything ending
+    in a colon) — keep looking. "stop" is one of the prompt's own sections: the
+    reply has moved on to analysis, and taking the next line would store the
+    model's critique as the requirement.
     """
-    s = (line or "").strip()
-    s = re.sub(r"^\s*>+\s*", "", s)          # blockquote
-    s = re.sub(r"^#{1,6}\s*", "", s)         # heading
-    s = re.sub(r"^[-*+]\s+", "", s)          # bullet
-    s = s.replace("**", "").replace("__", "")
-    return s.strip().strip('"').strip("*_ ").strip()
+    if not re.search(r"[^\W\d_]{2,}", text):
+        return "skip"   # markdown punctuation, a rule, a bare number
+    if _SECTION_HEADING.match(text):
+        return "stop"
+    if text.endswith(":") or _PREAMBLE.match(text):
+        return "skip"
+    return "ok"
 
 
-def _split_refinement(content: str, fallback: str) -> tuple[str, str]:
-    """Split an LLM refinement into (refined PIR, analysis).
+def _split_refinement_parsed(content: str, fallback: str) -> tuple[str, str, bool]:
+    """Split an LLM refinement into (refined PIR, analysis, parsed).
+
+    `parsed` is False when nothing in the reply could be taken as the
+    requirement and `fallback` was returned in its place. The caller must not
+    store that fallback as a refinement: it is the original text wearing the
+    refinement's name, and once written it was never corrected.
 
     The prompt asks for the refined PIR on the first line. Replies routinely
     arrive as a markdown-only line, then a blockquoted label, then the
-    requirement in italics, then a critique of the rewrite — so both "take line
-    0" and "take the first non-empty line" capture something that is not the
-    requirement.
-
-    The label is searched for across the whole reply before falling back to the
-    first line with words in it: a stray fragment above the label must not win
-    simply by appearing first.
+    requirement in italics, then a critique of the rewrite — so the label is
+    searched for across the whole reply before falling back to the first line
+    that is neither a preamble nor one of the prompt's section headings.
     """
     text = (content or "").strip()
     if not text:
-        return fallback, ""
+        return fallback, "", False
 
     lines = text.split("\n")
 
-    def _substantive_from(start: int) -> tuple[str, str] | None:
+    def _requirement_from(start: int) -> tuple[str, str, bool]:
         for j in range(start, len(lines)):
-            cleaned = _clean_line(lines[j])
-            if cleaned and not _MD_NOISE.match(lines[j].strip()):
-                return cleaned, "\n".join(lines[j + 1:]).strip()
-        return None
+            cleaned = _clean_candidate(normalise_line(lines[j]))
+            kind = _candidate_kind(cleaned)
+            if kind == "ok":
+                return cleaned, "\n".join(lines[j + 1:]).strip(), True
+            if kind == "stop":
+                break
+        return fallback, "", False
 
     # Pass 1: the labelled requirement, wherever it sits in the reply.
     for i, raw in enumerate(lines):
-        line = raw.strip()
-        if not line:
+        label = _PIR_LABEL.match(normalise_line(raw))
+        if not label:
             continue
-        inline = _LABEL_INLINE.match(line)
-        if inline:
-            body = _clean_line(inline.group("body"))
-            if body:
-                return body, "\n".join(lines[i + 1:]).strip()
-            found = _substantive_from(i + 1)
-            return found if found else (fallback, "")
-        if _LABEL_ONLY.match(line):
-            found = _substantive_from(i + 1)
-            return found if found else (fallback, "")
+        body = _clean_candidate(label.group("body") or "")
+        kind = _candidate_kind(body) if body else "skip"
+        if kind == "ok":
+            return body, "\n".join(lines[i + 1:]).strip(), True
+        if kind == "stop":
+            return fallback, "", False
+        return _requirement_from(i + 1)
 
-    # Pass 2: no label anywhere — the first line that actually carries words.
-    found = _substantive_from(0)
-    return found if found else (fallback, "")
+    # Pass 2: no label anywhere — the first line that states something.
+    return _requirement_from(0)
+
+
+def _split_refinement(content: str, fallback: str) -> tuple[str, str]:
+    """(refined PIR, analysis) — `_split_refinement_parsed` without the flag."""
+    refined, analysis, _parsed = _split_refinement_parsed(content, fallback)
+    return refined, analysis
 
 
 def _parse_uuid(value: str, label: str = "ID") -> uuid.UUID:
@@ -277,9 +368,29 @@ def _parse_uuid(value: str, label: str = "ID") -> uuid.UUID:
 # Request / Response schemas
 # ---------------------------------------------------------------------------
 
+# Lengths match the String(n) columns in db/models.CollectionPlan. Past them
+# the insert failed in Postgres and the client got a 500; they are now a 422.
+_NAME_MAX = 256
+_SHORT_MAX = 128
+_STATUS_MAX = 20
+
+# Every status a plan may be given. FAILED is the terminal state of a run that
+# failed (see plan_executor.PLAN_FAILED).
+_PLAN_STATUSES = frozenset({
+    PlanStatus.DRAFT, PlanStatus.ACTIVE, PlanStatus.PAUSED,
+    PlanStatus.COMPLETED, PlanStatus.ARCHIVED, "FAILED",
+})
+
+
+def _validate_plan_status(status: str) -> str:
+    if status not in _PLAN_STATUSES:
+        raise HTTPException(400, f"Invalid status: {status!r}. Expected one of {sorted(_PLAN_STATUSES)}")
+    return status
+
+
 class CreatePlanRequest(BaseModel):
     project_id: str
-    name: str
+    name: str = Field(max_length=_NAME_MAX)
     description: str = ""
     requirement: str = ""
     pir: str = ""
@@ -288,26 +399,26 @@ class CreatePlanRequest(BaseModel):
     # requirements still land on the project's requirements spine.
     pir_id: str | None = None
     refined_pir: str = ""
-    status: str = PlanStatus.DRAFT
+    status: str = Field(default=PlanStatus.DRAFT, max_length=_STATUS_MAX)
     routing_rules: dict = Field(default_factory=lambda: {
         "extract_entities": True,
         "store_documents": True,
     })
-    created_by: str = "analyst"
-    assigned_to: str = ""
-    schedule_cron: str = ""
+    created_by: str = Field(default="analyst", max_length=_SHORT_MAX)
+    assigned_to: str = Field(default="", max_length=_SHORT_MAX)
+    schedule_cron: str = Field(default="", max_length=_SHORT_MAX)
 
 
 class UpdatePlanRequest(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=_NAME_MAX)
     description: str | None = None
     requirement: str | None = None
     pir: str | None = None
     refined_pir: str | None = None
-    status: str | None = None
+    status: str | None = Field(default=None, max_length=_STATUS_MAX)
     routing_rules: dict | None = None
-    assigned_to: str | None = None
-    schedule_cron: str | None = None
+    assigned_to: str | None = Field(default=None, max_length=_SHORT_MAX)
+    schedule_cron: str | None = Field(default=None, max_length=_SHORT_MAX)
 
 
 class AddSourceRequest(BaseModel):
@@ -444,7 +555,7 @@ async def create_plan(req: CreatePlanRequest, db: AsyncSession = Depends(get_db)
         pir=req.pir or (pir_record.text if pir_record else ""),
         pir_id=pir_record.id if pir_record else None,
         refined_pir=req.refined_pir,
-        status=req.status,
+        status=_validate_plan_status(req.status),
         routing_rules=req.routing_rules,
         created_by=req.created_by,
         assigned_to=req.assigned_to,
@@ -487,6 +598,12 @@ async def update_plan(plan_id: str, req: UpdatePlanRequest, db: AsyncSession = D
         raise HTTPException(404, "Collection plan not found")
 
     update_data = req.model_dump(exclude_none=True)
+    if "status" in update_data:
+        # Any string used to be stored, and an ARCHIVED plan could be revived
+        # by writing a new status over it. Un-archiving is not an edit.
+        new_status = _validate_plan_status(update_data["status"])
+        if plan.status == PlanStatus.ARCHIVED and new_status != PlanStatus.ARCHIVED:
+            raise HTTPException(409, "An archived plan's status cannot be changed")
     for key, value in update_data.items():
         setattr(plan, key, value)
 
@@ -541,6 +658,9 @@ async def complete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
         raise HTTPException(404, "Collection plan not found")
+    if plan.status == PlanStatus.ARCHIVED:
+        # Completing an archived plan un-archived it.
+        raise HTTPException(400, "Cannot complete an archived plan")
     plan.status = PlanStatus.COMPLETED
     plan.updated_at = datetime.now(timezone.utc)
     await db.commit()
@@ -602,6 +722,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
         llm_status = f"LLM unavailable: {e}"
 
     refined_pir = pir_text
+    refined_ok = False
     plan_description = ""
     # Why a plan came back thin, in the plan's own words rather than the UI's
     # guess. Without this the analyst was shown "The LLM may have been
@@ -622,7 +743,14 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
                 system=refinement_system_prompt(),
                 temperature=active_persona_temperature(0.3),
             )
-            refined_pir, plan_description = _split_refinement(refine_result.content, pir_text)
+            refined_pir, plan_description, refined_ok = _split_refinement_parsed(
+                refine_result.content, pir_text,
+            )
+            if not refined_ok:
+                failures.append("refinement returned no usable requirement")
+                # No requirement could be read, but the reply is still the
+                # model's analysis — keep it so the EEIs it lists are captured.
+                plan_description = (refine_result.content or "").strip()
         except Exception as e:
             # `%s` alone loses everything when the exception carries no message —
             # a timeout stringifies to "" and the log line read literally
@@ -672,9 +800,16 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
         plan_text = ""
 
     # Step 4: Create the plan, linked to the requirement it serves
-    if pir_record and refined_pir and not pir_record.refined_text:
+    stored = (pir_record.refined_text or "").strip() if pir_record else ""
+    if pir_record and refined_ok and (not stored or stored == (pir_record.text or "").strip()):
         # Carry the LLM's refinement back onto the requirement so the analyst
-        # does not have to re-derive it on the next run.
+        # does not have to re-derive it on the next run — only when there is a
+        # refinement to carry. This used to run on failure too, storing the
+        # original text as its own refinement, and the "already refined" guard
+        # then meant no later success could ever correct it. A stored value
+        # equal to the original text is exactly that fallback, so a success now
+        # replaces it; any other stored wording is someone's refinement and is
+        # kept.
         pir_record.refined_text = refined_pir
 
     if pir_record and not pir_record.eeis:
@@ -789,6 +924,16 @@ async def execute_plan_endpoint(
     if not plan:
         raise HTTPException(404, "Collection plan not found")
 
+    # Held from the in-flight check until the new run is registered, so a
+    # second request waits and then sees the first request's live task.
+    async with _execute_lock(plan.id):
+        return await _start_execution(plan, body, db, store)
+
+
+async def _start_execution(
+    plan: CollectionPlan, body: ExecuteRequest | None, db: AsyncSession, store: GraphStore,
+) -> dict:
+    """The execute guard and launch. Runs under the plan's execute lock."""
     # Refuse only when a run is genuinely in flight, not because of a status
     # flag. The old guard allowed DRAFT and PAUSED only, which made "Activate" —
     # the button an analyst naturally presses before running something — set
@@ -825,8 +970,13 @@ async def execute_plan_endpoint(
     # the run was actually allowed rather than on a number the caller re-supplies
     # at assessment time.
     plan.status = PlanStatus.ACTIVE
+    # The budget belongs to this run only. It used to persist when a later run
+    # was started without one, so that run was assessed against a limit it was
+    # never given.
+    rules = {k: v for k, v in (plan.routing_rules or {}).items() if k != "source_limit"}
     if body and body.source_limit:
-        plan.routing_rules = {**(plan.routing_rules or {}), "source_limit": body.source_limit}
+        rules["source_limit"] = body.source_limit
+    plan.routing_rules = rules
     plan.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(plan)
@@ -841,7 +991,12 @@ async def execute_plan_endpoint(
 
     all_auto = [s for s in sources if s.enabled and s.source_type != "file_upload"]
     source_limit = body.source_limit if body else None
-    if all_auto:
+    # A plan raised against a PIR is collected against its open elements even
+    # with no planned sources: the loop goes straight to re-tasking. It used to
+    # be set ACTIVE and left there, with the requirement loop never run.
+    requirement_only = not all_auto and plan.pir_id is not None
+    launched = bool(all_auto) or requirement_only
+    if launched:
         session_factory = get_session_factory()
         max_results = max(1, min(25, body.max_results_per_source if body else 10))
         register_run(plan.id, asyncio.create_task(
@@ -857,11 +1012,16 @@ async def execute_plan_endpoint(
             )
         ))
 
+    if all_auto:
+        message = f"Agentic execution started with {len(all_auto)} source(s)."
+    elif requirement_only:
+        message = "No planned sources; collecting against the requirement's open elements."
+    else:
+        message = "Plan activated but no automated sources found."
     return {
         **_plan_to_dict(plan),
-        "execution_status": "started" if all_auto else "no_executable_sources",
-        "message": f"Agentic execution started with {len(all_auto)} source(s)." if all_auto
-                   else "Plan activated but no automated sources found.",
+        "execution_status": "started" if launched else "no_executable_sources",
+        "message": message,
         "sources_queued": min(len(all_auto), source_limit) if source_limit else len(all_auto),
         "sources_manual": len(file_only),
         "sources_missing_config": len(missing_config),
@@ -883,9 +1043,15 @@ async def get_execution_status(plan_id: str, db: AsyncSession = Depends(get_db))
     from intel_platform.services.plan_executor import get_execution_status as _mem_status
     pid = _parse_uuid(plan_id, "plan_id")
 
-    mem = _mem_status(plan_id)
-    if mem:
-        return {"plan_id": plan_id, **mem}
+    # Same evidence, same order as the execute guard (`current_run_state`): the
+    # live task, a failure recorded when it ended, the in-memory tracker, then
+    # the trail. This endpoint skipped the live task, so a run that had not
+    # written its first event yet read "idle" while the guard refused with 409.
+    known = _in_process_state(pid)
+    if known is None:
+        mem = _mem_status(plan_id)
+        if mem:
+            return {"plan_id": plan_id, **mem}
 
     result = await db.execute(
         select(CollectionActivity)
@@ -894,6 +1060,12 @@ async def get_execution_status(plan_id: str, db: AsyncSession = Depends(get_db))
     )
     events = result.scalars().all()
     if not events:
+        if known == "running":
+            return {"plan_id": plan_id, "status": "running", "message": "Run starting",
+                    "sources_succeeded": 0, "sources_failed": 0}
+        if known == "failed":
+            return {"plan_id": plan_id, "status": "failed",
+                    "message": "The collection run ended with an error"}
         return {"plan_id": plan_id, "status": "idle", "message": "No active execution"}
 
     latest = events[-1]
@@ -905,9 +1077,14 @@ async def get_execution_status(plan_id: str, db: AsyncSession = Depends(get_db))
     # restarting the backend and watching a dead plan keep claiming it. Now that
     # extraction emits a heartbeat, silence past the threshold is itself
     # information: the work is not merely slow.
-    state = run_state_from_events(events)
-    # Counts are for the current run only — see current_run_events.
-    this_run = current_run_events(events)
+    state = known or run_state_from_events(events)
+    # Counts are for the current run only — see current_run_events. A live run
+    # whose trail still ends on the previous run's terminal event has not
+    # written anything of its own yet.
+    if known == "running" and latest.event in _TERMINAL_EVENTS:
+        this_run = []
+    else:
+        this_run = current_run_events(events)
     return {
         "plan_id": plan_id,
         "status": state,
@@ -1011,6 +1188,34 @@ async def delete_source(plan_id: str, source_id: str, db: AsyncSession = Depends
 # File upload → ingest through collection plan
 # ---------------------------------------------------------------------------
 
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB for structured data
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+
+async def _read_upload_capped(file: UploadFile, cap: int) -> bytes:
+    """The upload's bytes, refused with 400 as soon as they pass `cap`.
+
+    `await file.read()` read the whole upload into memory before comparing it
+    with the cap, so the cap bounded nothing. Starlette has already spooled the
+    request body to a temporary file; this reads it back a chunk at a time and
+    stops at the cap, so memory is bounded by the cap rather than by whatever a
+    client chose to send. A declared size over the cap is refused without
+    reading at all. The whole file is still returned as bytes because the
+    file_upload connector parses from bytes.
+    """
+    too_large = HTTPException(400, f"File too large. Max: {cap // (1024 * 1024)}MB")
+    if file.size is not None and file.size > cap:
+        raise too_large
+    buf = bytearray()
+    while True:
+        chunk = await file.read(_UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            return bytes(buf)
+        if len(buf) + len(chunk) > cap:
+            raise too_large
+        buf.extend(chunk)
+
+
 @router.post("/collection-plans/{plan_id}/sources/{source_id}/upload")
 async def upload_file_to_source(
     plan_id: str,
@@ -1036,11 +1241,8 @@ async def upload_file_to_source(
     if source.source_type != SourceType.FILE_UPLOAD:
         raise HTTPException(400, "Source is not a file_upload type")
 
-    # Read and validate file
-    MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB for structured data
-    file_bytes = await file.read()
-    if len(file_bytes) > MAX_FILE_SIZE:
-        raise HTTPException(400, f"File too large. Max: {MAX_FILE_SIZE // (1024*1024)}MB")
+    # Read and validate file, refusing an oversized one while reading it.
+    file_bytes = await _read_upload_capped(file, _MAX_UPLOAD_BYTES)
 
     safe_name = re.sub(r'[^\w\-.]', '_', file.filename or 'upload')
     file_format = detect_format(safe_name)
@@ -1101,9 +1303,12 @@ async def upload_file_to_source(
     relationships_created = 0
     document_id = ""
 
+    # The Neo4j driver, spaCy and the graph build are synchronous. Each runs in
+    # a worker thread (contract 15): on the event loop, one 10 MB upload stalled
+    # every other request, the health check included, for its whole length.
     if routing.get("extract_entities", True) or routing.get("store_documents", True):
         # Convert structured records to text for entity extraction
-        text_content = _records_to_text(result.records, safe_name)
+        text_content = await asyncio.to_thread(_records_to_text, result.records, safe_name)
 
         if routing.get("store_documents", True):
             doc = Document(
@@ -1112,11 +1317,13 @@ async def upload_file_to_source(
                 reliability_rating=reliability_rating,
                 project_id=plan.project_id,
             )
-            store.create_entity(doc)
+            await asyncio.to_thread(store.create_entity, doc)
             document_id = doc.id
 
         if routing.get("extract_entities", True):
-            chunks = ingest_text(text_content, settings.chunk_size, settings.chunk_overlap)
+            chunks = await asyncio.to_thread(
+                ingest_text, text_content, settings.chunk_size, settings.chunk_overlap,
+            )
             all_entities = []
             all_rels = []
             for chunk in chunks:
@@ -1125,7 +1332,8 @@ async def upload_file_to_source(
                 all_rels.extend(rels)
 
             if all_entities or all_rels:
-                build_result = build_graph_from_extractions(
+                build_result = await asyncio.to_thread(
+                    build_graph_from_extractions,
                     store, all_entities, all_rels, plan.project_id,
                     source_doc_id=document_id or None,
                 )
@@ -1219,20 +1427,43 @@ async def list_source_acquisitions(
 # ---------------------------------------------------------------------------
 
 @router.get("/collection-plans/{plan_id}/activity")
-async def get_activity(plan_id: str, since: str | None = None, db: AsyncSession = Depends(get_db)):
-    """Get the activity log for a collection plan, optionally filtered by timestamp."""
-    stmt = (
-        select(CollectionActivity)
-        .where(CollectionActivity.plan_id == _parse_uuid(plan_id, "plan_id"))
-        .order_by(CollectionActivity.created_at.asc())
+async def get_activity(
+    plan_id: str,
+    since: str | None = None,
+    limit: int = Query(500, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+):
+    """A page of a plan's activity log, oldest first.
+
+    Without `since`, the most recent `limit` events. With `since` (an ISO-8601
+    timestamp, normally the last event the caller holds), up to `limit` events
+    after it — so a poller pages forward instead of reloading the trail. The UI
+    polls every 3 s and every poll used to load the whole trail; a malformed
+    `since` was silently ignored, which also meant "load all of it", and is now
+    a 400.
+    """
+    stmt = select(CollectionActivity).where(
+        CollectionActivity.plan_id == _parse_uuid(plan_id, "plan_id")
     )
     if since:
+        # An unencoded "+00:00" offset arrives as " 00:00" once the query
+        # string is decoded; restore it rather than refusing the poll.
+        since = re.sub(r" (\d{2}:\d{2})$", r"+\1", since.strip())
         try:
-            since_dt = datetime.fromisoformat(since)
-            stmt = stmt.where(CollectionActivity.created_at > since_dt)
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
         except ValueError:
-            pass
-    result = await db.execute(stmt)
+            raise HTTPException(400, "since must be an ISO-8601 timestamp")
+        if since_dt.tzinfo is None:
+            since_dt = since_dt.replace(tzinfo=timezone.utc)
+        stmt = (
+            stmt.where(CollectionActivity.created_at > since_dt)
+            .order_by(CollectionActivity.created_at.asc())
+            .limit(limit)
+        )
+        rows = (await db.execute(stmt)).scalars().all()
+    else:
+        stmt = stmt.order_by(CollectionActivity.created_at.desc()).limit(limit)
+        rows = list(reversed((await db.execute(stmt)).scalars().all()))
     return [
         {
             "id": str(a.id),
@@ -1242,7 +1473,7 @@ async def get_activity(plan_id: str, since: str | None = None, db: AsyncSession 
             "message": a.message,
             "created_at": a.created_at.isoformat(),
         }
-        for a in result.scalars().all()
+        for a in rows
     ]
 
 
@@ -1404,4 +1635,5 @@ async def _extract(text: str, doc_id: str, mode: str):
         from intel_platform.services.extraction import extract_entities_hybrid
         return await extract_entities_hybrid(text, doc_id)
     else:
-        return extract_entities_nlp(text, doc_id)
+        # spaCy is synchronous and CPU-bound (contract 15).
+        return await asyncio.to_thread(extract_entities_nlp, text, doc_id)

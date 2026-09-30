@@ -6,11 +6,15 @@ and the default looked like a real answer.
 """
 from __future__ import annotations
 
+import pytest
+
 from intel_platform.services.llm_output import (
     json_object,
     labelled_json,
     labelled_probability,
+    labelled_probability_parsed,
     labelled_value,
+    normalise_line,
 )
 
 
@@ -46,6 +50,91 @@ class TestLabelledProbability:
     def test_zero_rejected_one_accepted(self):
         assert labelled_probability("PROBABILITY: 0.0", 0.5) == 0.5
         assert labelled_probability("PROBABILITY: 1.0", 0.5) == 1.0
+
+    @pytest.mark.parametrize("text", [
+        "PROBABILITY: 15%",
+        "PROBABILITY: 10",
+        "PROBABILITY: 12.5%",
+        "PROBABILITY: 78",
+        "**PROBABILITY:** **15%**",
+        "| PROBABILITY | 12.5% |",
+        "PROBABILITY: 100",
+        "PROBABILITY: 0.78%",
+    ])
+    def test_a_percentage_is_not_read_as_its_leading_digit(self, text):
+        """The leading `1` of `15%`, `10` or `12.5%` used to match, so the value
+        read as 1.0 and the label as "Unknown" — a judgement nobody made."""
+        assert labelled_probability(text, 0.5) == 0.5
+        assert labelled_probability_parsed(text, 0.5) == (0.5, False)
+
+
+class TestLabelledProbabilityParsed:
+    """The fallback is never reported as though the model had stated it."""
+
+    @pytest.mark.parametrize("text,expected", [
+        ("PROBABILITY: 0.78", 0.78),
+        ("**PROBABILITY:** **0.70**", 0.70),                         # bolded
+        ("3. **PROBABILITY:** 0.65", 0.65),                           # numbered heading
+        ("| **PROBABILITY** | 0.40 |", 0.40),                         # table row
+        ("| PROBABILITY | CONFIDENCE_LABEL |\n|---|---|\n| 0.4 | Unlikely |", None),  # header row only
+        ("Having weighed it, my overall probability: 0.30.", 0.30),  # prose-prefixed
+        ("PROBABILITY: 1.0", 1.0),
+    ])
+    def test_stated_values_are_flagged_parsed(self, text, expected):
+        value, parsed = labelled_probability_parsed(text, 0.5)
+        if expected is None:
+            assert (value, parsed) == (0.5, False)
+        else:
+            assert (value, parsed) == (expected, True)
+
+    @pytest.mark.parametrize("text", [
+        "The actor is likely responsible, roughly a 70 percent chance.",   # prose only, no label
+        "## Assessment\nWe judge this Likely.\n\nConfidence is moderate.",
+        "",
+        None,
+    ])
+    def test_a_reply_with_no_label_is_fallback_and_unparsed(self, text):
+        assert labelled_probability_parsed(text, 0.42) == (0.42, False)
+
+    def test_labelled_probability_agrees(self):
+        for text in ("PROBABILITY: 0.61", "PROBABILITY: 15%", "no label"):
+            assert labelled_probability(text, 0.5) == labelled_probability_parsed(text, 0.5)[0]
+
+
+class TestNormaliseLine:
+    """One place that strips the decoration models put around a line."""
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("**1** | which facilities | **SATISFIED** | cited", "1 | which facilities | SATISFIED | cited"),
+        ("| 1 | which facilities | SATISFIED | cited |", "1 | which facilities | SATISFIED | cited"),
+        ("- 2 | enrichment | UNMET | nothing", "2 | enrichment | UNMET | nothing"),
+        ("* 2 | enrichment | UNMET | nothing", "2 | enrichment | UNMET | nothing"),
+        ("3. 2 | enrichment | UNMET", "2 | enrichment | UNMET"),
+        ("4) Proposed PIR: something", "Proposed PIR: something"),
+        ("`EEI_ASSESSMENT:` 1 | a | SATISFIED", "EEI_ASSESSMENT: 1 | a | SATISFIED"),
+        ("__Refined PIR:__ _Which_ vessels", "Refined PIR: Which vessels"),
+        ("  lots   of\tspace  ", "lots of space"),
+        ("### 1. Assessment", "Assessment"),
+        ("> **Refined PIR:** foo", "Refined PIR: foo"),
+        ("• bullet item", "bullet item"),
+        ("", ""),
+    ])
+    def test_decoration_is_stripped(self, raw, expected):
+        assert normalise_line(raw) == expected
+
+    def test_inner_word_underscores_are_kept(self):
+        """`EEI_ASSESSMENT` is a label, not emphasis."""
+        assert normalise_line("snake_case and EEI_ASSESSMENT") == "snake_case and EEI_ASSESSMENT"
+
+    def test_a_decimal_is_not_a_numbering_marker(self):
+        assert normalise_line("1.5 | x") == "1.5 | x"
+
+    def test_a_numbered_cell_keeps_its_number(self):
+        """`| 1. | …` — the number is the element, not list decoration."""
+        assert normalise_line("| 1. | facilities | SATISFIED |") == "1. | facilities | SATISFIED"
+
+    def test_none_is_empty(self):
+        assert normalise_line(None) == ""
 
 
 class TestLabelledValue:

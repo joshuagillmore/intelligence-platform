@@ -43,21 +43,88 @@ def labelled_value(content: str, label: str, pattern: str = r"(.+?)\s*$") -> str
     return match.group(1).strip().strip("*_` ") if match else None
 
 
-def labelled_probability(content: str, fallback: float) -> float:
-    """A probability stated as ``PROBABILITY: 0.78``, in any emphasis.
+# The value must not run on into another digit or a percent sign. Without the
+# boundary the leading `1` of `15%`, `10` or `12.5%` matched on its own, read as
+# 1.0 — "Almost Certain" or, past the label table, "Unknown" — a judgement the
+# model never made.
+_PROBABILITY_VALUE = r"(\d?\.\d+|[01](?:\.\d+)?)(?![\d%])"
+
+# `:` is the requested separator; `|` is the same label as a markdown table row
+# ("| **PROBABILITY** | 0.40 |"). A header row naming the column is not a value
+# and fails the number pattern, so the scan moves on rather than misreading it.
+_PROBABILITY_LINE = re.compile(
+    rf"PROBABILITY{_EMPHASIS}[:|]{_EMPHASIS}{_PROBABILITY_VALUE}",
+    re.IGNORECASE,
+)
+
+
+def labelled_probability_parsed(content: str | None, fallback: float) -> tuple[float, bool]:
+    """A stated probability and whether it was actually stated.
+
+    Returns ``(value, True)`` when the reply carries a readable probability in
+    0 < p <= 1, and ``(fallback, False)`` otherwise — including a reply that is
+    prose with no label at all. The flag is what lets a caller report that a
+    stored 0.5 is a default rather than the model's judgement.
 
     A value outside 0..1 falls back rather than being clamped: a model writing
     ``PROBABILITY: 78`` meant percent, and clamping to 1.0 would silently
     substitute a different judgement for the one it made.
     """
-    raw = labelled_value(content, "PROBABILITY", r"(\d?\.\d+|[01](?:\.\d+)?)")
-    if raw is None:
-        return fallback
-    try:
-        value = float(raw)
-    except ValueError:
-        return fallback
-    return value if 0.0 < value <= 1.0 else fallback
+    if not content:
+        return fallback, False
+    for match in _PROBABILITY_LINE.finditer(content):
+        try:
+            value = float(match.group(1))
+        except ValueError:
+            continue
+        if 0.0 < value <= 1.0:
+            return value, True
+    return fallback, False
+
+
+def labelled_probability(content: str | None, fallback: float) -> float:
+    """A probability stated as ``PROBABILITY: 0.78``, in any emphasis.
+
+    See `labelled_probability_parsed`, which also says whether the value was
+    stated or is the fallback.
+    """
+    return labelled_probability_parsed(content, fallback)[0]
+
+
+# Emphasis underscores sit at a word edge; an underscore between word characters
+# is part of a name (`EEI_ASSESSMENT`, `snake_case`) and must survive.
+_EDGE_UNDERSCORES = re.compile(r"(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])")
+# One leading marker at a time: blockquote, heading, bullet, or a list number.
+# A number followed by a pipe is a table cell carrying the element number, not
+# list decoration, so it is left for the caller's pattern to read.
+_LEADING_MARKER = re.compile(r"^(?:>+\s*|#{1,6}\s+|[-+•–—]\s+|\d+[.)]\s+(?!\|))")
+
+
+def normalise_line(line: str | None) -> str:
+    """A model's line with its decoration removed, for line-oriented parsers.
+
+    Strips `*`, backticks and emphasis underscores anywhere; leading
+    blockquote, heading, bullet and ``1.``/``1)`` numbering markers; and the
+    outer pipes of a markdown table row. Whitespace is collapsed to single
+    spaces. Inner table pipes are kept — they are the field separators a
+    verdict-style line is read by.
+
+    Parsers written against the requested shape kept failing on the same
+    handful of decorations (bold fields, numbered headings, table rows), each
+    fixed one form at a time. Normalising first means a parser only has to
+    describe the content.
+    """
+    if not line:
+        return ""
+    s = line.replace("`", "").replace("*", "")
+    s = _EDGE_UNDERSCORES.sub("", s)
+    s = " ".join(s.split())
+    while True:
+        before = s
+        s = s.strip("|").strip()
+        s = _LEADING_MARKER.sub("", s).strip()
+        if s == before:
+            return s
 
 
 def json_object(content: str, label: str | None = None) -> dict[str, Any]:

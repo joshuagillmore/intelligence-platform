@@ -8,7 +8,7 @@ built on ICD 203 language is a judgement error, not a formatting one.
 """
 from __future__ import annotations
 
-from intel_platform.api.routes.assess import extract_probability
+from intel_platform.services.llm_output import labelled_probability as extract_probability
 from intel_platform.models.entities import probability_to_label
 
 
