@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from dataclasses import asdict
 from datetime import datetime, timezone
 
@@ -37,6 +38,28 @@ _PROTECTED_KEYS = frozenset({
     "id", "name", "project_id", "entity_type", "entity_category",
     "created_at", "source_doc_id",
 })
+
+# Per-source severity ratings folded into the node's `severity`, which /cyber
+# and the enrichment panel read. KEV and NVD each used to write `severity`
+# directly and whichever finished last won; now each writes its own key and the
+# node shows the highest. A KEV hit is critical: the CVE is being exploited.
+_SEVERITY_SOURCES = frozenset({"kev_severity", "cvss_severity", "known_exploited"})
+_SEVERITY_RANK = {"none": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+# Serializes read-derive-write per process so concurrent applies (KEV and NVD
+# run in parallel worker threads) cannot leave the lower rating last.
+_severity_lock = threading.Lock()
+
+
+def combined_severity(node: dict) -> str:
+    """The highest per-source severity recorded on ``node``, or ``""``."""
+    ratings = [
+        str(node.get(key) or "").lower() for key in ("kev_severity", "cvss_severity")
+    ]
+    if node.get("known_exploited") is True:
+        ratings.append("critical")
+    ranked = [r for r in ratings if r in _SEVERITY_RANK]
+    return max(ranked, key=_SEVERITY_RANK.__getitem__) if ranked else ""
+
 
 # One limiter for the whole process. Provider quotas (ip-api 45/min, Nominatim
 # 1/s, NVD's keyless window) are per client IP, and the route and auto-enrich
@@ -249,10 +272,24 @@ class EnrichmentService:
         props["enriched"] = True
         props["enriched_at"] = datetime.now(timezone.utc).isoformat()
         self.store.update_entity(entity.get("id"), props)
+        if _SEVERITY_SOURCES & props.keys():
+            self._derive_severity(entity.get("id"))
 
         if result.related:
             writer = self._write_related_fn or self._default_write_related
             writer(entity, result.related, project_id)
+
+    def _derive_severity(self, entity_id: str) -> None:
+        """Set the node's ``severity`` to the highest of its per-source ratings.
+
+        Reads after this apply's own write, under a process lock: whichever
+        derivation runs last therefore sees every rating written before it.
+        """
+        with _severity_lock:
+            node = self.store.get_entity(entity_id) or {}
+            severity = combined_severity(node)
+            if severity and node.get("severity") != severity:
+                self.store.update_entity(entity_id, {"severity": severity})
 
     def _default_write_related(self, entity: dict, related, project_id: str) -> None:
         """Upsert related nodes (exact-match dedup) and their typed edges."""

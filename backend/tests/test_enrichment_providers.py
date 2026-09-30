@@ -79,7 +79,8 @@ async def test_kev_hit_marks_known_exploited():
 
     result = await KEVProvider(client=_client(get)).lookup("CVE-2021-44228", "Vulnerability")
     assert result.properties["known_exploited"] is True
-    assert result.properties["severity"] == "critical"
+    assert result.properties["kev_severity"] == "critical"
+    assert "severity" not in result.properties  # derived by the service, not owned by KEV
     assert result.properties["kev_date_added"] == "2021-12-10"
 
 
@@ -141,7 +142,8 @@ async def test_nvd_extracts_cvss_description_products():
 
     result = await NVDProvider(client=_client(get)).lookup("CVE-2021-44228", "Vulnerability")
     assert result.properties["cvss_score"] == 10.0
-    assert result.properties["severity"] == "critical"
+    assert result.properties["cvss_severity"] == "critical"
+    assert "severity" not in result.properties  # derived by the service, not owned by NVD
     assert result.properties["description"] == "Log4j RCE"
     assert "apache log4j" in result.properties["affected_products"]
 

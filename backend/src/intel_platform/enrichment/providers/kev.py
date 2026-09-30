@@ -3,8 +3,8 @@
 Keyless. The KEV catalog is one JSON document; we fetch it once and cache the
 parsed CVE set in-process (refreshed every few hours) so a per-CVE lookup is a
 dict membership test, not a re-download. A hit marks the Vulnerability node
-``known_exploited`` and sets severity to critical — real data replacing the
-hollow ``/cyber`` severity stat.
+``known_exploited`` with ``kev_severity: critical``; the service folds that and
+NVD's ``cvss_severity`` into the node's ``severity``.
 """
 from __future__ import annotations
 
@@ -80,9 +80,11 @@ class KEVProvider(EnrichmentProvider):
         if not entry:
             return EnrichmentResult(properties={"known_exploited": False}, source_url=_KEV_URL)
 
+        # KEV's own rating key; the service derives the node's `severity` from
+        # this and NVD's `cvss_severity`, so neither overwrites the other.
         props = {
             "known_exploited": True,
             "kev_date_added": entry.get("dateAdded", ""),
-            "severity": "critical",
+            "kev_severity": "critical",
         }
         return EnrichmentResult(properties=props, raw=entry, source_url=_KEV_URL)

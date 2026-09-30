@@ -542,6 +542,74 @@ def test_default_writer_passes_project_id_on_the_relationship(monkeypatch):
     assert captured and captured[0]["project_id"] == "test-p"
 
 
+# --- Low -> E: KEV and NVD no longer overwrite each other's severity --------
+
+class _NodeStore:
+    """A one-node store that really merges properties (SET n += props)."""
+
+    def __init__(self, node):
+        self.node = dict(node)
+
+    def get_entity(self, entity_id):
+        return dict(self.node)
+
+    def update_entity(self, entity_id, props):
+        self.node.update(props)
+        return dict(self.node)
+
+
+def _vuln_services(monkeypatch, *, in_kev: bool, nvd_severity: str):
+    from intel_platform.enrichment.providers import kev, nvd
+
+    kev._reset_catalog()
+
+    def client_for(payload):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json = MagicMock(return_value=payload)
+        client = MagicMock()
+        client.get = AsyncMock(return_value=resp)
+        return client
+
+    kev_catalog = [{"cveID": "CVE-2021-44228", "dateAdded": "2021-12-10"}] if in_kev else []
+    kev_client = client_for({"vulnerabilities": kev_catalog})
+    nvd_client = client_for({"vulnerabilities": [{"cve": {
+        "id": "CVE-2021-44228",
+        "descriptions": [{"lang": "en", "value": "Log4j RCE"}],
+        "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 6.5, "baseSeverity": nvd_severity}}]},
+    }}]})
+    monkeypatch.setattr(kev, "ProxiedClient", lambda *a, **k: kev_client)
+    monkeypatch.setattr(nvd, "ProxiedClient", lambda *a, **k: nvd_client)
+    register_provider(kev.KEVProvider)
+    register_provider(nvd.NVDProvider)
+    store = _NodeStore({
+        "id": "v1", "name": "CVE-2021-44228", "entity_type": "Vulnerability", "project_id": "test-p",
+    })
+    return EnrichmentService(store, write_related=MagicMock(), cache=_cache_miss()), store
+
+
+@pytest.mark.parametrize("order", [("kev", "nvd"), ("nvd", "kev")])
+async def test_kev_and_nvd_severity_do_not_depend_on_which_ran_last(monkeypatch, order):
+    # Each used to write `severity`; whichever finished last won, so a
+    # known-exploited CVE could read "medium".
+    svc, store = _vuln_services(monkeypatch, in_kev=True, nvd_severity="MEDIUM")
+    for name in order:
+        await svc.enrich_entity("v1", only={name})
+
+    assert store.node["kev_severity"] == "critical"
+    assert store.node["cvss_severity"] == "medium"
+    assert store.node["severity"] == "critical"
+
+
+async def test_severity_follows_cvss_when_not_known_exploited(monkeypatch):
+    svc, store = _vuln_services(monkeypatch, in_kev=False, nvd_severity="HIGH")
+    await svc.enrich_entity("v1")  # both providers, concurrently
+
+    assert store.node["known_exploited"] is False
+    assert "kev_severity" not in store.node
+    assert store.node["severity"] == "high"
+
+
 async def test_malformed_cve_id_property_is_not_used(monkeypatch):
     entity = {
         "id": "v1", "name": "Log4Shell", "entity_type": "Vulnerability",

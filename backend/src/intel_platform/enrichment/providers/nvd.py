@@ -116,7 +116,9 @@ class NVDProvider(EnrichmentProvider):
         if score is not None:
             props["cvss_score"] = score
         if severity:
-            props["severity"] = severity.lower()
+            # NVD's own key; the service derives the node's `severity` from this
+            # and KEV's `kev_severity`, so neither overwrites the other.
+            props["cvss_severity"] = severity.lower()
         if products:
             props["affected_products"] = products
         if cwe_ids:
