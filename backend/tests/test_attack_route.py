@@ -171,6 +171,18 @@ def test_map_returns_counts(client, analyst_header, _override_db):
     assert resp.json() == {"mapped": 3, "skipped": 2}
 
 
+def test_map_llm_unavailable_is_503_without_leaking(client, analyst_header, _override_db):
+    # Contract 14: an LLM outage is an error, not {"mapped": 0, "skipped": N}.
+    from intel_platform.services.attack import mapping
+
+    with patch("intel_platform.api.routes.attack.attack_mapping.map_project_ttps",
+               new=AsyncMock(side_effect=mapping.LLMUnavailable("ollama 404: model not found"))):
+        resp = client.post("/api/attack/map", params={"project_id": "p1"}, headers=analyst_header)
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "LLM provider unavailable"
+    assert "ollama" not in resp.text
+
+
 def test_d3fend_requires_auth(client):
     resp = client.get("/api/attack/technique/T1566/d3fend")
     assert resp.status_code in (401, 403)

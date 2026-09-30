@@ -152,11 +152,15 @@ async def map_ttps(
 ):
     """RAG-map this project's un-T-code-resolved TTPs to ATT&CK techniques.
 
-    Never 500s on a provider outage — degrades to skips (see
-    :func:`services.attack.mapping.map_project_ttps`).
+    Returns mapped/skipped counts with a reason per skip (see
+    :func:`services.attack.mapping.map_project_ttps`). An unreachable LLM is a
+    503, not a batch of skips.
     """
     try:
         result = await attack_mapping.map_project_ttps(db, driver, project_id)
+    except attack_mapping.LLMUnavailable:
+        logger.warning("ATT&CK mapping: LLM provider unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail="LLM provider unavailable")
     except Exception:
         logger.exception("ATT&CK mapping failed")
         raise HTTPException(status_code=500, detail="Failed to map TTPs to ATT&CK")
