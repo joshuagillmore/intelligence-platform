@@ -17,7 +17,7 @@ import { getErrorMessage } from '@/lib/errorMessages';
 import { collapseToCommunities } from '@/lib/graphLayout';
 import { useNotifications } from '@/components/NotificationProvider';
 import Markdown from '@/components/Markdown';
-import { filterGraph, createRequestSequencer, useDebouncedValue } from './graphFilters';
+import { filterGraph, createRequestSequencer, useDebouncedValue, mapWithConcurrency } from './graphFilters';
 
 interface Entity {
   id: string;
@@ -96,6 +96,11 @@ const ENTITY_PANEL_LIMIT = 500;
 // The entity search waits for typing to pause before it asks the server.
 const SEARCH_DEBOUNCE_MS = 300;
 
+// The evidence chain asks each document whether it mentions the entity; there
+// is no per-entity endpoint yet (deferred in the 2026-09-30 remediation plan).
+// Bounded so a 500-document project neither crawls serially nor floods the API.
+const EVIDENCE_CONCURRENCY = 6;
+
 const TYPE_LABELS: Record<string, string> = {
   TTP: 'Tactics, Techniques & Procedures',
   IPAddress: 'IP Address',
@@ -168,6 +173,16 @@ function NetworkPageInner() {
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
   const [entityRelationships, setEntityRelationships] = useState<Relationship[]>([]);
+  const [relationshipsError, setRelationshipsError] = useState<string | null>(null);
+  // Each selection takes a token; responses for an entity the analyst has since
+  // moved away from (details, evidence, watchlist status) are dropped.
+  const selectSeqRef = useRef(createRequestSequencer());
+  // The selected entity's id, readable from callbacks that outlive a render
+  // (an enrichment run finishing after the analyst moved on).
+  const selectedEntityIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedEntityIdRef.current = selectedEntity?.id ?? null;
+  }, [selectedEntity]);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
   // Only the latest entity search may write the list; a slow response to an
@@ -657,48 +672,76 @@ function NetworkPageInner() {
   }
 
   async function selectEntity(entity: Entity) {
+    const seq = selectSeqRef.current;
+    const token = seq.next();
+    const isCurrent = () => seq.isCurrent(token);
     setSelectedEntity(entity);
     setMobileRightOpen(true);
     setAiResult(null);
     setTypeDropdownOpen(false);
+    // Nothing of the previous entity's may show under this one's header.
+    setEntityRelationships([]);
+    setRelationshipsError(null);
+    setIsWatchlisted(false);
     setEvidenceDocs([]);
     setRelEvidenceOpen({});
-    checkWatchlistStatus(entity.id);
+    checkWatchlistStatus(entity.id, isCurrent);
     try {
       const res = await entitiesApi.get(entity.id);
-      if (res.data.relationships) {
-        setEntityRelationships(res.data.relationships);
-      }
+      if (!isCurrent()) return;
+      setEntityRelationships(res.data.relationships || []);
       if (res.data.entity) {
         setSelectedEntity(res.data.entity);
       }
     } catch (e) {
+      if (!isCurrent()) return;
       console.error('Failed to load entity details', e);
+      setRelationshipsError(getErrorMessage(e));
     }
-    // Load evidence chain: source documents mentioning this entity
+    // Load evidence chain: source documents mentioning this entity. Each
+    // document is asked in turn (see EVIDENCE_CONCURRENCY); the run stops
+    // starting requests as soon as another entity is selected.
     if (activeProject) {
       setEvidenceLoading(true);
       try {
         const docsRes = await documentsApi.list(activeProject.id);
-        const allDocs = docsRes.data.documents || [];
-        // Check which documents mention this entity by fetching evidence
-        const matched: Array<{ id: string; name: string; reliability_rating: string }> = [];
-        for (const doc of allDocs) {
+        if (!isCurrent()) return;
+        const allDocs: Array<{ id: string; name: string; reliability_rating?: string }> = docsRes.data.documents || [];
+        const mentions = await mapWithConcurrency(allDocs, EVIDENCE_CONCURRENCY, async (doc) => {
           try {
             const evRes = await documentsApi.evidence(doc.id, entity.name);
-            if (evRes.data.count > 0) {
-              matched.push({ id: doc.id, name: doc.name, reliability_rating: doc.reliability_rating || '' });
-            }
+            return evRes.data.count > 0;
           } catch {
-            // skip docs that fail
+            return false; // skip docs that fail
           }
-        }
-        setEvidenceDocs(matched);
+        }, isCurrent);
+        if (!isCurrent()) return;
+        setEvidenceDocs(
+          allDocs
+            .filter((_, i) => mentions[i])
+            .map(doc => ({ id: doc.id, name: doc.name, reliability_rating: doc.reliability_rating || '' })),
+        );
       } catch {
-        setEvidenceDocs([]);
+        if (isCurrent()) setEvidenceDocs([]);
       } finally {
-        setEvidenceLoading(false);
+        if (isCurrent()) setEvidenceLoading(false);
       }
+    }
+  }
+
+  // After an enrichment run: re-read the entity that was enriched, and only
+  // while it is still the one on screen. A run takes a while; re-selecting the
+  // enriched entity after the analyst had moved on yanked them back to it.
+  async function refreshEnrichedEntity(entityId: string) {
+    if (selectedEntityIdRef.current !== entityId) return;
+    try {
+      const res = await entitiesApi.get(entityId);
+      if (selectedEntityIdRef.current !== entityId) return;
+      if (res.data.entity) setSelectedEntity(res.data.entity);
+      setEntityRelationships(res.data.relationships || []);
+      setRelationshipsError(null);
+    } catch (e) {
+      console.error('Failed to refresh enriched entity', e);
     }
   }
 
@@ -913,14 +956,18 @@ function NetworkPageInner() {
 
   const ENTITY_TYPE_OPTIONS = ['Person', 'Organization', 'Location', 'IPAddress', 'Domain', 'Hash', 'ThreatActor', 'TTP', 'Vulnerability', 'Malware', 'Campaign'];
 
-  async function checkWatchlistStatus(entityId: string) {
+  async function checkWatchlistStatus(entityId: string, isCurrent: () => boolean) {
     if (!activeProject) return;
     try {
       const res = await watchlistApi.list(activeProject.id);
-      const watchedIds = (res.data || []).map((e: { id: string }) => e.id);
-      setIsWatchlisted(watchedIds.includes(entityId));
+      if (!isCurrent()) return;
+      // GET /watchlist returns {watched_entities: [{id, name, ...}], count}.
+      // Reading the body as an array made every entity look unwatched, so
+      // "Remove from Watchlist" could never appear.
+      const watched: Array<{ id: string }> = res.data?.watched_entities ?? [];
+      setIsWatchlisted(watched.some(e => e.id === entityId));
     } catch {
-      setIsWatchlisted(false);
+      if (isCurrent()) setIsWatchlisted(false);
     }
   }
 
@@ -975,6 +1022,7 @@ function NetworkPageInner() {
   // Edge click handler for detail panel (P0.4)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleEdgeClick(edge: any) {
+    selectSeqRef.current.next(); // abandon the entity loads still in flight
     setSelectedEdge(edge as GraphEdge);
     setSelectedEntity(null);
   }
@@ -2102,11 +2150,25 @@ function NetworkPageInner() {
                 )}
 
                 <EnrichmentPanel
+                  key={selectedEntity.id}
                   entityId={selectedEntity.id}
                   entityType={selectedEntity.entity_type}
                   properties={entityFields(selectedEntity)}
-                  onEnriched={() => selectEntity(selectedEntity)}
+                  onEnriched={() => refreshEnrichedEntity(selectedEntity.id)}
                 />
+
+                {relationshipsError && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-400 mb-2">Relationships</h4>
+                    <p className="text-xs text-red-400">Could not load relationships: {relationshipsError}</p>
+                    <button
+                      onClick={() => selectEntity(selectedEntity)}
+                      className="text-[10px] text-accent-blue hover:underline mt-1"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
 
                 {entityRelationships.length > 0 && (
                   <div>
