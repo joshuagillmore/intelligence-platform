@@ -539,20 +539,31 @@ class GraphStore:
         Costs ~2.1s cold against ~0.25s before: ranking needs the relationship
         counts, and an unlabeled `project_id` match cannot use a label index.
         The route caches for 30s, so only the first caller pays it.
+
+        The selection is deterministic — nodes by degree then id, edges by
+        confidence then endpoints — so two builds of one project keep the same
+        slice. Ties used to fall to scan order. `truncated` is True when the
+        budget cut nodes or edges: analytics read the 10,000-node build as if
+        it were the whole project, with nothing to say it might not be.
         """
+        limit = max(0, int(limit))
         with self._driver.session() as session:
+            # One row past the budget, so a full page is distinguishable from a
+            # truncated one without a separate count.
             nodes_result = session.run(
                 """
                 MATCH (n) WHERE n.project_id = $project_id
                 OPTIONAL MATCH (n)-[r]-()
                 WITH n, count(r) AS degree
-                ORDER BY degree DESC
-                LIMIT $limit
+                ORDER BY degree DESC, n.id
+                LIMIT $limit + 1
                 RETURN properties(n) as props
                 """,
                 project_id=project_id, limit=limit,
             )
             nodes = [self._strip_heavy_props(record["props"]) for record in nodes_result]
+            truncated = len(nodes) > limit
+            nodes = nodes[:limit]
             node_ids = [n.get("id") for n in nodes if n.get("id")]
             # Restricted to the nodes actually returned. The edge query used to
             # run its own independent LIMIT over the whole project, so nothing
@@ -562,9 +573,10 @@ class GraphStore:
                 """
                 MATCH (a)-[r]->(b)
                 WHERE a.id IN $node_ids AND b.id IN $node_ids
-                RETURN type(r) as rel_type, startNode(r).id as source_id,
-                       endNode(r).id as target_id, properties(r) as props
-                LIMIT $limit
+                WITH r, a.id AS source_id, b.id AS target_id
+                ORDER BY coalesce(r.confidence, 0.0) DESC, source_id, type(r), target_id
+                LIMIT $limit + 1
+                RETURN type(r) as rel_type, source_id, target_id, properties(r) as props
                 """,
                 node_ids=node_ids, limit=limit,
             )
@@ -573,8 +585,11 @@ class GraphStore:
                  "target_id": r["target_id"], **r["props"]}
                 for r in edges_result
             ]
+            truncated = truncated or len(edges) > limit
+            edges = edges[:limit]
             return {"nodes": nodes, "edges": edges,
-                    "node_count": len(nodes), "edge_count": len(edges)}
+                    "node_count": len(nodes), "edge_count": len(edges),
+                    "truncated": truncated}
 
     def find_shortest_path(self, entity_id_1: str, entity_id_2: str, project_id: str | None = None) -> dict:
         """Shortest undirected path between two entities, up to 10 hops.

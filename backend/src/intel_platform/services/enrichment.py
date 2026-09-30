@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 import networkx as nx
 
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.graph_cache import graph_cache
+
+logger = logging.getLogger(__name__)
 
 
 # Tactical relationship types that should have higher weight in analysis
@@ -18,6 +22,9 @@ def build_networkx_from_data(data: dict) -> nx.DiGraph:
     - Generic ASSOCIATED_WITH uses raw confidence (typically 0.5)
     """
     G = nx.DiGraph()
+    # Whether the fetch was cut by its budget, so metrics computed over a
+    # sample can say they are one.
+    G.graph["truncated"] = bool(data.get("truncated", False))
     for node in data.get("nodes", []):
         nid = node.get("id", "")
         if nid:
@@ -36,10 +43,22 @@ def build_networkx_from_data(data: dict) -> nx.DiGraph:
     return G
 
 
+_ANALYTICS_NODE_LIMIT = 10000
+
+
 def _build_networkx_graph(store: GraphStore, project_id: str) -> nx.DiGraph:
-    """Build (or retrieve from cache) the NetworkX DiGraph for a project."""
+    """Build (or retrieve from cache) the NetworkX DiGraph for a project.
+
+    This is the only builder that may populate `graph_cache`: every analytic
+    reads the cached graph expecting this 10,000-node build.
+    """
     def _builder() -> nx.DiGraph:
-        data = store.get_full_graph(project_id=project_id, limit=10000)
+        data = store.get_full_graph(project_id=project_id, limit=_ANALYTICS_NODE_LIMIT)
+        if data.get("truncated"):
+            logger.warning(
+                "Analytics graph for project %s is truncated at %d nodes; metrics describe a sample",
+                project_id, _ANALYTICS_NODE_LIMIT,
+            )
         return build_networkx_from_data(data)
 
     return graph_cache.get_or_build_graph(project_id, _builder)
@@ -143,7 +162,8 @@ def compute_all_statistics(store: GraphStore, project_id: str, *, graph: nx.DiGr
     """Compute all network statistics in one call."""
     G = graph if graph is not None else _build_networkx_graph(store, project_id)
     if not G.nodes:
-        return {"nodes": 0, "edges": 0, "density": 0, "components": 0, "entities": []}
+        return {"nodes": 0, "edges": 0, "density": 0, "components": 0, "entities": [],
+                "truncated": bool(G.graph.get("truncated", False))}
 
     # Check metrics cache
     cached = graph_cache.get_metric(project_id, "all_statistics")
@@ -156,6 +176,8 @@ def compute_all_statistics(store: GraphStore, project_id: str, *, graph: nx.DiGr
         "edges": G.number_of_edges(),
         "density": round(nx.density(G), 6),
         "components": nx.number_weakly_connected_components(G),
+        # True when the graph is the budgeted sample, not the whole project.
+        "truncated": bool(G.graph.get("truncated", False)),
     }
 
     # Per-node stats
