@@ -41,6 +41,72 @@ describe('EnrichmentPanel cached status', () => {
   });
 });
 
+describe('EnrichmentPanel provider outcomes', () => {
+  beforeEach(() => {
+    getCached.mockReset();
+    investigate.mockReset();
+  });
+
+  // A provider that failed or was skipped is neither "ok" nor "cached", and
+  // the analyst needs the reason (Tor mode, rate limit, lookup failed).
+  it('shows error and skipped providers as their own chips, with the reason', async () => {
+    getCached.mockResolvedValue({ data: { cached: {} } });
+    investigate.mockResolvedValue({
+      data: {
+        providers: {
+          geoip: { status: 'skipped', reason: 'not used over Tor' },
+          nvd: { status: 'error', reason: 'lookup failed' },
+          dns: { status: 'ok' },
+        },
+      },
+    });
+    render(<EnrichmentPanel entityId="ip-1" entityType="IPAddress" />);
+    fireEvent.click(screen.getByRole('button', { name: /Investigate/ }));
+
+    const skipped = await screen.findByText(/geoip: skipped/);
+    expect(skipped).toHaveTextContent('not used over Tor');
+    expect(screen.getByText(/nvd: error/)).toHaveTextContent('lookup failed');
+    expect(screen.getByText(/dns: ok/)).toBeInTheDocument();
+    expect(screen.queryByText(/geoip: (ok|cached)/)).toBeNull();
+    // Distinct styling: a skip is not painted as a failure, nor as success.
+    expect(skipped.className).not.toBe(screen.getByText(/nvd: error/).className);
+    expect(skipped.className).not.toBe(screen.getByText(/dns: ok/).className);
+  });
+});
+
+describe('EnrichmentPanel CVSS', () => {
+  beforeEach(() => {
+    getCached.mockReset();
+    getCached.mockResolvedValue({ data: { cached: {} } });
+  });
+
+  // `severity` is now the combined KEV/NVD rating; beside the CVSS score the
+  // panel must show NVD's own rating, not KEV's "critical".
+  it('labels the CVSS score with cvss_severity, not the combined severity', () => {
+    render(
+      <EnrichmentPanel
+        entityId="cve-1"
+        entityType="Vulnerability"
+        properties={{ cvss_score: 7.5, cvss_severity: 'high', severity: 'critical', known_exploited: true }}
+      />,
+    );
+    expect(screen.getByText(/7\.5 \(high\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/7\.5 \(critical\)/)).toBeNull();
+  });
+
+  it('shows the bare score when NVD gave no rating', () => {
+    render(
+      <EnrichmentPanel
+        entityId="cve-2"
+        entityType="Vulnerability"
+        properties={{ cvss_score: 5.1, severity: 'critical' }}
+      />,
+    );
+    expect(screen.getByText(/5\.1/)).toBeInTheDocument();
+    expect(screen.queryByText(/\(critical\)/)).toBeNull();
+  });
+});
+
 describe('EnrichmentPanel when the entity changes', () => {
   beforeEach(() => {
     getCached.mockReset();

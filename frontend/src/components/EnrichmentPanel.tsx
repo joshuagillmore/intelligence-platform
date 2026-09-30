@@ -51,6 +51,10 @@ function statusClass(status?: string): string {
       return 'bg-yellow-900/30 text-yellow-400';
     case 'error':
       return 'bg-red-900/30 text-red-400';
+    // Deliberately not run (e.g. a lookup that would leave the proxy): neither
+    // a failure nor a result.
+    case 'skipped':
+      return 'bg-navy-700 text-gray-300 border border-dashed border-gray-500';
     default:
       return 'bg-gray-800 text-gray-400';
   }
@@ -176,10 +180,12 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
           {properties.kev_date_added ? ` · ${properties.kev_date_added}` : ''}
         </div>
       )}
+      {/* NVD's own rating. `severity` is the combined KEV/NVD rating now, so a
+          KEV "critical" must not be shown as the CVSS score's severity. */}
       {properties.cvss_score != null && (
         <Field
           label="CVSS"
-          value={`${properties.cvss_score}${properties.severity ? ` (${properties.severity})` : ''}`}
+          value={`${properties.cvss_score}${properties.cvss_severity ? ` (${properties.cvss_severity})` : ''}`}
         />
       )}
       {properties.description ? <Field label="Description" value={String(properties.description)} /> : null}
@@ -257,11 +263,21 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
 
       {status && (
         <div className="mt-2 flex flex-wrap gap-1">
-          {Object.entries(status).map(([name, s]: [string, any]) => (
-            <span key={name} className={`text-[10px] px-1.5 py-0.5 rounded ${statusClass(s?.status)}`}>
-              {name}: {s?.status || '—'}
-            </span>
-          ))}
+          {Object.entries(status).map(([name, s]: [string, any]) => {
+            // error and skipped carry the reason; say it on the chip.
+            const reason = (s?.status === 'error' || s?.status === 'skipped') && typeof s?.reason === 'string'
+              ? s.reason
+              : '';
+            return (
+              <span
+                key={name}
+                title={reason || undefined}
+                className={`text-[10px] px-1.5 py-0.5 rounded ${statusClass(s?.status)}`}
+              >
+                {name}: {s?.status || '—'}{reason ? ` · ${reason}` : ''}
+              </span>
+            );
+          })}
         </div>
       )}
     </div>
