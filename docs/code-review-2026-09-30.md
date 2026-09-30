@@ -39,6 +39,23 @@ Unless listed here, a finding's status is **Fixed** on that branch.
 Verification on the integrated branch: backend `ruff` clean and the full suite
 green against a dedicated Neo4j; frontend lint with zero warnings, vitest and
 `next build` green; the production image builds with Chromium present.
+
+**End-to-end run (local full stack, real Cohere model):** the Playwright suite
+passed (24 tests, 8 guarded captures skipped), and the key flows were driven by
+hand in Chrome: login; project select and dashboard (real centrality values);
+network graph, entity panel with all source documents, true-direction
+relationship and evidence chain; watchlist add → Watchlist page → sidebar
+badge; Cyber, Timeline and Search totals; a Threat Assessment generated and
+grounded; an assistant answer with sources; a streamed topic summary keeping
+its structure; the status bar showing "Degraded" with Neo4j stopped. Two
+defects that only a live run could show were found and fixed in the same
+branch:
+
+| Finding | Status | Note |
+|---|---|---|
+| Topic tree 500 after any watchlist add | Fixed | Watchlist nodes carry `project_id` but no entity `id`; label-less project scans returned them and `_build_entity_branches` died on `e["id"]`. Store scans now use `:Entity`; the builder skips id-less rows. Pre-existing since watchlists moved to Neo4j; masked until the watchlist UI worked. |
+| Embedding width mismatch invisible | Fixed | pgvector columns are created at `EMBEDDING_DIMENSIONS` on first boot and never altered; a later provider switch (Cohere 1024 on a 1536 column) failed every insert with only a log line. `init_db` now compares live column widths with the setting and `/health` reports the mismatch with both remedies. |
+| Text ingests named `text_input` | Open | `POST /ingest` with `content` ignores any supplied name; every pasted document is called `text_input`. Pre-existing; cosmetic but confusing in the evidence chain. |
 Dependency advisories: backend 252 → 1 (a transitive nltk issue with no fix),
 frontend production 6 → 2 (both the deferred Next line).
 
