@@ -710,8 +710,8 @@ function NetworkPageInner() {
       console.error('Failed to load entity details', e);
       setRelationshipsError(getErrorMessage(e));
     }
-    // Load evidence chain: source documents mentioning this entity. Each
-    // document is asked in turn (see EVIDENCE_CONCURRENCY); the run stops
+    // Load evidence chain: source documents mentioning this entity. Every
+    // document is asked, EVIDENCE_CONCURRENCY at a time; the run stops
     // starting requests as soon as another entity is selected.
     if (activeProject) {
       setEvidenceLoading(true);
