@@ -423,7 +423,6 @@ export const collectionsApi = {
     api.put(`/collections/${id}`, data),
   status: (id: string) => api.get(`/collections/${id}/status`),
   cancel: (id: string) => api.post(`/collections/${id}/cancel`),
-  approve: (id: string) => api.post(`/collections/${id}/approve`),
   parsePlan: (planText: string) => api.post('/collections/parse-plan', { plan_text: planText }),
   count: (projectId: string) => api.get(`/collections/count/${projectId}`),
 };

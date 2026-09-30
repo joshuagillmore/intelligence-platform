@@ -99,14 +99,23 @@ export default function Sidebar() {
 
   useEffect(() => {
     async function fetchBadges() {
-      try {
-        const colRes = await collectionsApi.list();
-        const active = (colRes.data || []).filter((c: { status?: string }) => {
-          const s = c.status?.toUpperCase();
-          return s === 'PENDING' || s === 'STARTED' || s === 'PROGRESS' || s === 'RUNNING';
-        });
-        setActiveCollections(active.length);
-      } catch { /* ignore */ }
+      // The pulse means "collection is running in this project now". It used
+      // to list every project's tasks and count PENDING rows that never ran.
+      if (activeProject) {
+        try {
+          const colRes = await collectionsApi.list(activeProject.id);
+          const rows = Array.isArray(colRes.data) ? colRes.data : [];
+          const running = rows.filter((c: { status?: string }) => {
+            const s = c.status?.toUpperCase();
+            return s === 'STARTED' || s === 'PROGRESS' || s === 'RUNNING';
+          });
+          setActiveCollections(running.length);
+        } catch {
+          setActiveCollections(0);
+        }
+      } else {
+        setActiveCollections(0);
+      }
 
       if (activeProject) {
         try {
