@@ -1,7 +1,7 @@
-# Datastore passwords come from NEO4J_PASSWORD / POSTGRES_PASSWORD /
-# REDIS_PASSWORD (shell or the root .env), defaulting to the dev value
-# `changeme`. Neo4j's and Postgres's are read both by the datastore service and
-# by the backend's connection settings below, so one variable sets both sides.
+# Datastore passwords come from NEO4J_PASSWORD / POSTGRES_PASSWORD (shell or
+# the root .env), defaulting to the dev value `changeme`. Each is read both by
+# the datastore service and by the backend's connection settings below, so one
+# variable sets both sides.
 services:
   neo4j:
     image: neo4j:5-community
@@ -31,20 +31,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U intel -d intel_platform"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Nothing in the backend imports celery or redis: collection plans run as
-  # asyncio tasks inside the API process. The service (and the celery/redis
-  # dependencies) are kept only until their removal is decided.
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "127.0.0.1:6379:6379"
-    command: redis-server --requirepass ${REDIS_PASSWORD:-changeme}
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -79,8 +65,7 @@ services:
     environment:
       # Datastore connections use the compose service names and the same
       # password variables as the services above. These override .env, whose
-      # localhost URLs are for running the backend outside compose. (No
-      # REDIS_URL: the backend never connects to Redis.)
+      # localhost URLs are for running the backend outside compose.
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-changeme}
@@ -94,8 +79,6 @@ services:
       neo4j:
         condition: service_healthy
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       ollama:
         condition: service_healthy

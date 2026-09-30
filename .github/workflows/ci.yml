@@ -134,7 +134,7 @@ jobs:
       - name: Bring up the stack
         # --wait blocks until the healthchecked services (incl. backend) are healthy.
         # ollama is required (backend depends_on it) but needs no model for UI tests.
-        run: docker compose up -d --wait neo4j postgres redis ollama backend frontend
+        run: docker compose up -d --wait neo4j postgres ollama backend frontend
 
       - name: Wait for the frontend + backend to serve
         run: |
