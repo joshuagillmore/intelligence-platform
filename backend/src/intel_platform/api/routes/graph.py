@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from intel_platform.api.cache import cached
 from intel_platform.api.deps import get_graph_store, project_exists, verify_api_key
@@ -8,23 +8,27 @@ from intel_platform.services.enrichment import (
     compute_degree_centrality, detect_communities, compute_all_statistics,
     compute_structural_holes, extract_ego_network, compute_influence_propagation,
 )
-from intel_platform.services.graph_cache import graph_cache
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
 @router.get("/graph")
-def get_full_graph(project_id: str, limit: int = 500, min_centrality: float = 0, store: GraphStore = Depends(get_graph_store)):
+def get_full_graph(
+    project_id: str,
+    limit: int = Query(500, ge=1, le=10000),
+    min_centrality: float = 0,
+    store: GraphStore = Depends(get_graph_store),
+):
     import networkx as nx
 
     data = store.get_full_graph(project_id=project_id, limit=limit)
 
-    # PERF: reuse already-fetched data for building the NetworkX graph
-    # instead of issuing a second query to Neo4j
-    G = graph_cache.get_or_build_graph(
-        project_id,
-        lambda: build_networkx_from_data(data),
-    )
+    # Built from the fetched display slice and never cached. `graph_cache` holds
+    # the analytics graph (centrality, communities, statistics) that expects the
+    # whole project; caching this `limit`-truncated slice under the same key made
+    # every analytic depend on which request came first — `/graph?limit=1`
+    # poisoned them all for five minutes.
+    G = build_networkx_from_data(data)
 
     try:
         # Get community assignments (Louvain needs undirected)
@@ -94,6 +98,9 @@ def get_full_graph(project_id: str, limit: int = 500, min_centrality: float = 0,
         "edges": enriched_edges,
         "node_count": len(enriched_nodes),
         "edge_count": len(enriched_edges),
+        # Whether the project holds more than this view shows. The store reports
+        # it; a store that does not is presumed truncated once it fills `limit`.
+        "truncated": bool(data.get("truncated", len(data.get("nodes", [])) >= limit)),
     }
 
 
