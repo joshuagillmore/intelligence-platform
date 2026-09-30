@@ -83,7 +83,7 @@ def _traversal_scope(requested: str | None, *entities: dict | None) -> str | Non
 @router.get("/subgraph/{entity_id}")
 def get_subgraph(
     entity_id: str,
-    hops: int = Query(1, ge=1, le=5),
+    hops: int = Query(1, ge=1, le=4),
     project_id: str | None = None,
     store: GraphStore = Depends(get_graph_store),
 ):

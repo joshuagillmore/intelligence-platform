@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
@@ -13,7 +13,10 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 class QueryRequest(BaseModel):
     project_id: str
     query: str
-    max_hops: int = 2
+    # Interpolated into a variable-length Cypher pattern: a negative value is a
+    # syntax error, and a deep one enumerates every path through the shared
+    # ATT&CK hubs. 1..4 matches the store's own clamp.
+    max_hops: int = Field(default=2, ge=1, le=4)
     token_budget: int = 8000
     use_vector: bool = True
 
