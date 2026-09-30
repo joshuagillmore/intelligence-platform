@@ -395,56 +395,57 @@ class GraphStore:
         props = self._serialize_props(
             rel.model_dump(exclude={"source_id", "target_id", "rel_type", "project_id"})
         )
+        # The type is interpolated, not a parameter, so MERGE can name it; it
+        # is safe because it has just been checked against the allowlist.
+        rel_type = rel.rel_type
         # With a project, both endpoints are matched inside it: an edge can
         # never join two projects, and the edge is stamped with its project.
         scope = ""
         if project_id:
             props["project_id"] = project_id
-            scope = "AND a.project_id = $project_id AND b.project_id = $project_id"
-        with self._driver.session() as session:
-            # Corroboration: the same claim asserted by a second document is not a
-            # second edge, it is the same edge with more support. Previously every
-            # assertion created a duplicate, so corroboration_count sat at 1
-            # forever and the graph accumulated near-identical edges.
-            existing = session.run(
-                f"""
-                MATCH (a:Entity {{id: $source_id}})-[r]->(b:Entity {{id: $target_id}})
-                WHERE type(r) = $rel_type {scope}
-                RETURN r LIMIT 1
-                """,
-                source_id=rel.source_id, target_id=rel.target_id, rel_type=rel.rel_type,
-                project_id=project_id,
-            ).single()
+            scope = "WHERE a.project_id = $project_id AND b.project_id = $project_id"
 
-            if existing:
-                update = self._merge_assertion(dict(existing["r"]), props)
-                if project_id:
-                    update["project_id"] = project_id
-                result = session.run(
-                    f"""
-                    MATCH (a:Entity {{id: $source_id}})-[r]->(b:Entity {{id: $target_id}})
-                    WHERE type(r) = $rel_type {scope}
-                    SET r += $update
-                    RETURN type(r) as rel_type, r as rel
-                    """,
-                    source_id=rel.source_id, target_id=rel.target_id,
-                    rel_type=rel.rel_type, update=self._serialize_props(update),
-                    project_id=project_id,
-                )
-            else:
-                result = session.run(
-                    f"""
-                    MATCH (a:Entity {{id: $source_id}})
-                    MATCH (b:Entity {{id: $target_id}})
-                    WHERE true {scope}
-                    CALL apoc.create.relationship(a, $rel_type, $props, b) YIELD rel
-                    RETURN type(rel) as rel_type, rel
-                    """,
-                    source_id=rel.source_id, target_id=rel.target_id,
-                    rel_type=rel.rel_type, props=props, project_id=project_id,
-                )
-            record = result.single()
-            rel_data = dict(record["rel"]) if record else {}
+        def _upsert(tx) -> dict:
+            # Corroboration: the same claim asserted by a second document is not
+            # a second edge, it is the same edge with more support.
+            #
+            # One write transaction. MERGE between two bound nodes locks both,
+            # so concurrent assertions of one claim make one edge; the lock SET
+            # then holds the edge itself until commit, so the read-modify-write
+            # below cannot interleave with another. It was a lookup followed by
+            # a separate create or update, so concurrent builds duplicated the
+            # edge or wrote back each other's stale source lists.
+            record = tx.run(
+                f"""
+                MATCH (a:Entity {{id: $source_id}})
+                MATCH (b:Entity {{id: $target_id}})
+                {scope}
+                MERGE (a)-[r:{rel_type}]->(b)
+                ON CREATE SET r = $props
+                SET r._upsert_lock = true
+                REMOVE r._upsert_lock
+                WITH r, coalesce(r.id = $new_id, false) AS created
+                ORDER BY created DESC, elementId(r)
+                LIMIT 1
+                RETURN r, created, elementId(r) AS eid
+                """,
+                source_id=rel.source_id, target_id=rel.target_id,
+                props=props, new_id=props.get("id"), project_id=project_id,
+            ).single()
+            if record is None:
+                return {}  # an endpoint is missing, or outside the project
+            if record["created"]:
+                return dict(record["r"])
+            update = self._merge_assertion(dict(record["r"]), props)
+            if project_id:
+                update["project_id"] = project_id
+            return dict(tx.run(
+                "MATCH ()-[r]->() WHERE elementId(r) = $eid SET r += $update RETURN r",
+                eid=record["eid"], update=self._serialize_props(update),
+            ).single()["r"])
+
+        with self._driver.session() as session:
+            rel_data = session.execute_write(_upsert)
 
         # Invalidate graph cache — resolve project_id from source entity
         project_id = getattr(rel, "project_id", None) or props.get("project_id")
