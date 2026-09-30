@@ -43,6 +43,10 @@ _ADDITIVE_COLUMNS = (
     # PIR spine: links a collection plan to the requirement it was raised against.
     "ALTER TABLE collection_plans ADD COLUMN IF NOT EXISTS pir_id UUID",
     "CREATE INDEX IF NOT EXISTS ix_collection_plans_pir_id ON collection_plans (pir_id)",
+    # Per-source status shipped after collection_sources did. NOT NULL in the
+    # model, so existing rows take the model's default.
+    "ALTER TABLE collection_sources ADD COLUMN IF NOT EXISTS collection_status "
+    "VARCHAR(20) NOT NULL DEFAULT 'pending'",
 )
 
 # Data repairs. Same rules as above — idempotent, and safe to run on every boot.
@@ -58,18 +62,43 @@ _DATA_REPAIRS = (
 )
 
 
+def _uses_pgvector(table) -> bool:
+    try:
+        from pgvector.sqlalchemy import Vector
+    except ImportError:  # models fall back to Text columns without pgvector
+        return False
+    return any(isinstance(column.type, Vector) for column in table.columns)
+
+
 async def init_db():
-    """Create all tables. Called once at startup."""
+    """Create all tables. Called once at startup.
+
+    Without pgvector the app degrades to graph-only retrieval rather than
+    failing to boot: the extension is tried in a transaction of its own
+    (a failed statement aborts a Postgres transaction, which took create_all
+    down with it), and the tables with vector columns are left out.
+    """
     import logging
     from sqlalchemy import text
     from intel_platform.db.models import Base
     logger = logging.getLogger(__name__)
-    async with get_engine().begin() as conn:
-        try:
+    vector_ok = True
+    try:
+        async with get_engine().begin() as conn:
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        except Exception:
-            logger.warning("pgvector extension not available — vector search disabled")
-        await conn.run_sync(Base.metadata.create_all)
+    except Exception:
+        vector_ok = False
+
+    tables = None  # every table
+    if not vector_ok:
+        skipped = [t for t in Base.metadata.sorted_tables if _uses_pgvector(t)]
+        tables = [t for t in Base.metadata.sorted_tables if t not in skipped]
+        logger.warning(
+            "pgvector extension not available — vector search disabled; not creating %s",
+            ", ".join(t.name for t in skipped) or "no tables",
+        )
+    async with get_engine().begin() as conn:
+        await conn.run_sync(Base.metadata.create_all, tables=tables)
 
     # Each statement runs in its own transaction: a failure in Postgres aborts the
     # whole transaction, so one bad statement must not take the others with it.
