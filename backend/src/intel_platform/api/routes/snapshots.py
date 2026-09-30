@@ -109,20 +109,29 @@ def get_snapshot(snapshot_id: str, store: GraphStore = Depends(get_graph_store))
     snapshot = record["props"]
     snapshot["entities"] = json.loads(snapshot.pop("entities_json", "[]"))
 
-    # Get current relationships between snapshot entities
-    entity_ids = set(snapshot.get("entity_ids", []))
-    edges = []
-    for eid in entity_ids:
-        rels = store.get_relationships(eid)
-        for rel in rels:
-            target_id = rel.get("target_id", "")
-            if target_id in entity_ids:
-                edges.append({
-                    "source_id": eid,
-                    "target_id": target_id,
-                    "rel_type": rel.get("rel_type"),
-                    "confidence": rel.get("confidence", rel.get("props", {}).get("confidence")),
-                })
+    # Current relationships between snapshot entities, each read once as the
+    # directed edge it is. Reading every entity's undirected neighbourhood and
+    # labelling each hit "from this entity" listed every edge twice, once
+    # reversed.
+    entity_ids = list(dict.fromkeys(snapshot.get("entity_ids", [])))
+    with store._driver.session() as session:
+        result = session.run(
+            """
+            MATCH (a)-[r]->(b)
+            WHERE a.id IN $ids AND b.id IN $ids
+            RETURN a.id AS source_id, b.id AS target_id, type(r) AS rel_type, r.confidence AS confidence
+            """,
+            ids=entity_ids,
+        )
+        edges = [
+            {
+                "source_id": record["source_id"],
+                "target_id": record["target_id"],
+                "rel_type": record["rel_type"],
+                "confidence": record["confidence"],
+            }
+            for record in result
+        ]
 
     return {
         **snapshot,
