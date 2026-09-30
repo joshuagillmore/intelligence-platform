@@ -107,17 +107,21 @@ def _get_driver():
     return get_neo4j_driver()
 
 
+_BUILTIN_ADMIN_PASSWORD = "admin"
+
+
 def _ensure_default_admin():
-    """Create default admin user in Neo4j if no users exist."""
+    """Seed the first admin if no users exist, then judge the stored admin passwords."""
+    from intel_platform.config import settings
+
     driver = _get_driver()
     with driver.session() as session:
         result = session.run("MATCH (u:User) RETURN count(u) as cnt")
         count = result.single()["cnt"]
         if count == 0:
-            from intel_platform.config import settings
-            admin_password = settings.default_admin_password or "admin"
+            admin_password = settings.default_admin_password or _BUILTIN_ADMIN_PASSWORD
             require_secure = settings.require_secure_auth
-            if require_secure and admin_password == "admin":
+            if require_secure and admin_password == _BUILTIN_ADMIN_PASSWORD:
                 raise RuntimeError(
                     "REQUIRE_SECURE_AUTH=true: set DEFAULT_ADMIN_PASSWORD (not the default 'admin') "
                     "before first boot so no default admin is seeded."
@@ -135,10 +139,82 @@ def _ensure_default_admin():
                 hashed_password=_hash_password(admin_password),
                 role="admin",
             )
-            if admin_password == "admin":
+            if admin_password == _BUILTIN_ADMIN_PASSWORD:
                 _logger.warning("SECURITY: Created default admin/admin user. Change password in production!")
             else:
                 _logger.info("Created initial admin user from DEFAULT_ADMIN_PASSWORD.")
+
+    # Judged on every boot, against what is stored. Seeding was the only check
+    # before, so a deploy that once booted admin/admin stayed admin/admin under
+    # REQUIRE_SECURE_AUTH=true: the flag guarded the config, not the account.
+    _enforce_stored_admin_password(_admins_with_default_password())
+
+
+def _admins_with_default_password() -> list[str]:
+    """Usernames of admin accounts whose stored hash still verifies 'admin'."""
+    driver = _get_driver()
+    with driver.session() as session:
+        records = list(session.run(
+            "MATCH (u:User {role: 'admin'}) RETURN u.username AS username, u.hashed_password AS h"
+        ))
+    weak = []
+    for record in records:
+        try:
+            if record["h"] and verify_password(_BUILTIN_ADMIN_PASSWORD, record["h"]):
+                weak.append(record["username"])
+        except ValueError:
+            # A malformed hash cannot verify anything, 'admin' included.
+            continue
+    return weak
+
+
+def _enforce_stored_admin_password(weak_usernames: list[str]) -> None:
+    """Act on admin accounts still using the built-in password.
+
+    Without REQUIRE_SECURE_AUTH: warn. With it: replace the password with
+    DEFAULT_ADMIN_PASSWORD when the operator has set one (that is what setting
+    it alongside the flag asks for), and otherwise refuse to boot. Takes the
+    usernames explicitly so only the accounts found weak are ever written.
+    """
+    if not weak_usernames:
+        return
+    from intel_platform.config import settings
+
+    names = ", ".join(weak_usernames)
+    if not settings.require_secure_auth:
+        _logger.warning(
+            "SECURITY: admin account(s) %s still use the default password 'admin'. "
+            "Change it (POST /api/auth/change-password) before any real deployment.",
+            names,
+        )
+        return
+
+    replacement = settings.default_admin_password
+    if not replacement or replacement == _BUILTIN_ADMIN_PASSWORD:
+        raise RuntimeError(
+            f"REQUIRE_SECURE_AUTH=true but admin account(s) {names} still use the default "
+            "password 'admin'. Set DEFAULT_ADMIN_PASSWORD to replace it at boot, or change it "
+            "(POST /api/auth/change-password) with REQUIRE_SECURE_AUTH=false first."
+        )
+    for username in weak_usernames:
+        set_password(username, replacement)
+    _logger.warning(
+        "SECURITY: replaced the default 'admin' password on admin account(s) %s with "
+        "DEFAULT_ADMIN_PASSWORD (REQUIRE_SECURE_AUTH=true).",
+        names,
+    )
+
+
+def set_password(username: str, new_password: str) -> bool:
+    """Store a new password hash for `username`. False when no such user exists."""
+    driver = _get_driver()
+    with driver.session() as session:
+        record = session.run(
+            "MATCH (u:User {username: $username}) SET u.hashed_password = $h, "
+            "u.password_changed_at = datetime() RETURN count(u) AS n",
+            username=username, h=_hash_password(new_password),
+        ).single()
+    return bool(record and record["n"])
 
 
 def create_access_token(username: str, role: str = "analyst") -> str:

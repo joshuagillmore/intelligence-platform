@@ -5,9 +5,11 @@ from intel_platform.api.auth import (
     check_login_rate_limit,
     clear_failed_logins,
     create_access_token,
+    get_current_user,
     record_failed_login,
     register_user,
     require_admin,
+    set_password,
 )
 
 router = APIRouter()
@@ -48,6 +50,20 @@ class RegisterRequest(BaseModel):
         return v
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _check_new_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if v == "admin":
+            raise ValueError("Password must not be the built-in default")
+        return v
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -85,3 +101,35 @@ def register(req: RegisterRequest, admin: dict = Depends(require_admin)):
         username=user["username"],
         role=user["role"],
     )
+
+
+@router.post("/auth/change-password")
+def change_password(
+    req: ChangePasswordRequest,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """Change the signed-in user's password.
+
+    There was no way to change a password at all, so a seeded admin/admin could
+    only be fixed by editing the database. The current password is required and
+    throttled like a login, because this endpoint is otherwise a password oracle.
+    """
+    username = user["username"]
+    if username == "api_key_user":
+        raise HTTPException(status_code=400, detail="The API key identity has no password")
+
+    from intel_platform.api.middleware import client_ip
+    ip = client_ip(request)
+    check_login_rate_limit(ip)
+    if not authenticate_user(username, req.current_password):
+        record_failed_login(ip)
+        # 403, not 401: the frontend treats 401 as an expired session and signs out.
+        raise HTTPException(status_code=403, detail="Current password is incorrect")
+    if req.new_password == req.current_password:
+        raise HTTPException(status_code=400, detail="New password must differ from the current one")
+
+    if not set_password(username, req.new_password):
+        raise HTTPException(status_code=404, detail="User not found")
+    clear_failed_logins(ip)
+    return {"status": "ok", "username": username}
