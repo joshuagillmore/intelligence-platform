@@ -115,6 +115,35 @@ def test_cached_view_reads_a_vulnerability_under_its_cve_id(client, auth_header)
     assert seen and set(seen) == {"CVE-2021-44228"}
 
 
+def test_cached_view_reads_the_graph_off_the_event_loop(client, auth_header):
+    # E-4: the sync driver call must run in a worker thread, not on the loop.
+    import asyncio
+
+    from intel_platform.api.app import app
+    from intel_platform.api.deps import get_graph_store
+
+    on_loop: list[bool] = []
+
+    def get_entity(entity_id):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+
+    store = MagicMock()
+    store.get_entity = get_entity
+    app.dependency_overrides[get_graph_store] = lambda: store
+    try:
+        with patch("intel_platform.enrichment.cache.EnrichmentCache.get", new=AsyncMock(return_value=None)):
+            resp = client.get("/api/enrichment/entities/e1", headers=auth_header)
+    finally:
+        app.dependency_overrides.pop(get_graph_store, None)
+    assert resp.status_code == 200
+    assert on_loop == [False]
+
+
 def test_admin_enrichment_get(client, auth_header):
     with patch("intel_platform.enrichment.hook.auto_enrich_enabled",
                new=AsyncMock(return_value=True)):

@@ -5,6 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+# Register the real providers before the registry fixture snapshots it, so a
+# test that uses one (E-3) cannot leave the registry emptied for later files.
+import intel_platform.enrichment.providers  # noqa: F401
 from intel_platform.enrichment import base as base_mod
 from intel_platform.enrichment import service as service_mod
 from intel_platform.enrichment.cache import RateLimiter
@@ -431,6 +434,112 @@ async def test_vulnerability_without_a_cve_id_asserts_nothing(monkeypatch):
     store.update_entity.assert_not_called()   # nothing written, not even `enriched`
     cache.set.assert_not_awaited()
     client.get.assert_not_called()
+
+
+def _on_event_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
+
+
+class _ThreadRecordingStore:
+    """A GraphStore stand-in that records whether each call ran on the loop."""
+
+    def __init__(self, entity):
+        self.entity = entity
+        self.on_loop: dict[str, bool] = {}
+
+    def _mark(self, name):
+        self.on_loop[name] = _on_event_loop()
+
+    def get_entity(self, entity_id):
+        self._mark("get_entity")
+        return self.entity
+
+    def update_entity(self, entity_id, props):
+        self._mark("update_entity")
+        return self.entity
+
+    def find_entity_by_exact_name(self, project_id, name, entity_type=None):
+        self._mark("find_entity_by_exact_name")
+        return None
+
+    def search_entity_by_name(self, project_id, name, limit=20):
+        self._mark("search_entity_by_name")
+        return []
+
+    def create_entity(self, model):
+        self._mark("create_entity")
+        return {"id": "n2"}
+
+    def create_relationship(self, rel):
+        self._mark("create_relationship")
+        return {}
+
+
+async def test_graph_store_calls_run_off_the_event_loop():
+    # E-4: the sync Neo4j driver blocks; on the loop, one Investigate stalls
+    # /health and every other request for the length of its writes.
+    class _RelProvider(EnrichmentProvider):
+        name = "relprov2"
+        supported_types = {"Domain"}
+
+        async def lookup(self, value, entity_type):
+            return EnrichmentResult(
+                properties={"x": 1},
+                related=[RelatedEntity(name="1.2.3.4", entity_type="IPAddress", rel_type="RESOLVES_TO")],
+            )
+
+    register_provider(_RelProvider)
+    store = _ThreadRecordingStore(
+        {"id": "e1", "name": "evil.com", "entity_type": "Domain", "project_id": "test-p"}
+    )
+    out = await EnrichmentService(store, cache=_cache_miss()).enrich_entity("e1")
+
+    assert out["providers"]["relprov2"]["status"] == "ok"
+    assert set(store.on_loop) >= {
+        "get_entity", "update_entity", "find_entity_by_exact_name", "create_entity", "create_relationship",
+    }
+    assert not any(store.on_loop.values()), store.on_loop
+
+
+async def test_cache_hit_apply_runs_off_the_event_loop():
+    register_provider(_PropProvider)
+    store = _ThreadRecordingStore(
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+    )
+    cache = MagicMock()
+    cache.get = AsyncMock(return_value={"properties": {"asn": "AS1"}, "related": []})
+    cache.set = AsyncMock()
+    out = await EnrichmentService(store, cache=cache).enrich_entity("e1")
+    assert out["providers"]["propprov"]["status"] == "cached"
+    assert store.on_loop.get("update_entity") is False
+
+
+def test_default_writer_passes_project_id_on_the_relationship(monkeypatch):
+    # Contract 16: create_relationship uses Relationship.project_id for a
+    # labelled, indexed match; the enrichment writer must supply it.
+    import intel_platform.models.relationships as rel_mod
+
+    captured: list[dict] = []
+
+    class _CapturingRelationship:
+        def __init__(self, **kwargs):
+            captured.append(kwargs)
+            self.__dict__.update(kwargs)
+
+    monkeypatch.setattr(rel_mod, "Relationship", _CapturingRelationship)
+    store = MagicMock()
+    store.find_entity_by_exact_name = MagicMock(return_value={"id": "n2"})
+    store.create_relationship = MagicMock(return_value={})
+    EnrichmentService(store, cache=_cache_miss())._default_write_related(
+        {"id": "e1"},
+        [RelatedEntity(name="1.2.3.4", entity_type="IPAddress", rel_type="RESOLVES_TO")],
+        "test-p",
+    )
+    assert captured and captured[0]["project_id"] == "test-p"
 
 
 async def test_malformed_cve_id_property_is_not_used(monkeypatch):

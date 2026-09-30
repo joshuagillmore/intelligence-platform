@@ -102,7 +102,9 @@ class EnrichmentService:
         ``only`` restricts to named providers (the per-source refresh button);
         ``bypass_cache`` forces a fresh lookup.
         """
-        entity = self.store.get_entity(entity_id)
+        # GraphStore uses the sync Neo4j driver: every call goes to a worker
+        # thread so an Investigate never blocks the event loop.
+        entity = await asyncio.to_thread(self.store.get_entity, entity_id)
         if not entity:
             return {"entity_id": entity_id, "error": "not found", "providers": {}}
         providers = get_providers_for(entity.get("entity_type", ""), self.available_keys)
@@ -167,7 +169,9 @@ class EnrichmentService:
             except Exception:
                 logger.debug("enrichment cache get failed for %s", provider.name, exc_info=True)
         if cached is not None:
-            applied = self._safe_apply(entity, project_id, _result_from_cache(cached))
+            applied = await asyncio.to_thread(
+                self._safe_apply, entity, project_id, _result_from_cache(cached)
+            )
             results[provider.name] = (
                 {"status": "cached"} if applied else {"status": "error", "reason": "graph write failed"}
             )
@@ -203,8 +207,8 @@ class EnrichmentService:
             return
 
         # per-provider isolation (graph write) — a store failure here must not
-        # abort the other providers.
-        if not self._safe_apply(entity, project_id, result):
+        # abort the other providers. The write runs in a worker thread.
+        if not await asyncio.to_thread(self._safe_apply, entity, project_id, result):
             results[provider.name] = {"status": "error", "reason": "graph write failed"}
             return
 
@@ -225,7 +229,11 @@ class EnrichmentService:
         }
 
     def _safe_apply(self, entity: dict, project_id: str, result) -> bool:
-        """Apply a result to the node, isolating any store/graph write failure."""
+        """Apply a result to the node, isolating any store/graph write failure.
+
+        Sync (it drives the sync Neo4j driver); callers run it via
+        ``asyncio.to_thread``.
+        """
         try:
             self._apply(entity, project_id, result)
             return True
@@ -267,6 +275,7 @@ class EnrichmentService:
                     source_id=src_id, target_id=tgt_id, rel_type=rel.rel_type,
                     confidence=0.95, method="enrichment",
                     evidence=str(rel.properties.get("evidence", "")),
+                    project_id=project_id,
                 ))
             except Exception:
                 logger.debug("enrichment: could not create %s edge", rel.rel_type, exc_info=True)

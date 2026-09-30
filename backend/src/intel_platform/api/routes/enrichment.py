@@ -10,6 +10,8 @@ collection egress (VPN/Tor), never the LLM path.
 """
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
@@ -95,7 +97,7 @@ async def get_enrichment(entity_id: str, store: GraphStore = Depends(get_graph_s
     from intel_platform.enrichment.cache import EnrichmentCache
     from intel_platform.enrichment.service import observable_for
 
-    entity = store.get_entity(entity_id)
+    entity = await asyncio.to_thread(store.get_entity, entity_id)  # sync driver: off the loop
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
 
