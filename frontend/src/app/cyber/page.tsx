@@ -518,6 +518,7 @@ export default function CyberPage() {
                                         View in Graph &rarr;
                                       </button>
                                       <EnrichmentPanel
+                                        key={ioc.id}
                                         entityId={ioc.id}
                                         entityType={ioc.entity_type}
                                         properties={entityFields(entity)}
