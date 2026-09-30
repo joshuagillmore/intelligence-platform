@@ -247,3 +247,23 @@ def test_nlp_results_carry_the_record_too():
 
 def test_empty_text_still_compares_equal_to_an_empty_pair():
     assert extraction.extract_entities_nlp("   ", "d") == ([], [])
+
+
+@pytest.mark.parametrize("how", ["copy", "deepcopy", "pickle"])
+def test_the_record_survives_copying_and_pickling(how):
+    """A tuple subclass is rebuilt from tuple(self) by copy and pickle; the
+    record has to come with it, or a caller that caches or ships a result
+    crashes (or silently loses the degraded marker)."""
+    import copy
+    import pickle
+
+    original = extraction.ExtractionResult(
+        [{"name": "a"}], [], method="nlp", degraded=True, reason="provider error (X)", skipped_items=2,
+    )
+    clone = {
+        "copy": copy.copy,
+        "deepcopy": copy.deepcopy,
+        "pickle": lambda o: pickle.loads(pickle.dumps(o)),
+    }[how](original)
+    assert clone == original
+    assert clone.meta == original.meta

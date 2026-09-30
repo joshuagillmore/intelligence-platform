@@ -49,6 +49,14 @@ class ExtractionResult(tuple):
         self.skipped_items = skipped_items
         return self
 
+    def __getnewargs_ex__(self):
+        # copy and pickle rebuild a tuple subclass from tuple(self); without
+        # this they call __new__ with one argument and fail.
+        return (self[0], self[1]), {
+            "method": self.method, "degraded": self.degraded,
+            "reason": self.reason, "skipped_items": self.skipped_items,
+        }
+
     @property
     def meta(self) -> dict:
         return {
