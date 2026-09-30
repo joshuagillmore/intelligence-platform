@@ -114,6 +114,30 @@ class TestJsonIsNotMistakenForJsonl:
         assert result.success and result.record_count == 2
 
 
+class TestNumbersAreNotFormulas:
+    """Formula-injection quoting prefixed every value starting with "-" or "+",
+    so a negative coordinate became the text "'-33.87" and every
+    southern-hemisphere or western location was lost."""
+
+    def test_negative_coordinates_survive_csv(self):
+        result = flat_file.parse_csv(b"name,lat,lng\nSydney,-33.87,151.21\nLima,-12.05,-77.04\n", {})
+        assert [r["lat"] for r in result.records] == ["-33.87", "-12.05"]
+        assert result.records[1]["lng"] == "-77.04"
+
+    def test_negative_coordinates_survive_json(self):
+        result = flat_file.parse_json(b'[{"name": "Lima", "lat": "-12.05", "note": "=HYPERLINK(1)"}]', {})
+        assert result.records[0]["lat"] == "-12.05"
+        assert result.records[0]["note"].startswith("'"), "a real formula is still neutralised"
+
+    def test_formulas_are_still_quoted(self):
+        for value in ("-1+1", "=1+1", "+cmd|' /C calc'!A0", "-2+3", "@SUM(A1)"):
+            assert flat_file._sanitize_cell(value).startswith("'"), value
+
+    def test_signed_numbers_are_left_alone(self):
+        for value in ("-33.87", "+44", "-1e5", " -7 "):
+            assert flat_file._sanitize_cell(value) == value, value
+
+
 class TestParsingLeavesTheEventLoop:
     async def test_acquire_parses_in_a_worker_thread(self, monkeypatch):
         seen = {}

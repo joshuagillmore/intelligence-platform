@@ -29,6 +29,7 @@ import csv
 import io
 import json
 import logging
+import math
 from collections import Counter
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -74,13 +75,26 @@ _SAFE_ENCODINGS = {
 }
 
 
+def _is_plain_number(value: str) -> bool:
+    try:
+        return math.isfinite(float(value))
+    except ValueError:
+        return False
+
+
 def _sanitize_cell(value: str) -> str:
     """Sanitize a cell value to prevent CSV formula injection.
 
     Prefixes dangerous characters with a single quote to neutralize
-    formula execution in spreadsheet applications.
+    formula execution in spreadsheet applications. A plain signed number is
+    not a formula and is left alone: quoting it turned every negative
+    coordinate into the text "'-33.87".
     """
-    if value and isinstance(value, str) and value.lstrip().startswith(_FORMULA_PREFIXES):
+    if (
+        value and isinstance(value, str)
+        and value.lstrip().startswith(_FORMULA_PREFIXES)
+        and not _is_plain_number(value)
+    ):
         return "'" + value
     return value
 
