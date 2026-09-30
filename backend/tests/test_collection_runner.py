@@ -186,15 +186,21 @@ class TestLegacyRunnerStatus:
         assert result["status"] == "REVOKED"
         assert _status(graph_store, cid) == "REVOKED"
 
-    async def test_a_cancelled_collection_can_be_run_again(self, graph_store):
+    async def test_a_cancel_before_the_run_starts_is_honoured(self, graph_store):
+        """The route writes STARTED when it accepts a run; a cancel that lands
+        between that and the background task starting must stop the run, not
+        be overwritten by the runner's own first write (found in review)."""
         cid = _collection(graph_store, status="REVOKED")
-        with patch("intel_platform.collection.runner.web_search", return_value=[{"url": PAGE["url"]}]), \
+        searched = []
+        with patch("intel_platform.collection.runner.web_search",
+                   side_effect=lambda *a, **kw: searched.append(1) or [{"url": PAGE["url"]}]), \
              patch("intel_platform.collection.runner.crawl_urls", new=AsyncMock(return_value=[PAGE])), \
              patch("intel_platform.collection.runner.extract_entities_nlp", return_value=([], [])):
             result = await CollectionRunner(graph_store).execute(cid, "test-legacy-runner", _items(1))
 
-        assert result["status"] == "SUCCESS"
-        assert _status(graph_store, cid) == "SUCCESS"
+        assert searched == []
+        assert result["status"] == "REVOKED"
+        assert _status(graph_store, cid) == "REVOKED"
 
     async def test_blocking_work_runs_off_the_event_loop(self, graph_store, monkeypatch):
         import threading

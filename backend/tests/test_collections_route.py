@@ -106,6 +106,16 @@ def test_a_finished_run_leaves_nothing_in_flight(monkeypatch):
     assert task_id not in route._running_collections
 
 
+def test_accepting_a_run_marks_it_started_even_after_a_cancel(monkeypatch):
+    """A cancelled collection can be run again: the route writes STARTED when
+    it accepts the run, which is what replaces the old REVOKED."""
+    monkeypatch.setattr("intel_platform.api.routes.collections.CollectionRunner", _NoopRunner)
+    task_id = _approved_collection(status="REVOKED")
+
+    assert client.post(f"/api/collections/{task_id}/execute", headers=headers).status_code == 202
+    assert client.get(f"/api/collections/{task_id}/status", headers=headers).json()["status"] == "STARTED"
+
+
 def test_cancel_records_revoked():
     task_id = _approved_collection()
     client.post(f"/api/collections/{task_id}/cancel", headers=headers)

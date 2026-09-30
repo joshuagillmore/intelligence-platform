@@ -35,10 +35,12 @@ class CollectionRunner:
         extraction_mode: str = "nlp",
         on_progress: callable = None,
     ) -> dict:
-        # A new run replaces whatever an earlier one left, including REVOKED.
+        # The route marks a run STARTED when it accepts it (replacing an
+        # earlier REVOKED); a cancel landing after that is honoured by the
+        # first check below, so this write never replaces REVOKED itself.
         # Every store call here is the sync Neo4j driver, so it runs in a
         # thread: on the loop it stalls every request the API is serving.
-        await asyncio.to_thread(self._update_status, collection_id, "STARTED", new_run=True)
+        await asyncio.to_thread(self._update_status, collection_id, "STARTED")
         approved_items = [item for item in plan if item.get("approved", False)]
         total_items = len(approved_items)
 
@@ -199,24 +201,23 @@ class CollectionRunner:
 
     def _update_status(
         self, collection_id: str, status: str,
-        progress: float = 0.0, documents_acquired: int = 0, new_run: bool = False,
+        progress: float = 0.0, documents_acquired: int = 0,
     ) -> None:
         """Persist collection status to Neo4j, never overwriting a cancellation.
 
         The check and the write are one statement: a cancel landing while an
         item runs must not be replaced by that item's PROGRESS update. Only the
-        write that starts a new run (`new_run`) replaces REVOKED.
+        route, accepting a new run, replaces REVOKED.
         """
         now = datetime.now(timezone.utc).isoformat()
         with self._store._driver.session() as session:
             session.run(
                 """
                 MATCH (c:Collection {id: $id})
-                SET c.status = CASE WHEN c.status = $revoked AND NOT $new_run
-                                    THEN c.status ELSE $status END,
+                SET c.status = CASE WHEN c.status = $revoked THEN c.status ELSE $status END,
                     c.progress = $progress,
                     c.documents_acquired = $docs, c.updated_at = $now
                 """,
-                id=collection_id, status=status, revoked=REVOKED, new_run=new_run,
+                id=collection_id, status=status, revoked=REVOKED,
                 progress=progress, docs=documents_acquired, now=now,
             )

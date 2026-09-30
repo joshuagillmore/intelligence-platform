@@ -219,10 +219,23 @@ async def execute_collection(
         finally:
             _running_collections.discard(task_id)
 
+    # Accepting a run is what starts it: STARTED replaces whatever an earlier
+    # run left, REVOKED included. A cancel after this point is honoured by the
+    # runner, which never overwrites REVOKED itself.
+    await asyncio.to_thread(_mark_started, store, task_id)
     _running_collections.add(task_id)
     background_tasks.add_task(_run)
 
     return {"collection_id": task_id, "status": "STARTED"}
+
+
+def _mark_started(store: GraphStore, task_id: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with store._driver.session() as session:
+        session.run(
+            "MATCH (c:Collection {id: $id}) SET c.status = 'STARTED', c.progress = 0.0, c.updated_at = $now",
+            id=task_id, now=now,
+        )
 
 
 def _mark_failed(store: GraphStore, task_id: str) -> None:
