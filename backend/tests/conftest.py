@@ -37,7 +37,11 @@ for _name in (
     "EMBEDDING_PROVIDER",
 ):
     os.environ[_name] = ""
-os.environ["POSTGRES_URL"] = "postgresql+asyncpg://intel:changeme@localhost:5432/intel_platform"
+# Exported POSTGRES_URL (CI) is kept; otherwise a `.invalid` host fails in ms. Not localhost:5432: on a
+# workstation it was the SeeStar telescope app (accepts TCP, never answers), costing 60 s per DB-touching test.
+os.environ["POSTGRES_URL"] = os.environ.get("POSTGRES_URL") or (
+    "postgresql+asyncpg://intel:changeme@postgres-disabled-in-tests.invalid:5432/intel_platform"
+)
 # With every provider blank, provider selection ends at its Ollama fallback, so
 # where that points decides whether a test talks to a real model. A developer's
 # .env names the compose host (`ollama`, 2.7 s per failed Windows lookup) and a
