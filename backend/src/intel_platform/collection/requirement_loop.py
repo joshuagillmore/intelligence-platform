@@ -236,6 +236,8 @@ async def run_requirement_passes(
             remaining = None if source_limit is None else max(0, source_limit - used)
             per_element = None if remaining is None else max(1, remaining // len(open_rows))
 
+            asked = 0
+            answered = 0
             for row in open_rows:
                 if source_limit is not None and used >= source_limit:
                     break
@@ -244,10 +246,13 @@ async def run_requirement_passes(
                     stop = True
                     break
 
+                asked += 1
                 assessment = await assess_requirement(
                     row.text, project_id, db, provider,
                     tried_queries=list(row.next_queries or []), store=store,
                 )
+                if getattr(assessment, "assessed", True):
+                    answered += 1
 
                 if not getattr(assessment, "assessed", True):
                     # Nobody looked: a provider outage or an unreadable reply.
@@ -301,6 +306,15 @@ async def run_requirement_passes(
                     await db.commit()
 
             if stop:
+                break
+            if asked and not answered:
+                # Nothing could be assessed this pass, so another pass would
+                # only repeat the outage — and ending on "pass_budget" would
+                # tell a budget story about an infrastructure fault.
+                outcome.stopped_on = "assessor_unavailable"
+                _log(db, plan_id, "requirement_assessor_unavailable",
+                     f"No element could be assessed in pass {pass_num}; re-tasking stopped")
+                await db.commit()
                 break
 
     async with db_factory() as db:

@@ -256,6 +256,27 @@ class TestOutagesAreNotVerdicts:
         assert row.assessment_missing == "no cascade detail"
         assert row.assessment_confidence == "medium"
 
+    async def test_an_assessor_that_never_answers_stops_the_loop_and_says_so(self, monkeypatch, no_collection):
+        """With the provider down for every element, the loop ran all its passes
+        and reported "stopped on pass_budget" — a budget story for an outage."""
+        calls = []
+
+        async def down(*a, **kw):
+            calls.append(1)
+            return SimpleNamespace(satisfied=False, confidence="unknown",
+                                   missing="assessment could not be completed", next_queries=[], assessed=False)
+
+        monkeypatch.setattr(rl, "assess_requirement", down)
+        rows = [_requirement(0, "a?"), _requirement(1, "b?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?", "b?"]))
+
+        out = await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None, max_passes=3,
+        )
+        assert out.stopped_on == "assessor_unavailable"
+        assert len(calls) == 2, "one pass is enough to know the assessor is down"
+        assert out.still_open == ["a?", "b?"]
+
     async def test_unassessed_element_is_not_collected_for(self, monkeypatch):
         """With no verdict there is no gap to aim a search at."""
         called = []

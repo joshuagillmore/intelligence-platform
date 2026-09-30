@@ -60,21 +60,21 @@ def _screen(text: str) -> str:
 
 
 _TRUE_WORDS = frozenset({"true", "yes", "y", "1", "satisfied"})
-_FALSE_WORDS = frozenset({"false", "no", "n", "0", "unsatisfied", "not satisfied", "none", "null", ""})
+_FALSE_WORDS = frozenset({"false", "no", "n", "0", "unsatisfied", "not satisfied"})
 
 
 def model_bool(value) -> bool | None:
     """A yes/no a model wrote, however it wrote it; None when it is neither.
 
     Models return ``"false"`` as often as ``false``, and ``bool("false")`` is
-    True, so a verdict of "not answered" read as "answered". An unrecognised
-    value is reported as None so the caller can treat it as no verdict rather
-    than guess.
+    True, so a verdict of "not answered" read as "answered". An unrecognised,
+    absent or null value is reported as None so the caller can treat it as no
+    verdict rather than guess — a missing answer is not a "no".
     """
     if isinstance(value, bool):
         return value
     if value is None:
-        return False
+        return None
     if isinstance(value, (int, float)):
         return bool(value)
     if isinstance(value, str):

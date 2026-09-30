@@ -115,8 +115,17 @@ class TestVerdictValuesAreReadNotCoerced:
 
     def test_model_bool(self):
         assert ra.model_bool("FALSE") is False and ra.model_bool("**true**") is True
-        assert ra.model_bool(0) is False and ra.model_bool(None) is False
+        assert ra.model_bool(0) is False
         assert ra.model_bool("maybe") is None
+        # Absent or null is no verdict, not a "no".
+        assert ra.model_bool(None) is None and ra.model_bool("null") is None and ra.model_bool("") is None
+
+    async def test_a_reply_without_a_verdict_is_not_a_verdict(self, material):
+        """A reply that omits `satisfied` used to read as unsatisfied, spend an
+        attempt, and move the element toward retirement."""
+        p = _Provider('ASSESSMENT: {"confidence": "high", "missing": "", "next_queries": ["q"]}')
+        out = await ra.assess_requirement("q?", "p1", None, p)
+        assert out.assessed is False
 
 
 class TestFailuresAreNotVerdicts:
