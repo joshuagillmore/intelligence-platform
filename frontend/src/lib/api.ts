@@ -941,7 +941,9 @@ export const healthApi = {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    return axios.get(`${API_BASE}/health`, { headers });
+    // Polled every 30 s by the sidebar and status bar. Without its own timeout
+    // a hung backend left the check pending (and the dot green) for minutes.
+    return axios.get(`${API_BASE}/health`, { headers, timeout: 5000 });
   },
 };
 

@@ -29,15 +29,38 @@ describe('StatusBar', () => {
   });
 
   it('runs a health check on mount (via the mocked api, not real HTTP)', async () => {
-    mockCheck.mockResolvedValue({ status: 'ok' });
+    mockCheck.mockResolvedValue({ data: { status: 'ok', neo4j_connected: true, ollama_connected: true } });
     render(<StatusBar />);
     await waitFor(() => expect(mockCheck).toHaveBeenCalled());
   });
 
   it('shows "Systems Nominal" while the backend is reachable', async () => {
-    mockCheck.mockResolvedValue({ status: 'ok' });
+    mockCheck.mockResolvedValue({ data: { status: 'ok', neo4j_connected: true, ollama_connected: true } });
     render(<StatusBar />);
     expect(await screen.findByText('Systems Nominal')).toBeInTheDocument();
+  });
+
+  // /health answers 200 with status "degraded" when Neo4j is down, so a 2xx
+  // alone is not "nominal": the body's status field is what counts.
+  it('does not claim "Systems Nominal" when /health reports degraded', async () => {
+    mockCheck.mockResolvedValue({ data: { status: 'degraded', neo4j_connected: false, ollama_connected: true } });
+    render(<StatusBar />);
+    expect(await screen.findByText(/Degraded/)).toBeInTheDocument();
+    expect(screen.queryByText('Systems Nominal')).toBeNull();
+  });
+
+  it('names the graph database when it is the part that is down', async () => {
+    mockCheck.mockResolvedValue({ data: { status: 'degraded', neo4j_connected: false, ollama_connected: true } });
+    render(<StatusBar />);
+    expect(await screen.findByText(/Neo4j/)).toBeInTheDocument();
+  });
+
+  it('does not claim "Systems Nominal" for a 200 with no status field', async () => {
+    mockCheck.mockResolvedValue({ data: {} });
+    render(<StatusBar />);
+    await waitFor(() => expect(mockCheck).toHaveBeenCalled());
+    expect(await screen.findByText(/Degraded/)).toBeInTheDocument();
+    expect(screen.queryByText('Systems Nominal')).toBeNull();
   });
 
   it('shows "Disconnected" when the health check fails', async () => {
@@ -47,7 +70,7 @@ describe('StatusBar', () => {
   });
 
   it('renders the active project name when one is selected', async () => {
-    mockCheck.mockResolvedValue({ status: 'ok' });
+    mockCheck.mockResolvedValue({ data: { status: 'ok', neo4j_connected: true, ollama_connected: true } });
     ctx.activeProject = { name: 'Operation Nightfall' };
     render(<StatusBar />);
     expect(await screen.findByText('Operation Nightfall')).toBeInTheDocument();
