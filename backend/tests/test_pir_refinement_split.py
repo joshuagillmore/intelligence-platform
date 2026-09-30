@@ -163,8 +163,7 @@ class _Provider:
         return SimpleNamespace(content=reply, model="fake")
 
 
-def _run_from_pir(monkeypatch, pir, provider):
-    import asyncio
+async def _run_from_pir(monkeypatch, pir, provider):
     from unittest.mock import AsyncMock, MagicMock
 
     from intel_platform.api.routes import collection_plans as cp
@@ -178,7 +177,7 @@ def _run_from_pir(monkeypatch, pir, provider):
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
     req = cp.SubmitPIRRequest(project_id="p1", pir=pir.text)
-    return asyncio.run(cp.create_plan_from_pir(req, db=db))
+    return await cp.create_plan_from_pir(req, db=db)
 
 
 def _pir(refined_text=""):
@@ -194,32 +193,32 @@ def _pir(refined_text=""):
 class TestRefinedTextIsWrittenOnSuccessOnly:
     PLAN = "1. [web_scrape] Something\n   CONFIG: {\"url\": \"https://example.com\"}"
 
-    def test_a_failed_refinement_writes_nothing(self, monkeypatch):
+    async def test_a_failed_refinement_writes_nothing(self, monkeypatch):
         pir = _pir()
-        _run_from_pir(monkeypatch, pir, _Provider(TimeoutError(), self.PLAN))
+        await _run_from_pir(monkeypatch, pir, _Provider(TimeoutError(), self.PLAN))
         assert pir.refined_text == "", "the original text must not be stored as its own refinement"
 
-    def test_an_unusable_refinement_writes_nothing(self, monkeypatch):
+    async def test_an_unusable_refinement_writes_nothing(self, monkeypatch):
         pir = _pir()
-        _run_from_pir(monkeypatch, pir, _Provider("### 1. Assessment\nToo broad.\n", self.PLAN))
+        await _run_from_pir(monkeypatch, pir, _Provider("### 1. Assessment\nToo broad.\n", self.PLAN))
         assert pir.refined_text == ""
 
-    def test_a_success_replaces_a_stored_fallback(self, monkeypatch):
+    async def test_a_success_replaces_a_stored_fallback(self, monkeypatch):
         pir = _pir(refined_text="Who is cutting the Baltic cables?")   # the old fallback
-        _run_from_pir(monkeypatch, pir, _Provider(f"Refined PIR: {REQ}\nAnalysis.", self.PLAN))
+        await _run_from_pir(monkeypatch, pir, _Provider(f"Refined PIR: {REQ}\nAnalysis.", self.PLAN))
         assert pir.refined_text == REQ
 
-    def test_a_success_fills_an_empty_one(self, monkeypatch):
+    async def test_a_success_fills_an_empty_one(self, monkeypatch):
         pir = _pir()
-        _run_from_pir(monkeypatch, pir, _Provider(f"Refined PIR: {REQ}\nAnalysis.", self.PLAN))
+        await _run_from_pir(monkeypatch, pir, _Provider(f"Refined PIR: {REQ}\nAnalysis.", self.PLAN))
         assert pir.refined_text == REQ
 
-    def test_an_existing_real_refinement_is_kept(self, monkeypatch):
+    async def test_an_existing_real_refinement_is_kept(self, monkeypatch):
         pir = _pir(refined_text="An analyst's own wording of the requirement.")
-        _run_from_pir(monkeypatch, pir, _Provider(f"Refined PIR: {REQ}\nAnalysis.", self.PLAN))
+        await _run_from_pir(monkeypatch, pir, _Provider(f"Refined PIR: {REQ}\nAnalysis.", self.PLAN))
         assert pir.refined_text == "An analyst's own wording of the requirement."
 
-    def test_elements_in_an_unlabelled_reply_are_still_captured(self, monkeypatch):
+    async def test_elements_in_an_unlabelled_reply_are_still_captured(self, monkeypatch):
         """No requirement could be read, but the decomposition is still there."""
         pir = _pir()
         pir.eeis = []
@@ -229,10 +228,10 @@ class TestRefinedTextIsWrittenOnSuccessOnly:
             "1. Which vessels loitered over the cable before each break?\n"
             "2. Which states have claimed or denied responsibility?\n"
         )
-        _run_from_pir(monkeypatch, pir, _Provider(reply, self.PLAN))
+        await _run_from_pir(monkeypatch, pir, _Provider(reply, self.PLAN))
         assert pir.refined_text == ""
         assert len(pir.eeis) == 2
 
-    def test_a_failed_refinement_is_reported(self, monkeypatch):
-        body = _run_from_pir(monkeypatch, _pir(), _Provider("### 1. Assessment\nToo broad.\n", self.PLAN))
+    async def test_a_failed_refinement_is_reported(self, monkeypatch):
+        body = await _run_from_pir(monkeypatch, _pir(), _Provider("### 1. Assessment\nToo broad.\n", self.PLAN))
         assert any("refinement" in f for f in body["generation_failures"])

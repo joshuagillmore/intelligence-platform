@@ -262,6 +262,52 @@ class TestExecuteRecordsOnlyThisRunsBudget:
         fake_loop.release.set()
 
 
+class _StmtDb:
+    """Records the statement it is asked to run and returns the given rows."""
+
+    def __init__(self, rows):
+        self.rows = rows
+        self.stmt = None
+
+    async def execute(self, stmt):
+        self.stmt = stmt
+        return _Result(self.rows)
+
+
+def _row(event: str, ago: int):
+    ev = _ev(event, ago)
+    ev.id = uuid.uuid4()
+    ev.plan_id = uuid.uuid4()
+    ev.source_id = None
+    return ev
+
+
+class TestActivityIsPaged:
+    """Low -> R: the UI polls the trail every 3 s and every poll loaded all of
+    it — thousands of rows on a long-running plan. A malformed `since` was
+    ignored, which also meant "load all of it"."""
+
+    async def test_without_since_it_is_the_latest_page_oldest_first(self):
+        db = _StmtDb([_row("e3", 1), _row("e2", 2)])        # the DESC query's order
+        out = await cp.get_activity(str(uuid.uuid4()), since=None, limit=2, db=db)
+        assert [o["event"] for o in out] == ["e2", "e3"]
+        compiled = db.stmt.compile()
+        assert " DESC" in str(compiled) and 2 in compiled.params.values()
+
+    async def test_with_since_it_pages_forward(self):
+        db = _StmtDb([_row("e4", 2), _row("e5", 1)])
+        since = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        out = await cp.get_activity(str(uuid.uuid4()), since=since, limit=50, db=db)
+        assert [o["event"] for o in out] == ["e4", "e5"]
+        compiled = db.stmt.compile()
+        assert " ASC" in str(compiled) and 50 in compiled.params.values()
+
+    async def test_a_malformed_since_is_rejected_not_ignored(self):
+        with pytest.raises(HTTPException) as err:
+            await cp.get_activity(str(uuid.uuid4()), since="yesterday", limit=50, db=_StmtDb([]))
+        assert err.value.status_code == 400
+
+
 class TestNoAutomatedSources:
     async def test_a_pir_linked_plan_still_runs_the_requirement_loop(self, fake_loop):
         plan = _plan(sources=[], pir_id=uuid.uuid4())

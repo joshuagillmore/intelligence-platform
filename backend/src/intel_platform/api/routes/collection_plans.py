@@ -12,7 +12,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -368,9 +368,29 @@ def _parse_uuid(value: str, label: str = "ID") -> uuid.UUID:
 # Request / Response schemas
 # ---------------------------------------------------------------------------
 
+# Lengths match the String(n) columns in db/models.CollectionPlan. Past them
+# the insert failed in Postgres and the client got a 500; they are now a 422.
+_NAME_MAX = 256
+_SHORT_MAX = 128
+_STATUS_MAX = 20
+
+# Every status a plan may be given. FAILED is the terminal state of a run that
+# failed (see plan_executor.PLAN_FAILED).
+_PLAN_STATUSES = frozenset({
+    PlanStatus.DRAFT, PlanStatus.ACTIVE, PlanStatus.PAUSED,
+    PlanStatus.COMPLETED, PlanStatus.ARCHIVED, "FAILED",
+})
+
+
+def _validate_plan_status(status: str) -> str:
+    if status not in _PLAN_STATUSES:
+        raise HTTPException(400, f"Invalid status: {status!r}. Expected one of {sorted(_PLAN_STATUSES)}")
+    return status
+
+
 class CreatePlanRequest(BaseModel):
     project_id: str
-    name: str
+    name: str = Field(max_length=_NAME_MAX)
     description: str = ""
     requirement: str = ""
     pir: str = ""
@@ -379,26 +399,26 @@ class CreatePlanRequest(BaseModel):
     # requirements still land on the project's requirements spine.
     pir_id: str | None = None
     refined_pir: str = ""
-    status: str = PlanStatus.DRAFT
+    status: str = Field(default=PlanStatus.DRAFT, max_length=_STATUS_MAX)
     routing_rules: dict = Field(default_factory=lambda: {
         "extract_entities": True,
         "store_documents": True,
     })
-    created_by: str = "analyst"
-    assigned_to: str = ""
-    schedule_cron: str = ""
+    created_by: str = Field(default="analyst", max_length=_SHORT_MAX)
+    assigned_to: str = Field(default="", max_length=_SHORT_MAX)
+    schedule_cron: str = Field(default="", max_length=_SHORT_MAX)
 
 
 class UpdatePlanRequest(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=_NAME_MAX)
     description: str | None = None
     requirement: str | None = None
     pir: str | None = None
     refined_pir: str | None = None
-    status: str | None = None
+    status: str | None = Field(default=None, max_length=_STATUS_MAX)
     routing_rules: dict | None = None
-    assigned_to: str | None = None
-    schedule_cron: str | None = None
+    assigned_to: str | None = Field(default=None, max_length=_SHORT_MAX)
+    schedule_cron: str | None = Field(default=None, max_length=_SHORT_MAX)
 
 
 class AddSourceRequest(BaseModel):
@@ -535,7 +555,7 @@ async def create_plan(req: CreatePlanRequest, db: AsyncSession = Depends(get_db)
         pir=req.pir or (pir_record.text if pir_record else ""),
         pir_id=pir_record.id if pir_record else None,
         refined_pir=req.refined_pir,
-        status=req.status,
+        status=_validate_plan_status(req.status),
         routing_rules=req.routing_rules,
         created_by=req.created_by,
         assigned_to=req.assigned_to,
@@ -578,6 +598,12 @@ async def update_plan(plan_id: str, req: UpdatePlanRequest, db: AsyncSession = D
         raise HTTPException(404, "Collection plan not found")
 
     update_data = req.model_dump(exclude_none=True)
+    if "status" in update_data:
+        # Any string used to be stored, and an ARCHIVED plan could be revived
+        # by writing a new status over it. Un-archiving is not an edit.
+        new_status = _validate_plan_status(update_data["status"])
+        if plan.status == PlanStatus.ARCHIVED and new_status != PlanStatus.ARCHIVED:
+            raise HTTPException(409, "An archived plan's status cannot be changed")
     for key, value in update_data.items():
         setattr(plan, key, value)
 
@@ -632,6 +658,9 @@ async def complete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
         raise HTTPException(404, "Collection plan not found")
+    if plan.status == PlanStatus.ARCHIVED:
+        # Completing an archived plan un-archived it.
+        raise HTTPException(400, "Cannot complete an archived plan")
     plan.status = PlanStatus.COMPLETED
     plan.updated_at = datetime.now(timezone.utc)
     await db.commit()
@@ -1398,20 +1427,40 @@ async def list_source_acquisitions(
 # ---------------------------------------------------------------------------
 
 @router.get("/collection-plans/{plan_id}/activity")
-async def get_activity(plan_id: str, since: str | None = None, db: AsyncSession = Depends(get_db)):
-    """Get the activity log for a collection plan, optionally filtered by timestamp."""
-    stmt = (
-        select(CollectionActivity)
-        .where(CollectionActivity.plan_id == _parse_uuid(plan_id, "plan_id"))
-        .order_by(CollectionActivity.created_at.asc())
+async def get_activity(
+    plan_id: str,
+    since: str | None = None,
+    limit: int = Query(500, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+):
+    """A page of a plan's activity log, oldest first.
+
+    Without `since`, the most recent `limit` events. With `since` (an ISO-8601
+    timestamp, normally the last event the caller holds), up to `limit` events
+    after it — so a poller pages forward instead of reloading the trail. The UI
+    polls every 3 s and every poll used to load the whole trail; a malformed
+    `since` was silently ignored, which also meant "load all of it", and is now
+    a 400.
+    """
+    stmt = select(CollectionActivity).where(
+        CollectionActivity.plan_id == _parse_uuid(plan_id, "plan_id")
     )
     if since:
         try:
-            since_dt = datetime.fromisoformat(since)
-            stmt = stmt.where(CollectionActivity.created_at > since_dt)
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
         except ValueError:
-            pass
-    result = await db.execute(stmt)
+            raise HTTPException(400, "since must be an ISO-8601 timestamp")
+        if since_dt.tzinfo is None:
+            since_dt = since_dt.replace(tzinfo=timezone.utc)
+        stmt = (
+            stmt.where(CollectionActivity.created_at > since_dt)
+            .order_by(CollectionActivity.created_at.asc())
+            .limit(limit)
+        )
+        rows = (await db.execute(stmt)).scalars().all()
+    else:
+        stmt = stmt.order_by(CollectionActivity.created_at.desc()).limit(limit)
+        rows = list(reversed((await db.execute(stmt)).scalars().all()))
     return [
         {
             "id": str(a.id),
@@ -1421,7 +1470,7 @@ async def get_activity(plan_id: str, since: str | None = None, db: AsyncSession 
             "message": a.message,
             "created_at": a.created_at.isoformat(),
         }
-        for a in result.scalars().all()
+        for a in rows
     ]
 
 
