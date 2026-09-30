@@ -6,6 +6,8 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 # How many documents one list response carries. `total` says how many exist.
 DOCUMENT_LIST_LIMIT = 500
+# How many passages one evidence response carries. `total` counts every mention.
+MAX_EVIDENCE_PASSAGES = 50
 
 # An entity belongs to the document it was extracted from. Ingestion records
 # that as `source_doc_id` on the entity (and the store appends later documents
@@ -138,17 +140,25 @@ def get_document(doc_id: str, store: GraphStore = Depends(get_graph_store)):
 
 @router.get("/documents/{doc_id}/evidence")
 def get_evidence_for_entity(doc_id: str, entity_name: str, store: GraphStore = Depends(get_graph_store)):
-    """Get text passages from a document that mention a specific entity."""
+    """Get text passages from a document that mention a specific entity.
+
+    At most MAX_EVIDENCE_PASSAGES are returned; `total` counts every mention.
+    A blank name is refused: it matched at every index, so one request against
+    a 10 MB document built about ten million passages.
+    """
+    if not entity_name.strip():
+        raise HTTPException(status_code=422, detail="entity_name must not be blank")
     doc = store.get_entity(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
     content = doc.get("content", "") or ""
     passages = []
+    total = content.count(entity_name)
 
-    # Find all occurrences and extract surrounding context (200 chars each side)
+    # Find occurrences and extract surrounding context (200 chars each side)
     start = 0
-    while True:
+    while len(passages) < MAX_EVIDENCE_PASSAGES:
         idx = content.find(entity_name, start)
         if idx == -1:
             break
@@ -164,7 +174,9 @@ def get_evidence_for_entity(doc_id: str, entity_name: str, store: GraphStore = D
             "position": idx,
             "entity_name": entity_name,
         })
-        start = idx + 1
+        # Past the whole match, so the passages and `total` count the same
+        # (non-overlapping) mentions.
+        start = idx + len(entity_name)
 
     return {
         "document_id": doc_id,
@@ -172,4 +184,6 @@ def get_evidence_for_entity(doc_id: str, entity_name: str, store: GraphStore = D
         "entity_name": entity_name,
         "passages": passages,
         "count": len(passages),
+        "total": total,
+        "truncated": total > len(passages),
     }

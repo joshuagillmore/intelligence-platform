@@ -77,6 +77,41 @@ class TestDocumentEntities:
         assert docs[corpus["d1"]]["entity_count"] == 2
 
 
+class TestEvidenceIsBounded:
+    """A-9: an empty entity name matched at every index, so a 10 MB document
+    built about ten million passages in one request."""
+
+    @pytest.fixture
+    def long_doc(self, graph_store):
+        doc = Document(name="Repetitive", project_id=PID, content="Kolvane shipped cable. " * 300)
+        graph_store.create_entity(doc)
+        return doc.id
+
+    @pytest.mark.parametrize("name", ["", "   "])
+    def test_a_blank_entity_name_is_rejected(self, long_doc, name):
+        resp = client.get(f"/api/documents/{long_doc}/evidence", params={"entity_name": name}, headers=headers)
+        assert resp.status_code == 422
+
+    def test_passages_are_capped_and_the_true_total_reported(self, long_doc):
+        from intel_platform.api.routes import documents as documents_route
+
+        data = client.get(
+            f"/api/documents/{long_doc}/evidence", params={"entity_name": "Kolvane"}, headers=headers,
+        ).json()
+        assert data["count"] == documents_route.MAX_EVIDENCE_PASSAGES
+        assert len(data["passages"]) == documents_route.MAX_EVIDENCE_PASSAGES
+        assert data["total"] == 300
+        assert data["truncated"] is True
+
+    def test_a_short_answer_is_not_marked_truncated(self, long_doc):
+        data = client.get(
+            f"/api/documents/{long_doc}/evidence", params={"entity_name": "absent name"}, headers=headers,
+        ).json()
+        assert data["count"] == 0
+        assert data["total"] == 0
+        assert data["truncated"] is False
+
+
 class TestDocumentListIsHonestAboutItsSize:
     """A-19: the list stopped silently at 500 and shipped every document's full
     content over Bolt just to measure it."""
