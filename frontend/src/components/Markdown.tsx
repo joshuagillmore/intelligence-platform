@@ -1,7 +1,10 @@
 'use client';
 
+import { memo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+const REMARK_PLUGINS = [remarkGfm];
 
 interface MarkdownProps {
   content: string;
@@ -59,6 +62,29 @@ const components: Components = {
     </blockquote>
   ),
   hr: () => <hr className="border-navy-700 my-4" />,
+  // Never render an <img>: it fetches on mount, so image markdown in a scraped
+  // document would reach the author's server with the analyst's IP and origin,
+  // outside the collection proxy. Show the alt text and a link the analyst can
+  // choose to follow instead.
+  img: ({ alt, src }) => (
+    <span className="text-gray-400 italic">
+      [image: {alt || 'no description'}]
+      {typeof src === 'string' && src && (
+        <>
+          {' '}
+          <a
+            href={src}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            referrerPolicy="no-referrer"
+            className="text-accent-blue underline not-italic"
+          >
+            open image link
+          </a>
+        </>
+      )}
+    </span>
+  ),
   pre: ({ children }) => (
     <pre className="bg-navy-900 border border-navy-700 rounded p-3 overflow-x-auto my-3">
       {children}
@@ -85,12 +111,17 @@ const components: Components = {
   },
 };
 
-export default function Markdown({ content, className }: MarkdownProps) {
+function Markdown({ content, className }: MarkdownProps) {
   return (
     <div className={className}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
         {content}
       </ReactMarkdown>
     </div>
   );
 }
+
+// Memoized: parsing is the expensive part and depends only on the props. The
+// assistant panel keeps its input state beside the thread, so without this
+// every keystroke re-parsed every message in it.
+export default memo(Markdown);

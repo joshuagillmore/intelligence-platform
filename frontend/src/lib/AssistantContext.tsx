@@ -25,10 +25,11 @@ import {
   type ReactNode,
 } from 'react';
 import { queryApi } from './api';
+import { getErrorMessage } from './errorMessages';
 import { useProject } from './ProjectContext';
 import {
   compactGroundingForStorage,
-  parseGrounding,
+  readRagAnswer,
   sanitizeGrounding,
   type AssistantGrounding,
 } from './assistantGrounding';
@@ -99,6 +100,8 @@ const AssistantContext = createContext<AssistantContextValue>({
 
 /** Keep stored threads small — localStorage is a shared 5MB budget. */
 const MAX_STORED_MESSAGES = 40;
+// `clearSession()` in lib/api removes every key with this prefix at sign-out,
+// on a 401 and at login; keep the two in step.
 const STORAGE_PREFIX = 'assistant_thread:';
 
 function storageKey(projectId: string | null): string {
@@ -136,15 +139,6 @@ function pruneThreads(keepKey?: string) {
       if (key.startsWith(STORAGE_PREFIX) && key !== keepKey) localStorage.removeItem(key);
     }
   } catch { /* storage unavailable */ }
-}
-
-/**
- * Drop every persisted assistant thread. Called on logout — these threads hold
- * RAG answers and verbatim source-document excerpts, which must not outlive the
- * session on a shared analyst workstation.
- */
-export function clearAllAssistantThreads() {
-  pruneThreads();
 }
 
 function writeThread(projectId: string | null, messages: AssistantMessage[]) {
@@ -244,13 +238,10 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
     append(forProject, { id: nextId(), role: 'user', content: q });
     try {
       const res = await queryApi.rag(forProject, q);
-      const data = (res?.data ?? {}) as Record<string, unknown>;
-      const content =
-        (typeof data.answer === 'string' && data.answer) ||
-        (typeof data.response === 'string' && data.response) ||
-        (typeof data.context === 'string' && data.context) ||
-        'The query returned no answer.';
-      append(forProject, { id: nextId(), role: 'assistant', content, grounding: parseGrounding(data) });
+      // A degraded reply (no model ran) is marked failed and never shows the
+      // retrieved context as the answer; the context stays as grounding.
+      const { content, failed, grounding } = readRagAnswer(res?.data);
+      append(forProject, { id: nextId(), role: 'assistant', content, grounding, ...(failed ? { failed } : {}) });
     } catch {
       append(forProject, {
         id: nextId(),
@@ -277,8 +268,14 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
         content: result.content || 'No output returned.',
         grounding: result.grounding ?? null,
       });
-    } catch {
-      append(forProject, { id: nextId(), role: 'assistant', content: `${task.label} failed.`, failed: true });
+    } catch (e) {
+      // Say why (e.g. the backend's "LLM provider unavailable"), not just that.
+      append(forProject, {
+        id: nextId(),
+        role: 'assistant',
+        content: `${task.label} failed: ${getErrorMessage(e)}`,
+        failed: true,
+      });
     } finally {
       endRequest();
     }

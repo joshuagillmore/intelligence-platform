@@ -76,6 +76,11 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
 
   useEffect(() => {
     if (!mapRef.current || leafletMapRef.current) return;
+    // Strict Mode runs this effect, its cleanup, and the effect again before
+    // the async import below resolves. Without this flag both runs created a
+    // map on the same container: the second threw "Map container is already
+    // initialized" and the page showed the map error.
+    let cancelled = false;
 
     // Dynamically import Leaflet and its CSS to avoid SSR crashes
     // @ts-expect-error - CSS import has no type declaration
@@ -85,7 +90,7 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
       cssImport,
     ]).then(([L]) => {
       try {
-        if (!mapRef.current) return;
+        if (cancelled || !mapRef.current || leafletMapRef.current) return;
 
         // Fix default marker icons
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -141,13 +146,14 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
         leafletRef.current = L.default;
         setMapReady(true);
       } catch {
-        setError(true);
+        if (!cancelled) setError(true);
       }
     }).catch(() => {
-      setError(true);
+      if (!cancelled) setError(true);
     });
 
     return () => {
+      cancelled = true;
       if (leafletMapRef.current) {
         leafletMapRef.current.remove();
         leafletMapRef.current = null;

@@ -121,10 +121,13 @@ function ChatTab() {
               </div>
             </div>
 
-            {msg.role === 'assistant' && !msg.failed && (
+            {/* A failed reply can still carry grounding: when no model ran, the
+                retrieved context is shown here as citations, never as the answer.
+                Only real answers can be saved as a product. */}
+            {msg.role === 'assistant' && (!msg.failed || msg.grounding) && (
               <div className="ml-1">
                 {msg.grounding && <AssistantCitations grounding={msg.grounding} />}
-                {msg.content.length > 50 && (
+                {!msg.failed && msg.content.length > 50 && (
                   <button
                     type="button"
                     onClick={() => saveAsProduct(msg.content, messages[i - 1]?.content ?? '')}

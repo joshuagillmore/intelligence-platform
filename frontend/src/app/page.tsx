@@ -2,7 +2,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
-import { projectsApi, watchlistApi, type Project } from '@/lib/api';
+import { projectsApi, watchlistApi, readWatchlist, type Project, type WatchedEntity } from '@/lib/api';
 import { useProject } from '@/lib/ProjectContext';
 import { orderProjects, type SortDir, type SortKey } from '@/lib/projectOrder';
 import { useNotifications } from '@/components/NotificationProvider';
@@ -41,8 +41,8 @@ export default function ProjectsPage() {
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [toast, setToast] = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [watchedEntities, setWatchedEntities] = useState<any[]>([]);
+  const [watchedEntities, setWatchedEntities] = useState<WatchedEntity[]>([]);
+  const [watchlistError, setWatchlistError] = useState(false);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [batchDeleting, setBatchDeleting] = useState(false);
   const { activeProject, setActiveProject } = useProject();
@@ -80,11 +80,13 @@ export default function ProjectsPage() {
   }, [activeProject]);
 
   async function loadWatchedEntities(projectId: string) {
+    setWatchlistError(false);
     try {
       const res = await watchlistApi.list(projectId);
-      setWatchedEntities(res.data || []);
+      setWatchedEntities(readWatchlist(res.data));
     } catch {
       setWatchedEntities([]);
+      setWatchlistError(true);
     }
   }
 
@@ -550,11 +552,15 @@ export default function ProjectsPage() {
           </div>
         )}
 
+        {activeProject && watchlistError && (
+          <p className="mt-8 text-sm text-red-300">Could not load this project&apos;s watched entities.</p>
+        )}
+
         {activeProject && watchedEntities.length > 0 && (
           <div className="mt-8">
             <h3 className="text-lg font-semibold mb-3">Watched Entities</h3>
             <div className="bg-navy-800 border border-navy-600 rounded-lg divide-y divide-navy-700">
-              {watchedEntities.map((entity: { id: string; name: string; entity_type: string; relationship_count?: number }) => (
+              {watchedEntities.map((entity) => (
                 <div key={entity.id} className="flex items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-medium text-gray-200">{entity.name}</span>

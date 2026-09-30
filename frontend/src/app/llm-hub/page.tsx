@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
-import { llmApi, personasApi } from '@/lib/api';
+import { llmApi, personasApi, isHttpStatus } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errorMessages';
 import { humanize } from '@/lib/format';
 import Markdown from '@/components/Markdown';
 import { useNotifications } from '@/components/NotificationProvider';
@@ -134,12 +135,24 @@ export default function LlmHubPage() {
     }
   }
 
+  // Persona changes are admin-only and global (the active persona shapes every
+  // user's PIR decomposition), and a built-in id cannot be overwritten. Say
+  // which of those stopped the action; these used to reach only the console.
+  function reportPersonaFailure(action: string, e: unknown) {
+    const message = isHttpStatus(e, 403)
+      ? 'Admin only: persona changes apply to every user, so only an administrator can make them.'
+      : isHttpStatus(e, 409)
+        ? `${getErrorMessage(e).replace(/\.$/, '')}. Built-in personas cannot be replaced; choose a different id.`
+        : getErrorMessage(e);
+    addNotification({ type: 'error', title: `Could not ${action} persona`, message });
+  }
+
   async function handleActivatePersona(personaId: string) {
     try {
       await personasApi.activate(personaId);
       await loadPersonas();
     } catch (e) {
-      console.error('Failed to activate persona', e);
+      reportPersonaFailure('activate', e);
     }
   }
 
@@ -151,7 +164,8 @@ export default function LlmHubPage() {
       setNewPersona({ id: '', name: '', description: '', skills: [], temperature: 0.3 });
       await loadPersonas();
     } catch (e) {
-      console.error('Failed to create persona', e);
+      // The form stays open so the analyst can change the id and retry.
+      reportPersonaFailure('create', e);
     }
   }
 
@@ -162,7 +176,7 @@ export default function LlmHubPage() {
       await personasApi.delete(personaId);
       await loadPersonas();
     } catch (e) {
-      console.error('Failed to delete persona', e);
+      reportPersonaFailure('delete', e);
     }
   }
 

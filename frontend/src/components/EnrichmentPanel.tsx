@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { enrichmentApi } from '@/lib/api';
 import { TYPE_ICON } from '@/lib/entityStyles';
 
@@ -27,6 +27,18 @@ function parseJson(value: any): any {
   } catch {
     return null;
   }
+}
+
+/** Providers with a real cached payload. The cache view may list every provider
+ *  with `null` on a miss; a null is "nothing cached", not a cached result. */
+function cachedProviders(cached: unknown): Record<string, Record<string, any>> {
+  if (!cached || typeof cached !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(cached as Record<string, unknown>).filter(
+      (entry): entry is [string, Record<string, any>] =>
+        entry[1] != null && typeof entry[1] === 'object' && !Array.isArray(entry[1]),
+    ),
+  );
 }
 
 function statusClass(status?: string): string {
@@ -61,6 +73,10 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Record<string, any> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The entity this panel is showing now. A run is slow (every provider goes
+  // through the collection proxy), so the analyst can move to another entity
+  // before it returns; its result must not land on the new one.
+  const currentEntity = useRef(entityId);
 
   // Show enrichment the backend has already cached. Without this the panel only
   // ever populated from a fresh Investigate click, so a previously-enriched
@@ -68,21 +84,26 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
   // served by GET /enrichment/entities/{id}, just never requested.
   // Declared before the early return below so hook order stays stable.
   useEffect(() => {
+    // A new entity starts clean: nothing from the previous one carries over.
+    currentEntity.current = entityId;
+    setStatus(null);
+    setError(null);
+    setBusy(false);
     if (!ENRICHABLE_TYPES.includes(entityType)) return;
     let cancelled = false;
     (async () => {
       try {
         const { data } = await enrichmentApi.getCached(entityId);
-        const cached = data?.cached;
-        if (!cancelled && cached && Object.keys(cached).length > 0) {
+        const cached = cachedProviders(data?.cached);
+        if (!cancelled && Object.keys(cached).length > 0) {
           // The cache view returns each provider's payload, not the {status}
           // envelope the live run returns — tag them so the chips read
           // "geoip: cached" rather than "geoip: —".
           setStatus(
             Object.fromEntries(
-              Object.entries(cached).map(([name, payload]: [string, any]) => [
+              Object.entries(cached).map(([name, payload]) => [
                 name,
-                { ...(payload && typeof payload === 'object' ? payload : {}), status: payload?.status ?? 'cached' },
+                { ...payload, status: payload.status ?? 'cached' },
               ]),
             ),
           );
@@ -102,16 +123,19 @@ export default function EnrichmentPanel({ entityId, entityType, properties = {},
   const actionVerb = isGeo ? 'Geolocate' : 'Investigate';
 
   async function run() {
+    const runFor = entityId;
     setBusy(true);
     setError(null);
     try {
-      const { data } = await enrichmentApi.investigate(entityId);
+      const { data } = await enrichmentApi.investigate(runFor);
+      if (currentEntity.current !== runFor) return;
       setStatus(data?.providers || null);
       onEnriched?.();
     } catch {
+      if (currentEntity.current !== runFor) return;
       setError('Enrichment failed — check the collection egress and provider availability.');
     } finally {
-      setBusy(false);
+      if (currentEntity.current === runFor) setBusy(false);
     }
   }
 

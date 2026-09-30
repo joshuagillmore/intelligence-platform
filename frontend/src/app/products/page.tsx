@@ -4,7 +4,8 @@ import { useSearchParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import { useProject } from '@/lib/ProjectContext';
-import { entitiesApi, reportsApi, exportApi } from '@/lib/api';
+import { entitiesApi, reportsApi, exportApi, pirsApi, type Pir } from '@/lib/api';
+import { getErrorMessage } from '@/lib/errorMessages';
 import { useNotifications } from '@/components/NotificationProvider';
 import Markdown from '@/components/Markdown';
 import PrintableProduct from '@/components/PrintableProduct';
@@ -49,7 +50,10 @@ interface SearchedEntity {
 interface ReportHistoryItem {
   id: string;
   reportType: string;
+  /** The report_type value it was generated as (not the label). */
+  reportTypeValue: string;
   entities: string[];
+  entityIds: string[];
   content: string;
   timestamp: Date;
 }
@@ -74,6 +78,10 @@ interface ProductContext {
   sourceId: string;
   title: string;
   reportTypeLabel: string;
+  /** What Save stores for this product. Read from the product itself, never
+   *  from the generation form, which may since have been changed. */
+  reportTypeValue: string;
+  entityIds: string[];
   entities: string[];
   generatedAt: Date;
 }
@@ -126,6 +134,13 @@ function ProductsPageContent() {
   const [includeEvidence, setIncludeEvidence] = useState(true);
   const [probabilityAssessments, setProbabilityAssessments] = useState(false);
   const [hoveredReportId, setHoveredReportId] = useState<string | null>(null);
+  // The requirement (PIR) this product answers. Without one the backend can only
+  // write "about these entities", which grounds the product in whatever the
+  // entity list happens to contain rather than in the question being asked.
+  const [pirs, setPirs] = useState<Pir[]>([]);
+  const [pirId, setPirId] = useState('');
+  const [pirsError, setPirsError] = useState<string | null>(null);
+  const requestedPirId = searchParams.get('pir');
 
   const searchEntities = useCallback(async (query: string) => {
     if (!query.trim() || !activeProject) {
@@ -175,6 +190,30 @@ function ProductsPageContent() {
   useEffect(() => {
     loadSavedReports();
   }, [loadSavedReports]);
+
+  // Load the project's live requirements. Preselect ?pir=<id> when a link names
+  // one, otherwise the project's only requirement if it has exactly one.
+  useEffect(() => {
+    if (!activeProject) return;
+    let cancelled = false;
+    setPirsError(null);
+    pirsApi
+      .list(activeProject.id)
+      .then(res => {
+        if (cancelled) return;
+        const live = (Array.isArray(res.data) ? res.data : []).filter(p => p.status !== 'ARCHIVED');
+        setPirs(live);
+        const requested = requestedPirId ? live.find(p => p.id === requestedPirId) : undefined;
+        setPirId(requested ? requested.id : live.length === 1 ? live[0].id : '');
+      })
+      .catch(e => {
+        if (cancelled) return;
+        setPirs([]);
+        setPirId('');
+        setPirsError(`Could not load requirements: ${getErrorMessage(e)}`);
+      });
+    return () => { cancelled = true; };
+  }, [activeProject, requestedPirId]);
 
   // Open the report named in ?report=<id> once its row has loaded. Guarded so
   // it fires only once per id — the analyst can navigate away afterwards.
@@ -259,10 +298,18 @@ function ProductsPageContent() {
         report_type: rt?.label || reportType,
         skill_name: rt?.skill || 'report_writing',
         entity_ids: selectedEntities.map(e => e.id),
+        ...(pirId ? { pir_id: pirId } : {}),
         include_evidence: includeEvidence,
         probability_assessments: probabilityAssessments,
       });
-      const content = res.data.content || JSON.stringify(res.data);
+      // The backend answers 503 when no model could draft the product; a 200
+      // with no content, or one that says no model ran, is the same failure and
+      // goes down the same path. Nothing below this line may run for a failure:
+      // it would become a savable, exportable, printable "product".
+      const content = typeof res.data?.content === 'string' ? res.data.content : '';
+      if (!content.trim() || res.data?.model === 'none') {
+        throw new Error('No model produced a report.');
+      }
       setGeneratedReport(content);
       setReportMeta({
         retrievalMode: res.data.retrieval_mode || 'ungrounded',
@@ -276,10 +323,13 @@ function ProductsPageContent() {
       // Add to history
       const historyId = Date.now().toString();
       const draftedAt = new Date();
+      const entityIds = selectedEntities.map(e => e.id);
       setReportHistory(prev => [{
         id: historyId,
         reportType: rt?.label || reportType,
+        reportTypeValue: reportType,
         entities: selectedEntities.map(e => e.name),
+        entityIds,
         content,
         timestamp: draftedAt,
       }, ...prev]);
@@ -290,6 +340,8 @@ function ProductsPageContent() {
         sourceId: `draft:${historyId}`,
         title: `${rt?.label || reportType} — ${activeProject.name}`,
         reportTypeLabel: rt?.label || reportType,
+        reportTypeValue: reportType,
+        entityIds,
         entities: selectedEntities.map(e => e.name),
         generatedAt: draftedAt,
       });
@@ -303,14 +355,15 @@ function ProductsPageContent() {
           : `${rt?.label || reportType} report generated — no supporting evidence was found for these entities.`,
         link: '/products',
       });
-    } catch {
-      // Surfaced as an alert + toast only. Writing it into `generatedReport`
-      // would make an error string savable/exportable as if it were a product.
-      setGenerateError('Report generation failed. Check that the LLM provider is configured and reachable, then try again.');
+    } catch (e) {
+      // Surfaced as an alert + toast only. Writing it into `generatedReport` or
+      // the history would make an error savable/exportable as if it were a product.
+      const reason = getErrorMessage(e).replace(/\.$/, '');
+      setGenerateError(`Report generation failed (${reason}). Check that the LLM provider is configured and reachable, then try again.`);
       updateNotification(notifId, {
         type: 'error',
         title: 'Report Failed',
-        message: 'Report generation failed. Check LLM configuration.',
+        message: `Report generation failed: ${reason}`,
       });
     } finally {
       setLoading(false);
@@ -318,15 +371,17 @@ function ProductsPageContent() {
   }
 
   async function saveReport() {
-    if (!generatedReport || !activeProject || !saveTitle.trim()) return;
+    if (!generatedReport || !activeProject || !saveTitle.trim() || !productContext) return;
     setSaveLoading(true);
     try {
+      // Save what is on screen: the viewed product's own type and entities,
+      // not whatever the generation form holds now.
       await reportsApi.save({
         project_id: activeProject.id,
         title: saveTitle,
         content: generatedReport,
-        report_type: reportType,
-        entity_ids: selectedEntities.map(e => e.id),
+        report_type: productContext.reportTypeValue,
+        entity_ids: productContext.entityIds,
       });
       // The draft now has an analyst-given title — carry it into the export header.
       const savedTitle = saveTitle;
@@ -383,6 +438,8 @@ function ProductsPageContent() {
       sourceId,
       title: report.title,
       reportTypeLabel: getReportTypeLabel(report.report_type),
+      reportTypeValue: report.report_type,
+      entityIds: report.entity_ids || [],
       entities: [],
       generatedAt: report.created_at ? new Date(report.created_at) : new Date(),
     });
@@ -472,6 +529,8 @@ function ProductsPageContent() {
       sourceId: `history:${item.id}`,
       title: `${item.reportType} — ${activeProject?.name ?? ''}`.trim().replace(/\s+—\s*$/, ''),
       reportTypeLabel: item.reportType,
+      reportTypeValue: item.reportTypeValue,
+      entityIds: item.entityIds,
       entities: item.entities,
       generatedAt: item.timestamp,
     });
@@ -543,6 +602,27 @@ function ProductsPageContent() {
               </label>
             </div>
           </div>
+        </div>
+
+        {/* The requirement this product answers (PIR) */}
+        <div className="mb-6">
+          <label htmlFor="product-pir" className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 block mb-2">
+            Answers Requirement (PIR)
+          </label>
+          <select
+            id="product-pir"
+            value={pirId}
+            onChange={e => setPirId(e.target.value)}
+            className="w-full md:max-w-xl bg-navy-800 border border-navy-600 rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-accent-periwinkle"
+          >
+            <option value="">None: write about the selected entities only</option>
+            {pirs.map(p => (
+              <option key={p.id} value={p.id}>
+                {(p.title || p.refined_text || p.text).slice(0, 120)}
+              </option>
+            ))}
+          </select>
+          {pirsError && <p className="text-xs text-threat-medium mt-1">{pirsError}</p>}
         </div>
 
         {/* Report Type Cards - 5 column grid */}

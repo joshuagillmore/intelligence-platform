@@ -1,12 +1,12 @@
 'use client';
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { geoApi, entitiesApi, assessApi, analysisApi, geoApiExtra } from '@/lib/api';
+import { geoApi, entitiesApi, assessApi, analysisApi, geoApiExtra, entityFields } from '@/lib/api';
 import { useAssistant } from '@/lib/AssistantContext';
 
 const GeoMap = dynamic(() => import('@/components/GeoMap'), { ssr: false });
@@ -72,6 +72,8 @@ export default function GeoPage() {
     source_name: string; target_name: string;
     weight: number; shared_entities: string[];
   }>>([]);
+  // Place-to-place links as the API counts them (`edge_count`); null when unknown.
+  const [edgeCount, setEdgeCount] = useState<number | null>(null);
 
   /* ── layer control state ── */
   const [layers, setLayers] = useState({
@@ -87,16 +89,22 @@ export default function GeoPage() {
   // Nearby OSM features (Overpass) around the selected geotarget.
   const [nearbyFeatures, setNearbyFeatures] = useState<Array<{ name: string; category: string; lat: number; lon: number }>>([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
+  // The location the side panel is showing now; responses for any other one
+  // (a slow request overtaken by a newer click) are dropped.
+  const selectedLocRef = useRef<string | null>(null);
   async function loadNearby() {
     if (!selectedLocation) return;
+    const forId = selectedLocation.id;
     setNearbyLoading(true);
     try {
-      const { data } = await geoApiExtra.nearby(selectedLocation.id, 3000);
+      const { data } = await geoApiExtra.nearby(forId, 3000);
+      if (selectedLocRef.current !== forId) return;
       setNearbyFeatures(data.features || []);
     } catch {
+      if (selectedLocRef.current !== forId) return;
       setNearbyFeatures([]);
     } finally {
-      setNearbyLoading(false);
+      if (selectedLocRef.current === forId) setNearbyLoading(false);
     }
   }
 
@@ -150,6 +158,9 @@ export default function GeoPage() {
   const loadLocations = useCallback(async () => {
     if (!activeProject) return;
     setLoading(true);
+    // Unknown until the locations endpoint says; the entity-search fallback
+    // below computes no place-to-place edges at all.
+    setEdgeCount(null);
     try {
       const res = await geoApi.locations(activeProject.id);
       const data = res.data;
@@ -157,7 +168,9 @@ export default function GeoPage() {
         setLocations(data);
       } else if (data && data.locations) {
         setLocations(data.locations);
-        if (data.edges) setGeoEdges(data.edges);
+        const edges = Array.isArray(data.edges) ? data.edges : [];
+        setGeoEdges(edges);
+        setEdgeCount(typeof data.edge_count === 'number' ? data.edge_count : edges.length);
       } else {
         setLocations([]);
       }
@@ -168,15 +181,22 @@ export default function GeoPage() {
         // sparse area of interest rather than a truncated fetch.
         const res = await entitiesApi.search(activeProject.id, undefined, 'Location', 2000);
         const entities = res.data || [];
-        setLocations(entities.map((e: { id: string; name: string; properties?: Record<string, unknown> }) => ({
-          id: e.id,
-          name: e.name,
-          latitude: e.properties?.latitude as number | undefined,
-          longitude: e.properties?.longitude as number | undefined,
-          geocoded: !!(e.properties?.latitude && e.properties?.longitude),
-          connections: 0,
-          properties: e.properties,
-        })));
+        // /entities flattens node fields onto the entity; entityFields reads
+        // either shape (e.properties was undefined here, so nothing plotted).
+        setLocations(entities.map((e: { id: string; name: string }) => {
+          const f = entityFields(e);
+          const lat = typeof f.latitude === 'number' ? f.latitude : undefined;
+          const lng = typeof f.longitude === 'number' ? f.longitude : undefined;
+          return {
+            id: e.id,
+            name: e.name,
+            latitude: lat,
+            longitude: lng,
+            geocoded: lat != null && lng != null,
+            connections: 0,
+            properties: f,
+          };
+        }));
       } catch {
         setLocations([]);
       }
@@ -191,22 +211,30 @@ export default function GeoPage() {
 
   const handleLocationClick = useCallback(async (loc: GeoLocation) => {
     if (selectedLocation?.id === loc.id) {
+      selectedLocRef.current = null;
       setSelectedLocation(null);
       setSelectedRels([]);
       setNearbyFeatures([]);
+      setRelsLoading(false);
+      setNearbyLoading(false);
       return;
     }
+    selectedLocRef.current = loc.id;
     setSelectedLocation(loc);
     setSelectedRels([]);
     setNearbyFeatures([]);
+    setNearbyLoading(false);
     setRelsLoading(true);
     try {
       const res = await entitiesApi.get(loc.id);
+      // A quick second click must not get the first location's relationships.
+      if (selectedLocRef.current !== loc.id) return;
       setSelectedRels(res.data?.relationships || []);
     } catch {
+      if (selectedLocRef.current !== loc.id) return;
       setSelectedRels([]);
     } finally {
-      setRelsLoading(false);
+      if (selectedLocRef.current === loc.id) setRelsLoading(false);
     }
   }, [selectedLocation]);
 
@@ -229,7 +257,12 @@ export default function GeoPage() {
         if (kind === 'assess') {
           const res = await assessApi.generate(location.id, { entity_id: location.id, project_id: activeProject.id });
           const d = res.data;
-          return { content: d.assessment || d.judgment || d.analysis || d.content || d.error || 'No assessment returned.' };
+          // A failure (503, or an older backend's 200 {error}) must fail the
+          // task, never render as the assessment.
+          if (d?.error) throw new Error(d.error);
+          const text = d.assessment || d.judgment || d.analysis || d.content;
+          if (!text) throw new Error('No assessment returned.');
+          return { content: text };
         }
         // Grounded endpoints: the backend retrieves this location's subgraph,
         // source documents and measured coverage before it reasons, rather than
@@ -251,13 +284,10 @@ export default function GeoPage() {
     });
   }
 
-  // `connection_count` is the field the API sends; `connections` is kept only
-  // for the fallback path below, which builds locations itself. Reading the
-  // wrong name summed a field that was never present, and `|| 0` turned that
-  // into a confident "0 Connections" beside a map drawing 128 of them.
-  const totalConnections = locations.reduce(
-    (sum, l) => sum + (l.connection_count ?? l.connections ?? 0), 0,
-  );
+  // "Connections" is the place-to-place links the map draws: the API's
+  // `edge_count`. Summing each location's `connection_count` counted every
+  // relationship of every location (not only place-to-place ones) and counted
+  // a link between two places twice.
   const geocodedCount = locations.filter(l => isGeocoded(l)).length;
 
   /* ── derive related locations from relationships ── */
@@ -290,9 +320,11 @@ export default function GeoPage() {
       setEntityTimeline({ events: [], buckets: [], date_range: null });
       return;
     }
+    let cancelled = false; // a newer selection supersedes this request
     setTimelineLoading(true);
     geoApi.entityTimeline(selectedLocation.id, activeProject.id)
       .then(({ data }) => {
+        if (cancelled) return;
         setEntityTimeline({
           events: data.events || [],
           buckets: data.buckets || [],
@@ -303,13 +335,17 @@ export default function GeoPage() {
           setTemporalEnd(data.date_range.end?.slice(0, 10) || '');
         }
       })
-      .catch(() => setEntityTimeline({ events: [], buckets: [], date_range: null }))
-      .finally(() => setTimelineLoading(false));
+      .catch(() => { if (!cancelled) setEntityTimeline({ events: [], buckets: [], date_range: null }); })
+      .finally(() => { if (!cancelled) setTimelineLoading(false); });
+    return () => { cancelled = true; };
   }, [selectedLocation?.id, activeProject]);
 
   const trafficBars = entityTimeline.buckets.length > 0
     ? entityTimeline.buckets.map(b => b.count)
     : [0];
+  // Scale by the busiest bucket: a fixed divisor of 9 drew any bucket above 9
+  // taller than the chart.
+  const trafficMax = Math.max(...trafficBars, 1);
 
   // Temporal Window: filter the selected location's timeline events by From/To
   const displayedTimelineEvents = entityTimeline.events.filter(evt => {
@@ -478,7 +514,7 @@ export default function GeoPage() {
               {geocodedCount} Geocoded
             </span>
             <span className="px-3 py-1.5 rounded-md" style={{ background: C.elevated, border: `1px solid ${C.border}`, color: C.textDim }}>
-              {totalConnections} Connections
+              {edgeCount ?? '—'} Connections
             </span>
           </div>
         </div>
@@ -708,9 +744,9 @@ export default function GeoPage() {
                         key={i}
                         className="flex-1 rounded-sm"
                         style={{
-                          height: `${(v / 9) * 100}%`,
+                          height: `${(v / trafficMax) * 100}%`,
                           background: C.primary,
-                          opacity: 0.6 + (v / 9) * 0.4,
+                          opacity: 0.6 + (v / trafficMax) * 0.4,
                         }}
                       />
                     ))}
