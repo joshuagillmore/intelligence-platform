@@ -107,8 +107,13 @@ def resolve_entity_name(
         import re as _re
         for existing in existing_names:
             existing_lower = existing.lower().strip()
+            existing_type = existing_types.get(existing, "") if existing_types else ""
             # Skip cyber entities
-            if existing_types and existing_types.get(existing, "") in EXACT_MATCH_TYPES:
+            if existing_type in EXACT_MATCH_TYPES:
+                continue
+            # The same type gate as the Jaro-Winkler pass above. Without it a
+            # Person "Wagner" resolved into the Organization "Wagner Group".
+            if existing_type and entity_type and not _types_compatible(entity_type, existing_type):
                 continue
             shorter = min(name_lower, existing_lower, key=len)
             longer = max(name_lower, existing_lower, key=len)
