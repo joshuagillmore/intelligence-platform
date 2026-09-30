@@ -1,5 +1,7 @@
 # ── Stage 1: Frontend build ──
-FROM node:20-slim AS frontend-build
+# Node 22 (active LTS). The runtime stage copies this same binary, so the
+# Next.js server runs on exactly the Node it was built with.
+FROM node:22-slim AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci --legacy-peer-deps
@@ -10,14 +12,19 @@ ENV NEXT_PUBLIC_API_URL=""
 RUN npm run build
 
 # ── Stage 2: Backend + Frontend on single port ──
-FROM python:3.12-slim
+# Python 3.11 matches backend/.python-version and the version CI tests on.
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install Node.js first (needed for frontend server)
-RUN apt-get update && apt-get install -y --no-install-recommends nodejs curl && rm -rf /var/lib/apt/lists/*
+# Node for the Next.js standalone server: the build stage's binary, not
+# Debian's apt `nodejs` (an unpinned, different major from the one that built
+# the app).
+COPY --from=frontend-build /usr/local/bin/node /usr/local/bin/node
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* \
+    && node --version
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.21 /uv /usr/local/bin/uv
 
 # Install backend. uv.lock ships with pyproject.toml so the production image
 # installs the exact versions the test suite ran against; without it `uv sync`
