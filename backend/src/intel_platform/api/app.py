@@ -17,14 +17,24 @@ logger = logging.getLogger(__name__)
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
 
 
+def _secret_problems() -> list[str]:
+    """What is wrong with the JWT secret and API key in effect (empty when sound).
+
+    Shared by the boot warning and REQUIRE_SECURE_AUTH so the two can never
+    disagree about what counts as insecure.
+    """
+    from intel_platform.api.auth import api_key_problem, jwt_secret_problem
+    return [p for p in (jwt_secret_problem(settings.jwt_secret), api_key_problem(settings.api_key)) if p]
+
+
 def _insecure_defaults() -> list[str]:
-    """List the built-in default secrets still in effect (empty when hardened)."""
-    from intel_platform.api.auth import _DEFAULT_API_KEY, _IS_DEFAULT_SECRET
+    """List the insecure secrets still in effect (empty when hardened)."""
+    from intel_platform.api.auth import _DEFAULT_API_KEY
     problems = []
-    if _IS_DEFAULT_SECRET:
-        problems.append("JWT_SECRET is the built-in default")
-    if settings.api_key == _DEFAULT_API_KEY:
-        problems.append("API_KEY is the built-in default (it will NOT authenticate)")
+    for problem in _secret_problems():
+        if settings.api_key == _DEFAULT_API_KEY and problem.startswith("API_KEY"):
+            problem += " (it will NOT authenticate)"
+        problems.append(problem)
     if not settings.default_admin_password:
         problems.append("DEFAULT_ADMIN_PASSWORD is blank (a default 'admin' user may be seeded)")
     return problems
@@ -46,22 +56,18 @@ def _warn_insecure_defaults() -> None:
 
 
 def _enforce_secure_auth() -> None:
-    """Fail-closed: refuse to start with built-in default secrets when REQUIRE_SECURE_AUTH is set."""
+    """Fail-closed: refuse to start on insecure secrets when REQUIRE_SECURE_AUTH is set."""
     if not settings.require_secure_auth:
         return
-    # Reuse the same detection, but the blank-admin-password case is enforced at
-    # seed time in _ensure_default_admin, so only the two hard secrets block boot here.
-    from intel_platform.api.auth import _DEFAULT_API_KEY, _IS_DEFAULT_SECRET
-    problems = []
-    if _IS_DEFAULT_SECRET:
-        problems.append("JWT_SECRET is the built-in default")
-    if settings.api_key == _DEFAULT_API_KEY:
-        problems.append("API_KEY is the built-in default")
+    # The admin password is judged against the stored hash in
+    # _ensure_default_admin, which needs the database; everything else is here.
+    problems = _secret_problems()
     if problems:
         raise RuntimeError(
-            "REQUIRE_SECURE_AUTH=true but insecure defaults are in use: "
+            "REQUIRE_SECURE_AUTH=true but insecure settings are in use: "
             + "; ".join(problems)
-            + ". Set a strong JWT_SECRET and API_KEY before deploying."
+            + ". Set JWT_SECRET to at least 32 random bytes and API_KEY to at least "
+            "16 random bytes (or blank, to disable API-key auth) before deploying."
         )
 
 

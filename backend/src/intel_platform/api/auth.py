@@ -1,6 +1,5 @@
 from __future__ import annotations
 import logging
-import os
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -11,16 +10,19 @@ import bcrypt
 
 _logger = logging.getLogger(__name__)
 
-# SECURITY: JWT secret must be set via environment in production.
-# The default is only for local development convenience.
-SECRET_KEY = os.environ.get("JWT_SECRET", "intel-platform-dev-secret-change-in-production")
-_IS_DEFAULT_SECRET = SECRET_KEY == "intel-platform-dev-secret-change-in-production"
-if _IS_DEFAULT_SECRET:
-    _logger.warning("SECURITY: Using default JWT secret. Set JWT_SECRET env var in production.")
+# SECURITY: the JWT secret comes from Settings (JWT_SECRET). The built-in value
+# is only for local development; see jwt_secret_problem for what production needs.
+_DEFAULT_JWT_SECRET = "intel-platform-dev-secret-change-in-production"
 
 # The built-in placeholder API key ships in .env.example, so anyone can read it.
 # It must NEVER authenticate (as admin or otherwise) — see get_current_user.
 _DEFAULT_API_KEY = "dev-api-key-change-in-production"
+
+# HS256 is only as strong as its key, and PyJWT signs and verifies with an empty
+# one. 32 bytes is the HMAC-SHA256 block-size guidance (RFC 7518 §3.2). An API
+# key authenticates as admin, so it gets a floor too.
+MIN_JWT_SECRET_BYTES = 32
+MIN_API_KEY_BYTES = 16
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
 
@@ -52,6 +54,44 @@ def record_failed_login(client_ip: str) -> None:
 
 def clear_failed_logins(client_ip: str) -> None:
     _failed_logins.pop(client_ip, None)
+
+
+def jwt_secret_problem(secret: str) -> str | None:
+    """Why this JWT secret is unfit for a deployment, or None when it is fine.
+
+    Judges the value itself. The old check compared against the literal default
+    only, so a blank `JWT_SECRET=` passed REQUIRE_SECURE_AUTH while letting
+    anyone mint admin tokens with an empty key. Length is counted in bytes: that
+    is the key material HMAC sees.
+    """
+    if not secret:
+        return "JWT_SECRET is blank"
+    if secret == _DEFAULT_JWT_SECRET:
+        return "JWT_SECRET is the built-in default"
+    if len(secret.encode("utf-8")) < MIN_JWT_SECRET_BYTES:
+        return f"JWT_SECRET is shorter than {MIN_JWT_SECRET_BYTES} bytes"
+    return None
+
+
+def api_key_problem(api_key: str) -> str | None:
+    """Why this API key is unfit for a deployment, or None when it is fine.
+
+    Blank is fine: it switches the API-key path off entirely. Any other value
+    authenticates as admin, so it must be neither the published default nor short.
+    """
+    if not api_key:
+        return None
+    if api_key == _DEFAULT_API_KEY:
+        return "API_KEY is the built-in default"
+    if len(api_key.encode("utf-8")) < MIN_API_KEY_BYTES:
+        return f"API_KEY is shorter than {MIN_API_KEY_BYTES} bytes"
+    return None
+
+
+def _jwt_secret() -> str:
+    """The signing key in effect, read per call so boot checks and the signer agree."""
+    from intel_platform.config import settings
+    return settings.jwt_secret
 
 
 def _hash_password(password: str) -> str:
@@ -108,7 +148,7 @@ def create_access_token(username: str, role: str = "analyst") -> str:
         "role": role,
         "exp": expire,
     }
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(payload, _jwt_secret(), algorithm=ALGORITHM)
 
 
 def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(security)) -> dict:
@@ -129,7 +169,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
 
     # JWT token
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[ALGORITHM])
         username = payload.get("sub")
         if not username:
             raise HTTPException(status_code=401, detail="Invalid token")

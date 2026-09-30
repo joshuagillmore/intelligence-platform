@@ -14,6 +14,8 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from intel_platform.api import auth as auth_module
 
+_JWT = "test-jwt-secret-of-at-least-32-bytes"
+
 
 def _creds(token: str) -> HTTPAuthorizationCredentials:
     return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
@@ -21,7 +23,7 @@ def _creds(token: str) -> HTTPAuthorizationCredentials:
 
 def test_default_api_key_does_not_authenticate(monkeypatch):
     """The placeholder key from .env.example must NOT grant admin (or any) access."""
-    fake = types.SimpleNamespace(api_key=auth_module._DEFAULT_API_KEY)
+    fake = types.SimpleNamespace(api_key=auth_module._DEFAULT_API_KEY, jwt_secret=_JWT)
     monkeypatch.setattr("intel_platform.config.settings", fake)
 
     with pytest.raises(HTTPException) as exc:
@@ -31,7 +33,7 @@ def test_default_api_key_does_not_authenticate(monkeypatch):
 
 def test_blank_api_key_does_not_authenticate(monkeypatch):
     """An unset API key must not let an empty/blank bearer token through either."""
-    fake = types.SimpleNamespace(api_key="")
+    fake = types.SimpleNamespace(api_key="", jwt_secret=_JWT)
     monkeypatch.setattr("intel_platform.config.settings", fake)
 
     with pytest.raises(HTTPException) as exc:
@@ -41,7 +43,7 @@ def test_blank_api_key_does_not_authenticate(monkeypatch):
 
 def test_non_default_api_key_authenticates_as_admin(monkeypatch):
     """A strong, non-default API key still authenticates (frontend relies on it)."""
-    fake = types.SimpleNamespace(api_key="a-strong-unique-key")
+    fake = types.SimpleNamespace(api_key="a-strong-unique-key", jwt_secret=_JWT)
     monkeypatch.setattr("intel_platform.config.settings", fake)
 
     user = auth_module.get_current_user(_creds("a-strong-unique-key"))
@@ -50,7 +52,7 @@ def test_non_default_api_key_authenticates_as_admin(monkeypatch):
 
 def test_valid_jwt_still_authenticates_when_api_key_path_disabled(monkeypatch):
     """A JWT minted by the app authenticates even when the API-key path is disabled."""
-    fake = types.SimpleNamespace(api_key=auth_module._DEFAULT_API_KEY)
+    fake = types.SimpleNamespace(api_key=auth_module._DEFAULT_API_KEY, jwt_secret=_JWT)
     monkeypatch.setattr("intel_platform.config.settings", fake)
 
     token = auth_module.create_access_token("analyst-1", role="analyst")
@@ -64,6 +66,7 @@ def test_boot_warns_on_default_secrets(monkeypatch, caplog):
 
     fake = types.SimpleNamespace(
         api_key=auth_module._DEFAULT_API_KEY,
+        jwt_secret=_JWT,
         default_admin_password="",
         require_secure_auth=False,
     )

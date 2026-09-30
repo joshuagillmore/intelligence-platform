@@ -12,6 +12,10 @@ class Settings(BaseSettings):
 
     # API
     api_key: str = "dev-api-key-change-in-production"
+    # HS256 signing key for login tokens. The default is public (it is in this
+    # file), so it is for local development only: REQUIRE_SECURE_AUTH refuses to
+    # boot on it, on a blank value, or on anything shorter than 32 bytes.
+    jwt_secret: str = "intel-platform-dev-secret-change-in-production"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     # Per-client request/minute cap. High by default for the single-user
