@@ -194,40 +194,65 @@ app.include_router(attack.router, prefix="/api", tags=["attack"])
 
 # Reverse proxy to frontend Node.js server (Railway single-port deployment)
 from pathlib import Path  # noqa: E402
+
+import httpx  # noqa: E402
+from fastapi import Request  # noqa: E402
+from fastapi.responses import Response  # noqa: E402
+
+# Headers that describe one connection, not the resource (RFC 9110 §7.6.1), so a
+# proxy must not pass them on; plus any header the Connection header names.
+_HOP_BY_HOP = frozenset({
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "proxy-connection", "te", "trailer", "trailers", "transfer-encoding", "upgrade",
+})
+# httpx has already decoded the body, so the upstream encoding and length no
+# longer describe what is sent; Starlette sets the length itself.
+_REFRAMED = frozenset({"content-encoding", "content-length"})
+
+
+def _forwardable_response_headers(headers: httpx.Headers) -> list[tuple[str, str]]:
+    """Every upstream response header a client should see, repeats included.
+
+    Contract 19: on Railway the browser reaches Next only through this proxy,
+    so a header Next sets (the Content-Security-Policy above all) exists for the
+    browser only if it is forwarded. Copying through a dict kept one value of a
+    repeated header, so only the last Set-Cookie survived.
+    """
+    named = {token.strip().lower() for value in headers.get_list("connection") for token in value.split(",")}
+    drop = _HOP_BY_HOP | _REFRAMED | named
+    return [(name, value) for name, value in headers.multi_items() if name.lower() not in drop]
+
+
+async def _proxy_frontend(request: Request, path: str) -> Response:
+    """Proxy non-API requests to the Next.js frontend server."""
+    # SECURITY: reject path traversal and protocol injection attempts
+    if ".." in path or path.startswith("/") or "://" in path:
+        return Response(status_code=400)
+    # Don't proxy API, health, or MCP routes
+    if path.startswith(("api/", "health", "mcp/", "openapi", "docs")):
+        return Response(status_code=404)
+    url = f"http://127.0.0.1:3000/{path}"
+    if request.url.query:
+        url += f"?{request.url.query}"
+    try:
+        # Don't forward Accept-Encoding to upstream — let httpx handle decompression
+        fwd_headers = {k: v for k, v in request.headers.items()
+                       if k.lower() not in ('host', 'accept-encoding')}
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, headers=fwd_headers, timeout=10)
+    except Exception:
+        return Response(content="Frontend not available", status_code=502)
+    response = Response(content=resp.content, status_code=resp.status_code)
+    for name, value in _forwardable_response_headers(resp.headers):
+        response.headers.append(name, value)
+    return response
+
+
 _frontend_dir = Path("/app/frontend-server")
 if _frontend_dir.exists() and (_frontend_dir / "server.js").exists():
-    import httpx
-    from fastapi import Request
-    from fastapi.responses import Response
-
-    @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
-    async def proxy_frontend(request: Request, path: str):
-        """Proxy non-API requests to the Next.js frontend server."""
-        # SECURITY: reject path traversal and protocol injection attempts
-        if ".." in path or path.startswith("/") or "://" in path:
-            return Response(status_code=400)
-        # Don't proxy API, health, or MCP routes
-        if path.startswith(("api/", "health", "mcp/", "openapi", "docs")):
-            return Response(status_code=404)
-        url = f"http://127.0.0.1:3000/{path}"
-        if request.url.query:
-            url += f"?{request.url.query}"
-        try:
-            # Don't forward Accept-Encoding to upstream — let httpx handle decompression
-            fwd_headers = {k: v for k, v in request.headers.items()
-                          if k.lower() not in ('host', 'accept-encoding')}
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, headers=fwd_headers, timeout=10)
-                # Strip encoding/transfer headers — content is already decompressed by httpx
-                safe_headers = {k: v for k, v in resp.headers.items()
-                               if k.lower() not in ('content-encoding', 'transfer-encoding', 'content-length')}
-                return Response(
-                    content=resp.content,
-                    status_code=resp.status_code,
-                    headers=safe_headers,
-                )
-        except Exception:
-            return Response(content="Frontend not available", status_code=502)
+    app.add_api_route(
+        "/{path:path}", _proxy_frontend, methods=["GET", "HEAD"], include_in_schema=False,
+    )
 elif Path("/app/static").exists():
     from fastapi.staticfiles import StaticFiles
     app.mount("/", StaticFiles(directory="/app/static", html=True), name="static")
