@@ -201,6 +201,69 @@ class TestRequestsAreRoutedThroughTheGuard:
         assert outcome["neo4j"] == "abort"
 
 
+class FakeContext:
+    def __init__(self):
+        self.route_handler = None
+
+    async def route(self, pattern, handler):
+        self.route_handler = handler
+
+
+class FakeWsRoute:
+    def __init__(self, url):
+        self.url = url
+        self.outcome = None
+
+    def connect_to_server(self):
+        self.outcome = "connected"
+        return self
+
+    async def close(self, code=None, reason=None):
+        self.outcome = "closed"
+
+
+class TestRequestsOutsidePageRouting:
+    """page.route sees neither service-worker fetches nor WebSockets, so a page
+    could reach an internal host through either (found in review)."""
+
+    async def test_service_worker_requests_are_routed_through_the_context(self, monkeypatch, direct_mode):
+        seen = {}
+
+        async def scenario(hooks, urls):
+            page, context = FakePage(), FakeContext()
+            await hooks["on_page_context_created"](page, context=context, config=None)
+            await hooks["before_goto"](page, context=context, url=urls[0], config=None)
+            route = FakeRoute(METADATA)
+            await context.route_handler(route)
+            seen["context"] = route.outcome
+            return [_result(urls[0])]
+
+        monkeypatch.setattr(crawler_mod, "AsyncWebCrawler", _fake_crawler(scenario))
+        await crawler_mod.crawl_urls([PUBLIC_START])
+        assert seen["context"] == "abort"
+
+    async def test_websockets_to_internal_hosts_are_refused(self, monkeypatch, direct_mode):
+        seen = {}
+
+        class WsPage(FakePage):
+            async def route_web_socket(self, pattern, handler):
+                self.ws_handler = handler
+
+        async def scenario(hooks, urls):
+            page = WsPage()
+            await hooks["on_page_context_created"](page, context=None, config=None)
+            for url in ("ws://127.0.0.1:8000/socket", "wss://93.184.216.34/live"):
+                ws = FakeWsRoute(url)
+                await page.ws_handler(ws)
+                seen[url] = ws.outcome
+            return [_result(urls[0])]
+
+        monkeypatch.setattr(crawler_mod, "AsyncWebCrawler", _fake_crawler(scenario))
+        await crawler_mod.crawl_urls([PUBLIC_START])
+        assert seen["ws://127.0.0.1:8000/socket"] == "closed"
+        assert seen["wss://93.184.216.34/live"] == "connected"
+
+
 class TestRedirectChains:
     """Playwright's route handler sees only the first URL of a redirect chain,
     so the hops are audited from the request events instead."""

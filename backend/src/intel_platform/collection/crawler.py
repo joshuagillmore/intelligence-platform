@@ -60,7 +60,9 @@ class _BrowserGuard:
     service's response. Three checks cover what the pre-filter cannot:
 
     * Every request the browser routes is vetted and aborted if unsafe: JS
-      navigations, fetch/XHR, subresources, and the first hop of a navigation.
+      navigations, fetch/XHR, subresources, and the first hop of a navigation;
+      the context is routed too (service-worker fetches bypass page routes),
+      and WebSockets are vetted and closed if unsafe.
     * Redirect hops, which Playwright does **not** route (its handler sees only
       the first URL of a redirect chain), are recorded from the request events,
       and a page is rejected if any hop was unsafe. A public → internal →
@@ -71,9 +73,13 @@ class _BrowserGuard:
       the browser's different answers; the connected socket cannot. Behind a
       proxy that address is the proxy's, so the check is skipped there.
 
-    What this cannot do is stop the browser *sending* a redirected request to
-    an internal host: the hop is only visible once it has been issued. It
-    guarantees the response never becomes a Document.
+    What this cannot do: stop the browser *sending* a redirected request to an
+    internal host (the hop is only visible once issued), or stop a rebinding
+    name answering the route check with a public address and Chromium's own
+    lookup with an internal one, in which case page JavaScript could read the
+    response before the page is rejected. It guarantees the response never
+    becomes a Document. Closing the rest needs Chromium's egress to go through
+    a pinned local proxy, as the httpx path's does.
     """
 
     def __init__(self, *, direct: bool):
@@ -83,6 +89,7 @@ class _BrowserGuard:
         self._hops: list[tuple[Any, str]] = []
         self._internal: dict[Any, str] = {}
         self._pending: dict[Any, list[asyncio.Future]] = {}
+        self._routed_contexts: set = set()
 
     def install(self, crawler) -> None:
         """Register the hooks, or refuse to crawl without them."""
@@ -107,6 +114,15 @@ class _BrowserGuard:
 
     async def on_page_context_created(self, page, context=None, **kwargs):
         await page.route("**/*", self._route)
+        # Service-worker fetches bypass page routes; the context's route sees
+        # them. A context can hold several pages, so it is routed once.
+        if context is not None and context not in self._routed_contexts:
+            self._routed_contexts.add(context)
+            await context.route("**/*", self._route)
+        # WebSockets are not routed by page.route at all.
+        route_web_socket = getattr(page, "route_web_socket", None)
+        if route_web_socket is not None:
+            await route_web_socket("**/*", self._route_ws)
         page.on("request", lambda request: self._on_request(page, request))
         if self._direct:
             page.on("response", lambda response: self._on_response(page, response))
@@ -132,6 +148,16 @@ class _BrowserGuard:
             return
         logger.warning("Browser request blocked by SSRF guard: %s", url[:200])
         await route.abort("blockedbyclient")
+
+    async def _route_ws(self, ws) -> None:
+        url = ws.url
+        # ws:// and wss:// are vetted as the http(s) origin they upgrade from.
+        http_url = "http" + url[2:] if url.startswith("ws") else url
+        if await self.is_safe(http_url):
+            ws.connect_to_server()
+            return
+        logger.warning("Browser WebSocket blocked by SSRF guard: %s", url[:200])
+        await ws.close(code=1008, reason="blocked")
 
     def _on_request(self, page, request) -> None:
         if getattr(request, "redirected_from", None) is not None:
