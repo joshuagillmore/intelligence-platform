@@ -9,10 +9,16 @@ class WebScraper:
 
     async def scrape_url(self, url: str, timeout: float = 30) -> dict:
         # Validate up front so a single bad URL raises rather than silently
-        # returning nothing; crawl_urls also validates every URL it fetches.
-        validate_url(url)
-        docs = await crawl_urls([url], timeout_ms=int(timeout * 1000))
+        # returning nothing. Only the lookup-free checks: crawl_urls runs the
+        # authoritative one, resolving only when no proxy is active.
+        validate_url(url, resolve=False)
+        rejected: list[tuple[str, str]] = []
+        docs = await crawl_urls([url], timeout_ms=int(timeout * 1000), rejected=rejected)
         if not docs:
+            if rejected:
+                # Say why: "failed" and "refused by the SSRF guard" are not the
+                # same event, and the activity trail should show which it was.
+                raise RuntimeError(f"Rejected {url}: {rejected[0][1]}")
             raise RuntimeError(f"Failed to crawl {url}")
         doc = docs[0]
         return {

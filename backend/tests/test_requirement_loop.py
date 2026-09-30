@@ -22,10 +22,11 @@ from intel_platform.db.models import PirRequirement
 class _FakeDB:
     """Enough AsyncSession surface for the loop, backed by a plain list."""
 
-    def __init__(self, rows, plan=None, pir=None):
+    def __init__(self, rows, plan=None, pir=None, sources=None):
         self.rows = rows
         self.plan = plan
         self.pir = pir
+        self.sources = list(sources or [])
         self.added = []
         self.deleted = []
         self.commits = 0
@@ -40,6 +41,9 @@ class _FakeDB:
 
     async def execute(self, stmt):
         sql = str(stmt)
+        if "FROM collection_sources" in sql:
+            found = list(self.sources)
+            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: found))
         rows = self.rows
         # The pass loop filters on status in its WHERE clause; sync and the
         # closing read do not. Match the predicate, not the column list — every
@@ -52,6 +56,8 @@ class _FakeDB:
         self.added.append(obj)
         if isinstance(obj, PirRequirement):
             self.rows.append(obj)
+        elif type(obj).__name__ == "CollectionSource":
+            self.sources.append(obj)
 
     async def delete(self, obj):
         self.deleted.append(obj)
@@ -88,6 +94,16 @@ def _requirement(ordinal, text, status="pending", attempts=0):
 
 def _plan(pir_id="pir-1"):
     return SimpleNamespace(id="plan-1", pir_id=pir_id, sources=[])
+
+
+async def _direct_proxy():
+    """Stand-in for `get_active_proxy_config`, which is a coroutine function.
+
+    These stubs used to be sync lambdas, which is why the loop's missing
+    `await` never failed a test: the stub answered the call the code made,
+    not the one the real function requires.
+    """
+    return SimpleNamespace(get_proxy_url=lambda: None)
 
 
 def _pir(eeis):
@@ -177,6 +193,152 @@ class TestStoppingConditions:
         )
         assert out.passes_run == 0 and out.sources_added == 0
         assert out.stopped_on == "nothing_to_do"
+
+
+def _unassessed():
+    """An assessor that never manages to assess: an outage or an unreadable reply."""
+    async def fake(text, project_id, db, provider, tried_queries=None, store=None):
+        return SimpleNamespace(
+            satisfied=False, confidence="unknown",
+            missing="assessment could not be completed",
+            next_queries=[], assessed=False,
+        )
+
+    return fake
+
+
+class TestOutagesAreNotVerdicts:
+    """`assessed=False` means nobody looked. It must not retire an element.
+
+    The loop never read the flag: an outage incremented `attempts`, and at two
+    the element became `unmet` for good — retired for an infrastructure fault,
+    contrary to backend/CLAUDE.md.
+    """
+
+    async def test_repeated_outage_does_not_retire_an_element(self, monkeypatch, no_collection):
+        rows = [_requirement(0, "a?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?"]))
+        monkeypatch.setattr(rl, "assess_requirement", _unassessed())
+
+        out = await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None,
+            attempts_per_element=2, max_passes=3,
+        )
+
+        assert rows[0].status == "pending", "an outage is not evidence the element is unanswered"
+        assert rows[0].attempts == 0, "an unassessed element has not spent an attempt"
+        assert out.retired == []
+        assert out.still_open == ["a?"]
+        assert out.stopped_on != "elements_retired"
+
+    async def test_outage_is_logged_as_unassessed(self, monkeypatch, no_collection):
+        rows = [_requirement(0, "a?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?"]))
+        monkeypatch.setattr(rl, "assess_requirement", _unassessed())
+
+        await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None, max_passes=1,
+        )
+        events = [getattr(a, "event", None) for a in db.added]
+        assert "requirement_unassessed" in events
+        assert "requirement_retired" not in events
+
+    async def test_outage_does_not_overwrite_the_last_real_assessment(self, monkeypatch, no_collection):
+        row = _requirement(0, "a?")
+        row.assessment_missing = "no cascade detail"
+        row.assessment_confidence = "medium"
+        db = _FakeDB([row], plan=_plan(), pir=_pir(["a?"]))
+        monkeypatch.setattr(rl, "assess_requirement", _unassessed())
+
+        await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None, max_passes=1,
+        )
+        assert row.assessment_missing == "no cascade detail"
+        assert row.assessment_confidence == "medium"
+
+    async def test_an_assessor_that_never_answers_stops_the_loop_and_says_so(self, monkeypatch, no_collection):
+        """With the provider down for every element, the loop ran all its passes
+        and reported "stopped on pass_budget" — a budget story for an outage."""
+        calls = []
+
+        async def down(*a, **kw):
+            calls.append(1)
+            return SimpleNamespace(satisfied=False, confidence="unknown",
+                                   missing="assessment could not be completed", next_queries=[], assessed=False)
+
+        monkeypatch.setattr(rl, "assess_requirement", down)
+        rows = [_requirement(0, "a?"), _requirement(1, "b?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?", "b?"]))
+
+        out = await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None, max_passes=3,
+        )
+        assert out.stopped_on == "assessor_unavailable"
+        assert len(calls) == 2, "one pass is enough to know the assessor is down"
+        assert out.still_open == ["a?", "b?"]
+
+    async def test_unassessed_element_is_not_collected_for(self, monkeypatch):
+        """With no verdict there is no gap to aim a search at."""
+        called = []
+
+        async def fake_collect(*a, **kw):
+            called.append(1)
+            return 1
+
+        monkeypatch.setattr(rl, "_collect_for_element", fake_collect)
+        rows = [_requirement(0, "a?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?"]))
+        monkeypatch.setattr(rl, "assess_requirement", _unassessed())
+
+        await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None, max_passes=1,
+        )
+        assert called == []
+
+
+class TestPauseStopsRetasking:
+    """PAUSED and ARCHIVED were never read by the loop (R-12)."""
+
+    async def test_a_paused_plan_is_not_retasked(self, monkeypatch, no_collection):
+        async def paused(db, plan_id):
+            return True
+
+        monkeypatch.setattr("intel_platform.services.plan_executor.plan_should_stop", paused, raising=False)
+        assessed = []
+
+        async def assessor(*a, **kw):
+            assessed.append(1)
+            return SimpleNamespace(satisfied=False, confidence="low", missing="", next_queries=["q"], assessed=True)
+
+        monkeypatch.setattr(rl, "assess_requirement", assessor)
+        rows = [_requirement(0, "a?"), _requirement(1, "b?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?", "b?"]))
+
+        out = await rl.run_requirement_passes("plan-1", _factory(db), lambda: None, object(), None)
+
+        assert assessed == []
+        assert out.stopped_on == "plan_stopped"
+        assert out.passes_run == 0
+
+    async def test_a_pause_between_elements_stops_the_pass(self, monkeypatch, no_collection):
+        calls = {"n": 0}
+
+        async def pause_after_first_element(db, plan_id):
+            calls["n"] += 1
+            return calls["n"] > 2  # pass check, element 1 check, then paused
+
+        monkeypatch.setattr(
+            "intel_platform.services.plan_executor.plan_should_stop", pause_after_first_element, raising=False,
+        )
+        monkeypatch.setattr(rl, "assess_requirement", _assessor([(False, ["q"])] * 5))
+        rows = [_requirement(0, "a?"), _requirement(1, "b?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?", "b?"]))
+
+        out = await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None, attempts_per_element=9,
+        )
+        assert rows[0].attempts == 1 and rows[1].attempts == 0
+        assert out.stopped_on == "plan_stopped"
 
 
 class TestRetasking:
@@ -314,13 +476,14 @@ class TestRetaskedSourcesAreFlushedBeforeBeingLogged:
         monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
         monkeypatch.setattr(
             "intel_platform.collection.proxy.get_active_proxy_config",
-            lambda: SimpleNamespace(get_proxy_url=lambda: None),
+            _direct_proxy,
         )
 
         acquired = []
 
         async def fake_acquire(source, plan, db, store, mode, provider=None, max_results=3):
             acquired.append(source.name)
+            return {"record_count": 1, "accepted_count": 1}
 
         db = _FkEnforcingDB([], plan=_plan(), pir=_pir(["a?"]))
         row = _requirement(0, "a?")
@@ -332,6 +495,103 @@ class TestRetaskedSourcesAreFlushedBeforeBeingLogged:
 
         assert added == 1, "the re-tasked source should have been acquired"
         assert acquired, "acquire_source was never called"
+
+
+class TestGapSearchHonoursTheProxy:
+    """Re-tasking searches must leave through the configured egress.
+
+    `get_active_proxy_config` is async and was called without `await`; the
+    coroutine has no `get_proxy_url`, the bare `except` set `proxy=None`, and
+    every re-tasking search went out direct even with Tor selected.
+    """
+
+    async def test_tor_mode_reaches_the_search(self, monkeypatch):
+        from intel_platform.collection.proxy import ProxyConfig
+
+        seen = {}
+
+        def fake_search(query, max_results=3, proxy=None):
+            seen["proxy"] = proxy
+            return []
+
+        async def tor_mode():
+            return ProxyConfig(mode="tor")
+
+        monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
+        monkeypatch.setattr("intel_platform.collection.proxy.get_active_proxy_config", tor_mode)
+        monkeypatch.setattr(
+            "intel_platform.collection.proxy.settings.tor_socks_proxy", "socks5h://tor:9050"
+        )
+
+        db = _FkEnforcingDB([], plan=_plan(), pir=_pir(["a?"]))
+        await rl._collect_for_element(
+            db, _plan(), _requirement(0, "a?"), ["q"], None, object(), None, "nlp", None,
+        )
+        assert seen["proxy"] == "socks5h://tor:9050"
+
+
+class TestRetaskingDoesNotRefetchKnownPages:
+    """Dedupe read `config["url"]`, but planned sources store `config["urls"]`,
+    and the seen-set was rebuilt on every call from a plan object loaded before
+    the loop started, so neither planned pages nor pages re-tasked a moment
+    earlier counted as seen."""
+
+    @pytest.fixture
+    def one_result(self, monkeypatch):
+        def fake_search(query, max_results=3, proxy=None):
+            return [{"url": "https://example.com/a", "title": "A", "snippet": ""}]
+
+        monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
+        monkeypatch.setattr("intel_platform.collection.proxy.get_active_proxy_config", _direct_proxy)
+
+    async def test_a_planned_multi_url_source_counts_as_seen(self, one_result):
+        planned = SimpleNamespace(config={"urls": ["https://example.com/a", "https://example.com/b"]})
+        plan = SimpleNamespace(id="plan-1", pir_id="pir-1", sources=[planned])
+        acquired = []
+
+        async def acquire(source, *a, **kw):
+            acquired.append(source.config["url"])
+            return {"record_count": 1}
+
+        db = _FkEnforcingDB([], plan=plan, pir=_pir(["a?"]))
+        added = await rl._collect_for_element(
+            db, plan, _requirement(0, "a?"), ["q"], None, object(), acquire, "nlp", None,
+        )
+        assert added == 0 and acquired == [], "a planned page was fetched again"
+
+    async def test_a_page_retasked_for_one_element_is_not_fetched_for_the_next(self, monkeypatch, one_result):
+        acquired = []
+
+        async def acquire(source, *a, **kw):
+            acquired.append(source.config["url"])
+            return {"record_count": 1, "accepted_count": 1}
+
+        rows = [_requirement(0, "a?"), _requirement(1, "b?")]
+        db = _FkEnforcingDB(rows, plan=_plan(), pir=_pir(["a?", "b?"]))
+        monkeypatch.setattr(rl, "assess_requirement", _assessor([(False, ["q1"]), (False, ["q2"])]))
+
+        await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), acquire, max_passes=1,
+        )
+        assert acquired == ["https://example.com/a"]
+
+    async def test_seen_urls_come_from_the_database_not_the_loaded_plan(self, monkeypatch, one_result):
+        """A source already stored for the plan counts, even if the plan object
+        the loop loaded does not list it."""
+        acquired = []
+
+        async def acquire(source, *a, **kw):
+            acquired.append(source.config["url"])
+            return {"record_count": 1}
+
+        stored = SimpleNamespace(config={"url": "https://example.com/a"})
+        db = _FkEnforcingDB([_requirement(0, "a?")], plan=_plan(), pir=_pir(["a?"]), sources=[stored])
+        monkeypatch.setattr(rl, "assess_requirement", _assessor([(False, ["q"])]))
+
+        await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), acquire, max_passes=1,
+        )
+        assert acquired == []
 
 
 class TestRetaskedSourceIsAcquirable:
@@ -358,7 +618,7 @@ class TestRetaskedSourceIsAcquirable:
         monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
         monkeypatch.setattr(
             "intel_platform.collection.proxy.get_active_proxy_config",
-            lambda: SimpleNamespace(get_proxy_url=lambda: None),
+            _direct_proxy,
         )
 
         seen = {}
@@ -389,7 +649,7 @@ class TestRetaskedSourceIsAcquirable:
         monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
         monkeypatch.setattr(
             "intel_platform.collection.proxy.get_active_proxy_config",
-            lambda: SimpleNamespace(get_proxy_url=lambda: None),
+            _direct_proxy,
         )
 
         captured = {}
@@ -484,7 +744,7 @@ class TestRetaskedSourceOutcomeIsRecorded:
         monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
         monkeypatch.setattr(
             "intel_platform.collection.proxy.get_active_proxy_config",
-            lambda: SimpleNamespace(get_proxy_url=lambda: None),
+            _direct_proxy,
         )
 
     async def test_a_collected_source_is_marked_succeeded(self, wired):
@@ -520,7 +780,8 @@ class TestRetaskedSourceOutcomeIsRecorded:
         assert captured["source"].collection_status == "failed"
 
     async def test_record_count_survives_a_result_without_one(self, wired):
-        """acquire_source returning None or a bare dict must not crash the pass."""
+        """acquire_source returning None must not crash the pass. Nothing was
+        reported collected, so nothing is counted as added (C-10)."""
         async def acquire(source, plan, db, store, mode, provider=None, max_results=3):
             return None
 
@@ -528,4 +789,24 @@ class TestRetaskedSourceOutcomeIsRecorded:
         added = await rl._collect_for_element(
             db, _plan(), _requirement(0, "a?"), ["q"], None, object(), acquire, "nlp", None,
         )
-        assert added == 1
+        assert added == 0
+
+    async def test_a_page_the_content_gate_refused_spends_no_budget(self, wired):
+        """A captcha wall used to log "collected: 1 record(s), 0 entities" and
+        count as a source added, spending budget on nothing."""
+        captured = {}
+
+        async def acquire(source, plan, db, store, mode, provider=None, max_results=3):
+            captured["source"] = source
+            return {"record_count": 1, "accepted_count": 0, "entities_created": 0,
+                    "rejected_pages": [("https://example.com/a", "anti-bot interstitial")]}
+
+        db = _FkEnforcingDB([], plan=_plan(), pir=_pir(["a?"]))
+        added = await rl._collect_for_element(
+            db, _plan(), _requirement(0, "a?"), ["q"], None, object(), acquire, "nlp", None,
+        )
+        assert added == 0
+        assert captured["source"].collection_status == "failed"
+        events = [getattr(a, "event", None) for a in db.added]
+        assert "requirement_source_rejected" in events
+        assert "requirement_source_acquired" not in events

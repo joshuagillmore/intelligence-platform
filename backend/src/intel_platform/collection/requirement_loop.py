@@ -110,6 +110,46 @@ async def sync_requirements(db, pir: Pir) -> list[PirRequirement]:
     return rows
 
 
+async def plan_stop_requested(db, plan_id) -> bool:
+    """True when the analyst has paused or archived the plan.
+
+    PAUSED and ARCHIVED were lifecycle flags the loops never read, so a paused
+    plan went on collecting. The rule lives in `plan_executor.plan_should_stop`
+    (it reads the column directly, so a stale session object cannot hide a
+    pause); until that exists this reports False and the run behaves as before.
+    A failed check is logged and the run continues: a transient read error is
+    not a decision to stop.
+    """
+    try:
+        from intel_platform.services.plan_executor import plan_should_stop
+    except ImportError:
+        return False
+    try:
+        return bool(await plan_should_stop(db, plan_id))
+    except Exception:
+        logger.warning("Could not read whether plan %s was paused; continuing", plan_id, exc_info=True)
+        return False
+
+
+def _source_urls(sources) -> set[str]:
+    """Every page URL a plan's sources already cover.
+
+    A re-tasked source stores one ``url``; a planned web_scrape/database source
+    stores a ``urls`` list. Reading only ``url`` let re-tasking fetch planned
+    pages again.
+    """
+    seen: set[str] = set()
+    for source in sources or []:
+        config = getattr(source, "config", None) or {}
+        url = config.get("url")
+        if isinstance(url, str) and url:
+            seen.add(url)
+        for u in config.get("urls") or []:
+            if isinstance(u, str) and u:
+                seen.add(u)
+    return seen
+
+
 def _log(db, plan_id, event: str, message: str, source_id=None) -> None:
     db.add(CollectionActivity(
         plan_id=plan_id, source_id=source_id, event=event, message=message,
@@ -148,13 +188,24 @@ async def run_requirement_passes(
             await db.commit()
             return outcome
         project_id = pir.project_id
+        # Read what the plan already covers from the database, once, and keep
+        # it current as sources are added — the plan object loaded here does
+        # not see sources added later in this run.
+        seen_urls = _source_urls((await db.execute(
+            select(CollectionSource).where(CollectionSource.plan_id == plan.id)
+        )).scalars().all())
         await db.commit()
 
     store = get_store()
     used = sources_already_used
 
+    stop = False
     for pass_num in range(1, max_passes + 1):
         async with db_factory() as db:
+            if await plan_stop_requested(db, plan_id):
+                outcome.stopped_on = "plan_stopped"
+                break
+
             open_rows = (await db.execute(
                 select(PirRequirement)
                 .where(PirRequirement.pir_id == plan.pir_id, PirRequirement.status == "pending")
@@ -185,14 +236,35 @@ async def run_requirement_passes(
             remaining = None if source_limit is None else max(0, source_limit - used)
             per_element = None if remaining is None else max(1, remaining // len(open_rows))
 
+            asked = 0
+            answered = 0
             for row in open_rows:
                 if source_limit is not None and used >= source_limit:
                     break
+                if await plan_stop_requested(db, plan_id):
+                    outcome.stopped_on = "plan_stopped"
+                    stop = True
+                    break
 
+                asked += 1
                 assessment = await assess_requirement(
                     row.text, project_id, db, provider,
                     tried_queries=list(row.next_queries or []), store=store,
                 )
+                if getattr(assessment, "assessed", True):
+                    answered += 1
+
+                if not getattr(assessment, "assessed", True):
+                    # Nobody looked: a provider outage or an unreadable reply.
+                    # That is not evidence the element is unanswered, so it
+                    # spends no attempt, keeps its last real assessment, and is
+                    # not searched for (there is no gap to aim at). Counting it
+                    # retired elements for infrastructure reasons.
+                    _log(db, plan_id, "requirement_unassessed",
+                         f"Could not assess element {row.ordinal + 1} this pass "
+                         f"({assessment.missing[:120]}); left open: {row.text[:120]}")
+                    await db.commit()
+                    continue
 
                 row.attempts += 1
                 row.assessment_missing = assessment.missing
@@ -223,7 +295,7 @@ async def run_requirement_passes(
 
                 added = await _collect_for_element(
                     db, plan, row, queries, store, provider, acquire_source,
-                    extraction_mode, per_element,
+                    extraction_mode, per_element, seen=seen_urls,
                 )
                 used += added
                 outcome.sources_added += added
@@ -232,6 +304,18 @@ async def run_requirement_passes(
                     _log(db, plan_id, "requirement_no_sources",
                          f"No new sources found for: {row.text[:160]}")
                     await db.commit()
+
+            if stop:
+                break
+            if asked and not answered:
+                # Nothing could be assessed this pass, so another pass would
+                # only repeat the outage — and ending on "pass_budget" would
+                # tell a budget story about an infrastructure fault.
+                outcome.stopped_on = "assessor_unavailable"
+                _log(db, plan_id, "requirement_assessor_unavailable",
+                     f"No element could be assessed in pass {pass_num}; re-tasking stopped")
+                await db.commit()
+                break
 
     async with db_factory() as db:
         rows = (await db.execute(
@@ -265,22 +349,24 @@ async def run_requirement_passes(
 
 async def _collect_for_element(
     db, plan, row, queries, store, provider, acquire_source, extraction_mode, budget,
+    seen: set[str] | None = None,
 ) -> int:
-    """Search the gap queries and collect what they return. Returns sources added."""
+    """Search the gap queries and collect what they return. Returns sources added.
+
+    `seen` is the run's set of already-covered page URLs; it is updated in place
+    so the next element and the next pass do not fetch the same page again.
+    """
     from intel_platform.collection.search import web_search
     from intel_platform.collection.proxy import get_active_proxy_config
 
     added = 0
-    seen = {
-        (s.config or {}).get("url")
-        for s in (plan.sources or [])
-        if (s.config or {}).get("url")
-    }
+    if seen is None:
+        seen = _source_urls(getattr(plan, "sources", None))
 
-    try:
-        proxy = get_active_proxy_config().get_proxy_url()
-    except Exception:
-        proxy = None
+    # get_active_proxy_config already degrades to direct on its own failures,
+    # so nothing here may swallow an error into proxy=None: that silently sent
+    # every re-tasking search out direct even with Tor selected.
+    proxy = (await get_active_proxy_config()).get_proxy_url()
 
     for query in queries:
         if budget is not None and added >= budget:
@@ -335,7 +421,20 @@ async def _collect_for_element(
                 result = await acquire_source(
                     source, plan, db, store, extraction_mode,
                     provider=provider, max_results=RESULTS_PER_QUERY,
-                )
+                ) or {}
+                if not result.get("accepted_count", result.get("record_count", 0)):
+                    # Fetched, but the content gate kept nothing (a captcha, a
+                    # login wall, an off-topic page). That spends no budget and
+                    # is not a source added — it used to log "collected: 1
+                    # record(s), 0 entities" and count against the element.
+                    reasons = ", ".join(sorted({r for _u, r in result.get("rejected_pages") or []})) or "no content"
+                    source.collection_status = "failed"
+                    source.last_error = f"No usable content ({reasons})"[:500]
+                    _log(db, plan.id, "requirement_source_rejected",
+                         f"Re-tasked source yielded nothing usable ({reasons[:120]}) — {url[:140]}",
+                         source_id=source.id)
+                    await db.commit()
+                    continue
                 # Record the outcome the way the planned pass does. Without
                 # this a re-tasked source sat at "pending / 0 records" forever
                 # while its content was demonstrably in the graph — the plan
@@ -345,10 +444,11 @@ async def _collect_for_element(
                 source.last_success_at = datetime.now(timezone.utc)
                 source.total_records_acquired = (
                     source.total_records_acquired or 0
-                ) + (result or {}).get("record_count", 0)
+                ) + result.get("record_count", 0)
                 _log(db, plan.id, "requirement_source_acquired",
-                     f"Re-tasked source collected: {(result or {}).get('record_count', 0)} "
-                     f"record(s), {(result or {}).get('entities_created', 0)} entities "
+                     f"Re-tasked source collected: "
+                     f"{result.get('accepted_count', result.get('record_count', 0))} "
+                     f"record(s), {result.get('entities_created', 0)} entities "
                      f"— {url[:140]}", source_id=source.id)
                 await db.commit()
                 added += 1
