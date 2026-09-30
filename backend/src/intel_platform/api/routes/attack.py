@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import JSONResponse
 from neo4j import Driver
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -215,12 +215,15 @@ async def get_technique(
 
 @router.get("/attack/technique/{tid}/d3fend")
 async def get_d3fend(
-    tid: str,
+    tid: str = Path(..., pattern=attack_d3fend.TECHNIQUE_ID_PATTERN),
     db: AsyncSession = Depends(get_db),
 ):
     """D3FEND defensive countermeasures for a technique (lazy, keyless, cached).
 
-    Degrades to ``{"countermeasures": []}`` on any D3FEND outage/404 — never 500s.
+    ``tid`` must be ``T####`` or ``T####.###`` (422 otherwise): it goes into the
+    outbound D3FEND URL. A 404 from D3FEND is a cached "none"; an outage or an
+    unreadable reply returns ``{"countermeasures": [], "degraded": true}``
+    uncached — never a 500.
     """
     return await attack_d3fend.get_countermeasures(db, tid)
 

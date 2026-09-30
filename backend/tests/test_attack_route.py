@@ -207,6 +207,24 @@ def test_d3fend_passthrough(client, analyst_header, _override_db):
     assert resp.json() == fake
 
 
+@pytest.mark.parametrize("tid", ["T1566x", "T15661", "T1566.01", "1566", "t1566", "TA0001"])
+def test_d3fend_rejects_a_malformed_technique_id(client, analyst_header, _override_db, tid):
+    # The id is interpolated into the outbound D3FEND URL; only T#### or
+    # T####.### may reach it.
+    fetch = AsyncMock(return_value={"countermeasures": []})
+    with patch("intel_platform.api.routes.attack.attack_d3fend.get_countermeasures", new=fetch):
+        resp = client.get(f"/api/attack/technique/{tid}/d3fend", headers=analyst_header)
+    assert resp.status_code == 422
+    fetch.assert_not_awaited()
+
+
+def test_d3fend_accepts_a_subtechnique_id(client, analyst_header, _override_db):
+    with patch("intel_platform.api.routes.attack.attack_d3fend.get_countermeasures",
+               new=AsyncMock(return_value={"countermeasures": []})):
+        resp = client.get("/api/attack/technique/T1566.001/d3fend", headers=analyst_header)
+    assert resp.status_code == 200
+
+
 def test_report_requires_auth(client):
     resp = client.get("/api/attack/report", params={"project_id": "p1"})
     assert resp.status_code in (401, 403)
