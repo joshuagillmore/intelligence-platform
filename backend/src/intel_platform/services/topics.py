@@ -393,7 +393,7 @@ class TopicTreeService:
             rels = self._store.get_relationships(doc_id)
             related = []
             for rel in rels:
-                target = self._store.get_entity(rel.get("target_id", ""))
+                target = self._store.get_entity(rel.get("neighbor_id") or rel.get("target_id", ""))
                 if target and target.get("entity_type") != "Document":
                     related.append({
                         "id": target.get("id", ""),
@@ -790,7 +790,7 @@ class TopicTreeService:
                     # Find entities extracted from this document
                     rels = self._store.get_relationships(doc_id)
                     for rel in rels:
-                        target = self._store.get_entity(rel.get("target_id", ""))
+                        target = self._store.get_entity(rel.get("neighbor_id") or rel.get("target_id", ""))
                         if target and target.get("entity_type") != "Document":
                             eid = target.get("id", "")
                             if eid not in seen_entity_ids:
@@ -826,7 +826,7 @@ class TopicTreeService:
         documents = []
         connected = []
         for rel in relationships:
-            target_id = rel.get("target_id", "")
+            target_id = rel.get("neighbor_id") or rel.get("target_id", "")
             target = self._store.get_entity(target_id)
             if not target:
                 continue
