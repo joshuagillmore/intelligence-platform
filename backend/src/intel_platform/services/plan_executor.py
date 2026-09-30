@@ -15,6 +15,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from intel_platform.connectors.base import get_connector, CONNECTOR_REGISTRY
@@ -35,6 +36,52 @@ _running_executions: dict[str, dict] = {}
 def get_execution_status(plan_id: str) -> dict | None:
     """Get the current execution status for a plan."""
     return _running_executions.get(plan_id)
+
+
+# A run that ended in failure. Not in `PlanStatus` (db/models.py) yet; the
+# column is a plain String(20), so the value stores as-is.
+PLAN_FAILED = "FAILED"
+
+# Statuses an analyst sets by hand to stop collection. A run reads them between
+# sources and must never overwrite them when it finishes.
+_STOPPING_STATUSES = frozenset({PlanStatus.PAUSED, PlanStatus.ARCHIVED})
+
+
+async def _read_plan_status(db: AsyncSession, plan_id) -> str | None:
+    """The plan's status as stored now, bypassing the session's cached object.
+
+    A column select returns the database value; `db.get(...)` would hand back
+    the instance already in the identity map, still showing the status the run
+    loaded at its start — which is how Pause went unseen.
+    """
+    pid = plan_id if isinstance(plan_id, uuid.UUID) else uuid.UUID(str(plan_id))
+    result = await db.execute(select(CollectionPlan.status).where(CollectionPlan.id == pid))
+    return result.scalar_one_or_none()
+
+
+async def plan_should_stop(db: AsyncSession, plan_id) -> bool:
+    """True when the plan was PAUSED or ARCHIVED, or no longer exists.
+
+    Collection loops call this between sources. PAUSED and ARCHIVED were never
+    read by a running loop, so neither did anything until the run ended — and
+    then completion overwrote them. A plan deleted mid-run stops the run too:
+    there is nothing left to collect for.
+    """
+    status = await _read_plan_status(db, plan_id)
+    return status is None or status in _STOPPING_STATUSES
+
+
+def final_plan_status(current: str | None, *, failed: bool) -> str:
+    """The status a finished run leaves the plan in.
+
+    PAUSED and ARCHIVED are an analyst's decision and survive the end of a run;
+    completion used to write COMPLETED over them, un-archiving the plan. A run
+    that failed ends FAILED rather than COMPLETED, so a plan whose every source
+    failed does not read as a plan that finished.
+    """
+    if current in _STOPPING_STATUSES:
+        return current
+    return PLAN_FAILED if failed else PlanStatus.COMPLETED
 
 
 def over_source_budget(attempted: int, source_limit: int | None) -> bool:
@@ -120,6 +167,13 @@ async def execute_plan(
             attempted = 0
 
             for source in sources:
+                # An analyst's Pause or Archive takes effect between sources,
+                # not only after the whole plan has been collected.
+                current = await _read_plan_status(db, plan.id)
+                if current is None or current in _STOPPING_STATUSES:
+                    status["stopped_on_status"] = current or "DELETED"
+                    break
+
                 if not source.enabled:
                     status["sources_skipped"] += 1
                     continue
@@ -196,18 +250,24 @@ async def execute_plan(
                     if result.get("error"):
                         status["errors"].append(f"{source.name}: {result['error']}")
 
-            # Mark plan complete if all sources processed
-            plan.status = PlanStatus.COMPLETED
+            # Settle the plan. Re-read first: the analyst may have paused or
+            # archived it while the last source ran, and that must stand.
+            every_source_failed = attempted > 0 and status["sources_completed"] == 0
+            plan.status = final_plan_status(
+                await _read_plan_status(db, plan.id), failed=every_source_failed,
+            )
             plan.updated_at = datetime.now(timezone.utc)
             await db.commit()
 
             status["status"] = "completed"
+            status["plan_status"] = plan.status
             status["completed_at"] = datetime.now(timezone.utc).isoformat()
 
     except Exception as e:
         logger.exception("Plan execution failed for %s", plan_id)
         _running_executions[plan_id]["status"] = "error"
         _running_executions[plan_id]["errors"].append(str(e))
+        await _mark_plan_failed(db_factory, plan_id)
     finally:
         # A cancelled task raises CancelledError, which is a BaseException and
         # so escapes the handler above — leaving the tracker saying "running"
@@ -219,6 +279,24 @@ async def execute_plan(
             _running_executions[plan_id]["errors"].append("Execution was interrupted")
 
     return _running_executions[plan_id]
+
+
+async def _mark_plan_failed(db_factory: async_sessionmaker[AsyncSession], plan_id: str) -> None:
+    """Record a run that raised as FAILED, in a session of its own.
+
+    The run's session is unusable after the exception, and the plan was left
+    ACTIVE — indistinguishable from one still collecting.
+    """
+    try:
+        async with db_factory() as db:
+            plan = await db.get(CollectionPlan, uuid.UUID(plan_id))
+            if plan is None:
+                return
+            plan.status = final_plan_status(await _read_plan_status(db, plan_id), failed=True)
+            plan.updated_at = datetime.now(timezone.utc)
+            await db.commit()
+    except Exception:
+        logger.exception("Could not record the failure of plan %s", plan_id)
 
 
 async def _execute_source(
