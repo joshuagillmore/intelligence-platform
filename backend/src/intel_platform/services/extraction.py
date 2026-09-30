@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -19,6 +18,53 @@ from intel_platform.services.geo.coordinates import parse_coordinates
 logger = logging.getLogger(__name__)
 
 _nlp = None
+
+
+class ExtractionResult(tuple):
+    """``(entities, relationships)`` for one chunk, plus how they were produced.
+
+    Still a 2-tuple, so every ``ents, rels = await extract_...(...)`` caller is
+    unchanged. The attributes are the per-chunk record that used to be missing:
+    a chunk the model never read looked exactly like one it did.
+
+    - ``method``: ``"hybrid" | "llm" | "nlp"`` — what actually ran.
+    - ``degraded``: the requested method failed and this is the NLP fallback.
+    - ``reason``: why it degraded (empty when it did not). Carries the exception
+      *type*, never its message, so it is safe to show an analyst.
+    - ``skipped_items``: individual model entities/relationships dropped for
+      being malformed, without discarding the rest of the reply.
+    """
+
+    method: str
+    degraded: bool
+    reason: str
+    skipped_items: int
+
+    def __new__(cls, entities: list[dict], relationships: list[dict], *, method: str,
+                degraded: bool = False, reason: str = "", skipped_items: int = 0):
+        self = super().__new__(cls, (entities, relationships))
+        self.method = method
+        self.degraded = degraded
+        self.reason = reason
+        self.skipped_items = skipped_items
+        return self
+
+    @property
+    def meta(self) -> dict:
+        return {
+            "method": self.method,
+            "degraded": self.degraded,
+            "reason": self.reason,
+            "skipped_items": self.skipped_items,
+        }
+
+
+class _LLMExtractionFailed(Exception):
+    """The LLM half produced nothing usable; ``reason`` says why."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
 
 SPACY_TO_ENTITY_TYPE = {
     "PERSON": "Person",
@@ -1004,9 +1050,9 @@ def _apply_coreference(doc, entities: list[dict]) -> list[dict]:
     return entities
 
 
-def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]]:
+def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
     if not text.strip():
-        return [], []
+        return ExtractionResult([], [], method="nlp")
 
     # Refang defanged IOCs (evil[.]com, hxxp://, a[at]b[.]com) up front so spaCy,
     # the cyber regex pass, and the sentence-matching that builds relationships all
@@ -1189,20 +1235,88 @@ def extract_entities_nlp(text: str, doc_id: str) -> tuple[list[dict], list[dict]
     # Resolve event_datetime on Event entities from their OCCURRED_ON Date links
     _link_event_dates(entities, relationships)
 
-    return entities, relationships
+    return ExtractionResult(entities, relationships, method="nlp")
 
 
-async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list[dict]]:
-    """Extract entities using LLM. Returns (entities, relationships)."""
+def _confidence(raw, default: float) -> float:
+    """A model-supplied confidence as a float; raises on "high" and the like."""
+    return default if raw is None else float(raw)
 
+
+def _llm_entity(e, doc_id: str) -> dict:
+    """One model entity as an extraction dict. Raises on a malformed item."""
+    if not isinstance(e, dict):
+        raise TypeError(f"entity is {type(e).__name__}, not an object")
+    name = e.get("name", "")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("entity has no name")
+    entity = {
+        "name": name,
+        "entity_type": _normalize_llm_entity_type(e.get("entity_type", "Person")),
+        "source": doc_id,
+        "method": "llm",
+        "confidence": _confidence(e.get("confidence"), 0.85),
+        "aliases": e.get("aliases", []),
+    }
+    # Pass through entity attributes from LLM. Only an object is attributes;
+    # graph_builder validates the fields themselves.
+    attrs = e.get("attributes", {})
+    if attrs and isinstance(attrs, dict):
+        entity["attributes"] = attrs
+    return entity
+
+
+def _llm_relationship(r, doc_id: str) -> dict:
+    """One model relationship as an extraction dict. Raises on a malformed item."""
+    if not isinstance(r, dict):
+        raise TypeError(f"relationship is {type(r).__name__}, not an object")
+    src_name = r.get("source_entity", r.get("source", ""))
+    tgt_name = r.get("target_entity", r.get("target", ""))
+    return {
+        "source_name": src_name,
+        "target_name": tgt_name,
+        "rel_type": _normalize_rel_type(r.get("relationship_type", r.get("rel_type", ""))),
+        "confidence": _confidence(r.get("confidence"), 0.7),
+        "source": doc_id,
+        "method": "llm",
+        "evidence": _clean_evidence(r.get("evidence", ""), src_name, tgt_name),
+        # Carry the model's polarity through. Without this a denial is
+        # indistinguishable from an assertion by the time it reaches the
+        # graph, and contradicting reporting counts as corroboration.
+        "polarity": (
+            "denies"
+            if str(r.get("polarity", "")).strip().lower() in ("denies", "deny", "negated", "false")
+            else "asserts"
+        ),
+    }
+
+
+def _describe_failure(exc: BaseException) -> str:
+    # The type, not the message: the message can carry provider URLs or key
+    # fragments, and this string is meant to be shown.
+    return f"provider error ({type(exc).__name__})"
+
+
+async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[dict], int]:
+    """The LLM half alone: (entities, relationships, skipped_items).
+
+    Raises ``_LLMExtractionFailed`` with a reason when the model produced
+    nothing usable. The callers decide what the fallback is.
+    """
     # Use the extraction-specific provider selection (routes to local Ollama
     # when extraction_llm_provider=ollama; respects runtime overrides otherwise).
+    # Resolved inside the failure boundary: the lookup reads the key store, and
+    # a failure there escaped as a 500 from /ingest.
     from intel_platform.llm.providers import _get_extraction_provider
-    provider = await _get_extraction_provider()
+    from intel_platform.services.llm_output import json_object
 
+    try:
+        provider = await _get_extraction_provider()
+    except Exception as exc:
+        logger.warning("Extraction provider lookup failed for doc %s", doc_id, exc_info=True)
+        raise _LLMExtractionFailed(f"provider lookup failed ({type(exc).__name__})") from exc
     if not provider:
-        # Fallback to NLP if no LLM configured
-        return extract_entities_nlp(text, doc_id)
+        raise _LLMExtractionFailed("no LLM provider configured")
 
     from intel_platform.llm.skills.loader import SkillsLoader
     loader = SkillsLoader()
@@ -1215,67 +1329,65 @@ async def extract_entities_llm(text: str, doc_id: str) -> tuple[list[dict], list
             temperature=0.2,
             max_tokens=8192,
         )
+    except Exception as exc:
+        logger.warning("LLM entity extraction call failed for doc %s", doc_id, exc_info=True)
+        raise _LLMExtractionFailed(_describe_failure(exc)) from exc
 
-        # Try to parse JSON from response
-        content = result.content
-        # Find JSON in response (may be wrapped in markdown code blocks)
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0]
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0]
+    # The first JSON object anywhere in the reply — fenced, prose-led or bold-
+    # labelled. `{}` means nothing parsed.
+    data = json_object(result.content or "")
+    if not data:
+        raise _LLMExtractionFailed("reply contained no JSON object")
+    if "entities" not in data and "relationships" not in data:
+        # Typically a list where an object was asked for: json_object then finds
+        # the first *entity* inside it, which has neither key. Reading that as
+        # the reply would be zero entities presented as a success.
+        raise _LLMExtractionFailed("reply had no entities or relationships list")
+    raw_entities = data.get("entities") or []
+    raw_rels = data.get("relationships") or []
+    if not isinstance(raw_entities, list) or not isinstance(raw_rels, list):
+        raise _LLMExtractionFailed("reply's entities or relationships was not a list")
 
-        data = json.loads(content.strip())
+    skipped = 0
+    entities: list[dict] = []
+    for e in raw_entities:
+        try:
+            entities.append(_llm_entity(e, doc_id))
+        except (TypeError, ValueError, AttributeError):
+            skipped += 1
+    relationships: list[dict] = []
+    for r in raw_rels:
+        try:
+            relationships.append(_llm_relationship(r, doc_id))
+        except (TypeError, ValueError, AttributeError):
+            skipped += 1
+    if skipped:
+        logger.warning("LLM extraction for doc %s skipped %d malformed item(s)", doc_id, skipped)
 
-        entities = []
-        for e in data.get("entities", []):
-            entity = {
-                "name": e.get("name", ""),
-                "entity_type": _normalize_llm_entity_type(e.get("entity_type", "Person")),
-                "source": doc_id,
-                "method": "llm",
-                "confidence": float(e.get("confidence", 0.85)),
-                "aliases": e.get("aliases", []),
-            }
-            # Pass through entity attributes from LLM
-            attrs = e.get("attributes", {})
-            if attrs:
-                entity["attributes"] = attrs
-            entities.append(entity)
+    _apply_type_hints(entities)
+    _link_event_dates(entities, relationships)
+    return entities, relationships, skipped
 
-        relationships = []
-        for r in data.get("relationships", []):
-            src_name = r.get("source_entity", r.get("source", ""))
-            tgt_name = r.get("target_entity", r.get("target", ""))
-            relationships.append({
-                "source_name": src_name,
-                "target_name": tgt_name,
-                "rel_type": _normalize_rel_type(r.get("relationship_type", r.get("rel_type", ""))),
-                "confidence": float(r.get("confidence", 0.7)),
-                "source": doc_id,
-                "method": "llm",
-                "evidence": _clean_evidence(r.get("evidence", ""), src_name, tgt_name),
-                # Carry the model's polarity through. Without this a denial is
-                # indistinguishable from an assertion by the time it reaches the
-                # graph, and contradicting reporting counts as corroboration.
-                "polarity": (
-                    "denies"
-                    if str(r.get("polarity", "")).strip().lower() in ("denies", "deny", "negated", "false")
-                    else "asserts"
-                ),
-            })
 
-        _apply_type_hints(entities)
-        _link_event_dates(entities, relationships)
+async def extract_entities_llm(text: str, doc_id: str) -> ExtractionResult:
+    """Extract entities using LLM. Returns (entities, relationships) with a record.
 
-        return entities, relationships
-    except Exception:
-        # ANY failure degrades to NLP — not just unparseable JSON but a provider
-        # that's unreachable/rate-limited/erroring (Ollama down, cloud 429/401/5xx).
-        # hybrid is the DEFAULT mode, so a provider hiccup must never 500 the
-        # ingest path (which creates the Document first) or silently drop a
-        # document's extraction in the collection paths.
-        logger.warning("LLM entity extraction failed for doc %s, falling back to NLP", doc_id, exc_info=True)
-        return extract_entities_nlp(text, doc_id)
+    ANY failure degrades to NLP — not just an unparseable reply but a provider
+    that's unreachable/rate-limited/erroring (Ollama down, cloud 429/401/5xx).
+    hybrid is the DEFAULT mode, so a provider hiccup must never 500 the ingest
+    path (which creates the Document first). The degradation is now recorded on
+    the result rather than only in the log.
+    """
+    try:
+        entities, relationships, skipped = await _extract_with_llm(text, doc_id)
+    except Exception as exc:
+        reason = exc.reason if isinstance(exc, _LLMExtractionFailed) else f"extraction failed ({type(exc).__name__})"
+        if not isinstance(exc, _LLMExtractionFailed):
+            logger.warning("LLM entity extraction failed for doc %s", doc_id, exc_info=True)
+        logger.warning("LLM extraction degraded to NLP for doc %s: %s", doc_id, reason)
+        ents, rels = extract_entities_nlp(text, doc_id)
+        return ExtractionResult(ents, rels, method="nlp", degraded=True, reason=reason)
+    return ExtractionResult(entities, relationships, method="llm", skipped_items=skipped)
 
 
 # Indicator types that are only ever the same entity when the value is the same.
@@ -1300,12 +1412,23 @@ def _exact_match_only(entity: dict) -> bool:
     return entity.get("method") == "regex" or entity.get("entity_type") in _EXACT_MATCH_TYPES
 
 
-async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], list[dict]]:
-    """Run both NLP and LLM extraction, merge results. LLM results take priority."""
+async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
+    """Run both NLP and LLM extraction, merge results. LLM results take priority.
+
+    When the LLM half fails the chunk is the NLP result, marked ``degraded``
+    with the reason — it used to be the same NLP result with nothing to say so.
+    """
     import jellyfish
 
     nlp_entities, nlp_rels = extract_entities_nlp(text, doc_id)
-    llm_entities, llm_rels = await extract_entities_llm(text, doc_id)
+    try:
+        llm_entities, llm_rels, skipped = await _extract_with_llm(text, doc_id)
+    except Exception as exc:
+        reason = exc.reason if isinstance(exc, _LLMExtractionFailed) else f"extraction failed ({type(exc).__name__})"
+        if not isinstance(exc, _LLMExtractionFailed):
+            logger.warning("LLM half of hybrid extraction failed for doc %s", doc_id, exc_info=True)
+        logger.warning("Hybrid extraction degraded to NLP for doc %s: %s", doc_id, reason)
+        return ExtractionResult(nlp_entities, nlp_rels, method="nlp", degraded=True, reason=reason)
 
     # ── Entities ──────────────────────────────────────────────────────────
     # LLM entities are primary (semantic, well-typed, lean). From NLP add only
@@ -1376,4 +1499,4 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> tuple[list[dict], l
     # same name could still carry the generic type into the merge.
     _apply_type_hints(merged_entities)
 
-    return merged_entities, merged_rels
+    return ExtractionResult(merged_entities, merged_rels, method="hybrid", skipped_items=skipped)
