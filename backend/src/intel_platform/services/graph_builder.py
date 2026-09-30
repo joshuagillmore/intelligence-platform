@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import logging
 import re
+from functools import lru_cache
+from typing import Annotated
 from urllib.parse import urlsplit
 
 import jellyfish
+from pydantic import TypeAdapter, ValidationError
 
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import (
@@ -318,6 +321,70 @@ def _type_from_name(name: str, current: str) -> str:
     return current
 
 
+# Fields the build sets itself. An LLM attribute named after one of these used
+# to overwrite it — `"project_id"` moved the entity into another project,
+# `"entity_type"` gave a Person node an Organization type — so they are never
+# taken from `attributes`.
+_STRUCTURAL_FIELDS = frozenset({"id", "name", "entity_type", "project_id", "source_doc_id", "created_at"})
+
+
+@lru_cache(maxsize=None)
+def _field_adapter(cls: type, field_name: str) -> TypeAdapter:
+    """A validator for one model field, with the field's own constraints."""
+    field = cls.model_fields[field_name]
+    if field.metadata:
+        return TypeAdapter(Annotated[(field.annotation, *field.metadata)])
+    return TypeAdapter(field.annotation)
+
+
+def _preview(value, limit: int = 80) -> str:
+    text = repr(value)
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
+def _validated_attributes(cls: type, attrs, entity_name: str) -> tuple[dict, int]:
+    """The LLM attributes that `cls` accepts, validated one field at a time.
+
+    Returns (accepted, dropped). An attribute is dropped, and logged, when its
+    value fails the field's validation or when it names a structural field.
+    Keys the model does not have were always ignored and still are; they are
+    not counted. Validation goes field by field so that one malformed value
+    costs that value, not the entity and everything the build had left to do.
+    """
+    if not attrs:
+        return {}, 0
+    if not isinstance(attrs, dict):
+        logger.warning(
+            "Dropped attributes on %s %r: expected a mapping, got %s",
+            cls.__name__, entity_name, type(attrs).__name__,
+        )
+        return {}, 1
+    accepted: dict = {}
+    dropped = 0
+    for key, value in attrs.items():
+        # `is not None` (not truthiness) so a real 0.0 latitude/longitude
+        # (equator / prime meridian) survives.
+        if key not in cls.model_fields or value is None:
+            continue
+        if key in _STRUCTURAL_FIELDS:
+            dropped += 1
+            logger.warning(
+                "Dropped attribute %r on %s %r: the build sets this field itself",
+                key, cls.__name__, entity_name,
+            )
+            continue
+        try:
+            accepted[key] = _field_adapter(cls, key).validate_python(value)
+        except ValidationError as exc:
+            dropped += 1
+            reason = exc.errors()[0].get("msg", "invalid") if exc.errors() else "invalid"
+            logger.warning(
+                "Dropped attribute %r=%s on %s %r: %s",
+                key, _preview(value), cls.__name__, entity_name, reason,
+            )
+    return accepted, dropped
+
+
 def build_graph_from_extractions(
     store: GraphStore, entities: list[dict], relationships: list[dict], project_id: str,
     source_doc_id: str = "", auto_enrich_loop=None,
@@ -329,6 +396,7 @@ def build_graph_from_extractions(
     entities_filtered = 0
     dates_absorbed = 0
     dates_orphaned = 0
+    dropped_attributes = 0
     absorbed_names: set[str] = set()
     name_to_id: dict[str, str] = {}
     # Newly-created entities (id/name/type/project) — fed to the selective
@@ -429,21 +497,27 @@ def build_graph_from_extractions(
         # Determine source doc ID from extraction data or caller
         entity_doc_id = ent_data.get("source", "") or source_doc_id
 
-        # Build constructor kwargs, passing through extracted attributes
+        # Build constructor kwargs, passing through extracted attributes that
+        # validate against the model, field by field.
         kwargs: dict = {"name": name, "project_id": project_id, "source_doc_id": entity_doc_id}
-        attrs = ent_data.get("attributes", {})
-        if attrs and cls:
-            # Only pass attributes that the Pydantic model accepts. `is not None`
-            # (not truthiness) so a real 0.0 latitude/longitude (equator / prime
-            # meridian) survives — setting a text field to "" just matches its
-            # default, so this is safe for non-numeric fields too.
-            model_fields = set(cls.model_fields.keys())
-            for k, v in attrs.items():
-                if k in model_fields and v is not None:
-                    kwargs[k] = v
+        if cls:
+            accepted, dropped = _validated_attributes(cls, ent_data.get("attributes"), name)
+            dropped_attributes += dropped
+            kwargs.update(accepted)
 
         if cls:
-            entity = cls(**kwargs)
+            try:
+                entity = cls(**kwargs)
+            except ValidationError:
+                # Each field already validated alone; this is the backstop for
+                # anything that only fails in combination. Keep the entity.
+                extra = len(kwargs) - 3
+                dropped_attributes += extra
+                logger.warning(
+                    "Dropped %d attribute(s) on %s %r: invalid together", extra, cls.__name__, name,
+                    exc_info=True,
+                )
+                entity = cls(name=name, project_id=project_id, source_doc_id=entity_doc_id)
         else:
             # Generic entity for unknown types
             from intel_platform.models.entities import Entity, EntityType
@@ -546,4 +620,6 @@ def build_graph_from_extractions(
         "relationships_created": rels_created,
         "relationships_dropped": rels_dropped,
         "relationships_dropped_by_type": dropped_types,
+        # LLM attributes that failed validation and were left off the entity.
+        "dropped_attributes": dropped_attributes,
     }
