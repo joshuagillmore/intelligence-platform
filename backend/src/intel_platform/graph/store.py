@@ -92,12 +92,15 @@ class GraphStore:
         _, parent_category = normalize_entity_type(specific_type)
 
         label = _validate_label(specific_type)
+        # Every entity also carries the shared :Entity label, whose unique `id`
+        # constraint is what makes the by-id lookups an index seek.
+        labels = label if label == "Entity" else f"{label}:Entity"
         props = self._serialize_props(entity.model_dump(exclude={"entity_type"}))
         props["entity_type"] = specific_type
         props["entity_category"] = parent_category
         with self._driver.session() as session:
             result = session.run(
-                f"CREATE (n:{label} $props) RETURN n",
+                f"CREATE (n:{labels} $props) RETURN n",
                 props=props,
             )
             record = result.single()
@@ -113,8 +116,13 @@ class GraphStore:
 
     def get_entity(self, entity_id: str) -> dict | None:
         with self._driver.session() as session:
-            result = session.run("MATCH (n {id: $id}) RETURN n", id=entity_id)
-            record = result.single()
+            record = session.run("MATCH (n:Entity {id: $id}) RETURN n", id=entity_id).single()
+            if record is None:
+                # A node written by raw Cypher elsewhere since the last startup
+                # (a legacy Collection, a test fixture) has no :Entity label
+                # until ensure_entity_label runs again. Only a miss pays for
+                # the unindexed lookup.
+                record = session.run("MATCH (n {id: $id}) RETURN n", id=entity_id).single()
             return dict(record["n"]) if record else None
 
     def update_entity(self, entity_id: str, props: dict) -> dict | None:
@@ -127,11 +135,16 @@ class GraphStore:
             return self.get_entity(entity_id)
         clean = self._serialize_props(props)
         with self._driver.session() as session:
-            result = session.run(
-                "MATCH (n {id: $id}) SET n += $props RETURN n",
+            record = session.run(
+                "MATCH (n:Entity {id: $id}) SET n += $props RETURN n",
                 id=entity_id, props=clean,
-            )
-            record = result.single()
+            ).single()
+            if record is None:
+                # Unlabelled node (see get_entity).
+                record = session.run(
+                    "MATCH (n {id: $id}) SET n += $props RETURN n",
+                    id=entity_id, props=clean,
+                ).single()
             node = dict(record["n"]) if record else None
 
         if node:
@@ -300,7 +313,7 @@ class GraphStore:
             # forever and the graph accumulated near-identical edges.
             existing = session.run(
                 f"""
-                MATCH (a {{id: $source_id}})-[r]->(b {{id: $target_id}})
+                MATCH (a:Entity {{id: $source_id}})-[r]->(b:Entity {{id: $target_id}})
                 WHERE type(r) = $rel_type {scope}
                 RETURN r LIMIT 1
                 """,
@@ -358,7 +371,7 @@ class GraphStore:
                     update["project_id"] = project_id
                 result = session.run(
                     f"""
-                    MATCH (a {{id: $source_id}})-[r]->(b {{id: $target_id}})
+                    MATCH (a:Entity {{id: $source_id}})-[r]->(b:Entity {{id: $target_id}})
                     WHERE type(r) = $rel_type {scope}
                     SET r += $update
                     RETURN type(r) as rel_type, r as rel
@@ -370,8 +383,8 @@ class GraphStore:
             else:
                 result = session.run(
                     f"""
-                    MATCH (a {{id: $source_id}})
-                    MATCH (b {{id: $target_id}})
+                    MATCH (a:Entity {{id: $source_id}})
+                    MATCH (b:Entity {{id: $target_id}})
                     WHERE true {scope}
                     CALL apoc.create.relationship(a, $rel_type, $props, b) YIELD rel
                     RETURN type(rel) as rel_type, rel
@@ -434,7 +447,7 @@ class GraphStore:
         """
         with self._driver.session() as session:
             result = session.run(
-                f"MATCH (n {{id: $id}})-[r]-(m) RETURN {self._REL_ROW}",
+                f"MATCH (n:Entity {{id: $id}})-[r]-(m) RETURN {self._REL_ROW}",
                 id=entity_id,
             )
             return [self._rel_from_record(record) for record in result]
@@ -455,7 +468,7 @@ class GraphStore:
         with self._driver.session() as session:
             result = session.run(
                 f"""
-                MATCH (n)-[r]-(m)
+                MATCH (n:Entity)-[r]-(m)
                 WHERE n.id IN $ids
                 RETURN n.id AS key, {self._REL_ROW}
                 """,
@@ -488,7 +501,7 @@ class GraphStore:
         with self._driver.session() as session:
             result = session.run(
                 f"""
-                MATCH (start {{id: $id}}) {start_scope}
+                MATCH (start:Entity {{id: $id}}) {start_scope}
                 MATCH path = (start)-[*1..{hops}]-(connected)
                 {path_scope}
                 WITH path LIMIT $max_paths + 1
@@ -621,7 +634,7 @@ class GraphStore:
         with self._driver.session() as session:
             result = session.run(
                 f"""
-                MATCH (a {{id: $id1}}), (b {{id: $id2}}) {end_scope}
+                MATCH (a:Entity {{id: $id1}}), (b:Entity {{id: $id2}}) {end_scope}
                 MATCH path = shortestPath((a)-[*..{_SHORTEST_PATH_MAX_HOPS}]-(b))
                 {path_scope}
                 RETURN [n IN nodes(path) | properties(n)] as nodes,
@@ -651,7 +664,10 @@ class GraphStore:
         project_id = entity.get("project_id") if entity else None
 
         with self._driver.session() as session:
-            session.run("MATCH (n {id: $id}) DETACH DELETE n", id=entity_id)
+            summary = session.run("MATCH (n:Entity {id: $id}) DETACH DELETE n", id=entity_id).consume()
+            if summary.counters.nodes_deleted == 0 and entity is not None:
+                # Unlabelled node (see get_entity).
+                session.run("MATCH (n {id: $id}) DETACH DELETE n", id=entity_id)
 
         if project_id:
             from intel_platform.services.graph_cache import graph_cache
@@ -668,7 +684,7 @@ class GraphStore:
             "entity_type": "Project", "project_id": "",
         }
         with self._driver.session() as session:
-            result = session.run("CREATE (n:Project $props) RETURN n", props=props)
+            result = session.run("CREATE (n:Project:Entity $props) RETURN n", props=props)
             record = result.single()
             return dict(record["n"]) if record else {}
 
