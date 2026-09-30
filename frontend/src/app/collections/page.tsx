@@ -8,6 +8,7 @@ import { useProject } from '@/lib/ProjectContext';
 import { collectionsApi, collectionPlansApi, ingestApi, llmApi, pirsApi, isHttpStatus, CollectionPlan, CollectionActivityEntry, PlanExecutionStatus, Pir } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { planTitle } from '@/lib/planTitle';
+import { extractRefinedPir } from '@/lib/refinedPir';
 
 interface Collection {
   id: string;
@@ -332,10 +333,11 @@ PIR: ${pirText}` }],
       const answer = res.data?.response || res.data?.answer || res.data?.content || JSON.stringify(res.data);
       setRefineAnalysis(answer);
 
-      // Try to extract refined PIR from the response
-      const refinedMatch = answer.match(/(?:refined|revised|improved|proposed)\s*(?:PIR|version)[:\s]*[""]?([^""]+)[""]?/i);
-      if (refinedMatch) {
-        setRefinedPir(refinedMatch[1].trim());
+      // The refined PIR is whatever follows a "Refined PIR"-style label, in
+      // whatever markdown the model used. No label: keep the analyst's text.
+      const refined = extractRefinedPir(answer);
+      if (refined) {
+        setRefinedPir(refined);
       }
 
       // Auto-open step 2
