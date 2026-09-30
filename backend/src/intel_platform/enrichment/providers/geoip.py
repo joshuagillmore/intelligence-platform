@@ -12,6 +12,8 @@ from intel_platform.collection.proxy import ProxiedClient
 from intel_platform.enrichment.base import (
     EnrichmentProvider,
     EnrichmentResult,
+    ProviderError,
+    fetch_json,
     register_provider,
 )
 
@@ -34,15 +36,12 @@ class GeoIPProvider(EnrichmentProvider):
 
     async def lookup(self, value: str, entity_type: str) -> EnrichmentResult:
         url = _URL.format(ip=value)
-        try:
-            resp = await self._client.get(url, params={"fields": _FIELDS}, timeout=10)
-            data = resp.json()
-        except Exception:
-            return EnrichmentResult(source_url=url)
-
+        data = await fetch_json(self._client, self.name, url, params={"fields": _FIELDS}, timeout=10)
         if not isinstance(data, dict):
-            return EnrichmentResult(source_url=url)
+            raise ProviderError(self.name, "unexpected response shape")
         if data.get("status") != "success":
+            # ip-api's "fail" (private/reserved range, invalid query) is a real
+            # answer about this address: it has no public geolocation.
             return EnrichmentResult(raw=data, source_url=url)
 
         geo = {

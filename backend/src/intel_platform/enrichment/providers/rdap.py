@@ -12,6 +12,8 @@ from intel_platform.collection.proxy import ProxiedClient
 from intel_platform.enrichment.base import (
     EnrichmentProvider,
     EnrichmentResult,
+    ProviderError,
+    fetch_json,
     register_provider,
 )
 
@@ -56,14 +58,9 @@ class RDAPProvider(EnrichmentProvider):
 
     async def lookup(self, value: str, entity_type: str) -> EnrichmentResult:
         url = (_IP_URL if entity_type == "IPAddress" else _DOMAIN_URL).format(value=value)
-        try:
-            resp = await self._client.get(url, timeout=15)
-            data = resp.json()
-        except Exception:
-            return EnrichmentResult(source_url=url)
-
+        data = await fetch_json(self._client, self.name, url, timeout=15)
         if not isinstance(data, dict):
-            return EnrichmentResult(source_url=url)
+            raise ProviderError(self.name, "unexpected response shape")
         entities = data.get("entities", []) or []
         events = data.get("events", []) or []
 

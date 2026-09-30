@@ -6,6 +6,9 @@ representative API payload to the right properties/edges.
 import json
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from intel_platform.enrichment.base import ProviderError
 from intel_platform.enrichment.providers.certs import CertsProvider
 from intel_platform.enrichment.providers.dns import DNSProvider
 from intel_platform.enrichment.providers.email import EmailProvider
@@ -17,6 +20,7 @@ from intel_platform.enrichment.providers.rdap import RDAPProvider
 
 def _resp(payload):
     resp = MagicMock()
+    resp.status_code = 200
     resp.json = MagicMock(return_value=payload)
     return resp
 
@@ -225,9 +229,9 @@ async def test_email_without_domain_is_empty():
     assert result.properties == {}
 
 
-async def test_email_tolerates_malformed_mx():
-    # A wrong-shaped DoH Answer (string/non-dict elements) must not raise — the
-    # domain still resolves, has_mx just comes back False.
+async def test_email_malformed_mx_is_an_error_not_no_mx():
+    # A wrong-shaped DoH Answer is not "this domain has no MX": has_mx: false
+    # would be written and cached for a week on the strength of a bad reply.
     async def get(url, params=None, headers=None, timeout=10):
         if "gravatar" in url:
             r = MagicMock()
@@ -235,14 +239,35 @@ async def test_email_tolerates_malformed_mx():
             return r
         return _resp({"Answer": "not-a-list"})
 
-    result = await EmailProvider(client=_client(get)).lookup("a@b.com", "EmailAddress")
-    assert result.properties["email_domain"] == "b.com"
+    with pytest.raises(ProviderError):
+        await EmailProvider(client=_client(get)).lookup("a@b.com", "EmailAddress")
+
+
+async def test_email_nxdomain_is_a_real_no_mx():
+    # NXDOMAIN (Status 3, no Answer) is an answer: the domain cannot take mail.
+    async def get(url, params=None, headers=None, timeout=10):
+        if "gravatar" in url:
+            r = MagicMock()
+            r.status_code = 404
+            return r
+        return _resp({"Status": 3})
+
+    result = await EmailProvider(client=_client(get)).lookup("a@nope.invalid", "EmailAddress")
     assert result.properties["has_mx"] is False
 
 
-# --- malformed JSON must not raise out of lookup (clean empty result) -------
+async def test_dns_servfail_is_an_error():
+    async def get(url, params=None, headers=None, timeout=10):
+        return _resp({"Status": 2})  # SERVFAIL
 
-async def test_providers_tolerate_malformed_json():
+    with pytest.raises(ProviderError) as info:
+        await DNSProvider(client=_client(get)).lookup("evil.com", "Domain")
+    assert info.value.reason == "dns rcode 2"
+
+
+# --- a body of the wrong shape is an error, not an empty answer -------------
+
+async def test_providers_reject_wrong_shaped_json():
     async def bad_get(url, params=None, headers=None, timeout=10):
         return _resp(None)  # not the expected dict/list shape
 
@@ -253,6 +278,6 @@ async def test_providers_tolerate_malformed_json():
         (RDAPProvider, "IPAddress"),
         (CertsProvider, "Domain"),
     ):
-        result = await provider_cls(client=_client(bad_get)).lookup("x", etype)
-        assert result.properties == {}
-        assert result.related == []
+        with pytest.raises(ProviderError) as info:
+            await provider_cls(client=_client(bad_get)).lookup("x", etype)
+        assert info.value.reason == "unexpected response shape"

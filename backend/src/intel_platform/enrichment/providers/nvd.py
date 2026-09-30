@@ -14,6 +14,8 @@ from intel_platform.config import settings
 from intel_platform.enrichment.base import (
     EnrichmentProvider,
     EnrichmentResult,
+    ProviderError,
+    fetch_json,
     register_provider,
 )
 
@@ -86,16 +88,14 @@ class NVDProvider(EnrichmentProvider):
 
     async def lookup(self, value: str, entity_type: str) -> EnrichmentResult:
         headers = {"apiKey": settings.nvd_api_key} if settings.nvd_api_key else None
-        try:
-            resp = await self._client.get(_URL, params={"cveId": value}, headers=headers, timeout=20)
-            data = resp.json()
-        except Exception:
-            return EnrichmentResult(source_url=_URL)
-
-        if not isinstance(data, dict):
-            return EnrichmentResult(source_url=_URL)
-        vulns = data.get("vulnerabilities") or []
+        data = await fetch_json(
+            self._client, self.name, _URL, params={"cveId": value}, headers=headers, timeout=20,
+        )
+        vulns = data.get("vulnerabilities") if isinstance(data, dict) else None
+        if not isinstance(vulns, list):
+            raise ProviderError(self.name, "unexpected response shape")
         if not vulns:
+            # NVD answered and has no record of this id.
             return EnrichmentResult(raw=data, source_url=_URL)
 
         cve = vulns[0].get("cve", {})

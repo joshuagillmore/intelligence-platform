@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 from intel_platform.enrichment.base import (
     EnrichmentResult,
+    ProviderError,
     RelatedEntity,
     get_providers_for,
 )
@@ -145,26 +146,38 @@ class EnrichmentService:
                 logger.debug("enrichment cache get failed for %s", provider.name, exc_info=True)
         if cached is not None:
             applied = self._safe_apply(entity, project_id, _result_from_cache(cached))
-            results[provider.name] = {"status": "cached" if applied else "error"}
+            results[provider.name] = (
+                {"status": "cached"} if applied else {"status": "error", "reason": "graph write failed"}
+            )
             return
 
+        # A failed lookup is recorded with its reason and goes no further: it is
+        # neither applied to the node nor cached, so an outage is never stored
+        # (and served for the provider's TTL) as "nothing found".
         try:
             if self.limiter is not None:
                 await self.limiter.acquire(
                     provider.name, rate=provider.rate, capacity=provider.capacity
                 )
             result = await provider.lookup(observable, entity_type)
-        except Exception as exc:  # per-provider isolation (lookup)
+        except ProviderError as exc:
             logger.warning(
-                "enrichment provider %s failed for %s: %s", provider.name, observable, exc
+                "enrichment provider %s failed for %s: %s", provider.name, observable, exc.reason,
+                exc_info=exc.__cause__ is not None,
             )
-            results[provider.name] = {"status": "error"}
+            results[provider.name] = {"status": "error", "reason": exc.reason}
+            return
+        except Exception:  # per-provider isolation (lookup)
+            logger.warning(
+                "enrichment provider %s raised for %s", provider.name, observable, exc_info=True
+            )
+            results[provider.name] = {"status": "error", "reason": "lookup failed"}
             return
 
         # per-provider isolation (graph write) — a store failure here must not
         # abort the other providers.
         if not self._safe_apply(entity, project_id, result):
-            results[provider.name] = {"status": "error"}
+            results[provider.name] = {"status": "error", "reason": "graph write failed"}
             return
 
         if self.cache is not None:

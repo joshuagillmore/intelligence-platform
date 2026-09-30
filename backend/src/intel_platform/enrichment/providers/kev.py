@@ -15,6 +15,8 @@ from intel_platform.collection.proxy import ProxiedClient
 from intel_platform.enrichment.base import (
     EnrichmentProvider,
     EnrichmentResult,
+    ProviderError,
+    fetch_json,
     register_provider,
 )
 
@@ -32,15 +34,23 @@ def _reset_catalog() -> None:
 
 
 async def _get_catalog(client: ProxiedClient) -> dict:
+    """The parsed KEV catalog, fetched at most every ``_CATALOG_TTL`` seconds.
+
+    Raises ``ProviderError`` (and keeps nothing) when the catalog cannot be
+    fetched or does not carry a ``vulnerabilities`` list — a catalog we could
+    not read must not answer "not known-exploited" for every CVE.
+    """
     now = time.monotonic()
     if _catalog["cves"] is not None and (now - _catalog["fetched"]) < _CATALOG_TTL:
         return _catalog["cves"]
-    resp = await client.get(_KEV_URL, timeout=30)
-    data = resp.json()
+    data = await fetch_json(client, KEVProvider.name, _KEV_URL, timeout=30)
+    entries = data.get("vulnerabilities") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        raise ProviderError(KEVProvider.name, "unexpected response shape")
     cves = {
         str(v.get("cveID", "")).upper(): v
-        for v in (data.get("vulnerabilities") or [])
-        if v.get("cveID")
+        for v in entries
+        if isinstance(v, dict) and v.get("cveID")
     }
     _catalog["cves"] = cves
     _catalog["fetched"] = now
@@ -60,10 +70,7 @@ class KEVProvider(EnrichmentProvider):
         self._client = client or ProxiedClient()
 
     async def lookup(self, value: str, entity_type: str) -> EnrichmentResult:
-        try:
-            catalog = await _get_catalog(self._client)
-        except Exception:
-            return EnrichmentResult(source_url=_KEV_URL)
+        catalog = await _get_catalog(self._client)
 
         entry = catalog.get(value.upper())
         if not entry:

@@ -20,7 +20,9 @@ from intel_platform.config import settings
 from intel_platform.enrichment.base import (
     EnrichmentProvider,
     EnrichmentResult,
+    ProviderError,
     RelatedEntity,
+    fetch_json,
     register_provider,
 )
 from intel_platform.services.geo.coordinates import latlng_to_mgrs
@@ -69,26 +71,25 @@ class GeocodeProvider(EnrichmentProvider):
 
     async def lookup(self, value: str, entity_type: str) -> EnrichmentResult:
         url = f"{settings.nominatim_base_url.rstrip('/')}/search"
-        try:
-            resp = await self._client.get(
-                url,
-                params={"q": value, "format": "jsonv2", "addressdetails": "1", "limit": "1"},
-                headers={"User-Agent": settings.geo_user_agent},
-                timeout=15,
-            )
-            data = resp.json()
-        except Exception:
-            return EnrichmentResult(source_url=url)
-
-        if not isinstance(data, list) or not data or not isinstance(data[0], dict):
-            return EnrichmentResult(source_url=url)
+        data = await fetch_json(
+            self._client, self.name, url,
+            params={"q": value, "format": "jsonv2", "addressdetails": "1", "limit": "1"},
+            headers={"User-Agent": settings.geo_user_agent},
+            timeout=15,
+        )
+        if not isinstance(data, list):
+            raise ProviderError(self.name, "unexpected response shape")
+        if not data:
+            return EnrichmentResult(source_url=url)  # Nominatim found no match
         hit = data[0]
+        if not isinstance(hit, dict):
+            raise ProviderError(self.name, "unexpected response shape")
         try:
             lat, lon = float(hit.get("lat")), float(hit.get("lon"))
         except (TypeError, ValueError):
-            return EnrichmentResult(source_url=url, raw=hit)
+            raise ProviderError(self.name, "unexpected response shape") from None
         if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
-            return EnrichmentResult(source_url=url, raw=hit)
+            raise ProviderError(self.name, "unexpected response shape")
 
         address = hit.get("address")
         admin = _admin_fields(address if isinstance(address, dict) else {})

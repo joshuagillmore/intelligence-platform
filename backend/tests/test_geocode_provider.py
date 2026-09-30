@@ -1,11 +1,15 @@
 """Tests for the Nominatim geocode provider (G2). All HTTP mocked."""
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from intel_platform.enrichment.base import ProviderError
 from intel_platform.enrichment.providers.geocode import GeocodeProvider
 
 
 def _resp(payload):
     resp = MagicMock()
+    resp.status_code = 200
     resp.json = MagicMock(return_value=payload)
     return resp
 
@@ -63,18 +67,27 @@ async def test_geocode_no_result_is_empty():
     assert result.properties == {}
 
 
-async def test_geocode_tolerates_malformed_json():
+async def test_geocode_wrong_shaped_json_is_an_error():
+    # Not a list at all: Nominatim did not answer the question we asked, and
+    # an empty result would be cached for 30 days as "no such place".
     async def get(url, params=None, headers=None, timeout=15):
         return _resp(None)
 
-    result = await GeocodeProvider(client=_client(get)).lookup("x", "Location")
-    assert result.properties == {}
+    with pytest.raises(ProviderError):
+        await GeocodeProvider(client=_client(get)).lookup("x", "Location")
 
 
-async def test_geocode_tolerates_non_dict_hit():
-    # A JSON list whose element isn't a dict (or a string address) must not raise.
+async def test_geocode_non_dict_hit_is_an_error():
     async def get(url, params=None, headers=None, timeout=15):
         return _resp(["not-a-dict"])
 
-    result = await GeocodeProvider(client=_client(get)).lookup("x", "Location")
-    assert result.properties == {}
+    with pytest.raises(ProviderError):
+        await GeocodeProvider(client=_client(get)).lookup("x", "Location")
+
+
+async def test_geocode_unparseable_coordinates_are_an_error():
+    async def get(url, params=None, headers=None, timeout=15):
+        return _resp([{"lat": "north-ish", "lon": "44.6", "address": {}}])
+
+    with pytest.raises(ProviderError):
+        await GeocodeProvider(client=_client(get)).lookup("x", "Location")
