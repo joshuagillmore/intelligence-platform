@@ -1,6 +1,6 @@
 """MCP tools over the knowledge graph.
 
-Served over authenticated streamable HTTP by ``intel_platform.mcp.http``.
+Served over authenticated streamable HTTP by ``intel_platform.mcp.transport``.
 Every tool is async and runs the sync Neo4j ``GraphStore`` (and any other
 blocking work) in a worker thread, so a tool call never stalls the API's event
 loop. Graph traversals are scoped to one project and bounded to 1..4 hops.
@@ -235,6 +235,6 @@ def get_mcp_app():
     it never returns FastMCP's bare, unauthenticated Starlette app.
     """
     from intel_platform.config import settings
-    from intel_platform.mcp.http import build_authenticated_app
+    from intel_platform.mcp.transport import build_authenticated_app
 
     return build_authenticated_app(settings)
