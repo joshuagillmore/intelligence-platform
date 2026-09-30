@@ -67,15 +67,73 @@ _PROCESS_STARTED_AT = datetime.now(timezone.utc)
 # run mid-collection.
 _inflight_runs: dict[uuid.UUID, "asyncio.Task"] = {}
 
+# The latest run this process launched for a plan ended by raising or being
+# cancelled. A crashed run writes no terminal event, so without this the trail
+# read "running" for the whole stall window, then "stalled" — never "failed" —
+# and the execute guard refused the plan meanwhile. Cleared when a new run is
+# registered for the plan.
+_failed_runs: dict[uuid.UUID, str] = {}
+
+# One lock per plan around the execute guard. The guard is check-then-act
+# across awaits (state read, status commit, task launch), so two POSTs could
+# both see "idle" and both start a collection loop.
+_execute_locks: dict[uuid.UUID, asyncio.Lock] = {}
+
+
+def _execute_lock(plan_id: uuid.UUID) -> asyncio.Lock:
+    lock = _execute_locks.get(plan_id)
+    if lock is None:
+        lock = _execute_locks[plan_id] = asyncio.Lock()
+    return lock
+
 
 def register_run(plan_id: uuid.UUID, task) -> None:
     _inflight_runs[plan_id] = task
-    task.add_done_callback(lambda _t, pid=plan_id: _inflight_runs.pop(pid, None))
+    _failed_runs.pop(plan_id, None)
+    task.add_done_callback(lambda t, pid=plan_id: _run_finished(pid, t))
+
+
+def _run_finished(plan_id: uuid.UUID, task) -> None:
+    """Done-callback: unregister the run and record how it ended.
+
+    Only the entry that is still *this* task is touched. A second run
+    registered for the plan replaces the first, and the first one's callback
+    used to pop the second's entry, making a live run invisible to the guard.
+    """
+    if task.cancelled():
+        outcome = "cancelled"
+        logger.warning("Collection run for plan %s was cancelled", plan_id)
+    elif task.exception() is not None:
+        exc = task.exception()
+        outcome = type(exc).__name__
+        # Retrieved and logged here; it used to be discarded, which also left
+        # asyncio to print "Task exception was never retrieved" at shutdown.
+        logger.error("Collection run for plan %s failed", plan_id, exc_info=exc)
+    else:
+        outcome = ""
+    if _inflight_runs.get(plan_id) is not task:
+        return
+    _inflight_runs.pop(plan_id, None)
+    if outcome:
+        _failed_runs[plan_id] = outcome
 
 
 def has_live_run(plan_id: uuid.UUID) -> bool:
     task = _inflight_runs.get(plan_id)
     return task is not None and not task.done()
+
+
+def _in_process_state(plan_id: uuid.UUID) -> str | None:
+    """What this process knows directly about the plan's latest run, if anything.
+
+    Shared by the execute guard and `/execution-status`, in the same order, so
+    what the analyst is shown and what the API enforces cannot disagree.
+    """
+    if has_live_run(plan_id):
+        return "running"
+    if plan_id in _failed_runs:
+        return "failed"
+    return None
 
 
 def run_state_from_events(events) -> str:
@@ -133,8 +191,9 @@ async def current_run_state(db: AsyncSession, plan_id: uuid.UUID) -> str:
     """
     from intel_platform.services.plan_executor import get_execution_status as _mem_status
 
-    if has_live_run(plan_id):
-        return "running"
+    known = _in_process_state(plan_id)
+    if known:
+        return known
     mem = _mem_status(str(plan_id))
     if mem:
         return mem.get("status") or "idle"
@@ -836,6 +895,16 @@ async def execute_plan_endpoint(
     if not plan:
         raise HTTPException(404, "Collection plan not found")
 
+    # Held from the in-flight check until the new run is registered, so a
+    # second request waits and then sees the first request's live task.
+    async with _execute_lock(plan.id):
+        return await _start_execution(plan, body, db, store)
+
+
+async def _start_execution(
+    plan: CollectionPlan, body: ExecuteRequest | None, db: AsyncSession, store: GraphStore,
+) -> dict:
+    """The execute guard and launch. Runs under the plan's execute lock."""
     # Refuse only when a run is genuinely in flight, not because of a status
     # flag. The old guard allowed DRAFT and PAUSED only, which made "Activate" —
     # the button an analyst naturally presses before running something — set
@@ -872,8 +941,13 @@ async def execute_plan_endpoint(
     # the run was actually allowed rather than on a number the caller re-supplies
     # at assessment time.
     plan.status = PlanStatus.ACTIVE
+    # The budget belongs to this run only. It used to persist when a later run
+    # was started without one, so that run was assessed against a limit it was
+    # never given.
+    rules = {k: v for k, v in (plan.routing_rules or {}).items() if k != "source_limit"}
     if body and body.source_limit:
-        plan.routing_rules = {**(plan.routing_rules or {}), "source_limit": body.source_limit}
+        rules["source_limit"] = body.source_limit
+    plan.routing_rules = rules
     plan.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(plan)
@@ -888,7 +962,12 @@ async def execute_plan_endpoint(
 
     all_auto = [s for s in sources if s.enabled and s.source_type != "file_upload"]
     source_limit = body.source_limit if body else None
-    if all_auto:
+    # A plan raised against a PIR is collected against its open elements even
+    # with no planned sources: the loop goes straight to re-tasking. It used to
+    # be set ACTIVE and left there, with the requirement loop never run.
+    requirement_only = not all_auto and plan.pir_id is not None
+    launched = bool(all_auto) or requirement_only
+    if launched:
         session_factory = get_session_factory()
         max_results = max(1, min(25, body.max_results_per_source if body else 10))
         register_run(plan.id, asyncio.create_task(
@@ -904,11 +983,16 @@ async def execute_plan_endpoint(
             )
         ))
 
+    if all_auto:
+        message = f"Agentic execution started with {len(all_auto)} source(s)."
+    elif requirement_only:
+        message = "No planned sources; collecting against the requirement's open elements."
+    else:
+        message = "Plan activated but no automated sources found."
     return {
         **_plan_to_dict(plan),
-        "execution_status": "started" if all_auto else "no_executable_sources",
-        "message": f"Agentic execution started with {len(all_auto)} source(s)." if all_auto
-                   else "Plan activated but no automated sources found.",
+        "execution_status": "started" if launched else "no_executable_sources",
+        "message": message,
         "sources_queued": min(len(all_auto), source_limit) if source_limit else len(all_auto),
         "sources_manual": len(file_only),
         "sources_missing_config": len(missing_config),
@@ -930,9 +1014,15 @@ async def get_execution_status(plan_id: str, db: AsyncSession = Depends(get_db))
     from intel_platform.services.plan_executor import get_execution_status as _mem_status
     pid = _parse_uuid(plan_id, "plan_id")
 
-    mem = _mem_status(plan_id)
-    if mem:
-        return {"plan_id": plan_id, **mem}
+    # Same evidence, same order as the execute guard (`current_run_state`): the
+    # live task, a failure recorded when it ended, the in-memory tracker, then
+    # the trail. This endpoint skipped the live task, so a run that had not
+    # written its first event yet read "idle" while the guard refused with 409.
+    known = _in_process_state(pid)
+    if known is None:
+        mem = _mem_status(plan_id)
+        if mem:
+            return {"plan_id": plan_id, **mem}
 
     result = await db.execute(
         select(CollectionActivity)
@@ -941,6 +1031,12 @@ async def get_execution_status(plan_id: str, db: AsyncSession = Depends(get_db))
     )
     events = result.scalars().all()
     if not events:
+        if known == "running":
+            return {"plan_id": plan_id, "status": "running", "message": "Run starting",
+                    "sources_succeeded": 0, "sources_failed": 0}
+        if known == "failed":
+            return {"plan_id": plan_id, "status": "failed",
+                    "message": "The collection run ended with an error"}
         return {"plan_id": plan_id, "status": "idle", "message": "No active execution"}
 
     latest = events[-1]
@@ -952,9 +1048,14 @@ async def get_execution_status(plan_id: str, db: AsyncSession = Depends(get_db))
     # restarting the backend and watching a dead plan keep claiming it. Now that
     # extraction emits a heartbeat, silence past the threshold is itself
     # information: the work is not merely slow.
-    state = run_state_from_events(events)
-    # Counts are for the current run only — see current_run_events.
-    this_run = current_run_events(events)
+    state = known or run_state_from_events(events)
+    # Counts are for the current run only — see current_run_events. A live run
+    # whose trail still ends on the previous run's terminal event has not
+    # written anything of its own yet.
+    if known == "running" and latest.event in _TERMINAL_EVENTS:
+        this_run = []
+    else:
+        this_run = current_run_events(events)
     return {
         "plan_id": plan_id,
         "status": state,
