@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import logging
 
+import httpcore
 import httpx
 
-from intel_platform.collection.url_guard import validate_url
+from intel_platform.collection.url_guard import resolve_host_async, validate_url_async
 from intel_platform.config import settings
 
 logger = logging.getLogger(__name__)
@@ -33,8 +34,64 @@ async def _ssrf_guard_hook(request: httpx.Request) -> None:
     Fires for the initial request AND each redirect hop httpx follows, so a
     3xx pointing at an internal host is rejected before we connect to it.
     Raises ValueError (surfaced to the caller) when a URL is unsafe.
+
+    Only the checks that need no lookup run here. In direct mode the address
+    is resolved and vetted once, at connect time, by `_PinnedBackend`; behind a
+    proxy the target is resolved at the far end and must not be looked up
+    locally at all.
     """
-    validate_url(str(request.url))
+    await validate_url_async(str(request.url), resolve=False)
+
+
+class _PinnedBackend(httpcore.AsyncNetworkBackend):
+    """Connects only to an address the SSRF guard vetted, resolving each host once.
+
+    The guard used to resolve a host and approve it, then httpx resolved it
+    again to connect. A TTL-0 rebinding name answers the first lookup with a
+    public address and the second with 127.0.0.1. Here the one lookup the guard
+    vets is the one the socket uses. TLS still verifies against the hostname:
+    httpcore passes it as the SNI/server name independently of the address.
+    """
+
+    #: Builds the real socket layer. A class attribute so tests can swap it.
+    inner_factory = staticmethod(httpcore.AnyIOBackend)
+
+    def __init__(self):
+        self._inner = self.inner_factory()
+
+    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        addresses = await resolve_host_async(host)
+        last_error: Exception | None = None
+        for address in addresses:
+            try:
+                return await self._inner.connect_tcp(
+                    address, port, timeout=timeout,
+                    local_address=local_address, socket_options=socket_options,
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout, OSError) as exc:
+                last_error = exc
+        raise last_error or httpcore.ConnectError(f"Could not connect to {host}")
+
+    async def connect_unix_socket(self, path, timeout=None, socket_options=None):
+        raise httpcore.ConnectError("Unix sockets are not an outbound collection path")
+
+    async def sleep(self, seconds: float) -> None:
+        await self._inner.sleep(seconds)
+
+
+def _pinned_transport() -> httpx.AsyncHTTPTransport:
+    """An httpx transport whose connections go through `_PinnedBackend`.
+
+    httpx does not expose the network backend, so it is set on the pool it
+    builds. If a future httpx/httpcore moves that attribute, refuse to fetch
+    rather than silently fall back to the unpinned resolver.
+    """
+    transport = httpx.AsyncHTTPTransport()
+    pool = getattr(transport, "_pool", None)
+    if pool is None or not hasattr(pool, "_network_backend"):
+        raise RuntimeError("httpx transport internals changed; refusing to fetch without DNS pinning")
+    pool._network_backend = _PinnedBackend()
+    return transport
 
 # Selectable modes. "vpn" -> gluetun HTTP proxy, "tor" -> Tor SOCKS5,
 # "proxy" -> an explicit ad-hoc proxy_url, "direct" -> no proxy.
@@ -106,25 +163,30 @@ class ProxiedClient:
     async def _resolve_config(self) -> ProxyConfig:
         return self._config or await get_active_proxy_config()
 
+    @staticmethod
+    def _client_kwargs(cfg: ProxyConfig, timeout: float) -> dict:
+        kwargs: dict = {
+            "timeout": timeout, "follow_redirects": True, "max_redirects": MAX_REDIRECTS,
+            "event_hooks": {"request": [_ssrf_guard_hook]},
+        }
+        proxy_kwargs = cfg.get_client_kwargs()
+        if proxy_kwargs:
+            kwargs.update(proxy_kwargs)  # resolved at the proxy's end, never here
+        else:
+            kwargs["transport"] = _pinned_transport()
+        return kwargs
+
     async def get(self, url: str, timeout: float = 30, headers: dict | None = None,
                   params: dict | None = None) -> httpx.Response:
         cfg = await self._resolve_config()
-        kwargs = cfg.get_client_kwargs()
-        async with httpx.AsyncClient(
-            timeout=timeout, follow_redirects=True, max_redirects=MAX_REDIRECTS,
-            event_hooks={"request": [_ssrf_guard_hook]}, **kwargs,
-        ) as client:
+        async with httpx.AsyncClient(**self._client_kwargs(cfg, timeout)) as client:
             return await client.get(url, headers=headers or {}, params=params)
 
     async def post(self, url: str, timeout: float = 30, headers: dict | None = None,
                    json: dict | None = None, data: dict | None = None,
                    params: dict | None = None) -> httpx.Response:
         cfg = await self._resolve_config()
-        kwargs = cfg.get_client_kwargs()
-        async with httpx.AsyncClient(
-            timeout=timeout, follow_redirects=True, max_redirects=MAX_REDIRECTS,
-            event_hooks={"request": [_ssrf_guard_hook]}, **kwargs,
-        ) as client:
+        async with httpx.AsyncClient(**self._client_kwargs(cfg, timeout)) as client:
             return await client.post(url, headers=headers or {}, json=json, data=data, params=params)
 
     async def fetch_text(self, url: str, timeout: float = 30) -> str:

@@ -1,5 +1,11 @@
+import socket
 from unittest.mock import patch
 
+import httpcore
+import pytest
+
+from intel_platform.collection import proxy as proxy_mod
+from intel_platform.collection import url_guard
 from intel_platform.collection.proxy import ProxyConfig, get_active_proxy_config
 from intel_platform.config import settings
 
@@ -221,3 +227,134 @@ async def test_proxied_client_post_forwards_json_and_honors_vpn(monkeypatch):
     assert kwargs["json"] == {"a": 1}
     # vpn mode -> the httpx client is built with the gluetun proxy
     assert _CapturingClient.captured["init"].get("proxy") == proxy_mod.settings.vpn_http_proxy
+
+
+# ---------------------------------------------------------------------------
+# Direct mode connects only to the address the guard vetted (C-5)
+# ---------------------------------------------------------------------------
+#
+# The guard used to resolve a host, approve it, and hand the URL to httpx, which
+# resolved it again. A TTL-0 rebinding name answers "public" to the first lookup
+# and "127.0.0.1" to the second. Now the lookup happens once, at connect time,
+# and the socket goes to exactly the address that was vetted.
+
+class _SequencedDNS:
+    """Answers each lookup of a host with the next address in its list."""
+
+    def __init__(self, answers: dict[str, list[str]]):
+        self.answers = {h: list(v) for h, v in answers.items()}
+        self.calls: list[str] = []
+
+    def __call__(self, host):
+        self.calls.append(host)
+        seq = self.answers.get(host)
+        if not seq:
+            raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+        ip = seq.pop(0) if len(seq) > 1 else seq[0]
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 0))]
+
+
+class _RecordingBackend(httpcore.AsyncNetworkBackend):
+    """Stands in for the socket layer: records where it was asked to connect."""
+
+    def __init__(self, responses: dict[str, list[bytes]] | None = None):
+        self.responses = responses or {}
+        self.connected: list[tuple[str, int]] = []
+
+    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        self.connected.append((host, port))
+        return httpcore.AsyncMockStream(list(self.responses.get(host, [])))
+
+    async def sleep(self, seconds):
+        return None
+
+
+def _http(body: bytes, status: str = "200 OK", extra: str = "") -> list[bytes]:
+    head = f"HTTP/1.1 {status}\r\nContent-Length: {len(body)}\r\n{extra}\r\n".encode()
+    return [head, body]
+
+
+@pytest.fixture
+def fake_socket_layer(monkeypatch):
+    backend = _RecordingBackend()
+    monkeypatch.setattr(proxy_mod._PinnedBackend, "inner_factory", staticmethod(lambda: backend))
+    return backend
+
+
+class TestPinnedConnection:
+    async def test_connects_to_the_vetted_address(self, monkeypatch, fake_socket_layer):
+        dns = _SequencedDNS({"example.org": ["93.184.216.34"]})
+        monkeypatch.setattr(url_guard, "_getaddrinfo", dns)
+
+        await proxy_mod._PinnedBackend().connect_tcp("example.org", 443)
+        assert fake_socket_layer.connected == [("93.184.216.34", 443)]
+
+    async def test_rebinding_name_is_resolved_once(self, monkeypatch, fake_socket_layer):
+        """Public first, loopback second: the second answer is never asked for."""
+        dns = _SequencedDNS({"rebind.example.org": ["93.184.216.34", "127.0.0.1"]})
+        monkeypatch.setattr(url_guard, "_getaddrinfo", dns)
+
+        await proxy_mod._PinnedBackend().connect_tcp("rebind.example.org", 80)
+        assert dns.calls == ["rebind.example.org"]
+        assert fake_socket_layer.connected == [("93.184.216.34", 80)]
+
+    async def test_private_answer_is_refused_before_connecting(self, monkeypatch, fake_socket_layer):
+        monkeypatch.setattr(url_guard, "_getaddrinfo", _SequencedDNS({"evil.example.org": ["10.1.2.3"]}))
+        with pytest.raises(ValueError):
+            await proxy_mod._PinnedBackend().connect_tcp("evil.example.org", 80)
+        assert fake_socket_layer.connected == []
+
+    async def test_unresolvable_host_is_refused(self, monkeypatch, fake_socket_layer):
+        monkeypatch.setattr(url_guard, "_getaddrinfo", _SequencedDNS({}))
+        with pytest.raises(ValueError):
+            await proxy_mod._PinnedBackend().connect_tcp("gone.example.org", 80)
+        assert fake_socket_layer.connected == []
+
+    async def test_direct_client_is_built_on_the_pinned_transport(self, monkeypatch):
+        _CapturingClient.captured = {}
+        monkeypatch.setattr(proxy_mod.httpx, "AsyncClient", _CapturingClient)
+        await proxy_mod.ProxiedClient(proxy_mod.ProxyConfig(mode="direct")).get("http://x.example.org")
+
+        transport = _CapturingClient.captured["init"].get("transport")
+        assert transport is not None, "direct mode must not fall back to httpx's own resolver"
+        assert isinstance(transport._pool._network_backend, proxy_mod._PinnedBackend)
+
+    async def test_proxied_client_has_no_local_resolution(self, monkeypatch):
+        _CapturingClient.captured = {}
+        monkeypatch.setattr(proxy_mod.httpx, "AsyncClient", _CapturingClient)
+        await proxy_mod.ProxiedClient(proxy_mod.ProxyConfig(mode="vpn")).get("http://x.example.org")
+        assert "transport" not in _CapturingClient.captured["init"]
+
+
+class TestThroughHttpx:
+    """The same guarantees, end to end through a real httpx client."""
+
+    async def test_fetch_goes_to_the_vetted_address(self, monkeypatch, fake_socket_layer):
+        monkeypatch.setattr(url_guard, "_getaddrinfo", _SequencedDNS({"example.org": ["93.184.216.34", "127.0.0.1"]}))
+        fake_socket_layer.responses["93.184.216.34"] = _http(b"hello")
+
+        resp = await proxy_mod.ProxiedClient(proxy_mod.ProxyConfig(mode="direct")).get("http://example.org/a")
+        assert resp.text == "hello"
+        assert fake_socket_layer.connected == [("93.184.216.34", 80)]
+
+    async def test_redirect_to_a_rebinding_host_is_refused(self, monkeypatch, fake_socket_layer):
+        monkeypatch.setattr(url_guard, "_getaddrinfo", _SequencedDNS({
+            "example.org": ["93.184.216.34"],
+            "inside.example.org": ["172.17.0.2"],
+        }))
+        fake_socket_layer.responses["93.184.216.34"] = _http(
+            b"", "302 Found", "Location: http://inside.example.org/admin\r\n",
+        )
+
+        with pytest.raises(ValueError):
+            await proxy_mod.ProxiedClient(proxy_mod.ProxyConfig(mode="direct")).get("http://example.org/a")
+        assert [ip for ip, _ in fake_socket_layer.connected] == ["93.184.216.34"]
+
+    async def test_redirect_to_an_ip_literal_is_refused(self, monkeypatch, fake_socket_layer):
+        monkeypatch.setattr(url_guard, "_getaddrinfo", _SequencedDNS({"example.org": ["93.184.216.34"]}))
+        fake_socket_layer.responses["93.184.216.34"] = _http(
+            b"", "302 Found", "Location: http://169.254.169.254/latest/meta-data/\r\n",
+        )
+        with pytest.raises(ValueError):
+            await proxy_mod.ProxiedClient(proxy_mod.ProxyConfig(mode="direct")).get("http://example.org/a")
+        assert [ip for ip, _ in fake_socket_layer.connected] == ["93.184.216.34"]

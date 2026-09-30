@@ -10,7 +10,7 @@ from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from crawl4ai import ProxyConfig as Crawl4aiProxyConfig
 
 from intel_platform.collection.proxy import get_active_proxy_config
-from intel_platform.collection.url_guard import is_safe_url, is_safe_url_async
+from intel_platform.collection.url_guard import is_safe_url_async
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ class _BrowserGuard:
         parts = urlsplit(url)
         key = f"{parts.scheme}://{parts.netloc}"
         if key not in self._verdicts:
-            self._verdicts[key] = await is_safe_url_async(url)
+            self._verdicts[key] = await is_safe_url_async(url, resolve=self._direct)
         return self._verdicts[key]
 
     # -- crawl4ai hooks -------------------------------------------------------
@@ -200,28 +200,28 @@ async def crawl_urls(
     if not urls:
         return []
 
-    # SSRF guard: validate EVERY URL here so no fetch path can bypass it (the
-    # runner and agentic paths call crawl_urls directly, not via WebScraper).
-    # Drop unsafe URLs rather than fail the whole batch. DNS resolution is
-    # blocking, so run the filter off the event loop.
-    def _filter_safe(candidates: list[str]) -> list[str]:
-        safe: list[str] = []
-        for u in candidates:
-            if is_safe_url(u):
-                safe.append(u)
-            else:
-                logger.warning("Skipping unsafe URL (SSRF guard): %s", u)
-        return safe
-
-    urls = await asyncio.to_thread(_filter_safe, urls)
-    if not urls:
-        return []
-
     # Resolve the active collection-egress proxy (fail-safe to direct) and
     # build the browser + run config PER CRAWL so a proxy-mode change takes
     # effect immediately (no module-level singleton to go stale).
     cfg = await get_active_proxy_config()
     purl = cfg.get_proxy_url()
+    direct = not purl
+
+    # SSRF guard: validate EVERY URL here so no fetch path can bypass it (the
+    # runner and agentic paths call crawl_urls directly, not via WebScraper).
+    # Drop unsafe URLs rather than fail the whole batch. Behind a proxy the
+    # target resolves at the far end, so it is not looked up locally (that
+    # leaked every hostname to the local resolver in Tor mode).
+    safe_urls: list[str] = []
+    for u in urls:
+        if await is_safe_url_async(u, resolve=direct):
+            safe_urls.append(u)
+        else:
+            logger.warning("Skipping unsafe URL (SSRF guard): %s", u)
+    urls = safe_urls
+    if not urls:
+        return []
+
     crawl_proxy = Crawl4aiProxyConfig(server=_browser_proxy_server(purl)) if purl else None
 
     browser_cfg = BrowserConfig(
@@ -231,7 +231,7 @@ async def crawl_urls(
         extra_args=["--dns-prefetch-disable"] if purl else [],
     )
     run_cfg = _make_run_cfg(timeout_ms, crawl_proxy)
-    guard = _BrowserGuard(direct=not purl)
+    guard = _BrowserGuard(direct=direct)
     documents = []
 
     async with AsyncWebCrawler(config=browser_cfg) as crawler:

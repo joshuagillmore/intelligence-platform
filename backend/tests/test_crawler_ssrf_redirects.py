@@ -280,6 +280,37 @@ class TestConnectedAddressIsEvidence:
         assert len(docs) == 1
 
 
+class TestProxyModeDoesNotResolveLocally:
+    """In Tor mode the local resolver must never see the target hostname."""
+
+    async def test_no_local_lookup_and_no_address_check(self, monkeypatch):
+        from intel_platform.collection import url_guard
+
+        lookups = []
+        monkeypatch.setattr(url_guard, "_getaddrinfo", lambda host: lookups.append(host) or [])
+
+        async def tor():
+            return ProxyConfig(mode="tor")
+
+        monkeypatch.setattr(crawler_mod, "get_active_proxy_config", tor)
+        monkeypatch.setattr("intel_platform.collection.proxy.settings.tor_socks_proxy", "socks5h://tor:9050")
+
+        async def scenario(hooks, urls):
+            page = await _open_page(hooks, urls[0])
+            route = FakeRoute("https://news.example.org/story")
+            await page.route_handler(route)
+            assert route.outcome == "continue"
+            # The server address behind a proxy is the proxy's own, so it is
+            # not evidence of anything and is not checked.
+            assert "response" not in page.listeners
+            return [_result(urls[0])]
+
+        monkeypatch.setattr(crawler_mod, "AsyncWebCrawler", _fake_crawler(scenario))
+        docs = await crawler_mod.crawl_urls(["https://news.example.org/"])
+        assert len(docs) == 1
+        assert lookups == []
+
+
 async def test_scraper_surfaces_the_rejection_reason(monkeypatch, direct_mode):
     """A single-URL scrape that was rejected says why, not just 'failed'."""
     from intel_platform.collection.scraper import WebScraper
