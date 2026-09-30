@@ -27,20 +27,49 @@ are especially valuable:
 - **Injection** — stored XSS from document- or LLM-derived text, Cypher/SQL
   injection, prompt injection that escalates privilege.
 - **AuthN / AuthZ** — JWT handling, the admin-gated routes, privilege escalation.
-- **Secret handling** — API keys are Fernet-encrypted at rest; report any leak path.
+- **Secret handling** — provider API keys saved through the admin UI are
+  Fernet-encrypted at rest **when `ENCRYPTION_KEY` is set**; without it they are
+  stored in plaintext (a warning is logged at boot, and `REQUIRE_SECURE_AUTH=true`
+  refuses to start). Report any leak path.
 
 ## Deploying safely
 
 This project ships with **default development credentials** and a placeholder
 `JWT_SECRET`. Before exposing any instance beyond `localhost`:
 
-- set `REQUIRE_SECURE_AUTH=true` — the app then refuses to start while any
-  built-in default secret, API key or admin password is still in place, so the
-  three items below fail loudly rather than silently,
-- set strong, non-default admin credentials,
-- set a real, high-entropy `JWT_SECRET`,
-- provide real datastore passwords (never the `.env.example` placeholders), and
+- set `REQUIRE_SECURE_AUTH=true` (see exactly what it checks below),
+- set a real, high-entropy `JWT_SECRET` (at least 32 bytes),
+- set `DEFAULT_ADMIN_PASSWORD` to a strong value, and an `ENCRYPTION_KEY`
+  (a Fernet key; `Fernet.generate_key()`),
+- set `API_KEY` to a long random value, or leave it blank to disable API-key
+  auth (a non-blank key authenticates as admin),
+- set `CORS_ORIGINS` to the origin(s) the UI is actually served from,
+- provide real datastore passwords (never the `.env.example` placeholders;
+  with Docker Compose, `NEO4J_PASSWORD` and `POSTGRES_PASSWORD`), and
 - keep `.env` (and any real keys) out of version control — it is gitignored.
+
+### What `REQUIRE_SECURE_AUTH=true` enforces
+
+With `REQUIRE_SECURE_AUTH=true` the app refuses to start unless every one of
+these holds (without the flag, the secret and admin-password problems are only
+logged as warnings at boot):
+
+- `JWT_SECRET` is set, is not the shipped placeholder, and is at least 32 bytes.
+- `API_KEY` is either blank (which switches API-key auth off) or a non-default
+  value of at least 16 bytes. Any non-blank key authenticates as admin.
+- `ENCRYPTION_KEY` is set to a valid Fernet key.
+- No admin account's **stored** password hash verifies against `admin`. This is
+  checked against the database on every boot, not against the setting: an
+  instance that once booted with `admin`/`admin` is caught too. If
+  `DEFAULT_ADMIN_PASSWORD` is set (and is not `admin`), those accounts are given
+  that password at boot; otherwise the app refuses to start. On an empty
+  database it will not seed an `admin` user without a non-default
+  `DEFAULT_ADMIN_PASSWORD`.
+- `MCP_ENABLED` is not true: the MCP endpoint's tools write to the graph and
+  spend LLM calls, so it is refused outright under secure auth.
+
+A signed-in user changes their own password with `POST /api/auth/change-password`
+(current password required; throttled like a login).
 
 The local `docker compose` stack binds all services to `127.0.0.1` by design;
 do not rebind app ports to `0.0.0.0` on an untrusted network.

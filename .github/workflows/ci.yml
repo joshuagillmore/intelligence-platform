@@ -62,8 +62,8 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Set up Python 3.11
-        run: uv python install 3.11
+      - name: Set up Python (version from backend/.python-version)
+        run: uv python install
 
       - name: Install dependencies
         # --locked, not --frozen: fail the build when uv.lock has drifted from
@@ -92,10 +92,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node 20
+      - name: Set up Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -127,7 +127,6 @@ jobs:
           NEO4J_USER=neo4j
           NEO4J_PASSWORD=changeme
           POSTGRES_URL=postgresql+asyncpg://intel:changeme@postgres:5432/intel_platform
-          REDIS_URL=redis://:changeme@redis:6379/0
           JWT_SECRET=ci-not-a-real-secret
           API_KEY=ci-test-api-key
           ENV
@@ -135,7 +134,7 @@ jobs:
       - name: Bring up the stack
         # --wait blocks until the healthchecked services (incl. backend) are healthy.
         # ollama is required (backend depends_on it) but needs no model for UI tests.
-        run: docker compose up -d --wait neo4j postgres redis ollama backend frontend
+        run: docker compose up -d --wait neo4j postgres ollama backend frontend
 
       - name: Wait for the frontend + backend to serve
         run: |
@@ -149,10 +148,10 @@ jobs:
           docker compose cp backend/scripts/seed_demo.py backend:/app/seed_demo.py
           docker compose exec -T backend uv run python /app/seed_demo.py
 
-      - name: Set up Node 20
+      - name: Set up Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -177,3 +176,96 @@ jobs:
       - name: Stack logs on failure
         if: failure()
         run: docker compose logs --no-color --tail 200
+
+  image:
+    # The root Dockerfile is what Railway deploys; the jobs above test
+    # backend/Dockerfile and frontend/Dockerfile instead. Build it on every run
+    # (the image is loaded locally, never pushed) and prove the parts that only
+    # exist in it: Chromium for crawl4ai, the bundled Node, and start.sh
+    # serving both halves and exiting when one of them dies.
+    name: Production image (root Dockerfile)
+    runs-on: ubuntu-latest
+    services:
+      neo4j:
+        image: neo4j:5-community
+        env:
+          NEO4J_AUTH: neo4j/changeme
+          NEO4J_PLUGINS: '["apoc"]'
+        ports:
+          - 7687:7687
+          - 7474:7474
+        options: >-
+          --health-cmd "wget --quiet --tries=1 --spider http://localhost:7474 || exit 1"
+          --health-start-period 30s
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 15
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: intel_platform
+          POSTGRES_USER: intel
+          POSTGRES_PASSWORD: changeme
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U intel -d intel_platform"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the root Dockerfile (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: intel-platform:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Bundled Node runs
+        run: docker run --rm --entrypoint node intel-platform:ci --version
+
+      - name: Chromium launches for crawl4ai
+        run: |
+          docker run --rm -i -w /app --entrypoint /app/.venv/bin/python intel-platform:ci - <<'PY'
+          import asyncio
+          from crawl4ai import AsyncWebCrawler, BrowserConfig
+
+          async def main():
+              async with AsyncWebCrawler(config=BrowserConfig(headless=True, browser_type="chromium")) as c:
+                  r = await c.arun("raw:<html><body><h1>rendered</h1></body></html>")
+                  assert r.success, r.error_message
+              print("CHROMIUM_OK")
+
+          asyncio.run(main())
+          PY
+
+      - name: Boot the image and serve API + UI through start.sh
+        run: |
+          docker run -d --name app --network host \
+            -e NEO4J_URI=bolt://localhost:7687 -e NEO4J_USER=neo4j -e NEO4J_PASSWORD=changeme \
+            -e POSTGRES_URL=postgresql+asyncpg://intel:changeme@localhost:5432/intel_platform \
+            intel-platform:ci
+          for i in $(seq 1 60); do curl -sf http://localhost:8000/health && break; sleep 2; done
+          curl -sf http://localhost:8000/health
+          # A page request goes through the backend's proxy to the Next server.
+          curl -sf -o /dev/null -w "GET / -> %{http_code}\n" http://localhost:8000/
+
+      - name: start.sh exits non-zero when the frontend dies
+        run: |
+          # Next renames its process to "next-server (vX)", so match that too.
+          docker exec app bash -c 'for p in /proc/[0-9]*; do tr "\0" " " < $p/cmdline 2>/dev/null | grep -qE "^(next-server|node server\.js)" && kill ${p#/proc/}; done'
+          for i in $(seq 1 30); do [ "$(docker inspect -f '{{.State.Running}}' app)" = false ] && break; sleep 1; done
+          code=$(docker inspect -f '{{.State.ExitCode}}' app)
+          echo "container exit code: $code"
+          [ "$(docker inspect -f '{{.State.Running}}' app)" = false ] && [ "$code" -ne 0 ]
+
+      - name: Container logs
+        if: always()
+        run: docker logs app 2>&1 | tail -100 || true
