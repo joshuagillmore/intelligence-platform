@@ -103,6 +103,29 @@ describe('TemporalHistogram', () => {
     expect(onBucketChange).toHaveBeenCalledWith('year');
   });
 
+  // A failed fetch leaves no data at all. Saying "No dated events" for that
+  // tells the analyst the corpus has no dates, which nobody established.
+  it('says the dates could not be loaded when there is no data, not that none exist', () => {
+    render(
+      <TemporalHistogram
+        data={null} value={[null, null]} onChange={vi.fn()}
+        hideUndated={false} onHideUndatedChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/No dated events/)).toBeNull();
+    expect(screen.getByText(/could not be loaded/i)).toBeInTheDocument();
+  });
+
+  it('shows the reason when the caller passes one', () => {
+    render(
+      <TemporalHistogram
+        data={null} error="Backend unavailable" value={[null, null]} onChange={vi.fn()}
+        hideUndated={false} onHideUndatedChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Backend unavailable/)).toBeInTheDocument();
+  });
+
   it('renders a loading state rather than an empty chart', () => {
     render(
       <TemporalHistogram

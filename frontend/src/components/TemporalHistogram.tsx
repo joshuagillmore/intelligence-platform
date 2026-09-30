@@ -36,8 +36,11 @@ export interface HistogramData {
 }
 
 interface Props {
+  /** null when the histogram has not loaded (e.g. the request failed). */
   data: HistogramData | null;
   loading?: boolean;
+  /** Why `data` is null, if the caller knows. */
+  error?: string | null;
   /** Selected range as [startKey, endKey] over bin keys; null = no filter. */
   value: [string | null, string | null];
   onChange: (range: [string | null, string | null]) => void;
@@ -63,7 +66,7 @@ function binLabel(key: string, bucket: string): string {
 }
 
 export default function TemporalHistogram({
-  data, loading, value, onChange, hideUndated, onHideUndatedChange, onBucketChange,
+  data, loading, error, value, onChange, hideUndated, onHideUndatedChange, onBucketChange,
 }: Props) {
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragTo, setDragTo] = useState<number | null>(null);
@@ -119,7 +122,17 @@ export default function TemporalHistogram({
     );
   }
 
-  if (!data || data.dated === 0) {
+  // No data is not "no dates": the fetch failed or never ran, so nothing is
+  // known about the corpus's dates.
+  if (!data) {
+    return (
+      <div role="status" className="px-3 py-2 text-xs text-gray-500 border-t border-navy-700">
+        Event dates could not be loaded{error ? `: ${error}` : '.'}
+      </div>
+    );
+  }
+
+  if (data.dated === 0) {
     return (
       <div className="px-3 py-2 text-xs text-gray-500 border-t border-navy-700">
         No dated events in this project — nothing to plot over time.
