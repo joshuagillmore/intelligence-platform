@@ -17,7 +17,10 @@ import { getErrorMessage } from '@/lib/errorMessages';
 import { collapseToCommunities } from '@/lib/graphLayout';
 import { useNotifications } from '@/components/NotificationProvider';
 import Markdown from '@/components/Markdown';
-import { filterGraph, createRequestSequencer, useDebouncedValue, mapWithConcurrency } from './graphFilters';
+import {
+  filterGraph, createRequestSequencer, useDebouncedValue, mapWithConcurrency,
+  normaliseGraphEdge, graphTruncationNote,
+} from './graphFilters';
 
 interface Entity {
   id: string;
@@ -63,7 +66,10 @@ interface GraphEdge {
   last_seen?: string;
   source: string;
   target: string;
+  // Provenance (contract 4); normalised to text on load, '' when absent.
   evidence?: string;
+  method?: string;
+  source_doc_id?: string;
   [key: string]: unknown;
 }
 
@@ -226,6 +232,9 @@ function NetworkPageInner() {
   const [mergePrimaryId, setMergePrimaryId] = useState<string>('');
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
+  // /graph returns a display budget of the most-connected entities and says
+  // when that is less than the whole project.
+  const [graphTruncated, setGraphTruncated] = useState(false);
   // Relationship type filter
   const [hiddenRelTypes, setHiddenRelTypes] = useState<Set<string>>(new Set());
   const [relFilterOpen, setRelFilterOpen] = useState(false);
@@ -299,7 +308,10 @@ function NetworkPageInner() {
       const nodes = res.data.nodes || [];
       graphNodesRef.current = nodes;
       setGraphNodes(nodes);
-      setGraphEdges(res.data.edges || []);
+      // One edge shape for the page whichever keys the route sends, with
+      // evidence / method / source_doc_id as text for the edge panel.
+      setGraphEdges(((res.data.edges || []) as Record<string, unknown>[]).map(normaliseGraphEdge) as unknown as GraphEdge[]);
+      setGraphTruncated(res.data.truncated === true);
       // The selected project is remembered in localStorage, so a project that
       // has since been deleted stays selected and every view reports "no data".
       // `project_exists === false` is the backend saying the id refers to
@@ -1125,6 +1137,8 @@ function NetworkPageInner() {
 
   const sortedStats = getSortedStats();
   const maxVals = getMaxValues();
+  // The statistics endpoint counts the same node population /graph samples.
+  const truncationNote = graphTruncationNote(graphTruncated, graphNodes.length, stats?.total_nodes);
   const sortArrow = (key: SortKey) => sortKey === key ? (sortAsc ? ' ▲' : ' ▼') : '';
 
   return (
@@ -1198,6 +1212,14 @@ function NetworkPageInner() {
               </div>
             )}
             <span className="text-xs md:text-sm text-gray-400">{displayData.nodes.length} nodes, {displayData.edges.length} edges{collapseCommunities ? ' (collapsed)' : ''}</span>
+            {truncationNote && (
+              <span
+                className="text-[10px] md:text-xs text-amber-400/80"
+                title="The graph view loads the most-connected entities first. The entity list searches the whole project."
+              >
+                {truncationNote}
+              </span>
+            )}
             <div className="hidden md:flex items-center gap-2">
               <button
                 onClick={() => {
@@ -2445,16 +2467,23 @@ function NetworkPageInner() {
                       <span className="text-gray-300">{String(selectedEdge.last_seen).slice(0, 10)}</span>
                     </div>
                   )}
-                  {selectedEdge.source && (
+                  {/* source_doc_id, not `source`: d3 replaces an edge's `source`
+                      with the node object, which printed "[object Object]". */}
+                  {selectedEdge.source_doc_id && (
                     <div>
                       <span className="text-gray-500">Source Document:</span>{' '}
-                      <span className="text-gray-300">{String(selectedEdge.source)}</span>
+                      <button
+                        onClick={() => networkRouter.push(`/documents/${selectedEdge.source_doc_id}`)}
+                        className="text-accent-blue hover:underline font-mono break-all text-left"
+                      >
+                        {selectedEdge.source_doc_id}
+                      </button>
                     </div>
                   )}
-                  {selectedEdge['method'] != null && (
+                  {selectedEdge.method && (
                     <div>
                       <span className="text-gray-500">Extraction Method:</span>{' '}
-                      <span className="text-gray-300">{String(selectedEdge['method'])}</span>
+                      <span className="text-gray-300">{selectedEdge.method}</span>
                     </div>
                   )}
                   <div>

@@ -173,6 +173,8 @@ function asText(value: unknown, sep = '\n'): string {
 export interface NormalisedEdgeFields {
   source_id: string;
   target_id: string;
+  source: string;
+  target: string;
   rel_type: string;
   evidence: string;
   method: string;
