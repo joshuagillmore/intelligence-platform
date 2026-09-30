@@ -22,10 +22,11 @@ from intel_platform.db.models import PirRequirement
 class _FakeDB:
     """Enough AsyncSession surface for the loop, backed by a plain list."""
 
-    def __init__(self, rows, plan=None, pir=None):
+    def __init__(self, rows, plan=None, pir=None, sources=None):
         self.rows = rows
         self.plan = plan
         self.pir = pir
+        self.sources = list(sources or [])
         self.added = []
         self.deleted = []
         self.commits = 0
@@ -40,6 +41,9 @@ class _FakeDB:
 
     async def execute(self, stmt):
         sql = str(stmt)
+        if "FROM collection_sources" in sql:
+            found = list(self.sources)
+            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: found))
         rows = self.rows
         # The pass loop filters on status in its WHERE clause; sync and the
         # closing read do not. Match the predicate, not the column list — every
@@ -52,6 +56,8 @@ class _FakeDB:
         self.added.append(obj)
         if isinstance(obj, PirRequirement):
             self.rows.append(obj)
+        elif type(obj).__name__ == "CollectionSource":
+            self.sources.append(obj)
 
     async def delete(self, obj):
         self.deleted.append(obj)
@@ -455,6 +461,70 @@ class TestGapSearchHonoursTheProxy:
             db, _plan(), _requirement(0, "a?"), ["q"], None, object(), None, "nlp", None,
         )
         assert seen["proxy"] == "socks5h://tor:9050"
+
+
+class TestRetaskingDoesNotRefetchKnownPages:
+    """Dedupe read `config["url"]`, but planned sources store `config["urls"]`,
+    and the seen-set was rebuilt on every call from a plan object loaded before
+    the loop started, so neither planned pages nor pages re-tasked a moment
+    earlier counted as seen."""
+
+    @pytest.fixture
+    def one_result(self, monkeypatch):
+        def fake_search(query, max_results=3, proxy=None):
+            return [{"url": "https://example.com/a", "title": "A", "snippet": ""}]
+
+        monkeypatch.setattr("intel_platform.collection.search.web_search", fake_search)
+        monkeypatch.setattr("intel_platform.collection.proxy.get_active_proxy_config", _direct_proxy)
+
+    async def test_a_planned_multi_url_source_counts_as_seen(self, one_result):
+        planned = SimpleNamespace(config={"urls": ["https://example.com/a", "https://example.com/b"]})
+        plan = SimpleNamespace(id="plan-1", pir_id="pir-1", sources=[planned])
+        acquired = []
+
+        async def acquire(source, *a, **kw):
+            acquired.append(source.config["url"])
+            return {"record_count": 1}
+
+        db = _FkEnforcingDB([], plan=plan, pir=_pir(["a?"]))
+        added = await rl._collect_for_element(
+            db, plan, _requirement(0, "a?"), ["q"], None, object(), acquire, "nlp", None,
+        )
+        assert added == 0 and acquired == [], "a planned page was fetched again"
+
+    async def test_a_page_retasked_for_one_element_is_not_fetched_for_the_next(self, monkeypatch, one_result):
+        acquired = []
+
+        async def acquire(source, *a, **kw):
+            acquired.append(source.config["url"])
+            return {"record_count": 1, "accepted_count": 1}
+
+        rows = [_requirement(0, "a?"), _requirement(1, "b?")]
+        db = _FkEnforcingDB(rows, plan=_plan(), pir=_pir(["a?", "b?"]))
+        monkeypatch.setattr(rl, "assess_requirement", _assessor([(False, ["q1"]), (False, ["q2"])]))
+
+        await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), acquire, max_passes=1,
+        )
+        assert acquired == ["https://example.com/a"]
+
+    async def test_seen_urls_come_from_the_database_not_the_loaded_plan(self, monkeypatch, one_result):
+        """A source already stored for the plan counts, even if the plan object
+        the loop loaded does not list it."""
+        acquired = []
+
+        async def acquire(source, *a, **kw):
+            acquired.append(source.config["url"])
+            return {"record_count": 1}
+
+        stored = SimpleNamespace(config={"url": "https://example.com/a"})
+        db = _FkEnforcingDB([_requirement(0, "a?")], plan=_plan(), pir=_pir(["a?"]), sources=[stored])
+        monkeypatch.setattr(rl, "assess_requirement", _assessor([(False, ["q"])]))
+
+        await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), acquire, max_passes=1,
+        )
+        assert acquired == []
 
 
 class TestRetaskedSourceIsAcquirable:

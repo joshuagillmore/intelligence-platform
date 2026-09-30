@@ -110,6 +110,25 @@ async def sync_requirements(db, pir: Pir) -> list[PirRequirement]:
     return rows
 
 
+def _source_urls(sources) -> set[str]:
+    """Every page URL a plan's sources already cover.
+
+    A re-tasked source stores one ``url``; a planned web_scrape/database source
+    stores a ``urls`` list. Reading only ``url`` let re-tasking fetch planned
+    pages again.
+    """
+    seen: set[str] = set()
+    for source in sources or []:
+        config = getattr(source, "config", None) or {}
+        url = config.get("url")
+        if isinstance(url, str) and url:
+            seen.add(url)
+        for u in config.get("urls") or []:
+            if isinstance(u, str) and u:
+                seen.add(u)
+    return seen
+
+
 def _log(db, plan_id, event: str, message: str, source_id=None) -> None:
     db.add(CollectionActivity(
         plan_id=plan_id, source_id=source_id, event=event, message=message,
@@ -148,6 +167,12 @@ async def run_requirement_passes(
             await db.commit()
             return outcome
         project_id = pir.project_id
+        # Read what the plan already covers from the database, once, and keep
+        # it current as sources are added — the plan object loaded here does
+        # not see sources added later in this run.
+        seen_urls = _source_urls((await db.execute(
+            select(CollectionSource).where(CollectionSource.plan_id == plan.id)
+        )).scalars().all())
         await db.commit()
 
     store = get_store()
@@ -235,7 +260,7 @@ async def run_requirement_passes(
 
                 added = await _collect_for_element(
                     db, plan, row, queries, store, provider, acquire_source,
-                    extraction_mode, per_element,
+                    extraction_mode, per_element, seen=seen_urls,
                 )
                 used += added
                 outcome.sources_added += added
@@ -277,17 +302,19 @@ async def run_requirement_passes(
 
 async def _collect_for_element(
     db, plan, row, queries, store, provider, acquire_source, extraction_mode, budget,
+    seen: set[str] | None = None,
 ) -> int:
-    """Search the gap queries and collect what they return. Returns sources added."""
+    """Search the gap queries and collect what they return. Returns sources added.
+
+    `seen` is the run's set of already-covered page URLs; it is updated in place
+    so the next element and the next pass do not fetch the same page again.
+    """
     from intel_platform.collection.search import web_search
     from intel_platform.collection.proxy import get_active_proxy_config
 
     added = 0
-    seen = {
-        (s.config or {}).get("url")
-        for s in (plan.sources or [])
-        if (s.config or {}).get("url")
-    }
+    if seen is None:
+        seen = _source_urls(getattr(plan, "sources", None))
 
     # get_active_proxy_config already degrades to direct on its own failures,
     # so nothing here may swallow an error into proxy=None: that silently sent
