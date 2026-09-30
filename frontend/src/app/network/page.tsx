@@ -17,6 +17,10 @@ import { getErrorMessage } from '@/lib/errorMessages';
 import { collapseToCommunities } from '@/lib/graphLayout';
 import { useNotifications } from '@/components/NotificationProvider';
 import Markdown from '@/components/Markdown';
+import {
+  filterGraph, createRequestSequencer, useDebouncedValue, mapWithConcurrency,
+  normaliseGraphEdge, graphTruncationNote, displayProperties,
+} from './graphFilters';
 
 interface Entity {
   id: string;
@@ -62,7 +66,10 @@ interface GraphEdge {
   last_seen?: string;
   source: string;
   target: string;
+  // Provenance (contract 4); normalised to text on load, '' when absent.
   evidence?: string;
+  method?: string;
+  source_doc_id?: string;
   [key: string]: unknown;
 }
 
@@ -91,6 +98,14 @@ const ENTITY_TYPES = ['All', 'Person', 'Organization', 'Location', 'ThreatActor'
 // as totals — but still a page, because this is a scrollable browse list and
 // putting 5,486 buttons in the DOM helps nobody. The panel now says which it is.
 const ENTITY_PANEL_LIMIT = 500;
+
+// The entity search waits for typing to pause before it asks the server.
+const SEARCH_DEBOUNCE_MS = 300;
+
+// The evidence chain asks each document whether it mentions the entity; there
+// is no per-entity endpoint yet (deferred in the 2026-09-30 remediation plan).
+// Bounded so a 500-document project neither crawls serially nor floods the API.
+const EVIDENCE_CONCURRENCY = 6;
 
 const TYPE_LABELS: Record<string, string> = {
   TTP: 'Tactics, Techniques & Procedures',
@@ -164,7 +179,21 @@ function NetworkPageInner() {
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
   const [entityRelationships, setEntityRelationships] = useState<Relationship[]>([]);
+  const [relationshipsError, setRelationshipsError] = useState<string | null>(null);
+  // Each selection takes a token; responses for an entity the analyst has since
+  // moved away from (details, evidence, watchlist status) are dropped.
+  const selectSeqRef = useRef(createRequestSequencer());
+  // The selected entity's id, readable from callbacks that outlive a render
+  // (an enrichment run finishing after the analyst moved on).
+  const selectedEntityIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedEntityIdRef.current = selectedEntity?.id ?? null;
+  }, [selectedEntity]);
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
+  // Only the latest entity search may write the list; a slow response to an
+  // earlier keystroke is dropped.
+  const entitySeqRef = useRef(createRequestSequencer());
   const [typeFilter, setTypeFilter] = useState('All');
   const [activeTypeFilters, setActiveTypeFilters] = useState<Set<string>>(new Set());
   const [typeFilterOpen, setTypeFilterOpen] = useState(false);
@@ -203,6 +232,9 @@ function NetworkPageInner() {
   const [mergePrimaryId, setMergePrimaryId] = useState<string>('');
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
+  // /graph returns a display budget of the most-connected entities and says
+  // when that is less than the whole project.
+  const [graphTruncated, setGraphTruncated] = useState(false);
   // Relationship type filter
   const [hiddenRelTypes, setHiddenRelTypes] = useState<Set<string>>(new Set());
   const [relFilterOpen, setRelFilterOpen] = useState(false);
@@ -223,6 +255,10 @@ function NetworkPageInner() {
   const [snapshotNameInput, setSnapshotNameInput] = useState('');
   const [snapshotFormOpen, setSnapshotFormOpen] = useState(false);
   const [activeSnapshotId, setActiveSnapshotId] = useState<string | null>(null);
+  // The viewed snapshot's entity ids — an input to the filter effect like any
+  // other filter, so it composes with them and clearing it restores the graph.
+  const [activeSnapshotIds, setActiveSnapshotIds] = useState<Set<string> | null>(null);
+  const snapshotSeqRef = useRef(createRequestSequencer());
   // Relationship evidence (rel.evidence is persisted on the edge — just toggle visibility, no fetch)
   const [relEvidenceOpen, setRelEvidenceOpen] = useState<Record<number, boolean>>({});
   // De-emphasize noise-tier ASSOCIATED_WITH edges in the Edge Overview stats
@@ -272,7 +308,10 @@ function NetworkPageInner() {
       const nodes = res.data.nodes || [];
       graphNodesRef.current = nodes;
       setGraphNodes(nodes);
-      setGraphEdges(res.data.edges || []);
+      // One edge shape for the page whichever keys the route sends, with
+      // evidence / method / source_doc_id as text for the edge panel.
+      setGraphEdges(((res.data.edges || []) as Record<string, unknown>[]).map(normaliseGraphEdge) as unknown as GraphEdge[]);
+      setGraphTruncated(res.data.truncated === true);
       // The selected project is remembered in localStorage, so a project that
       // has since been deleted stays selected and every view reports "no data".
       // `project_exists === false` is the backend saying the id refers to
@@ -288,22 +327,25 @@ function NetworkPageInner() {
 
   const loadEntities = useCallback(async () => {
     if (!activeProject) return;
+    const token = entitySeqRef.current.next();
     try {
       const res = await entitiesApi.search(
         activeProject.id,
-        searchQuery || undefined,
+        debouncedSearchQuery || undefined,
         typeFilter === 'All' ? undefined : typeFilter,
         ENTITY_PANEL_LIMIT,
       );
+      if (!entitySeqRef.current.isCurrent(token)) return;
       setEntities(res.data);
       // The panel groups what it received under type headings, and those counts
       // read as totals. On a 5,486-entity project it was grouping the first 50
       // and captioning them "Organization (6)" beside a graph holding 156.
       setEntityTotal(totalFrom(res));
     } catch (e) {
+      if (!entitySeqRef.current.isCurrent(token)) return;
       console.error('Failed to load entities', e);
     }
-  }, [activeProject, searchQuery, typeFilter]);
+  }, [activeProject, debouncedSearchQuery, typeFilter]);
 
   // Event-date distribution for the chronology brush. Re-fetched when the
   // bucket changes; the selection is cleared because bin keys differ between
@@ -485,16 +527,12 @@ function NetworkPageInner() {
   }
 
   async function loadSnapshotView(snapshotId: string) {
+    const token = snapshotSeqRef.current.next();
     try {
       const res = await snapshotsApi.get(snapshotId);
-      const snap = res.data;
-      const snapEntityIds = new Set(snap.entity_ids || []);
-      setFilteredGraphNodes(graphNodes.filter(n => snapEntityIds.has(n.id)));
-      setFilteredGraphEdges(graphEdges.filter(e => {
-        const srcId = e.source_id || e.source;
-        const tgtId = e.target_id || e.target;
-        return snapEntityIds.has(srcId) && snapEntityIds.has(tgtId);
-      }));
+      // A slower load of a previously clicked snapshot must not win.
+      if (!snapshotSeqRef.current.isCurrent(token)) return;
+      setActiveSnapshotIds(new Set<string>(res.data.entity_ids || []));
       setActiveSnapshotId(snapshotId);
     } catch {
       console.error('Failed to load snapshot');
@@ -502,9 +540,9 @@ function NetworkPageInner() {
   }
 
   function clearSnapshotView() {
+    snapshotSeqRef.current.next(); // and a load still in flight must not re-apply it
     setActiveSnapshotId(null);
-    // Re-trigger the filter effect by resetting island threshold
-    setIslandThreshold(0);
+    setActiveSnapshotIds(null);
   }
 
   async function deleteSnapshot(snapshotId: string) {
@@ -523,22 +561,32 @@ function NetworkPageInner() {
     setRelEvidenceOpen(prev => ({ ...prev, [relIndex]: !prev[relIndex] }));
   }
 
+  // Project-level loads. Kept apart from the entity search below: they used to
+  // share one effect with it, so every keystroke re-fetched the graph and five
+  // analytics endpoints and unmounted the canvas while the graph reloaded.
   useEffect(() => {
     loadGraph();
-    loadEntities();
     loadStatistics();
     loadCommunities();
     loadSnapshots();
     loadStructuralHoles();
-  }, [loadGraph, loadEntities, loadStatistics, loadCommunities, loadSnapshots, loadStructuralHoles]);
+  }, [loadGraph, loadStatistics, loadCommunities, loadSnapshots, loadStructuralHoles]);
 
-  // Auto-select entity from URL param (e.g., from Cyber "View in Graph")
+  // The entity list alone follows the (debounced) search and type filter.
   useEffect(() => {
-    if (selectParam && graphNodes.length > 0) {
-      const node = graphNodes.find(n => n.id === selectParam);
-      if (node) {
-        selectEntity({ id: node.id, name: node.name, entity_type: node.entity_type });
-      }
+    loadEntities();
+  }, [loadEntities]);
+
+  // Auto-select entity from URL param (e.g., from Cyber "View in Graph").
+  // Consumed once per distinct param value: re-applying it whenever graphNodes
+  // changed snapped the selection back to it after the analyst had moved on.
+  const consumedSelectRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectParam || graphNodes.length === 0 || consumedSelectRef.current === selectParam) return;
+    consumedSelectRef.current = selectParam;
+    const node = graphNodes.find(n => n.id === selectParam);
+    if (node) {
+      selectEntity({ id: node.id, name: node.name, entity_type: node.entity_type });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectParam, graphNodes]);
@@ -558,97 +606,28 @@ function NetworkPageInner() {
     });
   }
 
-  // Combined filter: entity type + island threshold + relationship type + confidence + temporal range
+  // Combined filter: snapshot + entity type + event-date brush + relationship
+  // type + confidence + temporal range + island threshold. The logic lives in
+  // graphFilters.filterGraph; it always applies the brushed node set and never
+  // returns an edge whose endpoint is hidden (d3 cannot resolve one).
   useEffect(() => {
-    // Filter nodes by active entity type filters
-    let nodes = graphNodes;
-    if (activeTypeFilters.size > 0) {
-      nodes = graphNodes.filter(n => activeTypeFilters.has(n.entity_type));
-    }
-
-    // Event-date brush. Undated entities stay visible unless explicitly hidden:
-    // most of a graph carries no date, so removing them on every selection would
-    // empty the view and make the filter look broken.
-    const [evStart, evEnd] = eventRange;
-    if (evStart && evEnd) {
-      nodes = nodes.filter(n => {
-        const dt = n.event_datetime;
-        if (!dt) return !hideUndated;
-        const key = dt.slice(0, evStart.length);
-        return key >= evStart && key <= evEnd;
-      });
-    }
-
-    const visibleNodeIds = new Set(nodes.map(n => n.id));
-
-    // Filter edges by relationship type, confidence, temporal range, and visible nodes
-    let edges = graphEdges.filter(e => {
-      const srcId = e.source_id || e.source;
-      const tgtId = e.target_id || e.target;
-      if (activeTypeFilters.size > 0 && (!visibleNodeIds.has(String(srcId)) || !visibleNodeIds.has(String(tgtId)))) return false;
-      if (hiddenRelTypes.has(e.rel_type)) return false;
-      if (confidenceThreshold > 0 && (e.confidence === undefined || e.confidence < confidenceThreshold)) return false;
-      const [tStart, tEnd] = temporalRange;
-      if (tStart && e.last_seen && e.last_seen < tStart) return false;
-      if (tEnd && e.first_seen && e.first_seen > tEnd) return false;
-      return true;
+    const { nodes, edges } = filterGraph({
+      nodes: graphNodes,
+      edges: graphEdges,
+      activeTypeFilters,
+      eventRange,
+      hideUndated,
+      hiddenRelTypes,
+      confidenceThreshold,
+      temporalRange,
+      islandThreshold,
+      islandMetric,
+      entityStats: stats?.entity_statistics ?? null,
+      snapshotIds: activeSnapshotIds,
     });
-
-    // Then apply island threshold
-    if (islandThreshold > 0) {
-      const metricMap: Record<string, number> = {};
-
-      if (islandMetric === 'degree') {
-        for (const node of nodes) {
-          metricMap[node.id] = 0;
-        }
-        for (const edge of edges) {
-          const srcId = edge.source_id || edge.source;
-          const tgtId = edge.target_id || edge.target;
-          if (metricMap[srcId] !== undefined) metricMap[srcId]++;
-          if (metricMap[tgtId] !== undefined) metricMap[tgtId]++;
-        }
-      } else {
-        const statsLookup: Record<string, EntityStats> = {};
-        if (stats?.entity_statistics) {
-          for (const s of stats.entity_statistics) {
-            statsLookup[s.entity] = s;
-          }
-        }
-        for (const node of nodes) {
-          const s = statsLookup[node.name];
-          metricMap[node.id] = s ? s[islandMetric] : 0;
-        }
-      }
-
-      const filteredIds = new Set(nodes.filter(n => metricMap[n.id] >= islandThreshold).map(n => n.id));
-      setFilteredGraphNodes(nodes.filter(n => filteredIds.has(n.id)));
-      edges = edges.filter(e => {
-        const srcId = e.source_id || e.source;
-        const tgtId = e.target_id || e.target;
-        return filteredIds.has(srcId) && filteredIds.has(tgtId);
-      });
-    } else {
-      const connectedIds = new Set<string>();
-      for (const edge of edges) {
-        connectedIds.add(String(edge.source_id || edge.source));
-        connectedIds.add(String(edge.target_id || edge.target));
-      }
-      if (hiddenRelTypes.size === 0 && confidenceThreshold === 0 && activeTypeFilters.size === 0) {
-        setFilteredGraphNodes(graphNodes);
-      } else {
-        const originallyConnected = new Set<string>();
-        for (const e of graphEdges) {
-          originallyConnected.add(String(e.source_id || e.source));
-          originallyConnected.add(String(e.target_id || e.target));
-        }
-        setFilteredGraphNodes(nodes.filter(n =>
-          connectedIds.has(n.id) || !originallyConnected.has(n.id)
-        ));
-      }
-    }
+    setFilteredGraphNodes(nodes);
     setFilteredGraphEdges(edges);
-  }, [graphNodes, graphEdges, islandThreshold, islandMetric, hiddenRelTypes, confidenceThreshold, temporalRange, eventRange, hideUndated, stats, activeTypeFilters]);
+  }, [graphNodes, graphEdges, islandThreshold, islandMetric, hiddenRelTypes, confidenceThreshold, temporalRange, eventRange, hideUndated, stats, activeTypeFilters, activeSnapshotIds]);
 
   // Community collapse: reduce many nodes into community super-nodes
   const displayData = useMemo(() => {
@@ -705,48 +684,76 @@ function NetworkPageInner() {
   }
 
   async function selectEntity(entity: Entity) {
+    const seq = selectSeqRef.current;
+    const token = seq.next();
+    const isCurrent = () => seq.isCurrent(token);
     setSelectedEntity(entity);
     setMobileRightOpen(true);
     setAiResult(null);
     setTypeDropdownOpen(false);
+    // Nothing of the previous entity's may show under this one's header.
+    setEntityRelationships([]);
+    setRelationshipsError(null);
+    setIsWatchlisted(false);
     setEvidenceDocs([]);
     setRelEvidenceOpen({});
-    checkWatchlistStatus(entity.id);
+    checkWatchlistStatus(entity.id, isCurrent);
     try {
       const res = await entitiesApi.get(entity.id);
-      if (res.data.relationships) {
-        setEntityRelationships(res.data.relationships);
-      }
+      if (!isCurrent()) return;
+      setEntityRelationships(res.data.relationships || []);
       if (res.data.entity) {
         setSelectedEntity(res.data.entity);
       }
     } catch (e) {
+      if (!isCurrent()) return;
       console.error('Failed to load entity details', e);
+      setRelationshipsError(getErrorMessage(e));
     }
-    // Load evidence chain: source documents mentioning this entity
+    // Load evidence chain: source documents mentioning this entity. Every
+    // document is asked, EVIDENCE_CONCURRENCY at a time; the run stops
+    // starting requests as soon as another entity is selected.
     if (activeProject) {
       setEvidenceLoading(true);
       try {
         const docsRes = await documentsApi.list(activeProject.id);
-        const allDocs = docsRes.data.documents || [];
-        // Check which documents mention this entity by fetching evidence
-        const matched: Array<{ id: string; name: string; reliability_rating: string }> = [];
-        for (const doc of allDocs) {
+        if (!isCurrent()) return;
+        const allDocs: Array<{ id: string; name: string; reliability_rating?: string }> = docsRes.data.documents || [];
+        const mentions = await mapWithConcurrency(allDocs, EVIDENCE_CONCURRENCY, async (doc) => {
           try {
             const evRes = await documentsApi.evidence(doc.id, entity.name);
-            if (evRes.data.count > 0) {
-              matched.push({ id: doc.id, name: doc.name, reliability_rating: doc.reliability_rating || '' });
-            }
+            return evRes.data.count > 0;
           } catch {
-            // skip docs that fail
+            return false; // skip docs that fail
           }
-        }
-        setEvidenceDocs(matched);
+        }, isCurrent);
+        if (!isCurrent()) return;
+        setEvidenceDocs(
+          allDocs
+            .filter((_, i) => mentions[i])
+            .map(doc => ({ id: doc.id, name: doc.name, reliability_rating: doc.reliability_rating || '' })),
+        );
       } catch {
-        setEvidenceDocs([]);
+        if (isCurrent()) setEvidenceDocs([]);
       } finally {
-        setEvidenceLoading(false);
+        if (isCurrent()) setEvidenceLoading(false);
       }
+    }
+  }
+
+  // After an enrichment run: re-read the entity that was enriched, and only
+  // while it is still the one on screen. A run takes a while; re-selecting the
+  // enriched entity after the analyst had moved on yanked them back to it.
+  async function refreshEnrichedEntity(entityId: string) {
+    if (selectedEntityIdRef.current !== entityId) return;
+    try {
+      const res = await entitiesApi.get(entityId);
+      if (selectedEntityIdRef.current !== entityId) return;
+      if (res.data.entity) setSelectedEntity(res.data.entity);
+      setEntityRelationships(res.data.relationships || []);
+      setRelationshipsError(null);
+    } catch (e) {
+      console.error('Failed to refresh enriched entity', e);
     }
   }
 
@@ -840,7 +847,8 @@ function NetworkPageInner() {
         message: `Assessment for ${selectedEntity.name} complete.`,
       });
     } catch {
-      setAiResult('Failed to generate assessment.');
+      // Includes the 503 the route raises when no model can run. Reported by
+      // the notification only — aiResult renders as if it were analysis.
       updateNotification(notifId, {
         type: 'error',
         title: 'Assessment Failed',
@@ -854,7 +862,12 @@ function NetworkPageInner() {
   async function generateAssessmentFromModal() {
     if (!activeProject || multiSelected.length === 0) return;
     setAssessLoading(true);
+    // A failure is reported and the modal stays open; it is never written into
+    // aiResult, which renders whatever it holds as if it were analysis.
+    const fail = (message: string) =>
+      addNotification({ type: 'error', title: 'Assessment Failed', message });
     try {
+      let result: string | undefined;
       // For multiple entities (community/group), generate a community overview
       if (multiSelected.length > 1) {
         const entityNames = multiSelected.map(e => `${e.name} (${e.entity_type})`).join(', ');
@@ -883,8 +896,11 @@ function NetworkPageInner() {
           [{ role: 'user', content: communityPrompt }],
           'threat_assessment'
         );
-        const result = llmRes.data.response || llmRes.data.content || JSON.stringify(llmRes.data);
-        setAiResult(result);
+        // model "none" is the route's no-provider reply, whose content is a
+        // configuration message rather than an assessment.
+        if (llmRes.data?.model !== 'none') {
+          result = llmRes.data?.response || llmRes.data?.content;
+        }
       } else {
         // Single entity: use standard assessment
         const entity = multiSelected[0];
@@ -894,14 +910,20 @@ function NetworkPageInner() {
           judgment: assessJudgment || undefined,
           probability: assessProbability,
         });
-        setAiResult(res.data.assessment || res.data.error || 'No response');
+        // A failed generation is a 503 now; older backends sent 200 {error}.
+        if (!res.data?.error) result = res.data?.assessment;
       }
+      if (!result) {
+        fail('No assessment was generated. Check the LLM configuration and try again.');
+        return;
+      }
+      setAiResult(result);
       setAssessModalOpen(false);
       setAssessJudgment('');
       setAssessProbability(0.5);
       setAssessAnalyst('');
-    } catch {
-      setAiResult('Failed to generate community assessment.');
+    } catch (e) {
+      fail(getErrorMessage(e));
     } finally {
       setAssessLoading(false);
     }
@@ -961,14 +983,18 @@ function NetworkPageInner() {
 
   const ENTITY_TYPE_OPTIONS = ['Person', 'Organization', 'Location', 'IPAddress', 'Domain', 'Hash', 'ThreatActor', 'TTP', 'Vulnerability', 'Malware', 'Campaign'];
 
-  async function checkWatchlistStatus(entityId: string) {
+  async function checkWatchlistStatus(entityId: string, isCurrent: () => boolean) {
     if (!activeProject) return;
     try {
       const res = await watchlistApi.list(activeProject.id);
-      const watchedIds = (res.data || []).map((e: { id: string }) => e.id);
-      setIsWatchlisted(watchedIds.includes(entityId));
+      if (!isCurrent()) return;
+      // GET /watchlist returns {watched_entities: [{id, name, ...}], count}.
+      // Reading the body as an array made every entity look unwatched, so
+      // "Remove from Watchlist" could never appear.
+      const watched: Array<{ id: string }> = res.data?.watched_entities ?? [];
+      setIsWatchlisted(watched.some(e => e.id === entityId));
     } catch {
-      setIsWatchlisted(false);
+      if (isCurrent()) setIsWatchlisted(false);
     }
   }
 
@@ -1023,6 +1049,7 @@ function NetworkPageInner() {
   // Edge click handler for detail panel (P0.4)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleEdgeClick(edge: any) {
+    selectSeqRef.current.next(); // abandon the entity loads still in flight
     setSelectedEdge(edge as GraphEdge);
     setSelectedEntity(null);
   }
@@ -1125,6 +1152,11 @@ function NetworkPageInner() {
 
   const sortedStats = getSortedStats();
   const maxVals = getMaxValues();
+  // The statistics endpoint counts the same node population /graph samples.
+  const truncationNote = graphTruncationNote(graphTruncated, graphNodes.length, stats?.total_nodes);
+  // Through entityFields: the entity routes flatten node fields onto the
+  // object, so reading only `.properties` showed nothing for most entities.
+  const propertyRows = selectedEntity ? displayProperties(selectedEntity) : [];
   const sortArrow = (key: SortKey) => sortKey === key ? (sortAsc ? ' ▲' : ' ▼') : '';
 
   return (
@@ -1198,6 +1230,14 @@ function NetworkPageInner() {
               </div>
             )}
             <span className="text-xs md:text-sm text-gray-400">{displayData.nodes.length} nodes, {displayData.edges.length} edges{collapseCommunities ? ' (collapsed)' : ''}</span>
+            {truncationNote && (
+              <span
+                className="text-[10px] md:text-xs text-amber-400/80"
+                title="The graph view loads the most-connected entities first. The entity list searches the whole project."
+              >
+                {truncationNote}
+              </span>
+            )}
             <div className="hidden md:flex items-center gap-2">
               <button
                 onClick={() => {
@@ -2135,14 +2175,14 @@ function NetworkPageInner() {
                   </span>
                 </div>
 
-                {selectedEntity.properties && Object.keys(selectedEntity.properties).length > 0 && (
+                {propertyRows.length > 0 && (
                   <div>
                     <h4 className="text-sm font-semibold text-gray-400 mb-2">Properties</h4>
                     <div className="space-y-1">
-                      {Object.entries(selectedEntity.properties).map(([key, value]) => (
-                        <div key={key} className="text-xs">
+                      {propertyRows.map(([key, value]) => (
+                        <div key={key} className="text-xs break-words">
                           <span className="text-gray-500">{key}:</span>{' '}
-                          <span className="text-gray-300">{String(value)}</span>
+                          <span className="text-gray-300">{value}</span>
                         </div>
                       ))}
                     </div>
@@ -2150,11 +2190,25 @@ function NetworkPageInner() {
                 )}
 
                 <EnrichmentPanel
+                  key={selectedEntity.id}
                   entityId={selectedEntity.id}
                   entityType={selectedEntity.entity_type}
                   properties={entityFields(selectedEntity)}
-                  onEnriched={() => selectEntity(selectedEntity)}
+                  onEnriched={() => refreshEnrichedEntity(selectedEntity.id)}
                 />
+
+                {relationshipsError && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-400 mb-2">Relationships</h4>
+                    <p className="text-xs text-red-400">Could not load relationships: {relationshipsError}</p>
+                    <button
+                      onClick={() => selectEntity(selectedEntity)}
+                      className="text-[10px] text-accent-blue hover:underline mt-1"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
 
                 {entityRelationships.length > 0 && (
                   <div>
@@ -2431,16 +2485,23 @@ function NetworkPageInner() {
                       <span className="text-gray-300">{String(selectedEdge.last_seen).slice(0, 10)}</span>
                     </div>
                   )}
-                  {selectedEdge.source && (
+                  {/* source_doc_id, not `source`: d3 replaces an edge's `source`
+                      with the node object, which printed "[object Object]". */}
+                  {selectedEdge.source_doc_id && (
                     <div>
                       <span className="text-gray-500">Source Document:</span>{' '}
-                      <span className="text-gray-300">{String(selectedEdge.source)}</span>
+                      <button
+                        onClick={() => networkRouter.push(`/documents/${selectedEdge.source_doc_id}`)}
+                        className="text-accent-blue hover:underline font-mono break-all text-left"
+                      >
+                        {selectedEdge.source_doc_id}
+                      </button>
                     </div>
                   )}
-                  {selectedEdge['method'] != null && (
+                  {selectedEdge.method && (
                     <div>
                       <span className="text-gray-500">Extraction Method:</span>{' '}
-                      <span className="text-gray-300">{String(selectedEdge['method'])}</span>
+                      <span className="text-gray-300">{selectedEdge.method}</span>
                     </div>
                   )}
                   <div>
