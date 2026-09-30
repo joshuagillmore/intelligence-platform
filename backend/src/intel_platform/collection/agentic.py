@@ -942,7 +942,9 @@ async def _follow_up(source, plan, db, store, extraction_mode, provider, acquire
             db.add(CollectionActivity(
                 plan_id=plan.id, source_id=source.id,
                 event="source_followup_failed",
-                message=f"Follow-up round {round_num + 1} failed: {str(e)[:200]}",
+                # The kind of failure; its text (which can carry internal
+                # addresses) goes to the server log above, not the UI.
+                message=f"Follow-up round {round_num + 1} failed ({type(e).__name__})",
             ))
             await db.commit()
             return
@@ -952,7 +954,10 @@ async def _follow_up(source, plan, db, store, extraction_mode, provider, acquire
         db.add(CollectionActivity(
             plan_id=plan.id, source_id=source.id,
             event="source_followup_done",
-            message=f"Follow-up: {followup_result.get('record_count', 0)} docs, {fu_ent} entities, {fu_rel} rels",
+            message=(
+                f"Follow-up: {followup_result.get('accepted_count', followup_result.get('record_count', 0))} docs, "
+                f"{fu_ent} entities, {fu_rel} rels"
+            ),
         ))
         await db.commit()
 
@@ -1097,6 +1102,9 @@ async def _run_agentic_loop(
 
     async with db_factory() as db:
         plan = await db.get(CollectionPlan, plan_id)
+        if plan is None:
+            logger.info("Plan %s was deleted during resolution; stopping", plan_id)
+            return
         sources = [s for s in (plan.sources or []) if s.enabled and s.source_type != "file_upload"]
 
         from intel_platform.config import settings
@@ -1295,6 +1303,11 @@ async def _run_agentic_loop(
 
     async with db_factory() as db:
         plan = await db.get(CollectionPlan, plan_id)
+        if plan is None:
+            # Deleted mid-run (plan_should_stop treats that as "stop"). There
+            # is nothing to record against, and it is not a failure.
+            logger.info("Plan %s was deleted during collection; nothing to finalise", plan_id)
+            return
 
         # Final status. Read in this fresh session, and never written over a
         # PAUSED or ARCHIVED plan: completion used to set COMPLETED

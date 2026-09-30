@@ -141,6 +141,26 @@ class TestFollowUps:
         assert "source_followup_failed" in session.events()
         assert "source_failed" not in session.events()
 
+    async def test_follow_up_messages_carry_the_kind_of_failure_and_kept_counts(self, wired):
+        async def acquire(n):
+            if n == 1:
+                return _acquired()
+            if n == 2:
+                return _acquired(records=3, accepted=1)
+            raise RuntimeError("connect to http://10.0.0.9:7474 refused")
+
+        wired.acquire = acquire
+        wired.evaluations = [
+            {"satisfied": False, "follow_up_urls": ["https://news.example.org/lead"], "notes": ""},
+            {"satisfied": False, "follow_up_urls": ["https://news.example.org/lead-2"], "notes": ""},
+        ]
+        session = await _run(_plan([_source()]))
+
+        [done] = session.messages("source_followup_done")
+        assert done.startswith("Follow-up: 1 docs"), done
+        [failed] = session.messages("source_followup_failed")
+        assert "RuntimeError" in failed and "10.0.0.9" not in failed
+
     async def test_rss_follow_ups_fetch_the_leads_not_the_feed(self, wired):
         async def acquire(n):
             return _acquired()
@@ -554,6 +574,24 @@ class TestPauseAndArchive:
         wired.acquire = acquire
         await _run(plan)
         assert plan.status == "ARCHIVED", "completion wrote COMPLETED over ARCHIVED"
+
+    async def test_a_plan_deleted_mid_run_ends_quietly(self, wired, caplog):
+        """plan_should_stop (WP-E) reports a deleted plan as "stop"; the closing
+        block then dereferenced the missing plan and logged a spurious crash."""
+        import logging
+
+        plan = _plan([_source()])
+        session = FakeSession(plan)
+
+        async def acquire(n):
+            session.plan = None  # the analyst deletes the plan
+            return _acquired()
+
+        wired.acquire = acquire
+        with caplog.at_level(logging.ERROR, logger="intel_platform.collection.agentic"):
+            await agentic.run_agentic_loop(plan.id, _factory(session), lambda: None, _provider)
+        assert "plan_failed" not in session.events()
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR], "a deletion is not a crash"
 
     async def test_no_provider_is_a_failure_not_a_completion(self, wired):
         async def no_provider():
