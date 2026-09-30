@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 
 from intel_platform.api.cache import cached
 from intel_platform.api.deps import get_graph_store, project_exists, verify_api_key
@@ -147,24 +148,34 @@ def get_statistics(project_id: str, store: GraphStore = Depends(get_graph_store)
 
 @router.get("/graph/structural-holes")
 @cached(ttl=30)
-def get_structural_holes(project_id: str, top_n: int = 20, store: GraphStore = Depends(get_graph_store)):
+def get_structural_holes(
+    project_id: str, top_n: int = Query(20, ge=1, le=1000), store: GraphStore = Depends(get_graph_store),
+):
     return compute_structural_holes(store, project_id, top_n=top_n)
 
 
 @router.get("/graph/ego-network/{entity_id}")
-def get_ego_network(entity_id: str, project_id: str, hops: int = 2, store: GraphStore = Depends(get_graph_store)):
-    return extract_ego_network(store, project_id, entity_id, hops=min(hops, 4))
+def get_ego_network(
+    entity_id: str, project_id: str, hops: int = Query(2, ge=1, le=4),
+    store: GraphStore = Depends(get_graph_store),
+):
+    return extract_ego_network(store, project_id, entity_id, hops=hops)
+
+
+class InfluenceRequest(BaseModel):
+    """Typed so a malformed body is a 422 rather than a failure inside the walk."""
+
+    project_id: str
+    seed_ids: list[str]
+    steps: int = Field(default=3, ge=1, le=10)
+    threshold: float = Field(default=0.3, ge=0.0, le=1.0)
 
 
 @router.post("/graph/influence")
 def post_influence_propagation(
-    body: dict,
+    body: InfluenceRequest,
     store: GraphStore = Depends(get_graph_store),
 ):
-    project_id = body.get("project_id", "")
-    seed_ids = body.get("seed_ids", [])
-    steps = min(body.get("steps", 3), 10)
-    threshold = body.get("threshold", 0.3)
     return compute_influence_propagation(
-        store, project_id, seed_ids, steps=steps, threshold=threshold
+        store, body.project_id, body.seed_ids, steps=body.steps, threshold=body.threshold
     )

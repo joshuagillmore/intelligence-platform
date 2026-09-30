@@ -2,7 +2,7 @@ import uuid
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select, update
 
 from intel_platform.api.deps import require_admin
@@ -20,9 +20,18 @@ router = APIRouter(dependencies=[Depends(require_admin)])
 # ---------------------------------------------------------------------------
 
 class ProxyConfigRequest(BaseModel):
-    mode: str = "direct"  # direct | vpn | tor | proxy
+    mode: str = "direct"  # one of VALID_PROXY_MODES: direct | vpn | tor
     proxy_url: str = ""
     tor_port: int = 9050
+
+    @field_validator("mode")
+    @classmethod
+    def _known_mode(cls, v: str) -> str:
+        # Refused, not coerced: saving 'direct' for a mistyped 'tor' answered
+        # 200 while turning egress protection off.
+        if v not in VALID_PROXY_MODES:
+            raise ValueError(f"mode must be one of {', '.join(VALID_PROXY_MODES)}")
+        return v
 
 
 class VpnActionRequest(BaseModel):
@@ -399,7 +408,7 @@ async def get_proxy_config():
 
 @router.put("/admin/proxy")
 async def update_proxy_config(req: ProxyConfigRequest):
-    mode = req.mode if req.mode in VALID_PROXY_MODES else "direct"
+    mode = req.mode
     factory = get_session_factory()
     async with factory() as session:
         result = await session.execute(

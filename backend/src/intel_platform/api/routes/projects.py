@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
@@ -234,7 +234,9 @@ async def delete_project(project_id: str, store: GraphStore = Depends(get_graph_
 
 
 @router.get("/projects/{project_id}/activity")
-def get_project_activity(project_id: str, limit: int = 20, store: GraphStore = Depends(get_graph_store)):
+def get_project_activity(
+    project_id: str, limit: int = Query(20, ge=1, le=500), store: GraphStore = Depends(get_graph_store),
+):
     """Get recent activity for a project."""
     entities = store.search_entities(project_id=project_id, limit=limit)
 

@@ -26,7 +26,7 @@ def get_entity_type_hierarchy():
 def search_entities(
     response: Response,
     project_id: str, query: str = "", entity_type: str | None = None,
-    limit: int = 50, offset: int = 0,
+    limit: int = Query(50, ge=1, le=10000), offset: int = Query(0, ge=0),
     store: GraphStore = Depends(get_graph_store),
 ):
     """Entities matching the filters, capped at `limit`.
