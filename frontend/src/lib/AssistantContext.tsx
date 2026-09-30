@@ -25,6 +25,7 @@ import {
   type ReactNode,
 } from 'react';
 import { queryApi } from './api';
+import { getErrorMessage } from './errorMessages';
 import { useProject } from './ProjectContext';
 import {
   compactGroundingForStorage,
@@ -267,8 +268,14 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
         content: result.content || 'No output returned.',
         grounding: result.grounding ?? null,
       });
-    } catch {
-      append(forProject, { id: nextId(), role: 'assistant', content: `${task.label} failed.`, failed: true });
+    } catch (e) {
+      // Say why (e.g. the backend's "LLM provider unavailable"), not just that.
+      append(forProject, {
+        id: nextId(),
+        role: 'assistant',
+        content: `${task.label} failed: ${getErrorMessage(e)}`,
+        failed: true,
+      });
     } finally {
       endRequest();
     }

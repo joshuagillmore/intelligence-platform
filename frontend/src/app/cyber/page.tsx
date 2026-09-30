@@ -8,6 +8,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
 import { entitiesApi, graphApi, assessApi, entityFields } from '@/lib/api';
 import { TYPE_BADGE_CLASS as TYPE_BADGE_STYLES } from '@/lib/entityStyles';
+import { getErrorMessage } from '@/lib/errorMessages';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
 import AttackMatrix from '@/components/AttackMatrix';
 import AttackAttribution from '@/components/AttackAttribution';
@@ -278,14 +279,14 @@ export default function CyberPage() {
         entity_id: actor.id,
         project_id: activeProject.id,
       });
-      // The backend returns an error envelope (200) rather than throwing.
+      // The backend answers 503 when no model could draft it; an older one
+      // returned a 200 error envelope. Either way it is a failure.
       if (gen.data?.error) throw new Error(gen.data.error);
 
       const text: string = gen.data?.assessment || gen.data?.judgment || '';
-      if (text) {
-        setActorProfiles(prev => ({ ...prev, [actor.id]: text }));
-        setExpandedActorId(actor.id); // reveal the profile we just generated
-      }
+      if (!text) throw new Error('No profile text was returned.');
+      setActorProfiles(prev => ({ ...prev, [actor.id]: text }));
+      setExpandedActorId(actor.id); // reveal the profile we just generated
 
       // Refresh actor data
       const res = await entitiesApi.get(actor.id);
@@ -297,11 +298,11 @@ export default function CyberPage() {
         title: 'Profile Generated',
         message: `Threat-actor profile ready for ${actor.name}.`,
       });
-    } catch {
+    } catch (e) {
       addNotification({
         type: 'error',
         title: 'Profile Failed',
-        message: `Could not generate a profile for ${actor.name}. Check that the LLM provider is configured and reachable.`,
+        message: `Could not generate a profile for ${actor.name} (${getErrorMessage(e).replace(/\.$/, '')}). Check that the LLM provider is configured and reachable.`,
       });
     }
     setGeneratingProfile(null);

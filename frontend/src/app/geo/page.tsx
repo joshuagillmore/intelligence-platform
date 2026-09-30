@@ -229,7 +229,12 @@ export default function GeoPage() {
         if (kind === 'assess') {
           const res = await assessApi.generate(location.id, { entity_id: location.id, project_id: activeProject.id });
           const d = res.data;
-          return { content: d.assessment || d.judgment || d.analysis || d.content || d.error || 'No assessment returned.' };
+          // A failure (503, or an older backend's 200 {error}) must fail the
+          // task, never render as the assessment.
+          if (d?.error) throw new Error(d.error);
+          const text = d.assessment || d.judgment || d.analysis || d.content;
+          if (!text) throw new Error('No assessment returned.');
+          return { content: text };
         }
         // Grounded endpoints: the backend retrieves this location's subgraph,
         // source documents and measured coverage before it reasons, rather than
