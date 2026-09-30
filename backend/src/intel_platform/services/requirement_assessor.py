@@ -28,6 +28,33 @@ _PASSAGE_CHARS = 900
 _MAX_NEXT_QUERIES = 3
 
 
+_TRUE_WORDS = frozenset({"true", "yes", "y", "1", "satisfied"})
+_FALSE_WORDS = frozenset({"false", "no", "n", "0", "unsatisfied", "not satisfied", "none", "null", ""})
+
+
+def model_bool(value) -> bool | None:
+    """A yes/no a model wrote, however it wrote it; None when it is neither.
+
+    Models return ``"false"`` as often as ``false``, and ``bool("false")`` is
+    True, so a verdict of "not answered" read as "answered". An unrecognised
+    value is reported as None so the caller can treat it as no verdict rather
+    than guess.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        word = value.strip().strip("*_`\"'").strip().lower()
+        if word in _TRUE_WORDS:
+            return True
+        if word in _FALSE_WORDS:
+            return False
+    return None
+
+
 @dataclass
 class RequirementAssessment:
     """Verdict for one element, plus the queries that would close the gap."""

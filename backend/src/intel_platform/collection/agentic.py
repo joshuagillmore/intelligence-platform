@@ -12,6 +12,7 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from intel_platform.connectors.base import get_connector
 from intel_platform.db.models import (
@@ -868,6 +869,93 @@ async def evaluate_results(source, plan, acquire_result, provider):
     return {"satisfied": False, "follow_up_urls": [], "notes": "Could not parse evaluation after retries"}
 
 
+def _page_urls(config: dict | None) -> set[str]:
+    config = config or {}
+    urls = {u for u in (config.get("urls") or []) if isinstance(u, str)}
+    for key in ("url", "feed_url", "base_url"):
+        if isinstance(config.get(key), str) and config[key]:
+            urls.add(config[key])
+    return urls
+
+
+async def _follow_up(source, plan, db, store, extraction_mode, provider, acquire_result, max_results):
+    """Evaluate what a source returned and fetch the leads it names, bounded.
+
+    A follow-up is extra collection on top of a source that has already
+    succeeded, so its failure is logged and ends the follow-ups; it does not
+    turn the source into a failure. The leads are fetched as pages whatever the
+    source's own type: re-acquiring through the source's connector re-read its
+    own config, so an RSS source ingested the same feed up to three times. The
+    source's config is left alone — it used to be overwritten with the lead
+    URLs, losing the planned ones.
+    """
+    from intel_platform.services.requirement_assessor import model_bool
+
+    fetched = _page_urls(source.config)
+    for round_num in range(MAX_FOLLOWUP_ROUNDS):
+        evaluation = await evaluate_results(source, plan, acquire_result, provider)
+        follow_ups = evaluation.get("follow_up_urls") or []
+        if not isinstance(follow_ups, list):
+            follow_ups = []
+        notes = evaluation.get("notes", "")
+        satisfied = model_bool(evaluation.get("satisfied")) is True
+
+        if satisfied or not follow_ups:
+            verdict = "satisfied" if satisfied else "not satisfied, no follow-up leads"
+            db.add(CollectionActivity(
+                plan_id=plan.id, source_id=source.id,
+                event="source_evaluated",
+                message=f"Evaluation: {verdict}. {notes}",
+            ))
+            await db.commit()
+            return
+
+        candidates = [u for u in follow_ups[:3] if isinstance(u, str) and u not in fetched]
+        new_urls = await asyncio.to_thread(_validate_urls, candidates)
+        db.add(CollectionActivity(
+            plan_id=plan.id, source_id=source.id,
+            event="source_followup",
+            message=(
+                f"Follow-up round {round_num + 1}: {len(new_urls)} of {len(follow_ups)} "
+                f"suggested URL(s) usable. {notes}"
+            ),
+        ))
+        await db.commit()
+        if not new_urls:
+            return
+        fetched.update(new_urls)
+
+        leads = SimpleNamespace(
+            id=source.id, name=source.name, source_type="web_scrape", config={"urls": new_urls},
+        )
+        try:
+            followup_result = await acquire_source(
+                leads, plan, db, store, extraction_mode, provider=provider, max_results=max_results,
+            )
+        except Exception as e:
+            logger.warning("Follow-up for source %s failed: %s", source.name, e)
+            db.add(CollectionActivity(
+                plan_id=plan.id, source_id=source.id,
+                event="source_followup_failed",
+                message=f"Follow-up round {round_num + 1} failed: {str(e)[:200]}",
+            ))
+            await db.commit()
+            return
+
+        fu_ent = followup_result.get("entities_created", 0)
+        fu_rel = followup_result.get("relationships_created", 0)
+        db.add(CollectionActivity(
+            plan_id=plan.id, source_id=source.id,
+            event="source_followup_done",
+            message=f"Follow-up: {followup_result.get('record_count', 0)} docs, {fu_ent} entities, {fu_rel} rels",
+        ))
+        await db.commit()
+
+        # Merge results for the next evaluation round
+        acquire_result["records"] = acquire_result.get("records", []) + followup_result.get("records", [])
+        acquire_result["record_count"] = acquire_result.get("record_count", 0) + followup_result.get("record_count", 0)
+
+
 # ---------------------------------------------------------------------------
 # Main entry point: run_agentic_loop
 # ---------------------------------------------------------------------------
@@ -1018,50 +1106,10 @@ async def run_agentic_loop(
                 await db.commit()
 
                 # Phase 3: Evaluate and follow up
-                for round_num in range(MAX_FOLLOWUP_ROUNDS):
-                    evaluation = await evaluate_results(source, plan, acquire_result, provider)
-
-                    follow_ups = evaluation.get("follow_up_urls", [])
-                    notes = evaluation.get("notes", "")
-
-                    if not follow_ups or evaluation.get("satisfied", True):
-                        db.add(CollectionActivity(
-                            plan_id=plan.id, source_id=source.id,
-                            event="source_evaluated",
-                            message=f"Evaluation: satisfied. {notes}",
-                        ))
-                        await db.commit()
-                        break
-
-                    # Follow up on suggested URLs
-                    db.add(CollectionActivity(
-                        plan_id=plan.id, source_id=source.id,
-                        event="source_followup",
-                        message=f"Follow-up round {round_num + 1}: {len(follow_ups)} URLs. {notes}",
-                    ))
-                    await db.commit()
-
-                    # Add follow-up URLs to config and re-acquire
-                    existing_urls = source.config.get("urls", [])
-                    new_urls = [u for u in follow_ups[:3] if u not in existing_urls]
-                    if new_urls:
-                        source.config = {**source.config, "urls": new_urls, "max_pages": len(new_urls)}
-                        await db.commit()
-
-                        followup_result = await acquire_source(source, plan, db, store, extraction_mode, provider=provider, max_results=max_results_per_source)
-                        fu_ent = followup_result.get("entities_created", 0)
-                        fu_rel = followup_result.get("relationships_created", 0)
-
-                        db.add(CollectionActivity(
-                            plan_id=plan.id, source_id=source.id,
-                            event="source_followup_done",
-                            message=f"Follow-up: {followup_result.get('record_count', 0)} docs, {fu_ent} entities, {fu_rel} rels",
-                        ))
-                        await db.commit()
-
-                        # Merge results for next evaluation round
-                        acquire_result["records"] = acquire_result.get("records", []) + followup_result.get("records", [])
-                        acquire_result["record_count"] = acquire_result.get("record_count", 0) + followup_result.get("record_count", 0)
+                await _follow_up(
+                    source, plan, db, store, extraction_mode, provider,
+                    acquire_result, max_results_per_source,
+                )
 
                 source.collection_status = "succeeded"
                 source.last_success_at = datetime.now(timezone.utc)
