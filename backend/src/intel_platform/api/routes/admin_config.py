@@ -72,6 +72,17 @@ async def _read_proxy_mode() -> str:
 # Helpers
 # ---------------------------------------------------------------------------
 
+def get_llm_override() -> dict | None:
+    """The admin's runtime provider/model choice, or None when none is set.
+
+    Lets callers tell an explicit admin choice from the configured default
+    without reaching into `_llm_override` (llm/providers.py does today).
+    """
+    if not _llm_override["provider"]:
+        return None
+    return dict(_llm_override)
+
+
 def get_active_provider() -> str:
     """Return the currently active LLM provider name."""
     if _llm_override["provider"]:

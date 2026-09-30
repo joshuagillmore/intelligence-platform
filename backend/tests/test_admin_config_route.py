@@ -94,6 +94,19 @@ def test_an_unknown_key_is_404_and_nothing_changes(db):
     assert _updates(db["log"]) == []
 
 
+def test_llm_override_accessor(monkeypatch):
+    """providers.py reads the admin override to tell it from the default."""
+    monkeypatch.setitem(admin_config._llm_override, "provider", "")
+    monkeypatch.setitem(admin_config._llm_override, "model", "")
+    assert admin_config.get_llm_override() is None
+    monkeypatch.setitem(admin_config._llm_override, "provider", "ollama")
+    monkeypatch.setitem(admin_config._llm_override, "model", "qwen2.5:14b")
+    override = admin_config.get_llm_override()
+    assert override == {"provider": "ollama", "model": "qwen2.5:14b"}
+    override["provider"] = "mutated"
+    assert admin_config._llm_override["provider"] == "ollama", "callers get a copy"
+
+
 def test_a_malformed_key_id_is_404_not_a_database_error(db):
     resp = _activate("not-a-uuid", "openai")
     assert resp.status_code == 404

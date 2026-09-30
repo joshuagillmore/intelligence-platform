@@ -50,9 +50,9 @@ class Settings(BaseSettings):
     # Seed password for the auto-created admin user (blank -> 'admin' in dev; must
     # be set when require_secure_auth is on). Read via Settings so .env works too.
     default_admin_password: str = ""
-    # The MCP server exposes read+write graph tools and is NOT behind the REST
-    # auth layer, so it is disabled by default. Enable deliberately (behind a
-    # trusted network / gateway) via MCP_ENABLED=true.
+    # The MCP server (endpoint /mcp) exposes graph-writing and LLM-spending
+    # tools, so it is disabled by default. When enabled it requires the REST
+    # API's credentials; it is refused outright under require_secure_auth.
     mcp_enabled: bool = False
 
     # Extraction

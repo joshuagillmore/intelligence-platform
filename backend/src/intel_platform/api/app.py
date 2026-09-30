@@ -1,3 +1,4 @@
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -83,6 +84,43 @@ def _enforce_secure_auth() -> None:
         )
 
 
+def _mount_mcp(target: FastAPI, cfg) -> None:
+    """Mount the authenticated MCP endpoint at /mcp when MCP_ENABLED is set.
+
+    Its tools write to the graph and spend LLM calls, so it is refused outright
+    under REQUIRE_SECURE_AUTH, and otherwise served behind the same credentials
+    as the REST API by the MCP package's own ASGI wrapper. Registered as a route
+    (endpoint /mcp), ahead of the frontend catch-all. Failures propagate: an
+    operator who enabled MCP must not get a server that quietly lacks it.
+    """
+    if not cfg.mcp_enabled:
+        logger.info("MCP server disabled (set MCP_ENABLED=true to enable)")
+        return
+    if cfg.require_secure_auth:
+        raise RuntimeError(
+            "MCP_ENABLED=true is refused under REQUIRE_SECURE_AUTH=true: its tools write to the "
+            "graph and spend LLM calls. Disable MCP on this deployment."
+        )
+    from intel_platform.mcp import build_authenticated_app
+    target.add_route("/mcp", _AsgiEndpoint(build_authenticated_app(cfg)))
+    logger.info("MCP server mounted at /mcp (authenticated)")
+
+
+class _AsgiEndpoint:
+    """Serve an ASGI app from a route as raw ASGI, whatever its shape.
+
+    Starlette's `add_route` treats a plain function as a request/response
+    endpoint and would call an `async def app(scope, receive, send)` with a
+    Request. A class instance is always passed (scope, receive, send).
+    """
+
+    def __init__(self, asgi_app):
+        self.asgi_app = asgi_app
+
+    async def __call__(self, scope, receive, send):
+        await self.asgi_app(scope, receive, send)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _warn_insecure_defaults()
@@ -96,7 +134,13 @@ async def lifespan(app: FastAPI):
     from intel_platform.db.engine import init_db
     await init_db()
     logger.info("PostgreSQL collection management tables initialized")
-    yield
+    async with contextlib.AsyncExitStack() as stack:
+        # A mounted MCP app's own lifespan never runs, so its session manager is
+        # started here, for the lifetime of this app.
+        if settings.mcp_enabled:
+            from intel_platform.mcp import session_lifespan
+            await stack.enter_async_context(session_lifespan())
+        yield
     driver.close()
     # Cleanup async engine
     from intel_platform.db.engine import get_engine
@@ -117,18 +161,8 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.rate_limit_per_minute)
 app.add_middleware(SecurityHeadersMiddleware)
 
-# Mount MCP server — OFF by default: its tools include graph writes and it is not
-# behind the REST auth. Enable deliberately (behind a trusted gateway) via MCP_ENABLED=true.
-if settings.mcp_enabled:
-    try:
-        from intel_platform.mcp.server import get_mcp_app
-        mcp_app = get_mcp_app()
-        app.mount("/mcp", mcp_app)
-        logger.warning("MCP server mounted at /mcp (unauthenticated — ensure the network is trusted)")
-    except Exception as exc:
-        logger.warning("MCP server not available: %s", exc)
-else:
-    logger.info("MCP server disabled (set MCP_ENABLED=true to enable)")
+# MCP server — OFF by default (MCP_ENABLED=true to enable).
+_mount_mcp(app, settings)
 
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(health.router, tags=["health"])
