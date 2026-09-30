@@ -144,6 +144,44 @@ def test_cached_view_reads_the_graph_off_the_event_loop(client, auth_header):
     assert on_loop == [False]
 
 
+def _get_cached_view(client, auth_header, entity, cache_get):
+    from intel_platform.api.app import app
+    from intel_platform.api.deps import get_graph_store
+
+    store = MagicMock()
+    store.get_entity = MagicMock(return_value=entity)
+    app.dependency_overrides[get_graph_store] = lambda: store
+    try:
+        with patch("intel_platform.enrichment.cache.EnrichmentCache.get", new=cache_get):
+            return client.get(f"/api/enrichment/entities/{entity['id']}", headers=auth_header)
+    finally:
+        app.dependency_overrides.pop(get_graph_store, None)
+
+
+_IP = {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+
+
+def test_cached_view_on_a_full_miss_is_empty(client, auth_header):
+    # Contract 12: a miss used to come back as {"geoip": null, "rdap": null},
+    # which the panel labelled "cached" for every provider.
+    resp = _get_cached_view(client, auth_header, _IP, AsyncMock(return_value=None))
+    assert resp.status_code == 200
+    assert resp.json()["cached"] == {}
+
+
+def test_cached_view_lists_only_providers_with_a_payload(client, auth_header):
+    payload = {"properties": {"asn": "AS15169"}, "related": [], "source_url": "", "raw": {}}
+
+    async def cache_get(self, provider, observable):
+        if provider == "rdap":
+            raise RuntimeError("postgres down")  # an unreadable entry is not a payload either
+        return payload if provider == "geoip" else None
+
+    resp = _get_cached_view(client, auth_header, _IP, cache_get)
+    assert resp.status_code == 200
+    assert resp.json()["cached"] == {"geoip": payload}
+
+
 def test_admin_enrichment_get(client, auth_header):
     with patch("intel_platform.enrichment.hook.auto_enrich_enabled",
                new=AsyncMock(return_value=True)):
