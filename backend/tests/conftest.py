@@ -20,6 +20,34 @@ os.environ["API_KEY"] = "test-key"
 # test suite so unit tests stay deterministic and never depend on a live LLM.
 os.environ["EXTRACTION_MODE"] = "nlp"
 
+# A developer's repo-root .env reaches the suite by two routes, and both are
+# closed here. The first is the process environment: crawl4ai/config.py calls
+# load_dotenv() at import, walks up from site-packages to the repo root and
+# copies that .env into os.environ, so provider choices, cloud keys and
+# POSTGRES_URL arrive as if exported — and made tests such as
+# test_topic_label_provenance call a real OllamaProvider. load_dotenv never
+# overrides a variable that is already set, so these are *assigned* explicit
+# test values before anything imports intel_platform or crawl4ai.
+for _name in (
+    "DEFAULT_LLM_PROVIDER", "DEFAULT_LLM_MODEL",
+    "EXTRACTION_LLM_PROVIDER", "EXTRACTION_LLM_MODEL",
+    "COLLECTION_LLM_PROVIDER", "COLLECTION_LLM_MODEL",
+    "TOPICS_LLM_PROVIDER", "TOPICS_LLM_MODEL",
+    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "COHERE_API_KEY",
+    "EMBEDDING_PROVIDER",
+):
+    os.environ[_name] = ""
+os.environ["POSTGRES_URL"] = "postgresql+asyncpg://intel:changeme@localhost:5432/intel_platform"
+
+# The second route is Settings' own env file: contract 20 resolves env_file to
+# the repository-root .env from config.py's location, so it is found from any
+# working directory. Loaded into the suite it would make billed LLM calls and
+# write to a real database. Tests never read it; this is set before anything
+# instantiates Settings.
+from intel_platform import config as _config  # noqa: E402
+
+_config.Settings.model_config["env_file"] = None
+
 
 @pytest.fixture
 def neo4j_driver():

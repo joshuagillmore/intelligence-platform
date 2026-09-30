@@ -36,11 +36,16 @@ def test_settings_requires_neo4j():
 
 def test_the_env_file_is_the_repo_root_env_wherever_the_process_starts():
     """It was the bare name '.env', resolved against the working directory, so
-    `cd backend && uv run uvicorn ...` never saw the repo's .env."""
-    env_file = Path(Settings.model_config["env_file"])
+    `cd backend && uv run uvicorn ...` never saw the repo's .env. (conftest
+    switches the env file off for the suite, so the module constant is checked.)"""
+    env_file = config_module.ENV_FILE
     assert env_file.is_absolute()
     assert env_file == REPO_ROOT / ".env"
     assert (REPO_ROOT / ".env.example").exists(), "the resolved directory is not the repo root"
+
+
+def test_the_suite_does_not_read_a_developers_env():
+    assert Settings.model_config["env_file"] is None
 
 
 def test_keys_settings_does_not_define_are_ignored(tmp_path):
