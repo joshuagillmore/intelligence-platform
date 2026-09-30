@@ -208,8 +208,22 @@ def get_settings() -> Settings:
 
 
 class _SettingsProxy:
+    """Module-level ``settings`` that always resolves to the cached instance.
+
+    Attribute *writes* are forwarded too. Without that, ``monkeypatch.setattr(
+    settings, "x", ...)`` stored ``x`` on the proxy itself, and the undo wrote
+    the old value back onto the proxy as well, leaving a permanent shadow that
+    every later reader (and every later patch of the instance) lost to.
+    """
+
     def __getattr__(self, name):
         return getattr(get_settings(), name)
+
+    def __setattr__(self, name, value):
+        setattr(get_settings(), name, value)
+
+    def __delattr__(self, name):
+        delattr(get_settings(), name)
 
 
 settings = _SettingsProxy()

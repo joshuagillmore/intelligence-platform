@@ -136,7 +136,43 @@ class TestSecretIsReadFromSettings:
         monkeypatch.setattr(
             "intel_platform.config.settings", _settings(jwt_secret="s" * 40, api_key=""),
         )
-        forged = jwt.encode({"sub": "mallory", "role": "admin"}, "", algorithm="HS256")
+        forged = jwt.encode({"sub": "mallory", "role": "admin"}, "x" * 40, algorithm="HS256")
         with pytest.raises(HTTPException) as exc:
             auth_module.get_current_user(self._creds(forged))
+        assert exc.value.status_code == 401
+
+    def test_a_token_signed_with_an_empty_key_is_rejected(self, monkeypatch):
+        """The A-3 forgery: HS256 over an empty key. PyJWT >= 2.15 refuses to
+        *encode* one, so it is built by hand; the server must still say 401."""
+        import base64
+        import hashlib
+        import hmac
+        import json
+
+        monkeypatch.setattr(
+            "intel_platform.config.settings", _settings(jwt_secret="s" * 40, api_key=""),
+        )
+
+        def b64(raw: bytes) -> bytes:
+            return base64.urlsafe_b64encode(raw).rstrip(b"=")
+
+        signing_input = b".".join((
+            b64(json.dumps({"alg": "HS256", "typ": "JWT"}).encode()),
+            b64(json.dumps({"sub": "mallory", "role": "admin"}).encode()),
+        ))
+        sig = hmac.new(b"", signing_input, hashlib.sha256).digest()
+        forged = (signing_input + b"." + b64(sig)).decode()
+        with pytest.raises(HTTPException) as exc:
+            auth_module.get_current_user(self._creds(forged))
+        assert exc.value.status_code == 401
+
+    def test_an_empty_server_secret_still_yields_401_not_500(self, monkeypatch):
+        """Without REQUIRE_SECURE_AUTH a blank JWT_SECRET can exist; PyJWT then
+        raises InvalidKeyError on decode, which is not an InvalidTokenError."""
+        monkeypatch.setattr(
+            "intel_platform.config.settings", _settings(jwt_secret="", api_key=""),
+        )
+        token = jwt.encode({"sub": "alice"}, "s" * 40, algorithm="HS256")
+        with pytest.raises(HTTPException) as exc:
+            auth_module.get_current_user(self._creds(token))
         assert exc.value.status_code == 401

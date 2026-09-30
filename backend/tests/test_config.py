@@ -132,3 +132,24 @@ def test_nothing_reads_os_environ_ad_hoc():
         if "os.environ" in (src / name).read_text(encoding="utf-8")
     ]
     assert offenders == []
+
+
+def test_patching_the_settings_proxy_never_shadows_the_instance(monkeypatch):
+    """monkeypatch.setattr(settings, ...) used to store the value on the proxy
+    and, on undo, write the *old* value back onto the proxy too. That shadow
+    then hid every later patch of the real instance (an ingest test saw 50000
+    after another file had patched-and-restored 100)."""
+    from intel_platform.config import get_settings, settings
+
+    original = get_settings().max_document_chars
+    with monkeypatch.context() as m:
+        m.setattr(settings, "max_document_chars", 100)
+        assert settings.max_document_chars == 100
+        assert get_settings().max_document_chars == 100
+    assert settings.__dict__ == {}
+    assert settings.max_document_chars == original
+
+    with monkeypatch.context() as m:
+        m.setattr(get_settings(), "max_document_chars", 300)
+        assert settings.max_document_chars == 300
+    assert settings.max_document_chars == original

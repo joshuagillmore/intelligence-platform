@@ -284,7 +284,10 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
         return {"username": username, "role": payload.get("role", "analyst")}
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
+    except jwt.PyJWTError:
+        # Covers InvalidTokenError and InvalidKeyError alike: PyJWT >= 2.15
+        # raises the latter for an empty HMAC key, which is not a token
+        # problem but must still be a 401, never a 500.
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
