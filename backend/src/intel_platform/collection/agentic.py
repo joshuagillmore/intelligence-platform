@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -26,6 +25,7 @@ from intel_platform.models.entities import Document
 from intel_platform.services.graph_builder import build_graph_from_extractions
 from intel_platform.services.content_quality import is_auth_wall, rejection_reason
 from intel_platform.services.ingestion import ingest_text
+from intel_platform.services.llm_output import json_object
 from intel_platform.services.plan_executor import over_source_budget, planned_source_budget
 
 logger = logging.getLogger(__name__)
@@ -209,70 +209,6 @@ async def _extract_entities(text: str, doc_id: str, mode: str):
     return extract_entities_nlp(text, doc_id)
 
 
-def _parse_llm_json(text: str) -> dict | None:
-    """Parse JSON from LLM response, with multiple fallback strategies."""
-    if not text or not text.strip():
-        return None
-
-    text = text.strip()
-
-    # Strip markdown code fences (```json ... ``` or ``` ... ```)
-    text = re.sub(r'^```(?:json)?\s*\n?', '', text, flags=re.MULTILINE)
-    text = re.sub(r'\n?```\s*$', '', text, flags=re.MULTILINE)
-    text = text.strip()
-
-    # Strategy 1: Direct parse
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    # Strategy 2: Find the first complete JSON object using brace counting
-    start = text.find('{')
-    if start >= 0:
-        depth = 0
-        in_string = False
-        escape = False
-        for i in range(start, len(text)):
-            c = text[i]
-            if escape:
-                escape = False
-                continue
-            if c == '\\' and in_string:
-                escape = True
-                continue
-            if c == '"' and not escape:
-                in_string = not in_string
-                continue
-            if in_string:
-                continue
-            if c == '{':
-                depth += 1
-            elif c == '}':
-                depth -= 1
-                if depth == 0:
-                    try:
-                        return json.loads(text[start:i + 1])
-                    except json.JSONDecodeError:
-                        break
-
-    # Strategy 3: Try to fix common LLM JSON issues
-    # Remove trailing commas before } or ]
-    cleaned = re.sub(r',\s*([}\]])', r'\1', text)
-    # Remove single-line comments
-    cleaned = re.sub(r'//[^\n]*', '', cleaned)
-    start = cleaned.find('{')
-    if start >= 0:
-        end = cleaned.rfind('}')
-        if end > start:
-            try:
-                return json.loads(cleaned[start:end + 1])
-            except json.JSONDecodeError:
-                pass
-
-    return None
-
-
 async def _structured_generate(provider, messages, system, expected_keys=None, max_retries=3):
     """Generate a structured JSON response with retry logic for unreliable models.
 
@@ -304,8 +240,10 @@ async def _structured_generate(provider, messages, system, expected_keys=None, m
                 max_tokens=1024,
             )
 
-            parsed = _parse_llm_json(result.content)
-            if parsed is None:
+            # The one JSON-from-model reader (services.llm_output). It returns
+            # {} when nothing parses, so test for emptiness, not None.
+            parsed = json_object(result.content or "")
+            if not parsed:
                 logger.warning("Structured generate attempt %d: JSON parse failed", attempt + 1)
                 continue
 

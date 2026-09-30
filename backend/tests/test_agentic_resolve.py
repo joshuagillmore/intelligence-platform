@@ -148,3 +148,46 @@ def test_validate_urls_rejects_all_private_ranges():
     assert set(out) == set(allowed), f"unexpected: {out}"
     # 172.16/12 specifically must not survive
     assert not any("172." in u for u in out)
+
+
+# ---------------------------------------------------------------------------
+# Structured replies are read with llm_output.json_object, whatever the shape
+# ---------------------------------------------------------------------------
+
+class _Replies:
+    """A provider that answers each call with the next canned reply."""
+
+    def __init__(self, *replies):
+        self.replies = list(replies)
+        self.calls = 0
+
+    async def generate(self, **kwargs):
+        self.calls += 1
+        return SimpleNamespace(content=self.replies.pop(0) if self.replies else "")
+
+
+URLS = {"urls": ["https://www.iaea.org/newscenter"]}
+
+
+@pytest.mark.parametrize("reply", [
+    '{"urls": ["https://www.iaea.org/newscenter"]}',
+    '```json\n{"urls": ["https://www.iaea.org/newscenter"]}\n```',
+    'Here are the sources I selected:\n{"urls": ["https://www.iaea.org/newscenter"]}',
+    '**Config:** {"urls": ["https://www.iaea.org/newscenter"]}',
+    '1. I chose authoritative sources.\n2. {"urls": ["https://www.iaea.org/newscenter"]}',
+    '| field | value |\n|---|---|\n| config | {"urls": ["https://www.iaea.org/newscenter"]} |',
+    # A schema echoed before the answer: the first balanced {...} is not JSON.
+    'Using the shape {urls: [...]}, the answer is {"urls": ["https://www.iaea.org/newscenter"]}',
+], ids=["bare", "fenced", "prose-prefixed", "bold-label", "numbered", "table-row", "schema-echo"])
+async def test_structured_reply_shapes_are_read(reply):
+    provider = _Replies(reply)
+    out = await agentic._structured_generate(provider, [{"role": "user", "content": "x"}], "sys", expected_keys=["urls"])
+    assert out == URLS
+    assert provider.calls == 1
+
+
+async def test_prose_with_no_object_is_retried_then_none():
+    provider = _Replies("I could not find anything relevant.", "Nothing.", "Still nothing.")
+    out = await agentic._structured_generate(provider, [{"role": "user", "content": "x"}], "sys", expected_keys=["urls"])
+    assert out is None
+    assert provider.calls == 3
