@@ -38,6 +38,13 @@ for _name in (
 ):
     os.environ[_name] = ""
 os.environ["POSTGRES_URL"] = "postgresql+asyncpg://intel:changeme@localhost:5432/intel_platform"
+# With every provider blank, provider selection ends at its Ollama fallback, so
+# where that points decides whether a test talks to a real model. A developer's
+# .env names the compose host (`ollama`, 2.7 s per failed Windows lookup) and a
+# workstation often runs a real Ollama on localhost:11434 (live, slow,
+# nondeterministic generation). An RFC 6761 `.invalid` host can never resolve
+# and fails in milliseconds everywhere, as CI's empty localhost port does.
+os.environ["OLLAMA_BASE_URL"] = "http://ollama-disabled-in-tests.invalid:11434"
 
 # The second route is Settings' own env file: contract 20 resolves env_file to
 # the repository-root .env from config.py's location, so it is found from any
