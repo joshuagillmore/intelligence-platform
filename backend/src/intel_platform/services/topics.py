@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import hashlib
+import json
 import logging
 import time
 from collections import defaultdict
@@ -15,9 +16,24 @@ logger = logging.getLogger(__name__)
 # Module-level caches — survive across per-request TopicTreeService instances
 _cluster_doc_map: dict[str, dict[str, list[str]]] = {}
 _cluster_keywords: dict[str, dict[str, list[str]]] = {}
-_summary_cache: dict[tuple[str, str, str], tuple[float, str]] = {}  # (project, node, hash) -> (timestamp, summary)
+# (project, node, content hash, level, history hash) -> (timestamp, summary)
+_summary_cache: dict[tuple[str, ...], tuple[float, str]] = {}
 _SUMMARY_TTL = 300  # 5 minutes
 _SUMMARY_CACHE_MAX = 200  # PERF: cap to prevent unbounded growth
+
+# Summary SSE framing (contract 7). Every `data:` payload is a JSON value: text
+# is a JSON *string*, so the model's newlines travel escaped inside it instead
+# of terminating the event. Sent raw, a client splitting on lines kept only the
+# lines starting `data: ` and a six-line summary arrived as "## Key Findingsps".
+_SSE_SLICE_CHARS = 80
+_SSE_DONE = "data: [DONE]\n\n"
+_SSE_ERROR = "data: " + json.dumps({"error": "Summary generation failed"}) + "\n\n"
+
+
+def _sse_text_frames(text: str):
+    """`text` as `data: "<json string>"` events, in slices of `_SSE_SLICE_CHARS`."""
+    for i in range(0, len(text), _SSE_SLICE_CHARS):
+        yield "data: " + json.dumps(text[i:i + _SSE_SLICE_CHARS]) + "\n\n"
 
 
 class TopicTreeService:
@@ -500,15 +516,21 @@ class TopicTreeService:
         keywords = context.get("keywords", [])
         entity_name = context.get("entity", {}).get("name", "Unknown")
 
-        # Check summary cache
+        # Check summary cache. The level and the conversation so far change the
+        # answer, so they are part of the key: a "corpus" request used to be
+        # served the "topic" summary, and a follow-up question the first reply.
         content_hash = hashlib.md5(
             str(sorted([e.get("name", "") for e in excerpts])).encode()
         ).hexdigest()
-        cache_key = (project_id, entity_id, content_hash)
+        history_hash = hashlib.md5(
+            json.dumps(conversation_history or [], sort_keys=True, default=str).encode()
+        ).hexdigest()
+        cache_key = (project_id, entity_id, content_hash, level, history_hash)
         cached = _summary_cache.get(cache_key)
         if cached and (time.time() - cached[0]) < _SUMMARY_TTL:
-            yield f"data: {cached[1]}\n\n"
-            yield "data: [DONE]\n\n"
+            for frame in _sse_text_frames(cached[1]):
+                yield frame
+            yield _SSE_DONE
             return
 
         # Build provider (centralized selection respecting runtime overrides)
@@ -516,8 +538,9 @@ class TopicTreeService:
         provider = await _get_provider()
 
         if not provider:
-            yield "data: No LLM provider configured.\n\n"
-            yield "data: [DONE]\n\n"
+            logger.warning("Topic summary requested with no LLM provider available")
+            yield _SSE_ERROR
+            yield _SSE_DONE
             return
 
         from intel_platform.llm.skills.loader import SkillsLoader
@@ -544,8 +567,7 @@ class TopicTreeService:
             messages.extend(conversation_history)
         messages.append({"role": "user", "content": user_content})
 
-        # Generate and stream
-        full_response = ""
+        # Generate, then stream in slices for non-streaming providers.
         try:
             result = await provider.generate(
                 messages=messages,
@@ -553,23 +575,29 @@ class TopicTreeService:
                 temperature=0.3,
                 max_tokens=4096,
             )
-            full_response = result.content
-            # Send in chunks to simulate streaming for non-streaming providers
-            chunk_size = 80
-            for i in range(0, len(full_response), chunk_size):
-                chunk = full_response[i:i + chunk_size]
-                yield f"data: {chunk}\n\n"
-        except Exception as e:
-            yield f"data: Error generating summary: {str(e)}\n\n"
+            full_response = result.content or ""
+        except Exception:
+            # Logged here; the client gets a fixed message. The exception text
+            # (hosts, credentials in URLs, provider error bodies) was streamed
+            # to the analyst and cached as though it were the summary.
+            logger.exception("Topic summary generation failed for %s", entity_id)
+            full_response = ""
 
-        # Cache the full response (evict oldest if cache is full)
-        if full_response:
-            if len(_summary_cache) >= _SUMMARY_CACHE_MAX:
-                oldest_key = min(_summary_cache, key=lambda k: _summary_cache[k][0])
-                del _summary_cache[oldest_key]
-            _summary_cache[cache_key] = (time.time(), full_response)
+        if not full_response.strip():
+            yield _SSE_ERROR
+            yield _SSE_DONE
+            return
 
-        yield "data: [DONE]\n\n"
+        for frame in _sse_text_frames(full_response):
+            yield frame
+
+        # Cache only a real summary (evict oldest if cache is full)
+        if len(_summary_cache) >= _SUMMARY_CACHE_MAX:
+            oldest_key = min(_summary_cache, key=lambda k: _summary_cache[k][0])
+            del _summary_cache[oldest_key]
+        _summary_cache[cache_key] = (time.time(), full_response)
+
+        yield _SSE_DONE
 
     def _rebuild_topic_clusters_sync(self, project_id: str) -> None:
         """Synchronously repopulate the module-level cluster caches.
