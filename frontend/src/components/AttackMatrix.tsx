@@ -1,5 +1,5 @@
 'use client';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   attackApi,
@@ -146,6 +146,10 @@ export default function AttackMatrix({
   const [d3fend, setD3fend] = useState<AttackD3fendCountermeasure[] | null>(null);
   const [d3fendLoading, setD3fendLoading] = useState(false);
   const [d3fendError, setD3fendError] = useState(false);
+  // The technique the drawer is showing now. Detail and D3FEND responses for
+  // any other technique (a slow response overtaken by a newer click) are
+  // dropped instead of landing in this drawer.
+  const drawerFor = useRef<string | null>(null);
 
   // ATT&CK report modal
   const [reportOpen, setReportOpen] = useState(false);
@@ -341,6 +345,7 @@ export default function AttackMatrix({
   }
 
   const openTechnique = useCallback(async (id: string) => {
+    drawerFor.current = id;
     setSelectedId(id);
     setDetail(null);
     setDetailLoading(true);
@@ -350,15 +355,18 @@ export default function AttackMatrix({
     setD3fendLoading(false);
     try {
       const res = await attackApi.technique(id, projectId);
+      if (drawerFor.current !== id) return; // the analyst opened another technique
       setDetail(res.data);
     } catch {
+      if (drawerFor.current !== id) return;
       setDetail(null);
     } finally {
-      setDetailLoading(false);
+      if (drawerFor.current === id) setDetailLoading(false);
     }
   }, [projectId]);
 
   const closeDrawer = useCallback(() => {
+    drawerFor.current = null;
     setSelectedId(null);
     setDetail(null);
     setD3fend(null);
@@ -370,15 +378,18 @@ export default function AttackMatrix({
   // lookup, so it can be slow or come back empty on an outage).
   const loadD3fend = useCallback(async () => {
     if (!selectedId) return;
+    const forId = selectedId;
     setD3fendLoading(true);
     setD3fendError(false);
     try {
-      const res = await attackApi.d3fend(selectedId);
+      const res = await attackApi.d3fend(forId);
+      if (drawerFor.current !== forId) return;
       setD3fend(res.data.countermeasures || []);
     } catch {
+      if (drawerFor.current !== forId) return;
       setD3fendError(true);
     } finally {
-      setD3fendLoading(false);
+      if (drawerFor.current === forId) setD3fendLoading(false);
     }
   }, [selectedId]);
 
