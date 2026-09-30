@@ -74,6 +74,7 @@ class _LLMExtractionFailed(Exception):
         super().__init__(reason)
         self.reason = reason
 
+
 SPACY_TO_ENTITY_TYPE = {
     "PERSON": "Person",
     "ORG": "Organization",
