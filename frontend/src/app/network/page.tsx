@@ -286,6 +286,7 @@ function NetworkPageInner() {
   const [histogramBucket, setHistogramBucket] = useState<'day' | 'month' | 'year'>('month');
   const [histogram, setHistogram] = useState<HistogramData | null>(null);
   const [histogramLoading, setHistogramLoading] = useState(false);
+  const [histogramError, setHistogramError] = useState<string | null>(null);
   // True when the backend says the selected project id refers to nothing at all
   // — distinct from a project that exists and is empty.
   const [projectMissing, setProjectMissing] = useState(false);
@@ -357,9 +358,14 @@ function NetworkPageInner() {
     }
     let cancelled = false;
     setHistogramLoading(true);
+    setHistogramError(null);
     timelineApi.histogram(activeProject.id, histogramBucket)
       .then(res => { if (!cancelled) setHistogram(res.data as HistogramData); })
-      .catch(() => { if (!cancelled) setHistogram(null); })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setHistogram(null);
+        setHistogramError(getErrorMessage(err));
+      })
       .finally(() => { if (!cancelled) setHistogramLoading(false); });
     return () => { cancelled = true; };
   }, [activeProject, histogramBucket]);
@@ -2032,6 +2038,7 @@ function NetworkPageInner() {
                   <TemporalHistogram
                     data={histogram}
                     loading={histogramLoading}
+                    error={histogramError}
                     value={eventRange}
                     onChange={setEventRange}
                     hideUndated={hideUndated}
