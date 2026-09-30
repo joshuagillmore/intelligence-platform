@@ -337,7 +337,11 @@ class GraphRAGPipeline:
             if provider:
                 from intel_platform.llm.skills.loader import SkillsLoader
                 loader = SkillsLoader()
-                system = loader.get_system_prompt("foundation", include_foundation=False) or ""
+                # The tradecraft grounding every analytic product runs under.
+                # The loader must register the foundation prompt under this
+                # name (llm package); until it does this is None and GraphRAG
+                # answers without it (tests/test_graph_rag_foundation.py).
+                system = loader.get_system_prompt("foundation") or ""
                 system += "\n\nYou are answering intelligence analyst queries using knowledge graph data. "
                 system += "Base your answer ONLY on the provided context. Cite entities and relationships. "
                 system += "If the context doesn't contain enough information, say so explicitly."
