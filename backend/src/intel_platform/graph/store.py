@@ -324,6 +324,70 @@ class GraphStore:
             )
             return [dict(record["n"]) for record in result]
 
+    # Distinct evidence sentences kept per list on one edge.
+    _MAX_EVIDENCE = 20
+
+    @classmethod
+    def _merge_assertion(cls, current: dict, props: dict) -> dict:
+        """The update that folds one more assertion of a claim into its edge.
+
+        Agreement and disagreement are relative to the polarity the edge was
+        first asserted with. An agreeing source corroborates; a disagreeing one
+        is recorded in `contradicting_sources` and turns the edge CONFLICT, and
+        is never counted as corroboration — it was, because the source was
+        appended before its polarity was compared. Evidence sentences are kept
+        per side (`evidence_all`, `contradicting_evidence`) instead of only the
+        first; `evidence` stays the first sentence, the primary reference.
+        """
+        new_doc = props.get("source_doc_id") or ""
+        new_evidence = props.get("evidence") or ""
+        prior_polarity = str(current.get("polarity") or "asserts").lower()
+        new_polarity = str(props.get("polarity") or "asserts").lower()
+        agrees = new_polarity == prior_polarity
+
+        sources = list(current.get("corroboration_sources") or [])
+        if current.get("source_doc_id") and current["source_doc_id"] not in sources:
+            sources.append(current["source_doc_id"])
+        contradicting = list(current.get("contradicting_sources") or [])
+        evidence_all = list(current.get("evidence_all") or ([current["evidence"]] if current.get("evidence") else []))
+        contradicting_evidence = list(current.get("contradicting_evidence") or [])
+
+        # Only a *different* source corroborates. Two mentions inside one
+        # document are one source, not two — that distinction is the whole
+        # point of a corroboration count.
+        side_sources, side_evidence = (sources, evidence_all) if agrees else (contradicting, contradicting_evidence)
+        if new_doc and new_doc not in side_sources:
+            side_sources.append(new_doc)
+        if new_evidence and new_evidence not in side_evidence and len(side_evidence) < cls._MAX_EVIDENCE:
+            side_evidence.append(new_evidence)
+
+        # Contradiction. A source that denies what another asserts must not
+        # be absorbed as further agreement — that is how contested reporting
+        # silently becomes settled fact. Once disputed, stays disputed until
+        # reviewed.
+        prior_agreement = str(current.get("corroboration_agreement") or "AGREE").upper()
+        agreement = "CONFLICT" if (not agrees or prior_agreement == "CONFLICT") else prior_agreement
+
+        prior_conf = float(current.get("confidence") or 0)
+        new_conf = float(props.get("confidence") or 0)
+        return {
+            "corroboration_count": len(sources) if sources else int(current.get("corroboration_count") or 1),
+            "corroboration_sources": sources,
+            "contradicting_sources": contradicting,
+            "corroboration_agreement": agreement,
+            # Keep the strongest assessed confidence — except once sources
+            # disagree, where the prior confidence no longer stands alone.
+            "confidence": min(prior_conf, new_conf) if agreement == "CONFLICT" else max(prior_conf, new_conf),
+            "evidence": current.get("evidence") or (new_evidence if agrees else ""),
+            "evidence_all": evidence_all,
+            "contradicting_evidence": contradicting_evidence,
+            "source_doc_id": current.get("source_doc_id") or (new_doc if agrees else ""),
+            "last_seen": props.get("last_seen") or current.get("last_seen"),
+            # The edge keeps the polarity it was first asserted with; the
+            # disagreement is carried by corroboration_agreement.
+            "polarity": prior_polarity,
+        }
+
     def create_relationship(self, rel) -> dict:
         if rel.rel_type not in self.VALID_REL_TYPES:
             raise ValueError(f"Invalid relationship type: {rel.rel_type}")
@@ -353,51 +417,7 @@ class GraphStore:
             ).single()
 
             if existing:
-                current = dict(existing["r"])
-                new_doc = props.get("source_doc_id") or ""
-                sources = list(current.get("corroboration_sources") or [])
-                if current.get("source_doc_id") and current["source_doc_id"] not in sources:
-                    sources.append(current["source_doc_id"])
-
-                # Only a *different* source corroborates. Two mentions inside one
-                # document are one source, not two — that distinction is the whole
-                # point of a corroboration count.
-                corroborated = bool(new_doc) and new_doc not in sources
-                if corroborated:
-                    sources.append(new_doc)
-
-                # Contradiction. A source that denies what another asserts must not
-                # be absorbed as further agreement — that is how contested
-                # reporting silently becomes settled fact.
-                prior_polarity = str(current.get("polarity") or "asserts").lower()
-                new_polarity = str(props.get("polarity") or "asserts").lower()
-                prior_agreement = str(current.get("corroboration_agreement") or "AGREE").upper()
-                if prior_polarity != new_polarity:
-                    agreement = "CONFLICT"
-                elif prior_agreement == "CONFLICT":
-                    agreement = "CONFLICT"  # once disputed, stays disputed until reviewed
-                else:
-                    agreement = prior_agreement
-
-                update = {
-                    "corroboration_count": max(len(sources), 1) if sources else int(current.get("corroboration_count") or 1),
-                    "corroboration_sources": sources,
-                    "corroboration_agreement": agreement,
-                    # Keep the strongest assessed confidence — except once sources
-                    # disagree, where the prior confidence no longer stands alone.
-                    "confidence": (
-                        min(float(current.get("confidence") or 0), float(props.get("confidence") or 0))
-                        if agreement == "CONFLICT"
-                        else max(float(current.get("confidence") or 0), float(props.get("confidence") or 0))
-                    ),
-                    # Keep the first captured sentence; it is the primary reference.
-                    "evidence": current.get("evidence") or props.get("evidence", ""),
-                    "source_doc_id": current.get("source_doc_id") or new_doc,
-                    "last_seen": props.get("last_seen") or current.get("last_seen"),
-                    # The edge keeps the polarity it was first asserted with; the
-                    # disagreement is carried by corroboration_agreement.
-                    "polarity": prior_polarity,
-                }
+                update = self._merge_assertion(dict(existing["r"]), props)
                 if project_id:
                     update["project_id"] = project_id
                 result = session.run(
