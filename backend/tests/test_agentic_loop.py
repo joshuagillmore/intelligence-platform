@@ -312,3 +312,17 @@ class TestAcquireSourceCountsWhatItKept:
         out = await agentic.acquire_source(source, _plan([source]), FakeSession(None), store)
         assert out["accepted_count"] == 1
         assert len(stored) == 1
+
+    async def test_the_document_records_where_it_came_from(self, monkeypatch, quiet):
+        """The runner path sets Document.url; the agentic path did not, so a
+        collected document could not say which page it was."""
+        text = "The Fordow facility is operated by the Atomic Energy Organization of Iran. " * 5
+        page = {"url": "https://example.org/report", "title": "Report", "content": text}
+        monkeypatch.setattr(agentic, "get_connector", lambda t: self._connector([page]))
+        monkeypatch.setattr(agentic, "rejection_reason", lambda url, content, title="": "")
+        stored = []
+        store = SimpleNamespace(create_entity=lambda e: stored.append(e))
+        source = _source("api_feed", {"base_url": "https://example.org/api"})
+
+        await agentic.acquire_source(source, _plan([source]), FakeSession(None), store)
+        assert stored[0].url == "https://example.org/report"

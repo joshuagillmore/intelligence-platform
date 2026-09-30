@@ -758,6 +758,8 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
         doc = Document(
             name=f"[Collection] {title or url or source.name}"[:256],
             content=content,
+            # Provenance: which page this is. The runner path always set it.
+            url=url,
             reliability_rating="C3",
             project_id=plan.project_id,
             summary_json=summary_json,
