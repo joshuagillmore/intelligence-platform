@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { geoApi, entitiesApi, assessApi, analysisApi, geoApiExtra } from '@/lib/api';
+import { geoApi, entitiesApi, assessApi, analysisApi, geoApiExtra, entityFields } from '@/lib/api';
 import { useAssistant } from '@/lib/AssistantContext';
 
 const GeoMap = dynamic(() => import('@/components/GeoMap'), { ssr: false });
@@ -181,15 +181,22 @@ export default function GeoPage() {
         // sparse area of interest rather than a truncated fetch.
         const res = await entitiesApi.search(activeProject.id, undefined, 'Location', 2000);
         const entities = res.data || [];
-        setLocations(entities.map((e: { id: string; name: string; properties?: Record<string, unknown> }) => ({
-          id: e.id,
-          name: e.name,
-          latitude: e.properties?.latitude as number | undefined,
-          longitude: e.properties?.longitude as number | undefined,
-          geocoded: !!(e.properties?.latitude && e.properties?.longitude),
-          connections: 0,
-          properties: e.properties,
-        })));
+        // /entities flattens node fields onto the entity; entityFields reads
+        // either shape (e.properties was undefined here, so nothing plotted).
+        setLocations(entities.map((e: { id: string; name: string }) => {
+          const f = entityFields(e);
+          const lat = typeof f.latitude === 'number' ? f.latitude : undefined;
+          const lng = typeof f.longitude === 'number' ? f.longitude : undefined;
+          return {
+            id: e.id,
+            name: e.name,
+            latitude: lat,
+            longitude: lng,
+            geocoded: lat != null && lng != null,
+            connections: 0,
+            properties: f,
+          };
+        }));
       } catch {
         setLocations([]);
       }

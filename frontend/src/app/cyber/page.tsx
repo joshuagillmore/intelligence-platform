@@ -6,7 +6,7 @@ import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import GraphVisualization from '@/components/GraphVisualization';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { entitiesApi, graphApi, assessApi, entityFields, totalFrom } from '@/lib/api';
+import { entitiesApi, graphApi, assessApi, entityFields, entityPropertyEntries, totalFrom } from '@/lib/api';
 import { TYPE_BADGE_CLASS as TYPE_BADGE_STYLES } from '@/lib/entityStyles';
 import { getErrorMessage } from '@/lib/errorMessages';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
@@ -65,6 +65,11 @@ const FILTER_TABS = [
 ];
 
 type PageTab = 'ioc' | 'attack' | 'actors';
+
+/** A property value as text; objects (geolocation, dns records) as JSON. */
+function formatPropertyValue(v: unknown): string {
+  return typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v);
+}
 
 function SeverityStatCard({ label, count, color, subtitle, trending, progressPercent }: {
   label: string;
@@ -290,7 +295,9 @@ export default function CyberPage() {
       const res = await entitiesApi.get(id);
       if (res.data.entity) {
         setExpandedEntity(prev => ({ ...prev, [id]: res.data.entity }));
-        setIocs(prev => prev.map(x => (x.id === id ? { ...x, properties: res.data.entity.properties } : x)));
+        // The entity route returns flattened fields (asn, enriched, …), not a
+        // `properties` bag; merge them so the tiles see the enrichment.
+        setIocs(prev => prev.map(x => (x.id === id ? { ...x, ...res.data.entity } : x)));
       }
     } catch { /* ignore */ }
   }
@@ -551,13 +558,13 @@ export default function CyberPage() {
                                       )}
                                     </div>
                                     <div>
-                                      {entity.properties && Object.keys(entity.properties).length > 0 && (
+                                      {entityPropertyEntries(entity).length > 0 && (
                                         <div className="mb-3">
                                           <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-2">Properties</h4>
-                                          {Object.entries(entity.properties).map(([k, v]) => (
+                                          {entityPropertyEntries(entity).map(([k, v]) => (
                                             <div key={k} className="text-xs mb-1">
                                               <span className="text-gray-500">{k}:</span>{' '}
-                                              <span className="text-gray-300">{String(v)}</span>
+                                              <span className="text-gray-300">{formatPropertyValue(v)}</span>
                                             </div>
                                           ))}
                                         </div>
@@ -737,13 +744,13 @@ export default function CyberPage() {
                               )}
                             </div>
                             <div>
-                              {actor.properties && Object.keys(actor.properties).length > 0 && (
+                              {entityPropertyEntries(actor).length > 0 && (
                                 <div>
                                   <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-2">Properties / Assessment</h4>
-                                  {Object.entries(actor.properties).map(([k, v]) => (
+                                  {entityPropertyEntries(actor).map(([k, v]) => (
                                     <div key={k} className="text-xs mb-1">
                                       <span className="text-gray-500">{k}:</span>{' '}
-                                      <span className="text-gray-300">{String(v)}</span>
+                                      <span className="text-gray-300">{formatPropertyValue(v)}</span>
                                     </div>
                                   ))}
                                 </div>

@@ -1057,4 +1057,19 @@ export function entityFields(entity: unknown): Record<string, unknown> {
   return { ...e, ...nested };
 }
 
+/** Keys that identify an entity rather than describe it. */
+const IDENTITY_KEYS = new Set(['id', 'name', 'entity_type', 'project_id', 'properties']);
+
+/**
+ * The entity's descriptive fields as `[key, value]` pairs for a properties
+ * panel, from either the flattened or the nested shape (see `entityFields`),
+ * without identity keys or empty values. Listing `entity.properties` directly
+ * showed nothing for flattened entities.
+ */
+export function entityPropertyEntries(entity: unknown): Array<[string, unknown]> {
+  return Object.entries(entityFields(entity)).filter(
+    ([k, v]) => !IDENTITY_KEYS.has(k) && v !== null && v !== undefined && v !== '',
+  );
+}
+
 export default api;
