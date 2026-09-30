@@ -387,6 +387,53 @@ class TestPauseAndArchive:
 
 
 # ---------------------------------------------------------------------------
+# Provider selection lives in llm/providers.py, not here
+# ---------------------------------------------------------------------------
+
+class TestProviderSelection:
+    """agentic.py re-implemented provider precedence: with Ollama chosen by the
+    operator and any cloud key present, it silently switched to the cloud."""
+
+    @pytest.fixture
+    def captured_provider(self, monkeypatch):
+        seen = {}
+
+        async def capture(plan, sources, db, provider, max_results=10):
+            seen["provider"] = provider
+
+        monkeypatch.setattr(agentic, "resolve_sources", capture)
+        return seen
+
+    async def test_the_operators_ollama_choice_is_used(self, monkeypatch, captured_provider):
+        async def a_cloud_key(name):
+            return "sk-cloud"
+
+        monkeypatch.setattr("intel_platform.llm.providers._resolve_api_key", a_cloud_key)
+        ollama = SimpleNamespace(name=lambda: "ollama:qwen2.5:14b")
+
+        async def get_provider():
+            return ollama
+
+        plan = _plan([])
+        await agentic.run_agentic_loop(plan.id, _factory(FakeSession(plan)), lambda: None, get_provider)
+        assert captured_provider["provider"] is ollama
+
+    async def test_default_is_the_collection_provider(self, monkeypatch, captured_provider):
+        chosen = FakeProvider()
+
+        async def collection_provider():
+            return chosen
+
+        monkeypatch.setattr("intel_platform.llm.providers._get_collection_provider", collection_provider)
+        plan = _plan([])
+        await agentic.run_agentic_loop(plan.id, _factory(FakeSession(plan)), lambda: None)
+        assert captured_provider["provider"] is chosen
+
+    def test_no_private_provider_chain_remains(self):
+        assert not hasattr(agentic, "_get_agentic_provider")
+
+
+# ---------------------------------------------------------------------------
 # R-3: a crashed run says it failed
 # ---------------------------------------------------------------------------
 

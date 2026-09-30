@@ -273,54 +273,6 @@ def _parse_llm_json(text: str) -> dict | None:
     return None
 
 
-async def _get_agentic_provider(get_provider):
-    """Get the best available provider for agentic steps (prefers cloud for JSON reliability).
-
-    If the configured provider is Ollama, checks if a cloud provider key
-    is available in the DB and uses that instead. Falls back to Ollama if no cloud key.
-    """
-    from intel_platform.config import settings
-
-    provider = await get_provider()
-    provider_name = provider.name() if provider else ""
-
-    # If a dedicated collection provider is explicitly configured, honor it
-    # as-is (do NOT override Ollama→cloud) — this is how the hybrid routing
-    # keeps high-volume collection off a rate-limited cloud key.
-    if (getattr(settings, "collection_llm_provider", "") or "").strip():
-        logger.info("Agentic provider (collection-configured): %s", provider_name)
-        return provider
-
-    # If already a cloud provider, use it
-    if not provider_name.startswith("ollama"):
-        logger.info("Agentic provider: %s", provider_name)
-        return provider
-
-    # Ollama is configured — check for cloud keys
-    try:
-        from intel_platform.llm.providers import _resolve_api_key
-        for cloud_provider in ["cohere", "anthropic", "openai"]:
-            key = await _resolve_api_key(cloud_provider)
-            if key:
-                if cloud_provider == "cohere":
-                    from intel_platform.llm.cohere_provider import CohereProvider
-                    logger.info("Agentic provider: cohere (preferred over Ollama for structured output)")
-                    return CohereProvider(api_key=key)
-                elif cloud_provider == "anthropic":
-                    from intel_platform.llm.anthropic import AnthropicProvider
-                    logger.info("Agentic provider: anthropic (preferred over Ollama for structured output)")
-                    return AnthropicProvider(api_key=key)
-                elif cloud_provider == "openai":
-                    from intel_platform.llm.openai_provider import OpenAIProvider
-                    logger.info("Agentic provider: openai (preferred over Ollama for structured output)")
-                    return OpenAIProvider(api_key=key)
-    except Exception as e:
-        logger.debug("Cloud provider lookup failed, using Ollama: %s", e)
-
-    logger.info("Agentic provider: %s (no cloud keys available)", provider_name)
-    return provider
-
-
 async def _structured_generate(provider, messages, system, expected_keys=None, max_retries=3):
     """Generate a structured JSON response with retry logic for unreliable models.
 
@@ -1052,7 +1004,7 @@ async def _record_plan_failed(db_factory, plan_id, reason: str) -> None:
 
 
 async def run_agentic_loop(
-    plan_id, db_factory, get_store, get_provider,
+    plan_id, db_factory, get_store, get_provider=None,
     max_results_per_source: int = 10, source_limit: int | None = None,
 ):
     """Background task: resolve, acquire, and evaluate all sources in a plan.
@@ -1089,14 +1041,25 @@ async def _run_agentic_loop(
         plan_id: UUID of the collection plan
         db_factory: async_sessionmaker (not request-scoped)
         get_store: callable returning GraphStore
-        get_provider: async callable returning LLM provider
+        get_provider: async callable returning the LLM provider; defaults to
+            llm.providers._get_collection_provider, the one selection rule
         source_limit: cap on how many sources are actually collected. A
             requirement should be answerable *or* stop against a stated
             collection budget; without this the planner's proposed source count
             is the only bound, so a plan given a budget of 3 ran all 5.
     """
     try:
-        provider = await _get_agentic_provider(get_provider)
+        # Provider selection is llm/providers.py's alone. A second precedence
+        # chain here overrode an operator's Ollama choice with any cloud key it
+        # could find.
+        if get_provider is None:
+            from intel_platform.llm import providers
+
+            get_provider = providers._get_collection_provider
+        provider = await get_provider()
+        if provider is None:
+            raise RuntimeError("no LLM provider is configured for collection")
+        logger.info("Agentic provider: %s", provider.name() if hasattr(provider, "name") else type(provider).__name__)
     except Exception as e:
         logger.error("Failed to get LLM provider for agentic loop: %s", e)
         # A run that could not start is a failure. It used to be marked
