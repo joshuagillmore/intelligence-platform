@@ -12,6 +12,12 @@ from intel_platform.services.enrichment import (
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
+def _edge_prop(edge: dict, key: str, default=None):
+    """An edge property, whether the store flattened it or nested it under `props`."""
+    value = edge.get(key, edge.get("props", {}).get(key))
+    return default if value is None else value
+
+
 @router.get("/graph")
 def get_full_graph(
     project_id: str,
@@ -83,24 +89,35 @@ def get_full_graph(
     enriched_edges = []
     for edge in data.get("edges", []):
         if edge.get("source_id") in visible_ids and edge.get("target_id") in visible_ids:
+            # Contract 4: what the evidence panel needs about each edge. The
+            # three identifying keys are unchanged — GraphVisualization reads them.
             enriched_edges.append({
                 "source_id": edge.get("source_id", ""),
                 "target_id": edge.get("target_id", ""),
                 "rel_type": edge.get("rel_type", ""),
-                "confidence": edge.get("confidence", edge.get("props", {}).get("confidence", 0.5)),
-                "first_seen": edge.get("first_seen", edge.get("props", {}).get("first_seen")),
-                "last_seen": edge.get("last_seen", edge.get("props", {}).get("last_seen")),
+                "confidence": _edge_prop(edge, "confidence", 0.5),
+                "evidence": str(_edge_prop(edge, "evidence", "")),
+                "method": str(_edge_prop(edge, "method", "")),
+                "source_doc_id": str(_edge_prop(edge, "source_doc_id", "")),
+                # An edge written before polarity was recorded is an assertion.
+                "polarity": _edge_prop(edge, "polarity", "asserts"),
+                "first_seen": _edge_prop(edge, "first_seen"),
+                "last_seen": _edge_prop(edge, "last_seen"),
             })
 
+    # The same node set get_full_graph draws its slice from, counted in full, so
+    # the view can say "showing N of M" with a real M.
+    total_nodes = store.count_entities(project_id=project_id)
     return {
         "project_exists": project_exists(store, project_id),
         "nodes": enriched_nodes,
         "edges": enriched_edges,
         "node_count": len(enriched_nodes),
         "edge_count": len(enriched_edges),
+        "total_nodes": total_nodes,
         # Whether the project holds more than this view shows. The store reports
-        # it; a store that does not is presumed truncated once it fills `limit`.
-        "truncated": bool(data.get("truncated", len(data.get("nodes", [])) >= limit)),
+        # it (contract 3); otherwise it follows from the true count.
+        "truncated": bool(data.get("truncated", total_nodes > len(data.get("nodes", [])))),
     }
 
 

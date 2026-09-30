@@ -36,9 +36,13 @@ from intel_platform.services.graph_cache import graph_cache  # noqa: E402
 class _FakeStore:
     """Stands in for GraphStore on the routes under test (no Neo4j needed)."""
 
-    def __init__(self, nodes, edges, truncated=None):
+    def __init__(self, nodes, edges, truncated=None, total=None):
         self.nodes, self.edges, self.truncated = nodes, edges, truncated
+        self.total = len(nodes) if total is None else total
         self.calls: list[dict] = []
+
+    def count_entities(self, project_id, query="", entity_type=None):
+        return self.total
 
     def get_full_graph(self, project_id, limit=500):
         self.calls.append({"project_id": project_id, "limit": limit})
@@ -105,9 +109,58 @@ class TestDisplayGraphDoesNotPoisonAnalytics:
         data = client.get("/api/graph", params={"project_id": "test-a4"}, headers=headers).json()
         assert data["truncated"] is False
 
+    def test_total_nodes_is_the_projects_true_node_count(self, fake_store):
+        fake_store(_FakeStore([_node(1), _node(2)], [], total=5486))
+        data = client.get("/api/graph", params={"project_id": "test-a4"}, headers=headers).json()
+        assert data["total_nodes"] == 5486
+        assert data["node_count"] == 2
+
+    def test_truncated_follows_the_true_count_when_the_store_does_not_say(self, fake_store):
+        fake_store(_FakeStore([_node(1), _node(2)], [], total=3))
+        data = client.get("/api/graph", params={"project_id": "test-a4"}, headers=headers).json()
+        assert data["truncated"] is True
+        fake_store(_FakeStore([_node(1), _node(2)], [], total=2))
+        data = client.get("/api/graph", params={"project_id": "test-a4"}, headers=headers).json()
+        assert data["truncated"] is False
+
     @pytest.mark.parametrize("limit", [0, -1, 10001])
     def test_out_of_range_limits_are_rejected(self, fake_store, limit):
         store = fake_store(_FakeStore([_node(1)], []))
         resp = client.get("/api/graph", params={"project_id": "test-a4", "limit": limit}, headers=headers)
         assert resp.status_code == 422
         assert store.calls == []
+
+
+class TestEdgePayload:
+    """Contract 4: the network panel said "No captured evidence — re-run
+    extraction" for every edge and showed `[object Object]` as its source
+    document, because /graph never sent evidence, method or provenance."""
+
+    EDGE = {
+        "source_id": "n1", "target_id": "n2", "rel_type": "TARGETS", "confidence": 0.8,
+        "evidence": "APT Example targeted Kolvane in March.", "method": "llm",
+        "source_doc_id": "doc-123", "polarity": "denies",
+        "first_seen": "2026-03-01T00:00:00+00:00", "last_seen": "2026-03-02T00:00:00+00:00",
+        "corroboration_sources": ["doc-123", "doc-456"],
+    }
+
+    def _edges(self, fake_store, edge):
+        fake_store(_FakeStore([_node(1), _node(2)], [edge]))
+        return client.get("/api/graph", params={"project_id": "test-a4"}, headers=headers).json()["edges"]
+
+    def test_edges_carry_evidence_method_provenance_and_polarity(self, fake_store):
+        (edge,) = self._edges(fake_store, self.EDGE)
+        assert edge == {
+            "source_id": "n1", "target_id": "n2", "rel_type": "TARGETS", "confidence": 0.8,
+            "evidence": "APT Example targeted Kolvane in March.", "method": "llm",
+            "source_doc_id": "doc-123", "polarity": "denies",
+            "first_seen": "2026-03-01T00:00:00+00:00", "last_seen": "2026-03-02T00:00:00+00:00",
+        }
+
+    def test_an_edge_built_before_provenance_existed_gets_strings_not_nulls(self, fake_store):
+        (edge,) = self._edges(fake_store, {"source_id": "n1", "target_id": "n2", "rel_type": "USES"})
+        assert edge["evidence"] == ""
+        assert edge["method"] == ""
+        assert edge["source_doc_id"] == ""
+        assert edge["polarity"] == "asserts"
+        assert edge["confidence"] == 0.5
