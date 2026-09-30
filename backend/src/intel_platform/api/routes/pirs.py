@@ -725,7 +725,7 @@ def _ranked_entities(store, project_id: str, limit: int) -> tuple[list[dict], in
     with store._driver.session() as session:
         rows = session.run(
             """
-            MATCH (n) WHERE n.project_id = $project_id
+            MATCH (n:Entity) WHERE n.project_id = $project_id
             OPTIONAL MATCH (n)-[r]-()
             WITH n, count(r) AS degree
             ORDER BY CASE WHEN n.entity_type IN $low_signal THEN 1 ELSE 0 END,

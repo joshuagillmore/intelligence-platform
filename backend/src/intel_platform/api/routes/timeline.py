@@ -42,14 +42,14 @@ def _timeline_page(store: GraphStore, project_id: str, limit: int, offset: int) 
     with store._driver.session() as session:
         summary = session.run(
             """
-            MATCH (n) WHERE n.project_id = $project_id
+            MATCH (n:Entity) WHERE n.project_id = $project_id
             RETURN count(n) AS total, collect(DISTINCT n.entity_type) AS types
             """,
             project_id=project_id,
         ).single()
         rows = session.run(
             """
-            MATCH (n) WHERE n.project_id = $project_id
+            MATCH (n:Entity) WHERE n.project_id = $project_id
             WITH n, coalesce(n.event_datetime, n.created_at, '') AS ts
             ORDER BY ts DESC, n.id
             SKIP $offset LIMIT $limit
