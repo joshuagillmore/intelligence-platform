@@ -18,6 +18,11 @@ import path from 'path';
 const OUT = path.resolve(__dirname, '../../../docs/screenshots');
 const PROJECT_ID = process.env.CAPTURE_PROJECT_ID || '';
 
+// Every test here overwrites a committed README image, so a plain `npm run e2e`
+// must not run them (it used to, replacing the screenshots with shots of the
+// seeded demo data). Opt in by naming the project to capture.
+test.skip(!PROJECT_ID, 'overwrites docs/screenshots; set CAPTURE_PROJECT_ID to run it deliberately');
+
 test.use({ viewport: { width: 1600, height: 1000 } });
 
 test.beforeAll(() => fs.mkdirSync(OUT, { recursive: true }));

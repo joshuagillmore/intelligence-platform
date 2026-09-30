@@ -127,7 +127,6 @@ jobs:
           NEO4J_USER=neo4j
           NEO4J_PASSWORD=changeme
           POSTGRES_URL=postgresql+asyncpg://intel:changeme@postgres:5432/intel_platform
-          REDIS_URL=redis://:changeme@redis:6379/0
           JWT_SECRET=ci-not-a-real-secret
           API_KEY=ci-test-api-key
           ENV
@@ -182,9 +181,38 @@ jobs:
     # The root Dockerfile is what Railway deploys; the jobs above test
     # backend/Dockerfile and frontend/Dockerfile instead. Build it on every run
     # (the image is loaded locally, never pushed) and prove the parts that only
-    # exist in it: Chromium for crawl4ai and the bundled Node.
+    # exist in it: Chromium for crawl4ai, the bundled Node, and start.sh
+    # serving both halves and exiting when one of them dies.
     name: Production image (root Dockerfile)
     runs-on: ubuntu-latest
+    services:
+      neo4j:
+        image: neo4j:5-community
+        env:
+          NEO4J_AUTH: neo4j/changeme
+          NEO4J_PLUGINS: '["apoc"]'
+        ports:
+          - 7687:7687
+          - 7474:7474
+        options: >-
+          --health-cmd "wget --quiet --tries=1 --spider http://localhost:7474 || exit 1"
+          --health-start-period 30s
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 15
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: intel_platform
+          POSTGRES_USER: intel
+          POSTGRES_PASSWORD: changeme
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U intel -d intel_platform"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v4
 
@@ -217,3 +245,26 @@ jobs:
 
           asyncio.run(main())
           PY
+
+      - name: Boot the image and serve API + UI through start.sh
+        run: |
+          docker run -d --name app --network host \
+            -e NEO4J_URI=bolt://localhost:7687 -e NEO4J_USER=neo4j -e NEO4J_PASSWORD=changeme \
+            -e POSTGRES_URL=postgresql+asyncpg://intel:changeme@localhost:5432/intel_platform \
+            intel-platform:ci
+          for i in $(seq 1 60); do curl -sf http://localhost:8000/health && break; sleep 2; done
+          curl -sf http://localhost:8000/health
+          # A page request goes through the backend's proxy to the Next server.
+          curl -sf -o /dev/null -w "GET / -> %{http_code}\n" http://localhost:8000/
+
+      - name: start.sh exits non-zero when the frontend dies
+        run: |
+          docker exec app bash -c 'for p in /proc/[0-9]*; do tr "\0" " " < $p/cmdline 2>/dev/null | grep -q "^node server.js" && kill ${p#/proc/}; done'
+          for i in $(seq 1 30); do [ "$(docker inspect -f '{{.State.Running}}' app)" = false ] && break; sleep 1; done
+          code=$(docker inspect -f '{{.State.ExitCode}}' app)
+          echo "container exit code: $code"
+          [ "$(docker inspect -f '{{.State.Running}}' app)" = false ] && [ "$code" -ne 0 ]
+
+      - name: Container logs
+        if: always()
+        run: docker logs app 2>&1 | tail -100 || true

@@ -31,7 +31,8 @@ Claude Code *online* branches alike. Read it first. `backend/CLAUDE.md` and
   `frontend/CLAUDE.md`.
 - **Dual datastore:** Neo4j is the knowledge graph (entities + relationships);
   Postgres/pgvector holds documents, embeddings, and collection-plan state.
-- **Deploy:** Railway (single Dockerfile, `start.sh` runs frontend + backend).
+- **Deploy:** Railway builds the root `Dockerfile`; its entrypoint `start.sh`
+  runs the Next.js server and uvicorn, and exits non-zero if either dies.
   Local full stack via `docker compose`.
 
 ## Repo layout
