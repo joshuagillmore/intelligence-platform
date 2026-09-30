@@ -4,9 +4,15 @@ import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import PirPanel from '@/components/PirPanel';
 import { useProject } from '@/lib/ProjectContext';
-import { projectsApi, graphApi, reportsApi, timelineApi, exportApi, type Project } from '@/lib/api';
+import {
+  projectsApi, graphApi, reportsApi, timelineApi, exportApi, collectionPlansApi, isHttpStatus, type Project,
+} from '@/lib/api';
 import { useNotifications } from '@/components/NotificationProvider';
 import { TYPE_BADGE_CLASS, TYPE_COLOR_HEX } from '@/lib/entityStyles';
+import { rankByDegree, type KeyEntity } from '@/lib/centrality';
+import { getErrorMessage } from '@/lib/errorMessages';
+
+type HubPanel = 'stats' | 'centrality' | 'timeline' | 'reports' | 'plans';
 
 // Design tokens
 const colors = {
@@ -25,39 +31,71 @@ export default function ProjectDashboard() {
   const { setActiveProject } = useProject();
   const { addNotification } = useNotifications();
   const [project, setProject] = useState<Project | null>(null);
+  // Why the project itself failed to load, when it was not a plain 404.
+  const [projectError, setProjectError] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [stats, setStats] = useState<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [topEntities, setTopEntities] = useState<any[]>([]);
+  const [topEntities, setTopEntities] = useState<KeyEntity[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [reports, setReports] = useState<any[]>([]);
+  // Collection plans in the ACTIVE lifecycle state; null until loaded.
+  const [activePlans, setActivePlans] = useState<number | null>(null);
+  // Panels whose data failed to load. A failed panel says so; it does not
+  // render a zero or an empty list as if that were the answer.
+  const [panelErrors, setPanelErrors] = useState<Set<HubPanel>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const projectId = params.id as string;
 
   useEffect(() => {
     if (!projectId) return;
+    let cancelled = false;
     setLoading(true);
-    Promise.all([
-      projectsApi.get(projectId).catch(() => null),
-      graphApi.statistics(projectId).catch(() => null),
-      graphApi.centrality(projectId).catch(() => null),
-      timelineApi.get(projectId).catch(() => null),
-      reportsApi.list(projectId).catch(() => null),
-    ]).then(([projRes, statsRes, centralRes, timeRes, repRes]) => {
-      if (projRes?.data) {
-        setProject(projRes.data);
-        setActiveProject(projRes.data);
+    setProjectError(null);
+    Promise.allSettled([
+      projectsApi.get(projectId),
+      graphApi.statistics(projectId),
+      graphApi.centrality(projectId),
+      timelineApi.get(projectId),
+      reportsApi.list(projectId),
+      collectionPlansApi.list(projectId),
+    ]).then(([projRes, statsRes, centralRes, timeRes, repRes, plansRes]) => {
+      if (cancelled) return;
+      if (projRes.status === 'rejected') {
+        setProject(null);
+        // A 404 is "not found"; anything else is a failure to load, and saying
+        // "not found" for it sends the analyst looking for a deleted project.
+        setProjectError(isHttpStatus(projRes.reason, 404) ? null : getErrorMessage(projRes.reason));
+        setLoading(false);
+        return;
       }
-      if (statsRes?.data) setStats(statsRes.data);
-      if (centralRes?.data) setTopEntities(centralRes.data.slice(0, 10));
-      if (timeRes?.data?.events) setRecentActivity(timeRes.data.events.slice(0, 15));
-      if (repRes?.data) setReports(Array.isArray(repRes.data) ? repRes.data : []);
+      setProject(projRes.value.data);
+      setActiveProject(projRes.value.data);
+
+      const failed = new Set<HubPanel>();
+      if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
+      else { setStats(null); failed.add('stats'); }
+      // /graph/centrality returns `degree`; rank and scale by it.
+      if (centralRes.status === 'fulfilled') setTopEntities(rankByDegree(centralRes.value.data, 10));
+      else { setTopEntities([]); failed.add('centrality'); }
+      if (timeRes.status === 'fulfilled') {
+        const events = timeRes.value.data?.events;
+        setRecentActivity(Array.isArray(events) ? events.slice(0, 15) : []);
+      } else { setRecentActivity([]); failed.add('timeline'); }
+      if (repRes.status === 'fulfilled') setReports(Array.isArray(repRes.value.data) ? repRes.value.data : []);
+      else { setReports([]); failed.add('reports'); }
+      if (plansRes.status === 'fulfilled') {
+        const plans = Array.isArray(plansRes.value.data) ? plansRes.value.data : [];
+        setActivePlans(plans.filter(p => p.status === 'ACTIVE').length);
+      } else { setActivePlans(null); failed.add('plans'); }
+      setPanelErrors(failed);
       setLoading(false);
     });
-  }, [projectId, setActiveProject]);
+    return () => { cancelled = true; };
+  }, [projectId, setActiveProject, reloadKey]);
 
   if (loading) {
     return (
@@ -75,7 +113,19 @@ export default function ProjectDashboard() {
       <div className="flex">
         <Sidebar />
         <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8" style={{ backgroundColor: colors.surface, minHeight: '100vh' }}>
-          <div style={{ color: colors.tertiary }}>Project not found</div>
+          {projectError ? (
+            <div>
+              <p style={{ color: colors.tertiary }}>Could not load this project: {projectError}</p>
+              <button
+                onClick={() => setReloadKey(k => k + 1)}
+                className="mt-3 text-xs px-3 py-1.5 rounded bg-navy-700 text-accent-blue hover:bg-navy-600 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            <div style={{ color: colors.tertiary }}>Project not found</div>
+          )}
         </main>
       </div>
     );
@@ -84,15 +134,21 @@ export default function ProjectDashboard() {
   const entityCount = stats?.nodes || project.entity_count || 0;
   const relationshipCount = stats?.edges || project.relationship_count || 0;
   const documentCount = project.document_count || 0;
-  const activeCollections = reports.length;
-  const unresolvedGaps = stats?.components || 0;
+  // Collection plans an analyst has put into the ACTIVE state (not the number
+  // of reports, which is what this card used to count).
+  const activeCollections = activePlans;
+  // Weakly connected components beyond the main one: a fully connected graph
+  // has none. The raw component count read 1 for a connected graph.
+  const disconnectedClusters = panelErrors.has('stats')
+    ? null
+    : Math.max((typeof stats?.components === 'number' ? stats.components : 0) - 1, 0);
 
   const statCards = [
     { label: 'Entities', value: entityCount, color: colors.primary, progress: Math.min(entityCount / 100, 1) },
     { label: 'Relationships', value: relationshipCount, color: colors.secondary, progress: Math.min(relationshipCount / 200, 1) },
     { label: 'Documents', value: documentCount, color: colors.primary, progress: Math.min(documentCount / 50, 1) },
-    { label: 'Active Collections', value: activeCollections, color: colors.green, progress: Math.min(activeCollections / 20, 1) },
-    { label: 'Unresolved Gaps', value: unresolvedGaps, color: colors.tertiary, progress: Math.min(unresolvedGaps / 10, 1) },
+    { label: 'Active Collections', value: activeCollections, color: colors.green, progress: Math.min((activeCollections ?? 0) / 20, 1) },
+    { label: 'Disconnected Clusters', value: disconnectedClusters, color: colors.tertiary, progress: Math.min((disconnectedClusters ?? 0) / 10, 1) },
   ];
 
   // Entity badge classes (activity list) come from the SSOT in
@@ -120,9 +176,9 @@ export default function ProjectDashboard() {
   // centrality and counts, not model output. Labeled as such so they are not
   // mistaken for AI-generated confidence scores.
   const insights = [
-    ...(topEntities.length > 2 ? [{
+    ...(topEntities.length > 2 && topEntities[0].degree > 0 ? [{
       tag: 'Centrality',
-      description: `Entity "${topEntities[0]?.name}" shows the highest centrality in the network, suggesting a key node connecting multiple clusters.`,
+      description: `Entity "${topEntities[0].name}" has the most connections in the network (${topEntities[0].degree}), suggesting a key node connecting multiple clusters.`,
       action: 'Deep Analysis',
       actionHref: '/network',
     }] : []),
@@ -132,16 +188,13 @@ export default function ProjectDashboard() {
       action: 'Verify Connection',
       actionHref: '/network',
     }] : []),
-    ...(unresolvedGaps > 1 ? [{
+    ...(disconnectedClusters && disconnectedClusters > 0 ? [{
       tag: 'Connectivity',
-      description: `${unresolvedGaps} disconnected components identified. These gaps may indicate missing intelligence links.`,
+      description: `${disconnectedClusters} cluster${disconnectedClusters === 1 ? ' is' : 's are'} not connected to the main network. These gaps may indicate missing intelligence links.`,
       action: 'Deep Analysis',
       actionHref: '/network',
     }] : []),
   ];
-
-  // Get max centrality for bar scaling
-  const maxCentrality = topEntities.reduce((max: number, e: { centrality?: number }) => Math.max(max, e.centrality || 0), 0) || 1;
 
   return (
     <div className="flex">
@@ -240,7 +293,12 @@ export default function ProjectDashboard() {
               >
                 {s.label}
               </div>
-              <div className="text-2xl font-bold text-white">{s.value}</div>
+              <div
+                className="text-2xl font-bold text-white"
+                title={s.value == null ? 'Could not load this figure' : undefined}
+              >
+                {s.value ?? '—'}
+              </div>
               <div
                 className="mt-3 h-1 rounded-full overflow-hidden"
                 style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
@@ -305,7 +363,9 @@ export default function ProjectDashboard() {
                   </div>
                 );
               })}
-              {recentActivity.length === 0 && <p className="text-xs text-gray-500">No activity yet</p>}
+              {recentActivity.length === 0 && (panelErrors.has('timeline')
+                ? <p className="text-xs text-red-300">Could not load recent activity.</p>
+                : <p className="text-xs text-gray-500">No activity yet</p>)}
             </div>
           </div>
 
@@ -328,10 +388,11 @@ export default function ProjectDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {topEntities.map((e: { id?: string; name: string; entity_type: string; centrality?: number }, i: number) => {
+                  {topEntities.map((e, i) => {
                     const badgeHex = TYPE_COLOR_HEX[e.entity_type] || '#9ca3af';
-                    const centralityVal = e.centrality || 0;
-                    const centralityPct = maxCentrality > 0 ? (centralityVal / maxCentrality) * 100 : 0;
+                    // Degree scaled by the best-connected entity (1.000 = most links).
+                    const centralityVal = e.score;
+                    const centralityPct = centralityVal * 100;
                     return (
                       <tr
                         key={e.id || i}
@@ -367,7 +428,9 @@ export default function ProjectDashboard() {
                                 opacity: 0.6,
                               }}
                             />
-                            <span className="text-[10px] text-gray-500">{centralityVal.toFixed(3)}</span>
+                            <span className="text-[10px] text-gray-500" title={`${e.degree} link${e.degree === 1 ? '' : 's'}`}>
+                              {centralityVal.toFixed(3)}
+                            </span>
                           </div>
                         </td>
                         <td className="py-2.5">
@@ -388,7 +451,9 @@ export default function ProjectDashboard() {
                   })}
                 </tbody>
               </table>
-              {topEntities.length === 0 && <p className="text-xs text-gray-500 mt-4">No entities yet</p>}
+              {topEntities.length === 0 && (panelErrors.has('centrality')
+                ? <p className="text-xs text-red-300 mt-4">Could not load key entities.</p>
+                : <p className="text-xs text-gray-500 mt-4">No entities yet</p>)}
             </div>
           </div>
 
@@ -447,12 +512,12 @@ export default function ProjectDashboard() {
                   { label: 'Entities', value: entityCount, max: Math.max(entityCount, relationshipCount, documentCount, 1), color: colors.primary },
                   { label: 'Relationships', value: relationshipCount, max: Math.max(entityCount, relationshipCount, documentCount, 1), color: colors.secondary },
                   { label: 'Documents', value: documentCount, max: Math.max(entityCount, relationshipCount, documentCount, 1), color: colors.green },
-                  { label: 'Gaps', value: unresolvedGaps, max: Math.max(entityCount, relationshipCount, documentCount, 1), color: colors.tertiary },
+                  { label: 'Disconnected clusters', value: disconnectedClusters, max: Math.max(entityCount, relationshipCount, documentCount, 1), color: colors.tertiary },
                 ].map(bar => (
                   <div key={bar.label}>
                     <div className="flex justify-between text-[10px] mb-1">
                       <span style={{ color: '#6b7280' }}>{bar.label}</span>
-                      <span style={{ color: '#6b7280' }}>{bar.value}</span>
+                      <span style={{ color: '#6b7280' }}>{bar.value ?? '—'}</span>
                     </div>
                     <div
                       className="h-2 rounded-full overflow-hidden"
@@ -461,7 +526,7 @@ export default function ProjectDashboard() {
                       <div
                         className="h-full rounded-full"
                         style={{
-                          width: `${Math.max((bar.value / bar.max) * 100, 2)}%`,
+                          width: `${Math.max(((bar.value ?? 0) / bar.max) * 100, 2)}%`,
                           backgroundColor: bar.color,
                           opacity: 0.7,
                         }}
@@ -498,7 +563,9 @@ export default function ProjectDashboard() {
                     <div className="text-gray-500 mt-1">{r.report_type || 'Report'}</div>
                   </div>
                 ))}
-                {reports.length === 0 && <p className="text-xs text-gray-500">No reports yet</p>}
+                {reports.length === 0 && (panelErrors.has('reports')
+                  ? <p className="text-xs text-red-300">Could not load reports.</p>
+                  : <p className="text-xs text-gray-500">No reports yet</p>)}
               </div>
               <button
                 onClick={() => router.push('/products')}
