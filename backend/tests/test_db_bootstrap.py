@@ -142,6 +142,17 @@ class TestInitDbWithoutPgvector:
         assert all(name in logged for name in VECTOR_TABLES), "skipped tables must be named"
 
 
+class TestPlanStatus:
+    def test_a_crashed_run_has_a_terminal_status(self):
+        """Written when a collection run crashes (WP-E), rather than leaving
+        the plan ACTIVE or marking it COMPLETED."""
+        from intel_platform.db.models import CollectionPlan, PlanStatus
+        assert PlanStatus.FAILED == "FAILED"
+        # A plain string column, not a Postgres enum: nothing to migrate, but
+        # the value must fit it.
+        assert len(PlanStatus.FAILED) <= CollectionPlan.__table__.c.status.type.length
+
+
 class TestInitDbWithPgvector:
     async def test_every_table_is_created(self, created):
         use, calls = created
