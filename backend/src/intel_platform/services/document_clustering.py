@@ -593,6 +593,33 @@ GRANULARITY_PRESETS = {
 }
 
 
+# Texts per embedding call. Cohere caps a call at 96 texts; sending a whole
+# corpus in one call failed there and dropped the tree to TF-IDF.
+_EMBED_BATCH_SIZE = 96
+
+# The group size a node aims to split into. Splitting into n // 2 groups leaves
+# pairs at the first level with no room beneath them; aiming for ~4 members
+# keeps a level to deepen into, capped by the preset's clusters-per-level.
+_SEMANTIC_TARGET_GROUP = 4
+
+
+async def _tfidf_fallback(
+    documents: list[tuple[str, str]], project_id: str, reason: str,
+) -> tuple[dict | None, dict, dict]:
+    """The TF-IDF tree, marked as what it is.
+
+    Without the marker a failed semantic build was indistinguishable from a
+    successful one: same shape, keyword labels, no hint that the embedder never
+    ran. ``fallback_reason`` names the failure without exception text.
+    """
+    logger.warning("Semantic clustering unavailable (%s) — falling back to TF-IDF", reason)
+    tree, doc_map, kw_map = await asyncio.to_thread(cluster_documents, documents, project_id)
+    if tree is not None:
+        tree["fallback"] = "tfidf"
+        tree["fallback_reason"] = reason
+    return tree, doc_map, kw_map
+
+
 async def cluster_semantic(
     documents: list[tuple[str, str]],
     project_id: str,
@@ -600,9 +627,11 @@ async def cluster_semantic(
 ) -> tuple[dict | None, dict, dict]:
     """Cluster documents using dense embeddings + agglomerative hierarchy.
 
-    Uses the platform's EmbeddingProvider to generate vectors, then
-    scipy Ward linkage for deterministic hierarchical clustering.
-    Falls back to TF-IDF clustering if embedding fails.
+    Uses the platform's EmbeddingProvider to generate vectors (in batches of
+    96), then recursive Ward linkage for a deterministic hierarchy whose depth
+    follows the granularity preset. Linkage and TF-IDF run in a worker thread.
+    Falls back to TF-IDF clustering if embedding fails, and marks the tree
+    ``fallback: "tfidf"`` when it does.
 
     Returns (tree_node, doc_map, kw_map) — same interface as cluster_documents().
     """
@@ -619,8 +648,8 @@ async def cluster_semantic(
         from intel_platform.llm.embeddings import get_embedding_provider
         provider = get_embedding_provider()
     except Exception:
-        logger.warning("No embedding provider — falling back to TF-IDF clustering")
-        return cluster_documents(documents, project_id)
+        logger.warning("No embedding provider for semantic clustering", exc_info=True)
+        return await _tfidf_fallback(documents, project_id, "no embedding provider")
 
     # Embed all documents
     texts = [text for _, text in documents]
@@ -629,67 +658,83 @@ async def cluster_semantic(
     try:
         # Truncate texts to avoid token limits (embedding models typically cap at 512 tokens)
         truncated = [t[:2000] for t in texts]
-        result = await provider.embed(truncated, input_type="search_document")
-        embeddings = np.array(result.embeddings)
-    except Exception as e:
-        logger.warning("Embedding failed (%s) — falling back to TF-IDF clustering", e)
-        return cluster_documents(documents, project_id)
+        vectors: list[list[float]] = []
+        for i in range(0, len(truncated), _EMBED_BATCH_SIZE):
+            result = await provider.embed(truncated[i:i + _EMBED_BATCH_SIZE], input_type="search_document")
+            vectors.extend(result.embeddings)
+    except Exception:
+        logger.warning("Embedding failed during semantic clustering", exc_info=True)
+        return await _tfidf_fallback(documents, project_id, "embedding failed")
+
+    if len(vectors) != len(documents) or len({len(v) for v in vectors}) > 1:
+        return await _tfidf_fallback(
+            documents, project_id,
+            f"embedding returned {len(vectors)} usable vectors for {len(documents)} documents",
+        )
+    embeddings = np.array(vectors, dtype=float)
 
     if len(embeddings) < 2:
-        # Single doc — delegate to TF-IDF which handles single-doc chunking
-        return cluster_documents(documents, project_id)
+        # Single doc — delegate to TF-IDF which handles single-doc chunking.
+        # By design, not a failure, so no fallback marker.
+        return await asyncio.to_thread(cluster_documents, documents, project_id)
 
-    # Agglomerative clustering with Ward linkage (deterministic)
-    from scipy.cluster.hierarchy import linkage, fcluster
-
-    Z = linkage(embeddings, method="ward")
-
-    # Multi-level cuts based on granularity
     max_k, max_depth = GRANULARITY_PRESETS.get(granularity, GRANULARITY_PRESETS["medium"])
-    n = len(doc_ids)
 
-    # Build tree by cutting dendrogram at multiple levels
-    level_cuts = []
-    for level in range(1, max_depth + 1):
-        k = max(2, min(max_k, n // max(1, level)))
-        if k >= n:
-            k = max(2, n - 1)
-        assignments = fcluster(Z, t=k, criterion="maxclust")
-        level_cuts.append(assignments)
+    def _build() -> dict:
+        # TF-IDF for keyword labeling (reuse existing infrastructure).
+        tfidf_vectors, _, vocab = build_tfidf(documents)
+        all_tokenized = [_tokenize(text) for _, text in documents]
+        return _build_semantic_tree(
+            embeddings=embeddings,
+            doc_ids=doc_ids,
+            tfidf_vectors=tfidf_vectors,
+            vocab=vocab,
+            all_tokenized=all_tokenized,
+            doc_map=doc_map_inner,
+            kw_map=kw_map_inner,
+            max_k=max_k,
+            max_depth=max_depth,
+        )
 
-    # Build TF-IDF for keyword labeling (reuse existing infrastructure)
-    tfidf_vectors, _, vocab = build_tfidf(documents)
-    all_tokenized = [_tokenize(text) for _, text in documents]
-
-    # Build tree from the multi-level cuts
-    root = _build_semantic_tree(
-        doc_ids=doc_ids,
-        level_cuts=level_cuts,
-        tfidf_vectors=tfidf_vectors,
-        vocab=vocab,
-        all_tokenized=all_tokenized,
-        doc_map=doc_map_inner,
-        kw_map=kw_map_inner,
-    )
-
+    # Ward linkage is O(n^2) and TF-IDF tokenises the corpus; neither belongs
+    # on the event loop that also serves /health and every agentic run.
+    root = await asyncio.to_thread(_build)
     return root, doc_map, kw_map
 
 
+def _ward_groups(embeddings: np.ndarray, indices: list[int], k: int) -> list[list[int]]:
+    """Split ``indices`` into at most ``k`` groups by Ward linkage on their vectors."""
+    from scipy.cluster.hierarchy import fcluster, linkage
+
+    z = linkage(embeddings[indices], method="ward")
+    assignments = fcluster(z, t=k, criterion="maxclust")
+    groups: dict[int, list[int]] = {}
+    for idx, cluster_id in zip(indices, assignments):
+        groups.setdefault(int(cluster_id), []).append(idx)
+    # In document order (each group's first member), not dendrogram order.
+    return sorted(groups.values(), key=lambda g: g[0])
+
+
 def _build_semantic_tree(
+    embeddings: np.ndarray,
     doc_ids: list[str],
-    level_cuts: list[np.ndarray],
     tfidf_vectors,
     vocab: list[str],
     all_tokenized: list[list[str]],
     doc_map: dict,
     kw_map: dict,
+    max_k: int,
+    max_depth: int,
     depth: int = 0,
     indices: list[int] | None = None,
 ) -> dict:
-    """Recursively build a tree from multi-level dendrogram cuts.
+    """Recursively build a topic tree by re-clustering each node's members.
 
-    At each level, groups documents by their cluster assignment, creates nodes,
-    and recurses into the next level for sub-clustering.
+    Each node's own documents are clustered again (Ward linkage on their
+    embeddings) into up to ``max_k`` groups of about ``_SEMANTIC_TARGET_GROUP``,
+    down to ``max_depth``. The previous approach cut one dendrogram at a fixed
+    ``k`` per level; once ``n // level`` exceeded ``max_k`` every level was the
+    same cut, so no preset ever produced a tree deeper than two levels.
     """
     if indices is None:
         indices = list(range(len(doc_ids)))
@@ -703,39 +748,33 @@ def _build_semantic_tree(
     doc_map[node_id] = current_doc_ids
     kw_map[node_id] = keywords
 
-    # Base case: no more levels or too few docs
-    if depth >= len(level_cuts) or len(indices) <= MIN_CLUSTER_SIZE:
-        return {
-            "id": node_id,
-            "name": label,
-            "entity_type": "topic",
-            "doc_ids": current_doc_ids,
-            "count": len(indices),
-            "children": [],
-            "keywords": keywords,
-        }
+    leaf = {
+        "id": node_id,
+        "name": label,
+        "entity_type": "topic",
+        "doc_ids": current_doc_ids,
+        "count": len(indices),
+        "children": [],
+        "keywords": keywords,
+    }
 
-    # Get cluster assignments for this level
-    assignments = level_cuts[depth]
-    groups: dict[int, list[int]] = {}
-    for idx in indices:
-        cluster_id = int(assignments[idx])
-        groups.setdefault(cluster_id, []).append(idx)
+    # Base case: deep enough, or too few docs to split
+    if depth >= max_depth or len(indices) <= MIN_CLUSTER_SIZE:
+        return leaf
 
-    # If all docs in one cluster, skip this level
+    k = max(2, min(max_k, math.ceil(len(indices) / _SEMANTIC_TARGET_GROUP)))
+    groups = _ward_groups(embeddings, indices, k)
+    # Indistinguishable members (identical vectors) do not split.
     if len(groups) <= 1:
-        return _build_semantic_tree(
-            doc_ids, level_cuts, tfidf_vectors, vocab, all_tokenized,
-            doc_map, kw_map, depth + 1, indices,
-        )
+        return leaf
 
-    children = []
-    for cluster_id, group_indices in sorted(groups.items()):
-        child = _build_semantic_tree(
-            doc_ids, level_cuts, tfidf_vectors, vocab, all_tokenized,
-            doc_map, kw_map, depth + 1, group_indices,
+    children = [
+        _build_semantic_tree(
+            embeddings, doc_ids, tfidf_vectors, vocab, all_tokenized,
+            doc_map, kw_map, max_k, max_depth, depth + 1, group,
         )
-        children.append(child)
+        for group in groups
+    ]
 
     return {
         "id": node_id,

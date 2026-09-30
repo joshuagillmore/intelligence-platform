@@ -165,12 +165,9 @@ class TestClusterSemantic:
 
 class TestBuildSemanticTree:
     def test_basic_tree(self):
-        """Build a simple two-level tree from level cuts."""
+        """Two well-separated pairs split into two children."""
         doc_ids = ["d1", "d2", "d3", "d4"]
-        level_cuts = [
-            np.array([1, 1, 2, 2]),  # level 0: two clusters
-            np.array([1, 2, 3, 4]),  # level 1: four clusters
-        ]
+        embeddings = np.array([[0.0, 0.0], [0.1, 0.0], [10.0, 10.0], [10.1, 10.0]])
         docs = [
             ("d1", "alpha beta"), ("d2", "alpha gamma"),
             ("d3", "delta epsilon"), ("d4", "delta zeta"),
@@ -181,34 +178,30 @@ class TestBuildSemanticTree:
         doc_map = {}
         kw_map = {}
         tree = _build_semantic_tree(
-            doc_ids, level_cuts, vectors, vocab, all_tokenized,
-            doc_map, kw_map,
+            embeddings, doc_ids, vectors, vocab, all_tokenized,
+            doc_map, kw_map, max_k=12, max_depth=4,
         )
 
         assert tree["count"] == 4
-        assert len(tree["children"]) == 2
-        assert len(doc_map) > 0
+        assert [sorted(c["doc_ids"]) for c in tree["children"]] == [["d1", "d2"], ["d3", "d4"]]
+        assert len(doc_map) == 3
 
-    def test_single_cluster_skips_level(self):
-        """If all docs in one cluster, should skip to next level."""
-        doc_ids = ["d1", "d2"]
-        level_cuts = [
-            np.array([1, 1]),  # all same cluster
-            np.array([1, 2]),  # split
-        ]
-        docs = [("d1", "alpha"), ("d2", "beta")]
+    def test_identical_members_do_not_split(self):
+        """Members Ward cannot tell apart stay one leaf rather than an
+        arbitrary split."""
+        doc_ids = ["d1", "d2", "d3"]
+        embeddings = np.zeros((3, 4))
+        docs = [("d1", "alpha"), ("d2", "beta"), ("d3", "gamma")]
         vectors, _, vocab = build_tfidf(docs)
         all_tokenized = [_tokenize(t) for _, t in docs]
 
-        doc_map = {}
-        kw_map = {}
         tree = _build_semantic_tree(
-            doc_ids, level_cuts, vectors, vocab, all_tokenized,
-            doc_map, kw_map,
+            embeddings, doc_ids, vectors, vocab, all_tokenized,
+            {}, {}, max_k=12, max_depth=4,
         )
 
-        # Should skip level 0 (single cluster) and use level 1
-        assert tree["count"] == 2
+        assert tree["count"] == 3
+        assert tree["children"] == []
 
 
 # ---------------------------------------------------------------------------
