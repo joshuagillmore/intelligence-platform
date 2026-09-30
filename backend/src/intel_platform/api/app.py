@@ -4,6 +4,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
+from starlette.requests import Request as StarletteRequest
 
 from intel_platform.api.middleware import RateLimitMiddleware, RequestLoggingMiddleware, SecurityHeadersMiddleware
 
@@ -156,6 +159,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+async def _graph_unavailable(request: StarletteRequest, exc: Exception) -> JSONResponse:
+    """Neo4j unreachable or the session lost: a 503 the caller can retry.
+
+    Unhandled, the driver's exception became a 500 whose trace named the bolt
+    address; every route reads the graph, so one handler covers them all,
+    including store calls made in a worker thread.
+    """
+    logger.warning("Neo4j unavailable during %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=503, content={"detail": "Graph database unavailable"})
+
+
+app.add_exception_handler(ServiceUnavailable, _graph_unavailable)
+app.add_exception_handler(SessionExpired, _graph_unavailable)
 
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.rate_limit_per_minute)
