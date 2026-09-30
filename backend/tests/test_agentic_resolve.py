@@ -150,6 +150,22 @@ def test_validate_urls_rejects_all_private_ranges():
     assert not any("172." in u for u in out)
 
 
+def test_validate_urls_is_the_ssrf_guard():
+    """CLAUDE.md says _validate_urls calls the guard; it had its own partial
+    copy, which passed everything below. It now asks url_guard (without a
+    lookup: the fetch path resolves, and only when no proxy is active)."""
+    blocked = [
+        "http://0x7f.1/admin",            # 127.0.0.1 to a browser
+        "http://2130706433/",             # 127.0.0.1
+        "http://host.docker.internal/",   # the Docker host
+        "http://api.localhost/",          # loopback in Chromium
+        "http://100.100.100.200/latest/meta-data/",  # Alibaba Cloud metadata
+        "http://[::ffff:127.0.0.1]/",
+        "http://neo4j:7474/",
+    ]
+    assert agentic._validate_urls(blocked + ["https://www.iaea.org/"]) == ["https://www.iaea.org/"]
+
+
 # ---------------------------------------------------------------------------
 # Structured replies are read with llm_output.json_object, whatever the shape
 # ---------------------------------------------------------------------------

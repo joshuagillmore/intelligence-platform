@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from intel_platform.collection.requirement_loop import plan_stop_requested
+from intel_platform.collection.url_guard import validate_url
 from intel_platform.connectors.base import get_connector
 from intel_platform.db.models import (
     AcquisitionLog,
@@ -280,36 +281,24 @@ async def _structured_generate(provider, messages, system, expected_keys=None, m
 
 
 def _validate_urls(urls: list) -> list[str]:
-    """Filter URLs to only valid, public HTTP(S) URLs."""
-    import ipaddress
-    from urllib.parse import urlparse
+    """Filter URLs to the ones the SSRF guard accepts.
+
+    The guard's lookup-free checks only: scheme, internal names, IP literals in
+    any spelling a browser accepts. This used to be its own partial copy, which
+    passed ``0x7f.1``, ``host.docker.internal`` and the CGNAT metadata address.
+    Resolution is left to the fetch path, which knows whether a proxy is
+    active and so whether a local lookup is allowed at all.
+    """
     valid = []
     for url in urls:
         if not isinstance(url, str):
             continue
         url = url.strip()
         try:
-            parsed = urlparse(url)
-            if parsed.scheme not in ("http", "https"):
-                continue
-            if not parsed.netloc or '.' not in parsed.netloc:
-                continue
-            hostname = (parsed.hostname or "").lower()
-            # Reject internal/private/reserved. IP-literal hosts are checked
-            # robustly via ipaddress (covers 10/8, 172.16/12, 192.168/16,
-            # 169.254/16, loopback, ::1, etc.). This is a fast pre-filter; the
-            # authoritative DNS-resolving guard runs inside crawl_urls (via
-            # collection/url_guard) and covers every fetch path.
-            if hostname in ("localhost", "0.0.0.0"):
-                continue
-            try:
-                if not ipaddress.ip_address(hostname).is_global:
-                    continue
-            except ValueError:
-                pass  # not an IP literal — a domain
-            valid.append(url)
-        except Exception:
+            validate_url(url, resolve=False)
+        except ValueError:
             continue
+        valid.append(url)
     return valid
 
 
