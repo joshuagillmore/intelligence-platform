@@ -1,5 +1,7 @@
+import uuid
+
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, update
 
@@ -220,19 +222,35 @@ async def add_api_key(req: ApiKeyCreateRequest):
 
 @router.put("/admin/api-keys/activate")
 async def activate_api_key(req: ApiKeyActivateRequest):
-    """Set a specific key as the active key for its provider."""
+    """Set a specific key as the active key for its provider.
+
+    Deactivation follows the stored key's own provider. Deactivating by the
+    request's provider and activating the id unchecked left two active keys for
+    one provider whenever the two disagreed, and every key lookup for it then
+    raised.
+    """
+    try:
+        key_id = uuid.UUID(req.key_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="API key not found")
     factory = get_session_factory()
     async with factory() as session:
-        # Deactivate all keys for this provider
+        result = await session.execute(select(ApiKey).where(ApiKey.id == key_id))
+        key = result.scalar_one_or_none()
+        if key is None:
+            raise HTTPException(status_code=404, detail="API key not found")
+        if req.provider and req.provider != key.provider:
+            raise HTTPException(
+                status_code=400, detail=f"That key belongs to provider '{key.provider}', not '{req.provider}'",
+            )
         await session.execute(
             update(ApiKey)
-            .where(ApiKey.provider == req.provider)
+            .where(ApiKey.provider == key.provider)
             .values(is_active=False)
         )
-        # Activate the selected key
         await session.execute(
             update(ApiKey)
-            .where(ApiKey.id == req.key_id)
+            .where(ApiKey.id == key_id)
             .values(is_active=True)
         )
         await session.commit()
