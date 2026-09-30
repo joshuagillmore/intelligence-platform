@@ -70,18 +70,6 @@ def _patch_llm(json_reply: str):
     )
 
 
-def _run(coro):
-    # Own a FRESH event loop per call — deterministic regardless of what a
-    # co-selected test does to the shared default loop (get_event_loop() +
-    # asyncio_mode="auto" can otherwise hand back a closed loop and flake).
-    import asyncio
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
 def _maps_to_llm(driver) -> list[dict]:
     with driver.session() as session:
         return session.run(
@@ -93,7 +81,7 @@ def _maps_to_llm(driver) -> list[dict]:
         ).data()
 
 
-def test_confirmed_match_creates_llm_mapsto(techniques, graph_store):
+async def test_confirmed_match_creates_llm_mapsto(techniques, graph_store):
     driver = techniques
     graph_store.create_entity(TTP(name="Users received a spoofed email with a malicious attachment", project_id=PROJECT_ID))
 
@@ -104,9 +92,9 @@ def test_confirmed_match_creates_llm_mapsto(techniques, graph_store):
     reply = '{"matches": [{"technique_id": "T9995", "confidence": 0.82, "rationale": "spoofed email with attachment"}]}'
 
     with _patch_llm(reply):
-        result = _run(mapping.map_project_ttps(
+        result = await mapping.map_project_ttps(
             session, driver, PROJECT_ID, embedding_provider=_embed_provider(),
-        ))
+        )
 
     assert result == {"mapped": 1, "skipped": 0, "skip_reasons": {}}
     edges = _maps_to_llm(driver)
@@ -116,7 +104,7 @@ def test_confirmed_match_creates_llm_mapsto(techniques, graph_store):
     assert edges[0]["rationale"] == "spoofed email with attachment"
 
 
-def test_below_threshold_is_skipped_not_written(techniques, graph_store):
+async def test_below_threshold_is_skipped_not_written(techniques, graph_store):
     driver = techniques
     graph_store.create_entity(TTP(name="Some vague activity was observed", project_id=PROJECT_ID))
 
@@ -126,24 +114,24 @@ def test_below_threshold_is_skipped_not_written(techniques, graph_store):
     reply = '{"matches": [{"technique_id": "T9995", "confidence": 0.2, "rationale": "weak"}]}'
 
     with _patch_llm(reply):
-        result = _run(mapping.map_project_ttps(
+        result = await mapping.map_project_ttps(
             session, driver, PROJECT_ID, embedding_provider=_embed_provider(),
-        ))
+        )
 
     assert result == {"mapped": 0, "skipped": 1, "skip_reasons": {"rejected": 1}}
     assert _maps_to_llm(driver) == []
 
 
-def test_degrades_when_embedding_provider_unreachable(techniques, graph_store):
+async def test_degrades_when_embedding_provider_unreachable(techniques, graph_store):
     driver = techniques
     graph_store.create_entity(TTP(name="Anything at all", project_id=PROJECT_ID))
 
     session = _mock_session([])  # never reached
 
     # No LLM patch needed — batch should short-circuit before any LLM call.
-    result = _run(mapping.map_project_ttps(
+    result = await mapping.map_project_ttps(
         session, driver, PROJECT_ID, embedding_provider=_embed_provider(fail=True),
-    ))
+    )
 
     assert result["mapped"] == 0 and result["skipped"] == 1
     assert result["skip_reasons"] == {"embedding_unavailable": 1}
@@ -152,7 +140,7 @@ def test_degrades_when_embedding_provider_unreachable(techniques, graph_store):
     session.execute.assert_not_called()
 
 
-def test_degrades_when_pgvector_retrieve_errors(techniques, graph_store):
+async def test_degrades_when_pgvector_retrieve_errors(techniques, graph_store):
     """A real pgvector error (e.g. embedding dim != the Vector column) degrades to
     skips instead of 500-ing the endpoint."""
     driver = techniques
@@ -162,9 +150,9 @@ def test_degrades_when_pgvector_retrieve_errors(techniques, graph_store):
     session.execute = AsyncMock(side_effect=RuntimeError("vector dimension mismatch"))
 
     with _patch_llm('{"matches": []}'):  # provider resolves; retrieve fails before it's used
-        result = _run(mapping.map_project_ttps(
+        result = await mapping.map_project_ttps(
             session, driver, PROJECT_ID, embedding_provider=_embed_provider(),
-        ))
+        )
 
     assert result["mapped"] == 0 and result["skipped"] == 1
     assert result["skip_reasons"] == {"candidate_retrieval_failed": 1}
@@ -172,7 +160,7 @@ def test_degrades_when_pgvector_retrieve_errors(techniques, graph_store):
     assert _maps_to_llm(driver) == []
 
 
-def test_reports_when_catalogue_is_not_embedded(techniques, graph_store):
+async def test_reports_when_catalogue_is_not_embedded(techniques, graph_store):
     """An unembedded catalogue must not look like "the model rejected everything".
 
     Found live: 695 techniques loaded in Neo4j, zero rows in
@@ -187,9 +175,9 @@ def test_reports_when_catalogue_is_not_embedded(techniques, graph_store):
     session.execute = AsyncMock(return_value=SimpleNamespace(scalar_one=lambda: 0))
 
     with _patch_llm('{"matches": []}'):
-        result = _run(mapping.map_project_ttps(
+        result = await mapping.map_project_ttps(
             session, driver, PROJECT_ID, embedding_provider=_embed_provider(),
-        ))
+        )
 
     assert result["mapped"] == 0
     assert result["skipped"] == 1
@@ -238,7 +226,7 @@ def test_parse_matches_empty_list_is_a_rejection():
     assert mapping._parse_matches('{"matches": []}') == []
 
 
-def test_prose_prefixed_reply_is_mapped(techniques, graph_store):
+async def test_prose_prefixed_reply_is_mapped(techniques, graph_store):
     # Verified live: a lead-in sentence made the old fence-split parser return
     # [], and the TTP was counted "skipped" as if the model had rejected it.
     driver = techniques
@@ -246,23 +234,23 @@ def test_prose_prefixed_reply_is_mapped(techniques, graph_store):
     session = _mock_session([{"id": "T9995", "text": "Synthetic Phishing.", "sim": 0.9}])
 
     with _patch_llm(f"Here is my assessment of the candidates:\n\n{_MATCH}"):
-        result = _run(mapping.map_project_ttps(
+        result = await mapping.map_project_ttps(
             session, driver, PROJECT_ID, embedding_provider=_embed_provider(),
-        ))
+        )
 
     assert result["mapped"] == 1
     assert [e["id"] for e in _maps_to_llm(driver)] == ["T9995"]
 
 
-def test_unparsed_reply_is_its_own_reason(techniques, graph_store):
+async def test_unparsed_reply_is_its_own_reason(techniques, graph_store):
     driver = techniques
     graph_store.create_entity(TTP(name="Users received a spoofed email", project_id=PROJECT_ID))
     session = _mock_session([{"id": "T9995", "text": "Synthetic Phishing.", "sim": 0.9}])
 
     with _patch_llm("T9995 looks like the best fit here, fairly confident."):
-        result = _run(mapping.map_project_ttps(
+        result = await mapping.map_project_ttps(
             session, driver, PROJECT_ID, embedding_provider=_embed_provider(),
-        ))
+        )
 
     assert result["mapped"] == 0
     assert result["skipped"] == 1
@@ -270,15 +258,15 @@ def test_unparsed_reply_is_its_own_reason(techniques, graph_store):
     assert _maps_to_llm(driver) == []
 
 
-def test_rejection_is_counted_as_rejected(techniques, graph_store):
+async def test_rejection_is_counted_as_rejected(techniques, graph_store):
     driver = techniques
     graph_store.create_entity(TTP(name="Users received a spoofed email", project_id=PROJECT_ID))
     session = _mock_session([{"id": "T9995", "text": "Synthetic Phishing.", "sim": 0.9}])
 
     with _patch_llm('{"matches": []}'):
-        result = _run(mapping.map_project_ttps(
+        result = await mapping.map_project_ttps(
             session, driver, PROJECT_ID, embedding_provider=_embed_provider(),
-        ))
+        )
 
     assert result["skip_reasons"] == {"rejected": 1}
 
@@ -306,7 +294,7 @@ def _maps_to(driver, ttp_id: str) -> dict[str, str]:
     return {r["id"]: r["m"] for r in rows}
 
 
-def test_llm_mapped_ttp_is_not_reselected(techniques, graph_store):
+async def test_llm_mapped_ttp_is_not_reselected(techniques, graph_store):
     # Every run used to re-send TTPs the LLM had already mapped: the query
     # excluded only method:'tcode' edges.
     driver = techniques
@@ -319,9 +307,9 @@ def test_llm_mapped_ttp_is_not_reselected(techniques, graph_store):
     provider.generate = AsyncMock()
     with patch("intel_platform.services.attack.mapping._get_extraction_provider",
                new=AsyncMock(return_value=provider)):
-        result = _run(mapping.map_project_ttps(
+        result = await mapping.map_project_ttps(
             _mock_session([]), driver, PROJECT_ID, embedding_provider=_embed_provider(),
-        ))
+        )
     assert result["mapped"] == 0 and result["skipped"] == 0
     provider.generate.assert_not_called()
 
@@ -346,7 +334,7 @@ def test_selection_is_ordered_by_id_so_the_cap_is_deterministic(techniques, grap
     assert ids == ["test-ttp-a", "test-ttp-b"]
 
 
-def test_remap_removes_a_stale_llm_edge_the_model_no_longer_confirms(techniques, graph_store):
+async def test_remap_removes_a_stale_llm_edge_the_model_no_longer_confirms(techniques, graph_store):
     driver = techniques
     graph_store.create_entity(TTP(id="test-ttp-stale", name="Spoofed email", project_id=PROJECT_ID))
     _link(driver, "test-ttp-stale", "T9996", "llm")  # an earlier, wrong mapping
@@ -356,31 +344,31 @@ def test_remap_removes_a_stale_llm_edge_the_model_no_longer_confirms(techniques,
     ])
 
     with _patch_llm(_MATCH):  # confirms T9995 only
-        result = _run(mapping.map_project_ttps(
+        result = await mapping.map_project_ttps(
             session, driver, PROJECT_ID, embedding_provider=_embed_provider(), remap=True,
-        ))
+        )
 
     assert result["mapped"] == 1
     assert result["stale_removed"] == 1
     assert _maps_to(driver, "test-ttp-stale") == {"T9995": "llm"}
 
 
-def test_remap_rejection_removes_the_llm_edge(techniques, graph_store):
+async def test_remap_rejection_removes_the_llm_edge(techniques, graph_store):
     driver = techniques
     graph_store.create_entity(TTP(id="test-ttp-rej", name="Spoofed email", project_id=PROJECT_ID))
     _link(driver, "test-ttp-rej", "T9995", "llm")
     session = _mock_session([{"id": "T9995", "text": "Synthetic Phishing.", "sim": 0.9}])
 
     with _patch_llm('{"matches": []}'):
-        result = _run(mapping.map_project_ttps(
+        result = await mapping.map_project_ttps(
             session, driver, PROJECT_ID, embedding_provider=_embed_provider(), remap=True,
-        ))
+        )
 
     assert result["skip_reasons"] == {"rejected": 1}
     assert _maps_to(driver, "test-ttp-rej") == {}
 
 
-def test_remap_keeps_the_edge_when_the_reply_is_unreadable(techniques, graph_store):
+async def test_remap_keeps_the_edge_when_the_reply_is_unreadable(techniques, graph_store):
     # An unreadable reply is not a disagreement; it must not delete anything.
     driver = techniques
     graph_store.create_entity(TTP(id="test-ttp-keep", name="Spoofed email", project_id=PROJECT_ID))
@@ -388,9 +376,9 @@ def test_remap_keeps_the_edge_when_the_reply_is_unreadable(techniques, graph_sto
     session = _mock_session([{"id": "T9995", "text": "Synthetic Phishing.", "sim": 0.9}])
 
     with _patch_llm("I think it is probably phishing."):
-        result = _run(mapping.map_project_ttps(
+        result = await mapping.map_project_ttps(
             session, driver, PROJECT_ID, embedding_provider=_embed_provider(), remap=True,
-        ))
+        )
 
     assert result["skip_reasons"] == {"unparsed": 1}
     assert result["stale_removed"] == 0
@@ -399,7 +387,7 @@ def test_remap_keeps_the_edge_when_the_reply_is_unreadable(techniques, graph_sto
 
 # --- contract 14: a provider failure is an error, not an empty mapping ------
 
-def test_llm_failure_surfaces_as_an_error(techniques, graph_store):
+async def test_llm_failure_surfaces_as_an_error(techniques, graph_store):
     driver = techniques
     graph_store.create_entity(TTP(name="Users received a spoofed email", project_id=PROJECT_ID))
     session = _mock_session([{"id": "T9995", "text": "Synthetic Phishing.", "sim": 0.9}])
@@ -411,13 +399,13 @@ def test_llm_failure_surfaces_as_an_error(techniques, graph_store):
     with patch("intel_platform.services.attack.mapping._get_extraction_provider",
                new=AsyncMock(return_value=provider)):
         with pytest.raises(mapping.LLMUnavailable):
-            _run(mapping.map_project_ttps(
+            await mapping.map_project_ttps(
                 session, driver, PROJECT_ID, embedding_provider=_embed_provider(),
-            ))
+            )
     assert _maps_to_llm(driver) == []
 
 
-def test_no_llm_provider_surfaces_as_an_error(techniques, graph_store):
+async def test_no_llm_provider_surfaces_as_an_error(techniques, graph_store):
     driver = techniques
     graph_store.create_entity(TTP(name="Users received a spoofed email", project_id=PROJECT_ID))
     session = _mock_session([{"id": "T9995", "text": "Synthetic Phishing.", "sim": 0.9}])
@@ -425,6 +413,6 @@ def test_no_llm_provider_surfaces_as_an_error(techniques, graph_store):
     with patch("intel_platform.services.attack.mapping._get_extraction_provider",
                new=AsyncMock(side_effect=RuntimeError("no provider configured"))):
         with pytest.raises(mapping.LLMUnavailable):
-            _run(mapping.map_project_ttps(
+            await mapping.map_project_ttps(
                 session, driver, PROJECT_ID, embedding_provider=_embed_provider(),
-            ))
+            )

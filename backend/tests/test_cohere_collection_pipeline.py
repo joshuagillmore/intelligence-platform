@@ -13,7 +13,6 @@ the integration path works correctly end-to-end.
 """
 from __future__ import annotations
 
-import asyncio
 import io
 import json
 import logging
@@ -27,10 +26,6 @@ from intel_platform.llm.base import LLMResponse
 from intel_platform.services.ingestion import ingest_text
 
 logger = logging.getLogger(__name__)
-
-
-def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 def _records_to_text(records: list[dict], source_name: str) -> str:
@@ -67,7 +62,7 @@ class _CannedReply:
         return LLMResponse(content=self._content, model="command-a-03-2025")
 
 
-def _parse_llm_response(content: str, doc_id: str, text: str = ""):
+async def _parse_llm_response(content: str, doc_id: str, text: str = ""):
     """Parse a model reply with the real extraction parser.
 
     These tests used to run a *copy* of the parsing in extract_entities_llm,
@@ -83,7 +78,7 @@ def _parse_llm_response(content: str, doc_id: str, text: str = ""):
         "intel_platform.llm.providers._get_extraction_provider",
         new=AsyncMock(return_value=_CannedReply(content)),
     ):
-        return run(extract_entities_llm(text, doc_id))
+        return await extract_entities_llm(text, doc_id)
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +177,7 @@ def _make_cohere_mock(response: LLMResponse) -> MagicMock:
 class TestCohereCSVPipeline:
     """Test CSV data flowing through the collection pipeline with Cohere extraction."""
 
-    def test_csv_ingest_to_cohere_extraction(self):
+    async def test_csv_ingest_to_cohere_extraction(self):
         """Full pipeline: CSV file → parse → text → chunk → Cohere extract → entities."""
         csv_data = (
             b"indicator,type,confidence,source,first_seen\n"
@@ -195,11 +190,11 @@ class TestCohereCSVPipeline:
 
         # Step 1: Parse CSV through connector
         connector = get_connector("file_upload")
-        result = run(connector.acquire({
+        result = await connector.acquire({
             "file_bytes": csv_data,
             "filename": "iocs.csv",
             "has_header": True,
-        }))
+        })
         assert result.success
         assert result.record_count == 5
 
@@ -222,12 +217,12 @@ class TestCohereCSVPipeline:
         all_entities = []
         all_rels = []
         for chunk in chunks:
-            response = run(mock_provider.generate(
+            response = await mock_provider.generate(
                 messages=[{"role": "user", "content": f"Extract entities:\n\n{chunk['content']}"}],
                 system="You are an entity extraction assistant.",
                 temperature=0.2,
-            ))
-            entities, rels = _parse_llm_response(response.content, "test-doc-001", chunk["content"])
+            )
+            entities, rels = await _parse_llm_response(response.content, "test-doc-001", chunk["content"])
             all_entities.extend(entities)
             all_rels.extend(rels)
 
@@ -265,7 +260,7 @@ class TestCohereCSVPipeline:
 class TestCohereJSONPipeline:
     """Test JSON intelligence report flowing through the pipeline with Cohere."""
 
-    def test_json_threat_report_to_cohere(self):
+    async def test_json_threat_report_to_cohere(self):
         """JSON threat report → parse → Cohere extraction → entities + relationships."""
         report_data = json.dumps({
             "report_id": "TR-2024-001",
@@ -298,11 +293,11 @@ class TestCohereJSONPipeline:
 
         # Step 3: Simulate Cohere extraction
         mock_provider = _make_cohere_mock(COHERE_THREAT_ACTOR_RESPONSE)
-        response = run(mock_provider.generate(
+        response = await mock_provider.generate(
             messages=[{"role": "user", "content": f"Extract entities:\n\n{text}"}],
             system="Entity extraction",
-        ))
-        entities, relationships = _parse_llm_response(response.content, "test-doc-002", text)
+        )
+        entities, relationships = await _parse_llm_response(response.content, "test-doc-002", text)
 
         # Step 4: Verify threat actor extraction
         entity_map = {e["name"]: e for e in entities}
@@ -341,7 +336,7 @@ class TestCohereJSONPipeline:
 class TestCohereExcelPipeline:
     """Test Excel data flowing through the pipeline with Cohere."""
 
-    def test_excel_threat_actors_to_cohere(self):
+    async def test_excel_threat_actors_to_cohere(self):
         """Excel threat actor spreadsheet → parse → Cohere extraction."""
         from openpyxl import Workbook
 
@@ -368,10 +363,10 @@ class TestCohereExcelPipeline:
 
         # Step 3: Simulate Cohere extraction
         mock_provider = _make_cohere_mock(COHERE_THREAT_ACTOR_RESPONSE)
-        response = run(mock_provider.generate(
+        response = await mock_provider.generate(
             messages=[{"role": "user", "content": f"Extract entities:\n\n{text}"}],
-        ))
-        entities, rels = _parse_llm_response(response.content, "test-doc-003", text)
+        )
+        entities, rels = await _parse_llm_response(response.content, "test-doc-003", text)
 
         # Verify entity types
         entity_types = {e["entity_type"] for e in entities}
@@ -393,36 +388,36 @@ class TestCohereExcelPipeline:
 class TestCohereFailureHandling:
     """Test the pipeline handles various Cohere response formats."""
 
-    def test_cohere_returns_malformed_json(self):
+    async def test_cohere_returns_malformed_json(self):
         """Non-JSON from Cohere degrades the chunk to NLP, and says so."""
-        result = _parse_llm_response(
+        result = await _parse_llm_response(
             COHERE_MALFORMED_RESPONSE.content, "test-doc", "APT28 targeted NATO systems in Brussels.",
         )
         assert result.degraded is True
         assert result.method == "nlp"
         assert result.reason
 
-    def test_cohere_json_after_a_sentence_is_parsed(self):
+    async def test_cohere_json_after_a_sentence_is_parsed(self):
         """The shape the copied parser could not read: prose, then the object."""
         content = "Here are the entities I extracted:\n\n" + COHERE_MARKDOWN_WRAPPED_RESPONSE.content.strip("`json\n")
-        result = _parse_llm_response(content, "test-doc")
+        result = await _parse_llm_response(content, "test-doc")
         assert result.degraded is False and result.method == "llm"
         assert [e["name"] for e in result[0]] == ["Fancy Bear"]
 
-    def test_cohere_returns_empty_results(self):
+    async def test_cohere_returns_empty_results(self):
         """When Cohere finds no entities, pipeline should return empty lists."""
-        entities, rels = _parse_llm_response(COHERE_EMPTY_RESPONSE.content, "test-doc")
+        entities, rels = await _parse_llm_response(COHERE_EMPTY_RESPONSE.content, "test-doc")
         assert entities == []
         assert rels == []
 
-    def test_cohere_markdown_wrapped_json(self):
+    async def test_cohere_markdown_wrapped_json(self):
         """When Cohere wraps JSON in markdown code blocks, parser should extract it."""
-        entities, rels = _parse_llm_response(COHERE_MARKDOWN_WRAPPED_RESPONSE.content, "test-doc")
+        entities, rels = await _parse_llm_response(COHERE_MARKDOWN_WRAPPED_RESPONSE.content, "test-doc")
         assert len(entities) == 1
         assert entities[0]["name"] == "Fancy Bear"
         assert entities[0]["entity_type"] == "ThreatActor"
 
-    def test_cohere_partial_entities(self):
+    async def test_cohere_partial_entities(self):
         """Cohere returns entities with missing optional fields."""
         content = json.dumps({
             "entities": [
@@ -431,13 +426,13 @@ class TestCohereFailureHandling:
             ],
             "relationships": [],
         })
-        entities, rels = _parse_llm_response(content, "test-doc")
+        entities, rels = await _parse_llm_response(content, "test-doc")
         assert len(entities) == 2
         assert entities[0]["entity_type"] == "Person"  # default
         assert entities[0]["confidence"] == 0.85  # default
         assert entities[1]["entity_type"] == "ThreatActor"
 
-    def test_cohere_response_with_evidence(self):
+    async def test_cohere_response_with_evidence(self):
         """Verify evidence text is captured from relationships."""
         content = json.dumps({
             "entities": [
@@ -450,7 +445,7 @@ class TestCohereFailureHandling:
                  "evidence": "A and B signed a partnership agreement in Q1 2024"},
             ],
         })
-        entities, rels = _parse_llm_response(content, "test-doc")
+        entities, rels = await _parse_llm_response(content, "test-doc")
         assert rels[0]["evidence"] == "A and B signed a partnership agreement in Q1 2024"
         # A type the graph does not accept collapses, as it does in production;
         # the copied parser passed PARTNERS_WITH through untouched.
@@ -476,7 +471,7 @@ class TestCohereProviderUnit:
             provider = CohereProvider(api_key="test-key", model="command-r-plus")
             assert provider.name() == "cohere:command-r-plus"
 
-    def test_cohere_generate_message_format(self):
+    async def test_cohere_generate_message_format(self):
         """Verify Cohere provider formats messages correctly with system prompt."""
         from intel_platform.llm.cohere_provider import CohereProvider
 
@@ -489,11 +484,11 @@ class TestCohereProviderUnit:
 
         with patch("cohere.AsyncClientV2", return_value=mock_client):
             provider = CohereProvider(api_key="test-key")
-            result = run(provider.generate(
+            result = await provider.generate(
                 messages=[{"role": "user", "content": "Extract entities"}],
                 system="You are an entity extraction assistant.",
                 temperature=0.2,
-            ))
+            )
 
         # Verify the chat call included system message
         call_kwargs = mock_client.chat.call_args
@@ -562,7 +557,7 @@ class TestCohereMultiFormatPipeline:
             assert len(text) > 10
             assert isinstance(text, str)
 
-    def test_cohere_extraction_across_all_formats(self):
+    async def test_cohere_extraction_across_all_formats(self):
         """Run Cohere extraction on text from each format and verify results."""
         formats = {
             "CSV": parse_csv(
@@ -583,10 +578,10 @@ class TestCohereMultiFormatPipeline:
             assert result.success, f"{fmt_name} parse failed"
             text = _records_to_text(result.records, f"test.{fmt_name.lower()}")
 
-            response = run(mock_provider.generate(
+            response = await mock_provider.generate(
                 messages=[{"role": "user", "content": text}],
-            ))
-            entities, rels = _parse_llm_response(response.content, f"{fmt_name}-doc", text)
+            )
+            entities, rels = await _parse_llm_response(response.content, f"{fmt_name}-doc", text)
 
             assert len(entities) > 0, f"No entities from {fmt_name}"
             assert any(e["entity_type"] == "IPAddress" for e in entities)
@@ -600,15 +595,15 @@ class TestCohereMultiFormatPipeline:
 class TestCohereSecurityIntegration:
     """Verify security sanitization persists through the Cohere extraction path."""
 
-    def test_formula_injection_sanitized_before_cohere(self):
+    async def test_formula_injection_sanitized_before_cohere(self):
         """Malicious formulas should be sanitized before reaching the LLM."""
         csv_data = b"name,payload\n=cmd|'/c calc'!A0,test\n+cmd|'/c notepad'!A0,test2"
         connector = get_connector("file_upload")
-        result = run(connector.acquire({
+        result = await connector.acquire({
             "file_bytes": csv_data,
             "filename": "malicious.csv",
             "has_header": True,
-        }))
+        })
         assert result.success
 
         text = _records_to_text(result.records, "malicious.csv")
@@ -648,7 +643,7 @@ class TestCohereTokenTracking:
             assert response.model == "command-a-03-2025"
             assert response.total_tokens == response.input_tokens + response.output_tokens
 
-    def test_multi_chunk_token_accumulation(self):
+    async def test_multi_chunk_token_accumulation(self):
         """When processing multiple chunks, token usage should accumulate."""
         mock_provider = _make_cohere_mock(COHERE_IOC_RESPONSE)
 
@@ -656,9 +651,9 @@ class TestCohereTokenTracking:
         total_input = 0
         total_output = 0
         for i in range(3):
-            response = run(mock_provider.generate(
+            response = await mock_provider.generate(
                 messages=[{"role": "user", "content": f"Chunk {i}"}],
-            ))
+            )
             total_input += response.input_tokens
             total_output += response.output_tokens
 

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import io
 import json
-import asyncio
 import uuid
 
 import pytest
@@ -29,10 +28,6 @@ def _has_fastapi() -> bool:
         return False
 
 
-def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
-
-
 # ---------------------------------------------------------------------------
 # Collection Plan → Source → Acquire workflow (no DB, connector-level)
 # ---------------------------------------------------------------------------
@@ -43,7 +38,7 @@ class TestCollectionWorkflow:
     Simulates what the API route does: create plan → add source → acquire data.
     """
 
-    def test_csv_acquisition_workflow(self):
+    async def test_csv_acquisition_workflow(self):
         """Full workflow: configure → acquire → verify profiling + schema."""
         connector = get_connector("file_upload")
 
@@ -63,10 +58,10 @@ class TestCollectionWorkflow:
             b"CVE-2024-1234,vulnerability,0.92,nist,2024-01-18\n"
             b"T1059.001,technique,0.88,mitre,2024-01-19\n"
         )
-        result = run(connector.acquire({
+        result = await connector.acquire({
             **config,
             "file_bytes": csv_data,
-        }))
+        })
 
         assert result.success
         assert result.record_count == 5
@@ -87,7 +82,7 @@ class TestCollectionWorkflow:
         assert len(result.preview_rows) == 5
         assert result.preview_rows[0]["indicator"] == "192.168.1.100"
 
-    def test_excel_acquisition_workflow(self):
+    async def test_excel_acquisition_workflow(self):
         """Full workflow for Excel ingestion."""
         from openpyxl import Workbook
 
@@ -114,11 +109,11 @@ class TestCollectionWorkflow:
         config = connector.configure({"file_format": "xlsx"})
 
         # Acquire from default sheet
-        result = run(connector.acquire({
+        result = await connector.acquire({
             **config,
             "file_bytes": buf.getvalue(),
             "filename": "threat_actors.xlsx",
-        }))
+        })
 
         assert result.success
         assert result.record_count == 4
@@ -127,17 +122,17 @@ class TestCollectionWorkflow:
         assert result.schema_info["available_sheets"] == ["Threat Actors", "TTPs"]
 
         # Acquire from second sheet
-        result2 = run(connector.acquire({
+        result2 = await connector.acquire({
             **config,
             "file_bytes": buf.getvalue(),
             "filename": "threat_actors.xlsx",
             "sheet_name": "TTPs",
-        }))
+        })
         assert result2.success
         assert result2.record_count == 2
         assert result2.records[0]["TTP ID"] == "T1566"
 
-    def test_json_api_response_workflow(self):
+    async def test_json_api_response_workflow(self):
         """Simulate ingesting a JSON API response with nested records."""
         api_response = json.dumps({
             "status": "success",
@@ -150,19 +145,19 @@ class TestCollectionWorkflow:
         }).encode()
 
         connector = get_connector("file_upload")
-        result = run(connector.acquire({
+        result = await connector.acquire({
             "file_bytes": api_response,
             "filename": "api_response.json",
             "file_format": "json",
             "records_path": "results",
-        }))
+        })
 
         assert result.success
         assert result.record_count == 3
         assert result.records[0]["ioc"] == "malware.exe"
         assert result.records[0]["tags"] == ["ransomware"]
 
-    def test_jsonl_feed_workflow(self):
+    async def test_jsonl_feed_workflow(self):
         """Simulate ingesting a JSONL log feed."""
         feed_data = (
             b'{"timestamp": "2024-01-15T10:00:00Z", "src_ip": "192.168.1.1", "dst_ip": "10.0.0.1", "action": "BLOCK"}\n'
@@ -171,25 +166,25 @@ class TestCollectionWorkflow:
         )
 
         connector = get_connector("file_upload")
-        result = run(connector.acquire({
+        result = await connector.acquire({
             "file_bytes": feed_data,
             "filename": "firewall.jsonl",
-        }))
+        })
 
         assert result.success
         assert result.record_count == 3
         assert result.records[0]["action"] == "BLOCK"
 
-    def test_multi_source_plan(self):
+    async def test_multi_source_plan(self):
         """Simulate a collection plan with multiple sources providing different data."""
         connector = get_connector("file_upload")
 
         # Source 1: CSV of IOCs (explicitly set has_header)
-        ioc_result = run(connector.acquire({
+        ioc_result = await connector.acquire({
             "file_bytes": b"ioc,type\n192.168.1.1,ip\nevil.com,domain",
             "filename": "iocs.csv",
             "has_header": True,
-        }))
+        })
 
         # Source 2: Excel of threat actors
         xlsx_data = _make_xlsx_helper([
@@ -197,19 +192,19 @@ class TestCollectionWorkflow:
             ["APT29", "Russia"],
             ["APT38", "DPRK"],
         ])
-        actor_result = run(connector.acquire({
+        actor_result = await connector.acquire({
             "file_bytes": xlsx_data,
             "filename": "actors.xlsx",
-        }))
+        })
 
         # Source 3: JSON of vulnerabilities
-        vuln_result = run(connector.acquire({
+        vuln_result = await connector.acquire({
             "file_bytes": json.dumps([
                 {"cve": "CVE-2024-0001", "cvss": 9.8},
                 {"cve": "CVE-2024-0002", "cvss": 7.2},
             ]).encode(),
             "filename": "vulns.json",
-        }))
+        })
 
         # All sources should succeed
         assert ioc_result.success and ioc_result.record_count == 2
@@ -264,7 +259,7 @@ def _lifecycle_plan(status):
     )
 
 
-def _transition(endpoint: str, status: str):
+async def _transition(endpoint: str, status: str):
     """Call a transition endpoint on a plan in `status`: (new status, HTTP code)."""
     from fastapi import HTTPException
 
@@ -272,7 +267,7 @@ def _transition(endpoint: str, status: str):
 
     plan = _lifecycle_plan(status)
     try:
-        body = run(getattr(cp, f"{endpoint}_plan")(str(plan.id), db=_PlanDb(plan)))
+        body = await getattr(cp, f"{endpoint}_plan")(str(plan.id), db=_PlanDb(plan))
     except HTTPException as err:
         return plan.status, err.status_code
     return body["status"], 200
@@ -298,33 +293,33 @@ class TestStatusLifecycle:
         ("archive", "ACTIVE", ("ARCHIVED", 200)),
         ("archive", "COMPLETED", ("ARCHIVED", 200)),
     ])
-    def test_valid_transitions(self, endpoint, start, expected):
-        assert _transition(endpoint, start) == expected
+    async def test_valid_transitions(self, endpoint, start, expected):
+        assert await _transition(endpoint, start) == expected
 
-    def _put(self, start, **fields):
+    async def _put(self, start, **fields):
         from fastapi import HTTPException
 
         from intel_platform.api.routes import collection_plans as cp
 
         plan = _lifecycle_plan(start)
         try:
-            body = run(cp.update_plan(str(plan.id), cp.UpdatePlanRequest(**fields), db=_PlanDb(plan)))
+            body = await cp.update_plan(str(plan.id), cp.UpdatePlanRequest(**fields), db=_PlanDb(plan))
         except HTTPException as err:
             return plan.status, err.status_code
         return body["status"], 200
 
-    def test_put_rejects_an_unknown_status(self):
+    async def test_put_rejects_an_unknown_status(self):
         """Any string used to be stored: the column is String(20)."""
-        assert self._put("DRAFT", status="SHIPPED") == ("DRAFT", 400)
+        assert await self._put("DRAFT", status="SHIPPED") == ("DRAFT", 400)
 
-    def test_put_cannot_revive_an_archived_plan(self):
-        assert self._put("ARCHIVED", status="ACTIVE") == ("ARCHIVED", 409)
+    async def test_put_cannot_revive_an_archived_plan(self):
+        assert await self._put("ARCHIVED", status="ACTIVE") == ("ARCHIVED", 409)
 
-    def test_put_can_still_edit_an_archived_plans_text(self):
-        assert self._put("ARCHIVED", description="note")[1] == 200
+    async def test_put_can_still_edit_an_archived_plans_text(self):
+        assert (await self._put("ARCHIVED", description="note"))[1] == 200
 
-    def test_put_accepts_a_known_status(self):
-        assert self._put("DRAFT", status="PAUSED") == ("PAUSED", 200)
+    async def test_put_accepts_a_known_status(self):
+        assert await self._put("DRAFT", status="PAUSED") == ("PAUSED", 200)
 
     @pytest.mark.parametrize("field,size", [
         ("name", 257), ("assigned_to", 129), ("schedule_cron", 129), ("status", 21),
@@ -386,13 +381,13 @@ class TestSecurityValidation:
         assert config["filename"] == "'; DROP TABLE users; --"
         # The filename is sanitized at the API level, not the connector level
 
-    def test_path_traversal_in_filename(self):
+    async def test_path_traversal_in_filename(self):
         """Path traversal in filename should not affect parsing."""
         connector = get_connector("file_upload")
-        result = run(connector.acquire({
+        result = await connector.acquire({
             "file_bytes": b"a,b\n1,2",
             "filename": "../../../etc/passwd.csv",
-        }))
+        })
         assert result.success
         # File bytes are parsed in-memory; filename is just metadata
 
@@ -423,19 +418,19 @@ class TestDataProvenance:
         assert result.records[1]["_row_number"] == 2
         assert result.records[2]["_row_number"] == 3
 
-    def test_metadata_format_tracking(self):
+    async def test_metadata_format_tracking(self):
         connector = get_connector("file_upload")
 
-        csv_result = run(connector.acquire({
+        csv_result = await connector.acquire({
             "file_bytes": b"a\n1",
             "filename": "test.csv",
-        }))
+        })
         assert csv_result.metadata["format"] == "csv"
 
-        json_result = run(connector.acquire({
+        json_result = await connector.acquire({
             "file_bytes": b'[{"a": 1}]',
             "filename": "test.json",
-        }))
+        })
         assert json_result.metadata["format"] == "json"
 
 

@@ -27,11 +27,6 @@ PROJECT_ID = "test-attack-report"
 EMPTY_PROJECT_ID = "test-attack-report-empty"
 
 
-def _run(coro):
-    import asyncio
-    return asyncio.get_event_loop().run_until_complete(coro)
-
-
 def _bundle():
     def tech(tid, name):
         return {"type": "attack-pattern", "id": f"attack-pattern--{tid}",
@@ -149,12 +144,12 @@ def test_assemble_structured_populates_all_sections(ingested, graph_store):
     assert {c["name"] for c in cve_enabled[0]["cves"]} == {"CVE-2099-0001"}
 
 
-def test_build_report_full_with_mocked_narrative(ingested, graph_store):
+async def test_build_report_full_with_mocked_narrative(ingested, graph_store):
     driver = ingested
     _seed_project(driver, graph_store)
 
     with _patch_narrative("Bottom line: two initial-access techniques observed."):
-        result = _run(report.build_report(driver, PROJECT_ID))
+        result = await report.build_report(driver, PROJECT_ID)
 
     assert result["project_id"] == PROJECT_ID
     assert result["narrative"] == "Bottom line: two initial-access techniques observed."
@@ -169,12 +164,12 @@ def test_build_report_full_with_mocked_narrative(ingested, graph_store):
     assert "Executive Summary" in md           # narrative section rendered
 
 
-def test_narrative_degrades_to_null_without_provider(ingested, graph_store):
+async def test_narrative_degrades_to_null_without_provider(ingested, graph_store):
     driver = ingested
     _seed_project(driver, graph_store)
 
     with _patch_narrative(None, raise_exc=RuntimeError("no provider reachable")):
-        result = _run(report.build_report(driver, PROJECT_ID))
+        result = await report.build_report(driver, PROJECT_ID)
 
     assert result["narrative"] is None
     # Structured sections + deterministic markdown still stand on their own.
@@ -183,11 +178,11 @@ def test_narrative_degrades_to_null_without_provider(ingested, graph_store):
     assert "Executive Summary" not in result["markdown"]
 
 
-def test_empty_project_returns_valid_empty_product(ingested):
+async def test_empty_project_returns_valid_empty_product(ingested):
     driver = ingested
 
     with _patch_narrative(None, raise_exc=RuntimeError("no provider")):
-        result = _run(report.build_report(driver, EMPTY_PROJECT_ID))
+        result = await report.build_report(driver, EMPTY_PROJECT_ID)
 
     assert result["project_id"] == EMPTY_PROJECT_ID
     assert result["observed_by_tactic"] == []

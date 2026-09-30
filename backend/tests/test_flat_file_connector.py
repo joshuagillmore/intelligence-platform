@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import io
 import json
-import asyncio
 import pytest
 
 from intel_platform.connectors.flat_file import (
@@ -29,11 +28,6 @@ from intel_platform.connectors.flat_file import (
     MAX_COLUMNS,
 )
 from intel_platform.connectors.base import get_connector, CONNECTOR_REGISTRY
-
-
-def run(coro):
-    """Helper to run async functions in sync tests."""
-    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 # ---------------------------------------------------------------------------
@@ -68,9 +62,9 @@ class TestConnectorRegistry:
         cfg = c.configure({"filename": "report.xlsx"})
         assert cfg["file_format"] == "xlsx"
 
-    def test_test_returns_healthy(self):
+    async def test_test_returns_healthy(self):
         c = FlatFileConnector()
-        result = run(c.test({}))
+        result = await c.test({})
         assert result.status.value == "healthy"
 
 
@@ -547,74 +541,74 @@ class TestMalformedFiles:
 # ---------------------------------------------------------------------------
 
 class TestFlatFileConnectorAcquire:
-    def test_csv_via_connector(self):
+    async def test_csv_via_connector(self):
         c = FlatFileConnector()
-        result = run(c.acquire({
+        result = await c.acquire({
             "file_bytes": b"name,age\nAlice,30\nBob,25",
             "filename": "test.csv",
-        }))
+        })
         assert result.success
         assert result.record_count == 2
 
-    def test_xlsx_via_connector(self):
+    async def test_xlsx_via_connector(self):
         c = FlatFileConnector()
         data = _make_xlsx({"Data": [["x", "y"], [1, 2], [3, 4]]})
-        result = run(c.acquire({
+        result = await c.acquire({
             "file_bytes": data,
             "filename": "data.xlsx",
-        }))
+        })
         assert result.success
         assert result.record_count == 2
 
-    def test_json_via_connector(self):
+    async def test_json_via_connector(self):
         c = FlatFileConnector()
-        result = run(c.acquire({
+        result = await c.acquire({
             "file_bytes": b'[{"a": 1}, {"a": 2}]',
             "filename": "data.json",
-        }))
+        })
         assert result.success
         assert result.record_count == 2
 
-    def test_jsonl_via_connector(self):
+    async def test_jsonl_via_connector(self):
         c = FlatFileConnector()
-        result = run(c.acquire({
+        result = await c.acquire({
             "file_bytes": b'{"a": 1}\n{"a": 2}',
             "filename": "data.jsonl",
-        }))
+        })
         assert result.success
         assert result.record_count == 2
 
-    def test_tsv_via_connector(self):
+    async def test_tsv_via_connector(self):
         c = FlatFileConnector()
-        result = run(c.acquire({
+        result = await c.acquire({
             "file_bytes": b"name\tage\nAlice\t30",
             "filename": "data.tsv",
-        }))
+        })
         assert result.success
         assert result.record_count == 1
 
-    def test_no_file_bytes(self):
+    async def test_no_file_bytes(self):
         c = FlatFileConnector()
-        result = run(c.acquire({"filename": "test.csv"}))
+        result = await c.acquire({"filename": "test.csv"})
         assert not result.success
         assert "file_bytes" in result.error
 
-    def test_unsupported_format(self):
+    async def test_unsupported_format(self):
         c = FlatFileConnector()
-        result = run(c.acquire({
+        result = await c.acquire({
             "file_bytes": b"some data",
             "filename": "data.parquet",
-        }))
+        })
         assert not result.success
         assert "Unsupported" in result.error
 
-    def test_format_detection(self):
+    async def test_format_detection(self):
         c = FlatFileConnector()
         # Should detect CSV from filename even without explicit format
-        result = run(c.acquire({
+        result = await c.acquire({
             "file_bytes": b"a,b\n1,2",
             "filename": "report.csv",
-        }))
+        })
         assert result.success
 
 
