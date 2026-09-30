@@ -24,6 +24,7 @@ Security:
 """
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
@@ -50,6 +51,10 @@ MAX_PREVIEW_ROWS = 50
 MAX_PROFILE_UNIQUE = 100
 MAX_ROWS = 500_000  # Hard limit: refuse files with more rows
 MAX_COLUMNS = 1_000  # Hard limit: refuse files with more columns
+# Rows x columns, for formats whose size on the wire says nothing about their
+# size in memory. A compressed workbook of one-cell rows under a wide header
+# is kilobytes to upload and becomes rows x columns once records are built.
+MAX_CELLS = 5_000_000
 MAX_JSON_SIZE = 100 * 1024 * 1024  # 100MB decoded text limit for JSON
 # XML nesting deeper than this is a malformed or hostile document, not data.
 MAX_XML_DEPTH = 40
@@ -320,23 +325,32 @@ def parse_excel(raw: bytes, config: dict) -> AcquireResult:
 
         ws = wb[sheet_name]
 
-        # Read rows with limits to prevent memory exhaustion
+        # A read-only sheet pads every row to the dimension the file declares,
+        # and the file can declare A1:XFD1048576 while holding three columns:
+        # each row became a 16,384-wide list before any limit was checked. Drop
+        # the declaration so each row is as wide as its own last cell, and check
+        # every row as it arrives rather than the first one after all are read.
+        ws.reset_dimensions()
         rows = []
+        cells = 0
         for i, row in enumerate(ws.iter_rows(values_only=True)):
             if i > MAX_ROWS:
                 return AcquireResult(
                     success=False,
                     error=f"Sheet exceeds maximum row limit of {MAX_ROWS:,}.")
+            if len(row) > MAX_COLUMNS:
+                return AcquireResult(
+                    success=False,
+                    error=f"Row {i + 1} has {len(row)} columns, exceeding limit of {MAX_COLUMNS}.")
+            cells += len(row)
+            if cells > MAX_CELLS:
+                return AcquireResult(
+                    success=False,
+                    error=f"Sheet exceeds the limit of {MAX_CELLS:,} cells.")
             rows.append(row)
 
         if not rows:
             return AcquireResult(success=True, record_count=0, metadata={"sheets": sheet_names})
-
-        # Column count check
-        if len(rows[0]) > MAX_COLUMNS:
-            return AcquireResult(
-                success=False,
-                error=f"Sheet has {len(rows[0])} columns, exceeding limit of {MAX_COLUMNS}.")
 
         has_header = config.get("has_header", True)
         if has_header:
@@ -348,6 +362,13 @@ def parse_excel(raw: bytes, config: dict) -> AcquireResult:
         else:
             headers = [f"column_{i}" for i in range(len(rows[0]))]
             data_rows = rows
+
+        # Every record carries every header, so this is the size about to be built.
+        if len(data_rows) * len(headers) > MAX_CELLS:
+            return AcquireResult(
+                success=False,
+                error=f"Sheet exceeds the limit of {MAX_CELLS:,} cells "
+                      f"({len(data_rows):,} rows x {len(headers)} columns).")
 
         records = []
         for row_idx, row in enumerate(data_rows):
@@ -925,23 +946,27 @@ class FlatFileConnector(SourceConnector):
             file_format = detect_format(filename)
 
         try:
-            if file_format in ("csv", "tsv"):
-                if file_format == "tsv":
-                    config = {**config, "delimiter": "\t"}
-                return parse_csv(file_bytes, config)
-            elif file_format in ("xlsx", "xls"):
-                return parse_excel(file_bytes, config)
-            elif file_format == "jsonl":
-                return parse_json(file_bytes, {**config, "jsonl": True})
-            elif file_format == "geojson":
-                return parse_geojson(file_bytes, config)
-            elif file_format == "json":
-                return parse_json(file_bytes, config)
-            elif file_format == "xml":
-                return parse_xml(file_bytes, config)
-            else:
-                return AcquireResult(
-                    success=False, error=f"Unsupported format: {file_format}")
+            # Parsing is CPU-bound and can take seconds on a large upload; on the
+            # event loop it stalls every request the API is serving meanwhile.
+            return await asyncio.to_thread(_parse, file_bytes, file_format, config)
         except Exception as e:
             logger.exception("Flat file parse error: %s", e)
             return AcquireResult(success=False, error=str(e))
+
+
+def _parse(file_bytes: bytes, file_format: str, config: dict[str, Any]) -> AcquireResult:
+    if file_format in ("csv", "tsv"):
+        if file_format == "tsv":
+            config = {**config, "delimiter": "\t"}
+        return parse_csv(file_bytes, config)
+    if file_format in ("xlsx", "xls"):
+        return parse_excel(file_bytes, config)
+    if file_format == "jsonl":
+        return parse_json(file_bytes, {**config, "jsonl": True})
+    if file_format == "geojson":
+        return parse_geojson(file_bytes, config)
+    if file_format == "json":
+        return parse_json(file_bytes, config)
+    if file_format == "xml":
+        return parse_xml(file_bytes, config)
+    return AcquireResult(success=False, error=f"Unsupported format: {file_format}")
