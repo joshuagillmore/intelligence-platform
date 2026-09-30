@@ -26,6 +26,12 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 logger = logging.getLogger(__name__)
 
+# Collections whose run is executing in this process. Whether a run is in
+# flight is answered here, not by the stored status: a STARTED left behind by a
+# process that died (a restart, a crash) refused every later execute with 409,
+# forever.
+_running_collections: set[str] = set()
+
 
 class CreateCollectionRequest(BaseModel):
     project_id: str
@@ -189,7 +195,7 @@ async def execute_collection(
 ):
     """Execute an approved collection plan: search -> crawl -> ingest -> extract."""
     coll = get_collection(task_id, store)
-    if coll["status"] in ("STARTED", "PROGRESS"):
+    if task_id in _running_collections:
         raise HTTPException(status_code=409, detail="Collection is already running")
 
     plan = coll.get("plan", [])
@@ -210,10 +216,15 @@ async def execute_collection(
             now = datetime.now(timezone.utc).isoformat()
             with store._driver.session() as session:
                 session.run(
-                    "MATCH (c:Collection {id: $id}) SET c.status = 'FAILURE', c.updated_at = $now",
+                    "MATCH (c:Collection {id: $id}) "
+                    "SET c.status = CASE WHEN c.status = 'REVOKED' THEN c.status ELSE 'FAILURE' END, "
+                    "c.updated_at = $now",
                     id=task_id, now=now,
                 )
+        finally:
+            _running_collections.discard(task_id)
 
+    _running_collections.add(task_id)
     background_tasks.add_task(_run)
 
     return {"collection_id": task_id, "status": "STARTED"}
