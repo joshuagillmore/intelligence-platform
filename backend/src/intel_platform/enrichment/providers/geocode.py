@@ -9,7 +9,10 @@ division so entities can be rolled up by area.
 
 Public Nominatim caps at 1 req/s and requires a User-Agent (ToS); egress runs
 through ProxiedClient (VPN/Tor). `nominatim_base_url` is config-driven — point
-it at a self-hosted instance for bulk/unlimited use.
+it at a self-hosted instance for bulk/unlimited use. Note that in direct egress
+mode ProxiedClient's SSRF guard refuses hosts resolving to private or CGNAT
+addresses, so a self-hosted instance on a LAN address is refused by design; it
+must be reachable at a public address.
 """
 from __future__ import annotations
 
