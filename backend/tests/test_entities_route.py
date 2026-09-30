@@ -96,3 +96,50 @@ class TestTraversalScope:
     def test_shortest_path_between_catalog_nodes_needs_a_project(self, traversal_store):
         resp = client.get("/api/paths/t1566/t1566", headers=headers)
         assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Retyping moves the label and the category with the type (A-12)
+# ---------------------------------------------------------------------------
+
+def _node(graph_store, entity_id):
+    with graph_store._driver.session() as session:
+        record = session.run(
+            "MATCH (n {id: $id}) RETURN labels(n) AS labels, n.entity_type AS type, "
+            "n.entity_category AS category",
+            id=entity_id,
+        ).single()
+    return set(record["labels"]), record["type"], record["category"]
+
+
+class TestRetype:
+    """ATT&CK attribution and the map read the label and `entity_category`;
+    the panel reads `entity_type`. Changing only the last made them disagree."""
+
+    def test_label_and_category_follow_the_new_type(self, graph_store):
+        from intel_platform.models.entities import Person
+        from intel_platform.models.type_hierarchy import normalize_entity_type
+
+        wagner = Person(name="Wagner", project_id="test-a12-retype")
+        graph_store.create_entity(wagner)
+        resp = client.put(
+            f"/api/entities/{wagner.id}/type", json={"entity_type": "Organization"}, headers=headers,
+        )
+        assert resp.status_code == 200
+        labels, etype, category = _node(graph_store, wagner.id)
+        assert "Organization" in labels
+        assert "Person" not in labels
+        assert etype == "Organization"
+        assert category == normalize_entity_type("Organization")[1]
+
+    def test_other_labels_are_kept(self, graph_store):
+        """The store package adds a shared :Entity label to every entity node."""
+        from intel_platform.models.entities import Person
+
+        wagner = Person(name="Wagner", project_id="test-a12-retype")
+        graph_store.create_entity(wagner)
+        with graph_store._driver.session() as session:
+            session.run("MATCH (n {id: $id}) SET n:Entity", id=wagner.id)
+        client.put(f"/api/entities/{wagner.id}/type", json={"entity_type": "Organization"}, headers=headers)
+        labels, _, _ = _node(graph_store, wagner.id)
+        assert labels == {"Organization", "Entity"}

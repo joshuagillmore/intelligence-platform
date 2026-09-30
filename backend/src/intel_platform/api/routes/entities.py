@@ -257,13 +257,34 @@ def update_entity_type(entity_id: str, req: UpdateEntityTypeRequest, store: Grap
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
 
-    # Update the entity_type property
+    # The type lives in three places — the label, entity_type and entity_category
+    # — and each has readers (ATT&CK attribution and the map read the label and
+    # the category, the panel reads entity_type), so all three move together.
+    # Only the old type label is swapped: other labels, such as the shared
+    # :Entity label, stay. The labels are validated by the same rule the store
+    # creates them with.
+    from intel_platform.graph.store import _validate_label
+    from intel_platform.models.type_hierarchy import normalize_entity_type
+
+    _, new_category = normalize_entity_type(req.entity_type)
+    new_label = _validate_label(req.entity_type)
+    old_label = _validate_label(entity.get("entity_type") or "")
+    remove = [old_label] if old_label not in (new_label, "Entity") else []
     with store._driver.session() as session:
         session.run(
-            "MATCH (n {id: $id}) SET n.entity_type = $new_type",
-            id=entity_id,
-            new_type=req.entity_type,
+            """
+            MATCH (n {id: $id})
+            CALL apoc.create.removeLabels(n, $remove) YIELD node
+            WITH node
+            CALL apoc.create.addLabels(node, [$new_label]) YIELD node AS retyped
+            SET retyped.entity_type = $new_type, retyped.entity_category = $new_category
+            """,
+            id=entity_id, remove=remove, new_label=new_label,
+            new_type=req.entity_type, new_category=new_category,
         )
+    if entity.get("project_id"):
+        from intel_platform.services.graph_cache import graph_cache
+        graph_cache.invalidate(entity["project_id"])
 
     return {
         "id": entity_id,
