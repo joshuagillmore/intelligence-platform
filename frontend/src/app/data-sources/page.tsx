@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import { useNotifications } from '@/components/NotificationProvider';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
@@ -133,6 +133,8 @@ export default function DataSourcesPage() {
   // Selected node
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeName, setSelectedNodeName] = useState<string | null>(null);
+  // The selected topic, readable from async work that outlives a render.
+  const selectedRef = useRef<string | null>(null);
 
   // Entity context
   const [entityContext, setEntityContext] = useState<EntityContext | null>(null);
@@ -223,25 +225,29 @@ export default function DataSourcesPage() {
       return;
     }
 
+    // The analyst can pick another topic while this streams; nothing from this
+    // run may land in that topic's panel. The finished summary is still cached
+    // under its own topic.
+    const isCurrent = () => selectedRef.current === nodeId;
     setSummaryLoading(true);
     setSummary(null);
     try {
       const fullText = await topicsApi.streamSummary(
         nodeId,
         { project_id: activeProject.id, level: 'topic' },
-        setSummary,
+        (text) => { if (isCurrent()) setSummary(text); },
       );
 
       if (fullText) {
         setSummaryCache((prev: Record<string, string>) => ({ ...prev, [nodeId]: fullText }));
-        setConversation([{ role: 'assistant', content: fullText }]);
-      } else {
+        if (isCurrent()) setConversation([{ role: 'assistant', content: fullText }]);
+      } else if (isCurrent()) {
         setSummary('No summary content returned.');
       }
     } catch (e) {
-      setSummary(`Unable to generate summary: ${getErrorMessage(e)}`);
+      if (isCurrent()) setSummary(`Unable to generate summary: ${getErrorMessage(e)}`);
     } finally {
-      setSummaryLoading(false);
+      if (isCurrent()) setSummaryLoading(false);
     }
   }, [activeProject, summaryCache]);
 
@@ -250,6 +256,7 @@ export default function DataSourcesPage() {
   const handleTopicClick = useCallback(async (node: TreeNode) => {
     if (!activeProject) return;
 
+    selectedRef.current = node.id;
     setSelectedNodeId(node.id);
     setSelectedNodeName(node.name);
     setEntityContext(null);
@@ -257,6 +264,10 @@ export default function DataSourcesPage() {
     setKeywords([]);
     setExpandedDocs(new Set());
     setConversation([]);
+    // Another topic's summary or question may still be in flight; it no longer
+    // owns the panel's loading state.
+    setSummaryLoading(false);
+    setQueryLoading(false);
 
     // Check summary cache
     if (summaryCache[node.id]) {
@@ -275,6 +286,7 @@ export default function DataSourcesPage() {
     setContextLoading(true);
     try {
       const res = await topicsApi.context(node.id, activeProject.id);
+      if (selectedRef.current !== node.id) return; // another topic is showing now
       const data = res.data;
       if (data.documents && !data.source_documents) {
         data.source_documents = data.documents;
@@ -284,6 +296,7 @@ export default function DataSourcesPage() {
 
       // Summary is now generated on-demand via button, not auto-generated
     } catch (e) {
+      if (selectedRef.current !== node.id) return;
       console.error('Failed to load entity context', e);
       setEntityContext({
         entity: { id: node.id, name: node.name, entity_type: node.entity_type || 'Unknown' },
@@ -291,7 +304,7 @@ export default function DataSourcesPage() {
         source_documents: [],
       });
     } finally {
-      setContextLoading(false);
+      if (selectedRef.current === node.id) setContextLoading(false);
     }
   }, [activeProject, summaryCache]);
 
@@ -299,6 +312,7 @@ export default function DataSourcesPage() {
 
   async function askAboutTopic() {
     if (!queryInput.trim() || !activeProject || !selectedNodeName) return;
+    const forNode = selectedRef.current;
     setQueryLoading(true);
     const userMessage = queryInput;
     setQueryInput('');
@@ -309,14 +323,18 @@ export default function DataSourcesPage() {
     try {
       const scopedQuery = `Regarding "${selectedNodeName}": ${userMessage}`;
       const res = await queryApi.rag(activeProject.id, scopedQuery);
+      // The answer belongs to the topic it was asked about; drop it if the
+      // analyst has moved to another one.
+      if (selectedRef.current !== forNode) return;
       // No model ran → say so; never show the raw response or retrieved
       // context as if it were the answer.
       const { content } = readRagAnswer(res.data);
       setConversation((prev: ConversationMessage[]) => [...prev, { role: 'assistant', content }]);
     } catch {
+      if (selectedRef.current !== forNode) return;
       setConversation((prev: ConversationMessage[]) => [...prev, { role: 'assistant', content: 'Failed to process query.' }]);
     } finally {
-      setQueryLoading(false);
+      if (selectedRef.current === forNode) setQueryLoading(false);
     }
   }
 
