@@ -194,6 +194,18 @@ async def run_requirement_passes(
                     tried_queries=list(row.next_queries or []), store=store,
                 )
 
+                if not getattr(assessment, "assessed", True):
+                    # Nobody looked: a provider outage or an unreadable reply.
+                    # That is not evidence the element is unanswered, so it
+                    # spends no attempt, keeps its last real assessment, and is
+                    # not searched for (there is no gap to aim at). Counting it
+                    # retired elements for infrastructure reasons.
+                    _log(db, plan_id, "requirement_unassessed",
+                         f"Could not assess element {row.ordinal + 1} this pass "
+                         f"({assessment.missing[:120]}); left open: {row.text[:120]}")
+                    await db.commit()
+                    continue
+
                 row.attempts += 1
                 row.assessment_missing = assessment.missing
                 row.assessment_confidence = assessment.confidence

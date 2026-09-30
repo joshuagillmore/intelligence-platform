@@ -139,8 +139,8 @@ async def assess_requirement(
     """Judge one element and propose the queries that would close its gap.
 
     A provider or parse failure returns ``assessed=False`` rather than an
-    unsatisfied verdict: the caller spends an attempt either way, but an outage
-    must not be recorded as evidence that the element is unanswered.
+    unsatisfied verdict. The caller must not spend an attempt on it: an outage
+    is not evidence that the element is unanswered.
     """
     material = await _material_for(requirement_text, project_id, db, store)
     if not material.strip():

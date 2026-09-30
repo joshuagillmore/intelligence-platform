@@ -189,6 +189,86 @@ class TestStoppingConditions:
         assert out.stopped_on == "nothing_to_do"
 
 
+def _unassessed():
+    """An assessor that never manages to assess: an outage or an unreadable reply."""
+    async def fake(text, project_id, db, provider, tried_queries=None, store=None):
+        return SimpleNamespace(
+            satisfied=False, confidence="unknown",
+            missing="assessment could not be completed",
+            next_queries=[], assessed=False,
+        )
+
+    return fake
+
+
+class TestOutagesAreNotVerdicts:
+    """`assessed=False` means nobody looked. It must not retire an element.
+
+    The loop never read the flag: an outage incremented `attempts`, and at two
+    the element became `unmet` for good — retired for an infrastructure fault,
+    contrary to backend/CLAUDE.md.
+    """
+
+    async def test_repeated_outage_does_not_retire_an_element(self, monkeypatch, no_collection):
+        rows = [_requirement(0, "a?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?"]))
+        monkeypatch.setattr(rl, "assess_requirement", _unassessed())
+
+        out = await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None,
+            attempts_per_element=2, max_passes=3,
+        )
+
+        assert rows[0].status == "pending", "an outage is not evidence the element is unanswered"
+        assert rows[0].attempts == 0, "an unassessed element has not spent an attempt"
+        assert out.retired == []
+        assert out.still_open == ["a?"]
+        assert out.stopped_on != "elements_retired"
+
+    async def test_outage_is_logged_as_unassessed(self, monkeypatch, no_collection):
+        rows = [_requirement(0, "a?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?"]))
+        monkeypatch.setattr(rl, "assess_requirement", _unassessed())
+
+        await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None, max_passes=1,
+        )
+        events = [getattr(a, "event", None) for a in db.added]
+        assert "requirement_unassessed" in events
+        assert "requirement_retired" not in events
+
+    async def test_outage_does_not_overwrite_the_last_real_assessment(self, monkeypatch, no_collection):
+        row = _requirement(0, "a?")
+        row.assessment_missing = "no cascade detail"
+        row.assessment_confidence = "medium"
+        db = _FakeDB([row], plan=_plan(), pir=_pir(["a?"]))
+        monkeypatch.setattr(rl, "assess_requirement", _unassessed())
+
+        await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None, max_passes=1,
+        )
+        assert row.assessment_missing == "no cascade detail"
+        assert row.assessment_confidence == "medium"
+
+    async def test_unassessed_element_is_not_collected_for(self, monkeypatch):
+        """With no verdict there is no gap to aim a search at."""
+        called = []
+
+        async def fake_collect(*a, **kw):
+            called.append(1)
+            return 1
+
+        monkeypatch.setattr(rl, "_collect_for_element", fake_collect)
+        rows = [_requirement(0, "a?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?"]))
+        monkeypatch.setattr(rl, "assess_requirement", _unassessed())
+
+        await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None, max_passes=1,
+        )
+        assert called == []
+
+
 class TestRetasking:
     async def test_gap_queries_drive_the_next_collection(self, monkeypatch):
         seen = {}
