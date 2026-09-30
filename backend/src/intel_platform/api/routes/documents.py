@@ -4,40 +4,70 @@ from intel_platform.graph.store import GraphStore
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
+# How many documents one list response carries. `total` says how many exist.
+DOCUMENT_LIST_LIMIT = 500
+
+# An entity belongs to the document it was extracted from. Ingestion records
+# that as `source_doc_id` on the entity (and the store appends later documents
+# to `source_doc_ids` when an entity is merged); it never creates an edge to the
+# Document node, so counting edges read 0 entities for every document.
+_EXTRACTED_FROM = "[x IN [e.source_doc_id] + coalesce(e.source_doc_ids, []) WHERE x IS NOT NULL AND x <> '']"
+
 
 @router.get("/documents")
 def list_documents(project_id: str, store: GraphStore = Depends(get_graph_store)):
-    """List all documents in a project with metadata."""
-    # PERF: single query with relationship count instead of N+1 pattern
+    """List a project's documents with metadata, and how many exist in all."""
     with store._driver.session() as session:
-        result = session.run(
+        total = session.run(
+            "MATCH (d:Document {project_id: $pid}) RETURN count(d) AS n", pid=project_id,
+        ).single()["n"]
+        # `size(d.content)` rather than `properties(d)`: the list only needs the
+        # length, and shipping every document's full text to measure it was the
+        # bulk of this response's cost.
+        rows = list(session.run(
             """
             MATCH (d:Document {project_id: $pid})
-            OPTIONAL MATCH (d)-[r]->(m) WHERE type(r) <> 'MENTIONS'
-            WITH d, properties(d) as props, count(r) as entity_count
-            RETURN props, entity_count
+            RETURN d.id AS id, d.name AS name, d.reliability_rating AS reliability_rating,
+                   size(coalesce(d.content, '')) AS content_length,
+                   d.created_at AS created_at, d.summary_json AS summary_json
             ORDER BY d.name
-            LIMIT 500
+            LIMIT $limit
             """,
-            pid=project_id,
-        )
-        docs = []
-        for record in result:
-            props = record["props"]
-            docs.append({
-                "id": props.get("id"),
-                "name": props.get("name"),
-                "reliability_rating": props.get("reliability_rating", ""),
-                "content_length": len(props.get("content", "") or ""),
-                "entity_count": record["entity_count"],
-                "created_at": str(props.get("created_at", "")),
-                "summary_json": props.get("summary_json", ""),
-            })
+            pid=project_id, limit=DOCUMENT_LIST_LIMIT,
+        ))
+        doc_ids = [r["id"] for r in rows]
+        counts = {
+            r["doc_id"]: r["n"]
+            for r in session.run(
+                f"""
+                MATCH (e) WHERE e.project_id = $pid AND NOT e:Document
+                UNWIND {_EXTRACTED_FROM} AS doc_id
+                WITH DISTINCT doc_id, e
+                WHERE doc_id IN $doc_ids
+                RETURN doc_id, count(e) AS n
+                """,
+                pid=project_id, doc_ids=doc_ids,
+            )
+        }
+    docs = [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "reliability_rating": r["reliability_rating"] or "",
+            "content_length": r["content_length"],
+            "entity_count": counts.get(r["id"], 0),
+            "created_at": str(r["created_at"] or ""),
+            "summary_json": r["summary_json"] or "",
+        }
+        for r in rows
+    ]
     # Distinguishes "this project holds no documents" from "this is not a
     # project" — both otherwise return an empty list and a zero.
     return {
         "documents": docs,
         "count": len(docs),
+        "total": total,
+        "truncated": total > len(docs),
         "project_exists": project_exists(store, project_id),
     }
 
@@ -49,18 +79,27 @@ def get_document(doc_id: str, store: GraphStore = Depends(get_graph_store)):
     if not doc or doc.get("entity_type") != "Document":
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # Get entities extracted from this document
-    rels = store.get_relationships(doc_id)
-    entities = []
-    for rel in rels:
-        target = store.get_entity(rel.get("target_id", ""))
-        if target and target.get("entity_type") != "Document":
-            entities.append({
-                "id": target.get("id"),
-                "name": target.get("name"),
-                "entity_type": target.get("entity_type"),
-                "relationship": rel.get("rel_type"),
-            })
+    # The entities extracted from this document, found the way ingestion links
+    # them: by their source document id, within the document's project.
+    with store._driver.session() as session:
+        result = session.run(
+            f"""
+            MATCH (e) WHERE e.project_id = $pid AND NOT e:Document
+              AND $doc_id IN {_EXTRACTED_FROM}
+            RETURN e.id AS id, e.name AS name, e.entity_type AS entity_type
+            ORDER BY e.name
+            """,
+            pid=doc.get("project_id", ""), doc_id=doc_id,
+        )
+        entities = [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "entity_type": r["entity_type"],
+                "relationship": "EXTRACTED_FROM",
+            }
+            for r in result
+        ]
 
     content = doc.get("content", "") or ""
 
