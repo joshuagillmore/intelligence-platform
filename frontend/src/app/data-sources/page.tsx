@@ -122,6 +122,7 @@ export default function DataSourcesPage() {
   const [topicTree, setTopicTree] = useState<TreeNode>({ name: 'Knowledge Base', id: 'root', children: [] });
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [editsUnmatched, setEditsUnmatched] = useState(0);
   const [crossReferences, setCrossReferences] = useState<CrossReference[]>([]);
 
   // Layout
@@ -177,6 +178,11 @@ export default function DataSourcesPage() {
       const res = await topicsApi.tree(activeProject.id, clusteringMethod, granularity);
       const data = res.data;
 
+      // Saved topic edits whose node no longer exists after the tree was
+      // rebuilt; the backend counts them rather than dropping them silently.
+      setEditsUnmatched(
+        data && typeof data === 'object' && typeof data.edits_unmatched === 'number' ? data.edits_unmatched : 0,
+      );
       if (data && typeof data === 'object' && !Array.isArray(data) && data.children) {
         setTopicTree(data);
         setCrossReferences(data.cross_references || []);
@@ -496,6 +502,14 @@ export default function DataSourcesPage() {
               }}
             />
           </div>
+
+          {editsUnmatched > 0 && !loading && !loadError && (
+            <p className="px-4 pb-1 text-[11px] text-yellow-300/80">
+              {editsUnmatched} saved topic edit{editsUnmatched === 1 ? '' : 's'} could not be applied: the
+              topic{editsUnmatched === 1 ? ' it targets no longer exists' : 's they target no longer exist'} after
+              the tree was rebuilt.
+            </p>
+          )}
 
           {/* Map */}
           <div className="flex-1 px-4 pb-2 min-h-0">

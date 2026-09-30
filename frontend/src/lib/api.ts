@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { createSummaryStreamParser, type SummaryStreamEvent } from './sse';
+import type { AttackMapResult } from './attackMapping';
 
 // Use relative URL so it works on both localhost and Railway (same-origin)
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
@@ -274,6 +275,9 @@ export interface AttackD3fendCountermeasure {
 
 export interface AttackD3fendResponse {
   countermeasures: AttackD3fendCountermeasure[];
+  /** The live D3FEND lookup failed or answered in an unexpected shape, so the
+   *  empty list means "unknown", not "none"; nothing was cached. */
+  degraded?: boolean;
 }
 
 // Phase 3c: aggregated ATT&CK report for a project. Rolls up observed techniques
@@ -330,10 +334,13 @@ export const attackApi = {
   // as success.
   embed: () => api.post<{ embedded: number; reason?: string; detail?: string }>('/attack/embed'),
   // RAG+LLM map the project's TTP entities that lack an explicit T-code. Slow for
-  // many TTPs. Returns how many were mapped vs. skipped.
-  map: (projectId: string) =>
-    api.post<{ mapped: number; skipped: number }>('/attack/map', null, {
-      params: { project_id: projectId },
+  // many TTPs. Returns mapped/skipped counts with a reason per skip
+  // (`skip_reasons`); `remap` also re-checks earlier AI mappings and reports how
+  // many it removed (`stale_removed`). 503 "LLM provider unavailable" when no
+  // model can run. See `lib/attackMapping` for the wording.
+  map: (projectId: string, remap = false) =>
+    api.post<AttackMapResult>('/attack/map', null, {
+      params: { project_id: projectId, ...(remap ? { remap: true } : {}) },
     }),
   // Candidate ATT&CK Groups ranked by technique overlap with the project.
   attribution: (projectId: string) =>
