@@ -28,6 +28,7 @@ class ReportService:
                         source_id=report.id, target_id=eid,
                         rel_type="MENTIONS", confidence=1.0,
                         source="report_service", method="analyst",
+                        project_id=project_id,
                     )
                     self._store.create_relationship(rel)
                 except ValueError:

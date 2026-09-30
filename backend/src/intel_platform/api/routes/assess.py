@@ -1,5 +1,5 @@
+import asyncio
 import logging
-import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -7,42 +7,15 @@ from pydantic import BaseModel
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.assessment import AssessmentService
+from intel_platform.services.llm_output import labelled_probability_parsed
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
-
-# Models emphasise the label they are asked to emit: the prompt asks for
-# "PROBABILITY: 0.78" and the reply is "**PROBABILITY:** 0.78". A pattern that
-# cannot cross the emphasis markers silently falls back to the default, so an
-# assessment reading "Likely" was stored at 0.5 — "Roughly Even Chance" — and
-# the structured field the UI shows contradicted the narrative beside it.
-# Emphasis lands anywhere and more than once — "**PROBABILITY:** **0.70**" puts
-# it on both sides of the number. Treat asterisks and whitespace as one
-# interchangeable run rather than trying to enumerate the arrangements.
-_PROBABILITY_LINE = re.compile(
-    r"PROBABILITY[\s*_]*:[\s*_]*(\d?\.\d+|[01](?:\.\d+)?)",
-    re.IGNORECASE,
-)
-
-
-def extract_probability(content: str, fallback: float) -> float:
-    """Read the probability the assessment states, whatever markup surrounds it.
-
-    Falls back only when the reply genuinely carries no probability — a value
-    outside 0..1 is treated as unparseable rather than clamped, since a model
-    writing "PROBABILITY: 78" meant percent and clamping would silently invent
-    a different judgement.
-    """
-    match = _PROBABILITY_LINE.search(content or "")
-    if not match:
-        return fallback
-    try:
-        value = float(match.group(1))
-    except ValueError:
-        return fallback
-    return value if 0.0 < value <= 1.0 else fallback
+# The one message a client sees when no model produced the product. Fixed text:
+# the reason is logged, never returned.
+LLM_UNAVAILABLE = "LLM provider unavailable"
 
 
 class CreateAssessmentRequest(BaseModel):
@@ -112,8 +85,8 @@ async def generate_assessment(req: GenerateAssessmentRequest, store: GraphStore 
     """Use LLM to generate an assessment for an entity based on graph context."""
     from intel_platform.services.graph_rag import GraphRAGPipeline
 
-    # Get entity and its context
-    entity = store.get_entity(req.entity_id)
+    # Get entity and its context. The Neo4j driver is synchronous.
+    entity = await asyncio.to_thread(store.get_entity, req.entity_id)
     if not entity:
         raise HTTPException(status_code=404, detail="Entity not found")
 
@@ -127,7 +100,9 @@ async def generate_assessment(req: GenerateAssessmentRequest, store: GraphStore 
     provider = await _get_provider()
 
     if not provider:
-        return {"error": "No LLM provider configured", "entity_name": entity.get("name")}
+        # A 200 carrying an error string was rendered and saved as though it
+        # were an assessment. Failure is a status, not content.
+        raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE)
 
     # Load threat assessment skill
     from intel_platform.llm.skills.loader import SkillsLoader
@@ -160,30 +135,40 @@ CONFIDENCE_LABEL: [Almost No Chance | Very Unlikely | Unlikely | Roughly Even Ch
             temperature=0.3,
             max_tokens=4096,
         )
-
-        probability = extract_probability(result.content, req.probability)
-
-        # Save the assessment
-        svc = AssessmentService(store)
-        saved = svc.create_assessment(
-            entity_id=req.entity_id,
-            project_id=req.project_id,
-            judgment=result.content,
-            probability=probability,
-            analyst=req.analyst or "llm",
-            methodology="LLM-generated threat assessment with Graph RAG context",
-        )
-
-        return {
-            "assessment": result.content,
-            "model": result.model,
-            "tokens_used": result.total_tokens,
-            **saved,
-        }
     except Exception:
         logger.exception("Failed to generate assessment for entity %s", req.entity_id)
         # SECURITY: don't leak internal error details to client
-        return {"error": "Assessment generation failed", "entity_name": entity_name}
+        raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE)
+    if not (result.content or "").strip():
+        # An empty reply is a failure wearing a success shape; saving it would
+        # store an assessment with no judgement in it.
+        logger.warning("Empty assessment reply for entity %s", req.entity_id)
+        raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE)
+
+    # `parsed` is False when the reply carried no readable probability and the
+    # request's fallback was stored instead — the caller must be able to tell
+    # a default from the model's judgement.
+    probability, parsed = labelled_probability_parsed(result.content, req.probability)
+
+    # Save the assessment
+    svc = AssessmentService(store)
+    saved = await asyncio.to_thread(
+        svc.create_assessment,
+        entity_id=req.entity_id,
+        project_id=req.project_id,
+        judgment=result.content,
+        probability=probability,
+        analyst=req.analyst or "llm",
+        methodology="LLM-generated threat assessment with Graph RAG context",
+    )
+
+    return {
+        "assessment": result.content,
+        "model": result.model,
+        "tokens_used": result.total_tokens,
+        **saved,
+        "probability_parsed": parsed,
+    }
 
 
 @router.post("/assess/multi")

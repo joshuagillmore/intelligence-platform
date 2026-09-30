@@ -41,6 +41,9 @@ class AssessmentService:
             confidence=1.0,
             source="assessment_service",
             method="analyst",
+            # Contract 16: lets create_relationship match both ends inside the
+            # project on an indexed label rather than scanning every node.
+            project_id=project_id,
         )
         self._store.create_relationship(rel)
         return {

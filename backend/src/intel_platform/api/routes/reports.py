@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from intel_platform.services.llm_output import labelled_probability
+from intel_platform.api.routes.assess import LLM_UNAVAILABLE
+from intel_platform.services.llm_output import labelled_probability_parsed
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.db.engine import get_db
 from intel_platform.graph.store import GraphStore
@@ -252,18 +253,14 @@ async def generate_report(
             "evidence, citations, or evidence chains."
         )
 
+    # No model, a failed call and an empty reply are all 503. They used to be
+    # 200 with the error text as `content`, which the products page rendered as
+    # "Report Ready" beside a "Grounded in N entities" badge and let the analyst
+    # save, export and print under a classification marking.
     from intel_platform.api.routes.llm import _get_provider
     provider = await _get_provider()
     if not provider:
-        return {
-            "content": "No LLM provider configured. Add API keys to .env file.",
-            "model": "none",
-            "tokens_used": 0,
-            "skill_applied": req.skill_name,
-            "retrieval_mode": retrieval_mode,
-            "context_nodes": context_nodes,
-            "context_edges": context_edges,
-        }
+        raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE)
 
     try:
         result = await provider.generate(
@@ -275,15 +272,10 @@ async def generate_report(
     except Exception:
         # SECURITY: don't leak internal error details to the client
         logger.exception("LLM generation failed during report generation")
-        return {
-            "content": "Report generation failed. Check LLM provider configuration.",
-            "model": "none",
-            "tokens_used": 0,
-            "skill_applied": req.skill_name,
-            "retrieval_mode": retrieval_mode,
-            "context_nodes": context_nodes,
-            "context_edges": context_edges,
-        }
+        raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE)
+    if not (result.content or "").strip():
+        logger.warning("LLM returned an empty report")
+        raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE)
 
     response = {
         "content": result.content,
@@ -300,11 +292,12 @@ async def generate_report(
     }
     if req.skill_name in ("threat_assessment", "report_writing"):
         # Emphasis-tolerant: the model replies "**PROBABILITY:** **0.70**", which
-        # a pattern anchored on the requested shape cannot cross. The sentinel
-        # keeps "not stated" distinct from a real value.
-        stated = labelled_probability(result.content, -1.0)
-        if stated > 0:
+        # a pattern anchored on the requested shape cannot cross. `probability`
+        # is present only when stated; `probability_parsed` says which it was.
+        stated, parsed = labelled_probability_parsed(result.content, -1.0)
+        if parsed:
             response["probability"] = stated
+        response["probability_parsed"] = parsed
     return response
 
 
