@@ -52,19 +52,49 @@ class LLMUnavailable(RuntimeError):
 # Neo4j reads / writes (sync driver — callers offload via asyncio.to_thread)
 # ---------------------------------------------------------------------------
 
-def _fetch_unresolved_ttps(driver: Driver, project_id: str, limit: int) -> list[dict]:
-    """Project TTPs lacking a T-code (``method:"tcode"``) MAPS_TO edge (capped)."""
+def _fetch_unresolved_ttps(driver: Driver, project_id: str, limit: int, remap: bool = False) -> list[dict]:
+    """Project TTPs still to map, ordered by id and capped.
+
+    By default a TTP with *any* ``MAPS_TO`` edge is done: excluding only T-code
+    edges re-sent every LLM-mapped TTP to the model on every run. ``remap``
+    re-selects LLM-mapped TTPs (never T-code ones, which are exact). Ordering
+    by id makes the cap deterministic rather than whatever the store yields.
+    """
+    exclude = (
+        "(t)-[:MAPS_TO {method: 'tcode'}]->(:AttackTechnique)" if remap
+        else "(t)-[:MAPS_TO]->(:AttackTechnique)"
+    )
     with driver.session() as session:
         return session.run(
-            """
-            MATCH (t:TTP {project_id: $pid})
-            WHERE NOT (t)-[:MAPS_TO {method: 'tcode'}]->(:AttackTechnique)
+            f"""
+            MATCH (t:TTP {{project_id: $pid}})
+            WHERE NOT {exclude}
             RETURN t.id AS id, coalesce(t.name, '') AS name,
                    coalesce(t.description, '') AS description
+            ORDER BY t.id
             LIMIT $limit
             """,
             pid=project_id, limit=limit,
         ).data()
+
+
+def _prune_llm_mappings(driver: Driver, ttp_id: str, keep: list[str]) -> int:
+    """Delete this TTP's ``method:"llm"`` MAPS_TO edges to techniques not in ``keep``.
+
+    Called only when the model gave a readable answer on a re-map: an edge it no
+    longer confirms is stale. T-code edges are never touched.
+    """
+    with driver.session() as session:
+        rec = session.run(
+            """
+            MATCH (t:TTP {id: $ttp_id})-[r:MAPS_TO {method: 'llm'}]->(tech:AttackTechnique)
+            WHERE NOT tech.attack_id IN $keep
+            DELETE r
+            RETURN count(r) AS removed
+            """,
+            ttp_id=ttp_id, keep=keep,
+        ).single()
+        return int(rec["removed"]) if rec else 0
 
 
 def _merge_mapping(driver: Driver, ttp_id: str, tech_id: str, confidence: float, rationale: str) -> bool:
@@ -178,8 +208,13 @@ async def map_project_ttps(
     project_id: str,
     *,
     embedding_provider: EmbeddingProvider | None = None,
+    remap: bool = False,
 ) -> dict:
-    """RAG-map a project's un-T-code-resolved TTPs to ATT&CK techniques.
+    """RAG-map a project's unmapped TTPs to ATT&CK techniques.
+
+    ``remap`` also re-examines TTPs the LLM mapped before; where the model now
+    gives a readable answer that no longer confirms an earlier ``llm`` edge,
+    that edge is removed and counted in ``stale_removed``.
 
     Returns ``{"mapped": int, "skipped": int, "skip_reasons": {reason: count}}``.
     A TTP counts as ``mapped`` when at least one confirmed match at/above the
@@ -200,9 +235,10 @@ async def map_project_ttps(
     # embedding + LLM call; an unbounded project TTP set would be an open-ended
     # cost/latency/memory sink. Over-cap TTPs are simply left for a later run.
     cap = int(getattr(settings, "attack_mapping_max_ttps", 200) or 200)
-    ttps = await asyncio.to_thread(_fetch_unresolved_ttps, driver, project_id, cap)
+    ttps = await asyncio.to_thread(_fetch_unresolved_ttps, driver, project_id, cap, remap)
+    remap_fields = {"stale_removed": 0} if remap else {}
     if not ttps:
-        return {"mapped": 0, "skipped": 0, "skip_reasons": {}}
+        return {"mapped": 0, "skipped": 0, "skip_reasons": {}, **remap_fields}
 
     def _batch_skipped(reason: str, detail: str) -> dict:
         return {
@@ -211,6 +247,7 @@ async def map_project_ttps(
             "skip_reasons": {reason: len(ttps)},
             "reason": reason,
             "detail": detail,
+            **remap_fields,
         }
 
     # Embedding provider — the whole batch cannot run without it.
@@ -266,6 +303,7 @@ async def map_project_ttps(
         )
 
     mapped = 0
+    stale_removed = 0
     skip_reasons: Counter[str] = Counter()
     for index, (ttp, vec) in enumerate(zip(ttps, vectors)):
         try:
@@ -287,19 +325,25 @@ async def map_project_ttps(
             continue
 
         candidate_ids = {c["technique_id"] for c in candidates}
-        wrote = False
+        confirmed: list[str] = []
         for m in matches:
             if m["technique_id"] in candidate_ids and m["confidence"] >= threshold:
                 if await asyncio.to_thread(
                     _merge_mapping, driver, ttp["id"], m["technique_id"], m["confidence"], m["rationale"]
                 ):
-                    wrote = True
-        if wrote:
+                    confirmed.append(m["technique_id"])
+        if remap:
+            # A readable answer that no longer confirms an earlier llm edge
+            # makes that edge stale (a rejection removes them all).
+            stale_removed += await asyncio.to_thread(_prune_llm_mappings, driver, ttp["id"], confirmed)
+        if confirmed:
             mapped += 1
         else:
             skip_reasons["rejected"] += 1
 
     result = {"mapped": mapped, "skipped": sum(skip_reasons.values()), "skip_reasons": dict(skip_reasons)}
+    if remap:
+        result["stale_removed"] = stale_removed
     if skip_reasons.get("candidate_retrieval_failed"):
         result["reason"] = "candidate_retrieval_failed"
         result["detail"] = "Technique candidate retrieval failed; the embedding width may not match the index."

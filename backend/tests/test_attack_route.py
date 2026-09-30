@@ -171,6 +171,16 @@ def test_map_returns_counts(client, analyst_header, _override_db):
     assert resp.json() == {"mapped": 3, "skipped": 2}
 
 
+def test_map_passes_remap_through(client, analyst_header, _override_db):
+    fake = AsyncMock(return_value={"mapped": 0, "skipped": 0, "skip_reasons": {}, "stale_removed": 0})
+    with patch("intel_platform.api.routes.attack.attack_mapping.map_project_ttps", new=fake):
+        resp = client.post(
+            "/api/attack/map", params={"project_id": "p1", "remap": "true"}, headers=analyst_header,
+        )
+    assert resp.status_code == 200
+    assert fake.await_args.kwargs["remap"] is True
+
+
 def test_map_llm_unavailable_is_503_without_leaking(client, analyst_header, _override_db):
     # Contract 14: an LLM outage is an error, not {"mapped": 0, "skipped": N}.
     from intel_platform.services.attack import mapping

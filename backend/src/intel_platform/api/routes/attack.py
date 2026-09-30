@@ -147,17 +147,19 @@ async def embed(
 @router.post("/attack/map")
 async def map_ttps(
     project_id: str = Query(...),
+    remap: bool = Query(False, description="Also re-examine TTPs the LLM mapped before"),
     driver: Driver = Depends(get_neo4j_driver),
     db: AsyncSession = Depends(get_db),
 ):
-    """RAG-map this project's un-T-code-resolved TTPs to ATT&CK techniques.
+    """RAG-map this project's unmapped TTPs to ATT&CK techniques.
 
     Returns mapped/skipped counts with a reason per skip (see
     :func:`services.attack.mapping.map_project_ttps`). An unreachable LLM is a
-    503, not a batch of skips.
+    503, not a batch of skips. ``remap`` re-examines LLM-mapped TTPs and removes
+    edges the model no longer confirms.
     """
     try:
-        result = await attack_mapping.map_project_ttps(db, driver, project_id)
+        result = await attack_mapping.map_project_ttps(db, driver, project_id, remap=remap)
     except attack_mapping.LLMUnavailable:
         logger.warning("ATT&CK mapping: LLM provider unavailable", exc_info=True)
         raise HTTPException(status_code=503, detail="LLM provider unavailable")
