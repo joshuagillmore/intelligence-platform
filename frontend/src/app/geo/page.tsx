@@ -72,6 +72,8 @@ export default function GeoPage() {
     source_name: string; target_name: string;
     weight: number; shared_entities: string[];
   }>>([]);
+  // Place-to-place links as the API counts them (`edge_count`); null when unknown.
+  const [edgeCount, setEdgeCount] = useState<number | null>(null);
 
   /* ── layer control state ── */
   const [layers, setLayers] = useState({
@@ -150,6 +152,9 @@ export default function GeoPage() {
   const loadLocations = useCallback(async () => {
     if (!activeProject) return;
     setLoading(true);
+    // Unknown until the locations endpoint says; the entity-search fallback
+    // below computes no place-to-place edges at all.
+    setEdgeCount(null);
     try {
       const res = await geoApi.locations(activeProject.id);
       const data = res.data;
@@ -157,7 +162,9 @@ export default function GeoPage() {
         setLocations(data);
       } else if (data && data.locations) {
         setLocations(data.locations);
-        if (data.edges) setGeoEdges(data.edges);
+        const edges = Array.isArray(data.edges) ? data.edges : [];
+        setGeoEdges(edges);
+        setEdgeCount(typeof data.edge_count === 'number' ? data.edge_count : edges.length);
       } else {
         setLocations([]);
       }
@@ -256,13 +263,10 @@ export default function GeoPage() {
     });
   }
 
-  // `connection_count` is the field the API sends; `connections` is kept only
-  // for the fallback path below, which builds locations itself. Reading the
-  // wrong name summed a field that was never present, and `|| 0` turned that
-  // into a confident "0 Connections" beside a map drawing 128 of them.
-  const totalConnections = locations.reduce(
-    (sum, l) => sum + (l.connection_count ?? l.connections ?? 0), 0,
-  );
+  // "Connections" is the place-to-place links the map draws: the API's
+  // `edge_count`. Summing each location's `connection_count` counted every
+  // relationship of every location (not only place-to-place ones) and counted
+  // a link between two places twice.
   const geocodedCount = locations.filter(l => isGeocoded(l)).length;
 
   /* ── derive related locations from relationships ── */
@@ -483,7 +487,7 @@ export default function GeoPage() {
               {geocodedCount} Geocoded
             </span>
             <span className="px-3 py-1.5 rounded-md" style={{ background: C.elevated, border: `1px solid ${C.border}`, color: C.textDim }}>
-              {totalConnections} Connections
+              {edgeCount ?? '—'} Connections
             </span>
           </div>
         </div>
