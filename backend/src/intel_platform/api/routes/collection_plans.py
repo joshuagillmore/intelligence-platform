@@ -41,6 +41,7 @@ from intel_platform.services.collection_planner import parse_plan_sources
 from intel_platform.services.extraction import extract_entities_nlp
 from intel_platform.services.graph_builder import build_graph_from_extractions
 from intel_platform.services.ingestion import ingest_text
+from intel_platform.services.llm_output import normalise_line
 
 logger = logging.getLogger(__name__)
 
@@ -180,89 +181,120 @@ def refinement_system_prompt() -> str:
     )
 
 
-# A line carrying no words — just markdown punctuation. Models emit these
-# constantly ("**" alone on a line, a stray ">", a rule). The old scan treated
-# the first *non-empty* line as the requirement, so a bare "**" was accepted,
-# stripped to "", and the entire response including the model's own critique was
-# stored as the requirement instead.
-_MD_NOISE = re.compile(r"^[\s*_>#\-–—`~|=+.]*$")
-
 # The label the requirement hides behind. "Refined PIR" is the form the prompt
-# asks for; models also answer with "Priority Intelligence Requirement (PIR)"
-# and variations, and the requirement is then further down the reply than the
-# first line of prose.
-_PIR_LABEL = (
-    r"(?:refined\s+)?(?:priority\s+intelligence\s+requirement|pir)"
-    r"(?:\s*\(\s*pir\s*\))?"
+# asks for; models also answer "Priority Intelligence Requirement (PIR)",
+# "Proposed PIR", "Revised requirement", "4. Proposed Refined PIR" as a numbered
+# heading, or a table row. Lines are normalised first (`normalise_line`), so
+# emphasis, blockquotes, headings and list numbering are already gone and the
+# pattern only has to describe the words.
+_PIR_NOUN = r"(?:priority\s+intelligence\s+requirement|pir)(?:\s*\(\s*pir\s*\))?"
+_QUALIFIER = r"(?:proposed|revised|refined|improved|updated|final|rewritten|new)"
+_PIR_LABEL = re.compile(
+    rf"^(?:(?:{_QUALIFIER}[\s,]+)+(?:{_PIR_NOUN}|requirement|version)|{_PIR_NOUN})"
+    r"\s*(?:[:\-–—|]\s*(?P<body>.*))?$",
+    re.IGNORECASE,
 )
-_LABEL_ONLY = re.compile(rf"^[\s*_#>\-]*{_PIR_LABEL}[\s*_]*[:\-–]?[\s*_]*$", re.IGNORECASE)
-_LABEL_INLINE = re.compile(
-    rf"^[\s*_#>\-]*{_PIR_LABEL}[\s*_]*[:\-–][\s*_]*(?P<body>.+)$", re.IGNORECASE
+
+# The prompt's own section names. A reply that opens on one of these is
+# analysis, not a requirement: "### 1. Assessment" was once stored as the PIR
+# and then drove source resolution and the judge. Matched against the whole
+# normalised line, so a requirement that merely begins "Identify …" survives —
+# only the prompt's step text ("IDENTIFY hidden assumptions") is a section.
+_SECTION_HEADING = re.compile(
+    r"^(?:step\s*\d+\s*[:.\-]?\s*)?(?:"
+    r"assess(?:ment)?(?:\s+of\s+(?:the\s+)?(?:original\s+)?(?:pir|requirement))?"
+    r"|assess\s+specificity\b.*"
+    r"|specificity(?:\s*,?\s*(?:and\s+)?(?:measurability|time[-\s]?bound(?:s|edness)?))*"
+    r"|(?:identify\s+)?hidden\s+assumptions?(?:\s*\.\.\.)?|identify\s+hidden\s+assumptions\b.*"
+    r"|break\s*down\b.*|breakdown"
+    r"|(?:\d+\s*[-–]\s*\d+\s+)?essential\s+elements(?:\s+of\s+information)?(?:\s*\(\s*eeis?\s*\))?"
+    r"|eeis?|propose\s+a\s+refined\b.*"
+    r"|analysis|critique|rationale|summary|overview|recommendations?|assumptions?"
+    r")\s*[:.]?$",
+    re.IGNORECASE,
+)
+
+# A line introducing what follows rather than stating it.
+_PREAMBLE = re.compile(
+    r"^(?:here(?:'s|\s+is|\s+are)|below\s+is|sure|certainly|of\s+course|okay|ok\b|great"
+    r"|i(?:'ve|\s+have|'ll|\s+will)|let\s+me|the\s+following)\b",
+    re.IGNORECASE,
 )
 
 
-def _clean_line(line: str) -> str:
-    """Strip the markdown a model wraps a requirement in, leaving the words.
+def _clean_candidate(text: str) -> str:
+    """A normalised line with the quoting a model puts round a requirement removed."""
+    return (text or "").strip().strip('"“”').strip("*_ |").strip()
 
-    Blockquote markers, headings, bullets and emphasis all reached the stored
-    requirement and from there into PIR titles, plan names, and — the damaging
-    part — the text the source resolver searches against. A requirement reading
-    "(Actionable, Specific, Measurable, Time-bounded)** > **" sent collection
-    after intelligence-doctrine PDFs instead of the subject.
+
+def _candidate_kind(text: str) -> str:
+    """Whether a cleaned line is the requirement: "ok", "skip" or "stop".
+
+    "skip" is a line that introduces what follows (a preamble, anything ending
+    in a colon) — keep looking. "stop" is one of the prompt's own sections: the
+    reply has moved on to analysis, and taking the next line would store the
+    model's critique as the requirement.
     """
-    s = (line or "").strip()
-    s = re.sub(r"^\s*>+\s*", "", s)          # blockquote
-    s = re.sub(r"^#{1,6}\s*", "", s)         # heading
-    s = re.sub(r"^[-*+]\s+", "", s)          # bullet
-    s = s.replace("**", "").replace("__", "")
-    return s.strip().strip('"').strip("*_ ").strip()
+    if not re.search(r"[^\W\d_]{2,}", text):
+        return "skip"   # markdown punctuation, a rule, a bare number
+    if _SECTION_HEADING.match(text):
+        return "stop"
+    if text.endswith(":") or _PREAMBLE.match(text):
+        return "skip"
+    return "ok"
 
 
-def _split_refinement(content: str, fallback: str) -> tuple[str, str]:
-    """Split an LLM refinement into (refined PIR, analysis).
+def _split_refinement_parsed(content: str, fallback: str) -> tuple[str, str, bool]:
+    """Split an LLM refinement into (refined PIR, analysis, parsed).
+
+    `parsed` is False when nothing in the reply could be taken as the
+    requirement and `fallback` was returned in its place. The caller must not
+    store that fallback as a refinement: it is the original text wearing the
+    refinement's name, and once written it was never corrected.
 
     The prompt asks for the refined PIR on the first line. Replies routinely
     arrive as a markdown-only line, then a blockquoted label, then the
-    requirement in italics, then a critique of the rewrite — so both "take line
-    0" and "take the first non-empty line" capture something that is not the
-    requirement.
-
-    The label is searched for across the whole reply before falling back to the
-    first line with words in it: a stray fragment above the label must not win
-    simply by appearing first.
+    requirement in italics, then a critique of the rewrite — so the label is
+    searched for across the whole reply before falling back to the first line
+    that is neither a preamble nor one of the prompt's section headings.
     """
     text = (content or "").strip()
     if not text:
-        return fallback, ""
+        return fallback, "", False
 
     lines = text.split("\n")
 
-    def _substantive_from(start: int) -> tuple[str, str] | None:
+    def _requirement_from(start: int) -> tuple[str, str, bool]:
         for j in range(start, len(lines)):
-            cleaned = _clean_line(lines[j])
-            if cleaned and not _MD_NOISE.match(lines[j].strip()):
-                return cleaned, "\n".join(lines[j + 1:]).strip()
-        return None
+            cleaned = _clean_candidate(normalise_line(lines[j]))
+            kind = _candidate_kind(cleaned)
+            if kind == "ok":
+                return cleaned, "\n".join(lines[j + 1:]).strip(), True
+            if kind == "stop":
+                break
+        return fallback, "", False
 
     # Pass 1: the labelled requirement, wherever it sits in the reply.
     for i, raw in enumerate(lines):
-        line = raw.strip()
-        if not line:
+        label = _PIR_LABEL.match(normalise_line(raw))
+        if not label:
             continue
-        inline = _LABEL_INLINE.match(line)
-        if inline:
-            body = _clean_line(inline.group("body"))
-            if body:
-                return body, "\n".join(lines[i + 1:]).strip()
-            found = _substantive_from(i + 1)
-            return found if found else (fallback, "")
-        if _LABEL_ONLY.match(line):
-            found = _substantive_from(i + 1)
-            return found if found else (fallback, "")
+        body = _clean_candidate(label.group("body") or "")
+        kind = _candidate_kind(body) if body else "skip"
+        if kind == "ok":
+            return body, "\n".join(lines[i + 1:]).strip(), True
+        if kind == "stop":
+            return fallback, "", False
+        return _requirement_from(i + 1)
 
-    # Pass 2: no label anywhere — the first line that actually carries words.
-    found = _substantive_from(0)
-    return found if found else (fallback, "")
+    # Pass 2: no label anywhere — the first line that states something.
+    return _requirement_from(0)
+
+
+def _split_refinement(content: str, fallback: str) -> tuple[str, str]:
+    """(refined PIR, analysis) — `_split_refinement_parsed` without the flag."""
+    refined, analysis, _parsed = _split_refinement_parsed(content, fallback)
+    return refined, analysis
 
 
 def _parse_uuid(value: str, label: str = "ID") -> uuid.UUID:
@@ -602,6 +634,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
         llm_status = f"LLM unavailable: {e}"
 
     refined_pir = pir_text
+    refined_ok = False
     plan_description = ""
     # Why a plan came back thin, in the plan's own words rather than the UI's
     # guess. Without this the analyst was shown "The LLM may have been
@@ -622,7 +655,14 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
                 system=refinement_system_prompt(),
                 temperature=active_persona_temperature(0.3),
             )
-            refined_pir, plan_description = _split_refinement(refine_result.content, pir_text)
+            refined_pir, plan_description, refined_ok = _split_refinement_parsed(
+                refine_result.content, pir_text,
+            )
+            if not refined_ok:
+                failures.append("refinement returned no usable requirement")
+                # No requirement could be read, but the reply is still the
+                # model's analysis — keep it so the EEIs it lists are captured.
+                plan_description = (refine_result.content or "").strip()
         except Exception as e:
             # `%s` alone loses everything when the exception carries no message —
             # a timeout stringifies to "" and the log line read literally
@@ -672,9 +712,16 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
         plan_text = ""
 
     # Step 4: Create the plan, linked to the requirement it serves
-    if pir_record and refined_pir and not pir_record.refined_text:
+    stored = (pir_record.refined_text or "").strip() if pir_record else ""
+    if pir_record and refined_ok and (not stored or stored == (pir_record.text or "").strip()):
         # Carry the LLM's refinement back onto the requirement so the analyst
-        # does not have to re-derive it on the next run.
+        # does not have to re-derive it on the next run — only when there is a
+        # refinement to carry. This used to run on failure too, storing the
+        # original text as its own refinement, and the "already refined" guard
+        # then meant no later success could ever correct it. A stored value
+        # equal to the original text is exactly that fallback, so a success now
+        # replaces it; any other stored wording is someone's refinement and is
+        # kept.
         pir_record.refined_text = refined_pir
 
     if pir_record and not pir_record.eeis:
