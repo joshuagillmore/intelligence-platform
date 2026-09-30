@@ -144,6 +144,25 @@ describe('AssistantPanel', () => {
     expect(await screen.findByText(/query failed/i)).toBeInTheDocument();
   });
 
+  it('says no model ran, instead of presenting the retrieved context as the answer', async () => {
+    mockRag.mockResolvedValue({
+      data: { ...RAG_RESPONSE.data, answer: '', model: 'none', llm_error: 'LLM provider unavailable' },
+    });
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /aegis/i }));
+    await user.type(screen.getByLabelText(/ask the intelligence assistant/i), 'q');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(await screen.findByText(/no model ran; showing retrieved context/i)).toBeInTheDocument();
+    expect(screen.queryByText(/OPERATES_IN/)).toBeNull();
+    // The retrieved context is still reachable as citations, and a failed
+    // reply cannot be saved as a product.
+    expect(screen.getByRole('button', { name: /^sources ·/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /save as product/i })).toBeNull();
+  });
+
   it('restores a persisted thread after mount (never in a state initializer)', async () => {
     localStorage.setItem(
       'assistant_thread:p1',

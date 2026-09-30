@@ -28,7 +28,7 @@ import { queryApi } from './api';
 import { useProject } from './ProjectContext';
 import {
   compactGroundingForStorage,
-  parseGrounding,
+  readRagAnswer,
   sanitizeGrounding,
   type AssistantGrounding,
 } from './assistantGrounding';
@@ -244,13 +244,10 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
     append(forProject, { id: nextId(), role: 'user', content: q });
     try {
       const res = await queryApi.rag(forProject, q);
-      const data = (res?.data ?? {}) as Record<string, unknown>;
-      const content =
-        (typeof data.answer === 'string' && data.answer) ||
-        (typeof data.response === 'string' && data.response) ||
-        (typeof data.context === 'string' && data.context) ||
-        'The query returned no answer.';
-      append(forProject, { id: nextId(), role: 'assistant', content, grounding: parseGrounding(data) });
+      // A degraded reply (no model ran) is marked failed and never shows the
+      // retrieved context as the answer; the context stays as grounding.
+      const { content, failed, grounding } = readRagAnswer(res?.data);
+      append(forProject, { id: nextId(), role: 'assistant', content, grounding, ...(failed ? { failed } : {}) });
     } catch {
       append(forProject, {
         id: nextId(),

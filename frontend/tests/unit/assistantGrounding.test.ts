@@ -5,6 +5,7 @@ import {
   groundingSummary,
   sanitizeGrounding,
   compactGroundingForStorage,
+  readRagAnswer,
 } from '@/lib/assistantGrounding';
 
 /**
@@ -253,5 +254,57 @@ describe('groundingSummary', () => {
   it('falls back to raw counts when nothing was parsed', () => {
     const g = parseGrounding({ context_nodes: 5, context_edges: 2, retrieval_mode: 'graph' })!;
     expect(groundingSummary(g)).toBe('5 nodes · 2 edges');
+  });
+});
+
+/**
+ * When the LLM fails, `/query` answers 200 with `answer: ""`, `model: "none"`,
+ * an `llm_error`, and the retrieved `context`. That context is retrieval
+ * output, not an answer; rendering it as the assistant's reply presented a raw
+ * dump of source excerpts as if a model had written it.
+ */
+describe('readRagAnswer', () => {
+  it('returns the model answer for a normal reply', () => {
+    const r = readRagAnswer({ answer: 'Kellerman works for Meridian.', model: 'claude-x', context: CONTEXT });
+    expect(r.failed).toBe(false);
+    expect(r.content).toBe('Kellerman works for Meridian.');
+  });
+
+  it('never shows the retrieved context as the answer when no model ran', () => {
+    const r = readRagAnswer({
+      answer: '',
+      model: 'none',
+      llm_error: 'LLM provider unavailable',
+      context: CONTEXT,
+    });
+    expect(r.failed).toBe(true);
+    expect(r.content).toMatch(/No model ran; showing retrieved context/);
+    expect(r.content).toContain('LLM provider unavailable');
+    expect(r.content).not.toContain('Marcus Kellerman');
+    expect(r.content).not.toContain('Intelligence Context');
+  });
+
+  it('keeps the retrieved context available as grounding when no model ran', () => {
+    const r = readRagAnswer({ answer: '', model: 'none', llm_error: 'timeout', context: CONTEXT });
+    expect(r.grounding).not.toBeNull();
+    expect(r.grounding!.entities.map((e) => e.name)).toContain('Marcus Kellerman');
+  });
+
+  it('treats model "none" as degraded even without an llm_error', () => {
+    const r = readRagAnswer({ answer: '', model: 'none', context: CONTEXT });
+    expect(r.failed).toBe(true);
+    expect(r.content).toMatch(/No model ran/);
+  });
+
+  it('marks an empty answer failed rather than substituting the context', () => {
+    const r = readRagAnswer({ answer: '', model: 'claude-x', context: CONTEXT });
+    expect(r.failed).toBe(true);
+    expect(r.content).not.toContain('Marcus Kellerman');
+  });
+
+  it('accepts the legacy `response` field', () => {
+    const r = readRagAnswer({ response: 'Legacy answer', model: 'x' });
+    expect(r.failed).toBe(false);
+    expect(r.content).toBe('Legacy answer');
   });
 });

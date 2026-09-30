@@ -13,6 +13,7 @@ import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
 import { topicsApi, queryApi } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
+import { readRagAnswer } from '@/lib/assistantGrounding';
 import Markdown from '@/components/Markdown';
 
 /* -- Types ------------------------------------------------------------ */
@@ -301,8 +302,10 @@ export default function DataSourcesPage() {
     try {
       const scopedQuery = `Regarding "${selectedNodeName}": ${userMessage}`;
       const res = await queryApi.rag(activeProject.id, scopedQuery);
-      const answer = res.data.answer || res.data.response || JSON.stringify(res.data);
-      setConversation((prev: ConversationMessage[]) => [...prev, { role: 'assistant', content: answer }]);
+      // No model ran → say so; never show the raw response or retrieved
+      // context as if it were the answer.
+      const { content } = readRagAnswer(res.data);
+      setConversation((prev: ConversationMessage[]) => [...prev, { role: 'assistant', content }]);
     } catch {
       setConversation((prev: ConversationMessage[]) => [...prev, { role: 'assistant', content: 'Failed to process query.' }]);
     } finally {
