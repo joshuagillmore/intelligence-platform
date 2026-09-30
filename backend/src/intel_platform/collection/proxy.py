@@ -149,19 +149,76 @@ async def get_active_proxy_config() -> ProxyConfig:
     return ProxyConfig(mode=mode)
 
 
+_DEFAULT_MAX_FETCH_BYTES = 10_000_000
+
+# Headers describing the body as it came off the wire. The rebuilt response
+# holds the decoded body, so keeping them would make httpx decode it again.
+_WIRE_HEADERS = {"content-encoding", "content-length", "transfer-encoding"}
+
+
+class ResponseTooLarge(httpx.HTTPError):
+    """A response body exceeded the fetch cap.
+
+    An httpx.HTTPError, so callers that already treat transport failures as
+    failures (the enrichment providers do) handle it without changes.
+    """
+
+
+def _fetch_cap(max_bytes: int | None) -> int:
+    if max_bytes is not None:
+        return max_bytes
+    return int(getattr(settings, "max_fetch_bytes", _DEFAULT_MAX_FETCH_BYTES))
+
+
+async def _read_capped(response: httpx.Response, cap: int) -> httpx.Response:
+    """Read a streamed response up to `cap` decoded bytes, then rebuild it whole.
+
+    The cap counts decoded bytes, so a small compressed body that inflates past
+    it is refused too. A declared Content-Length over the cap is refused before
+    anything is read.
+    """
+    declared = response.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > cap:
+        raise ResponseTooLarge(f"Response declares {declared} bytes, over the {cap}-byte fetch cap")
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_bytes():
+        total += len(chunk)
+        if total > cap:
+            raise ResponseTooLarge(f"Response exceeded the {cap}-byte fetch cap")
+        chunks.append(chunk)
+    headers = [(k, v) for k, v in response.headers.multi_items() if k.lower() not in _WIRE_HEADERS]
+    return httpx.Response(
+        status_code=response.status_code,
+        headers=headers,
+        content=b"".join(chunks),
+        request=response.request,
+        extensions=response.extensions,
+        history=response.history,
+    )
+
+
 class ProxiedClient:
     """Thin httpx wrapper that honors the active collection proxy.
 
     Constructed with config=None (the default across all connectors), it lazily
     resolves the active ProxyConfig on each request — so switching the admin
     proxy mode takes effect without touching any connector code.
+
+    Bodies are streamed and capped at `max_bytes` (default
+    ``settings.max_fetch_bytes``, 10 MB). A caller that legitimately downloads
+    more — a reference catalogue — passes a larger cap per client or per call.
     """
 
-    def __init__(self, config: ProxyConfig | None = None):
+    def __init__(self, config: ProxyConfig | None = None, max_bytes: int | None = None):
         self._config = config
+        self._max_bytes = max_bytes
 
     async def _resolve_config(self) -> ProxyConfig:
         return self._config or await get_active_proxy_config()
+
+    def _cap(self, max_bytes: int | None) -> int:
+        return _fetch_cap(max_bytes if max_bytes is not None else self._max_bytes)
 
     @staticmethod
     def _client_kwargs(cfg: ProxyConfig, timeout: float) -> dict:
@@ -177,19 +234,23 @@ class ProxiedClient:
         return kwargs
 
     async def get(self, url: str, timeout: float = 30, headers: dict | None = None,
-                  params: dict | None = None) -> httpx.Response:
+                  params: dict | None = None, max_bytes: int | None = None) -> httpx.Response:
         cfg = await self._resolve_config()
         async with httpx.AsyncClient(**self._client_kwargs(cfg, timeout)) as client:
-            return await client.get(url, headers=headers or {}, params=params)
+            async with client.stream("GET", url, headers=headers or {}, params=params) as response:
+                return await _read_capped(response, self._cap(max_bytes))
 
     async def post(self, url: str, timeout: float = 30, headers: dict | None = None,
                    json: dict | None = None, data: dict | None = None,
-                   params: dict | None = None) -> httpx.Response:
+                   params: dict | None = None, max_bytes: int | None = None) -> httpx.Response:
         cfg = await self._resolve_config()
         async with httpx.AsyncClient(**self._client_kwargs(cfg, timeout)) as client:
-            return await client.post(url, headers=headers or {}, json=json, data=data, params=params)
+            async with client.stream(
+                "POST", url, headers=headers or {}, json=json, data=data, params=params,
+            ) as response:
+                return await _read_capped(response, self._cap(max_bytes))
 
-    async def fetch_text(self, url: str, timeout: float = 30) -> str:
-        response = await self.get(url, timeout=timeout)
+    async def fetch_text(self, url: str, timeout: float = 30, max_bytes: int | None = None) -> str:
+        response = await self.get(url, timeout=timeout, max_bytes=max_bytes)
         response.raise_for_status()
         return response.text

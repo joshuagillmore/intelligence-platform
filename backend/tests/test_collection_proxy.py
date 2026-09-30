@@ -190,13 +190,18 @@ class _CapturingClient:
     async def __aexit__(self, *exc):
         return False
 
-    async def get(self, url, **kwargs):
-        _CapturingClient.captured["call"] = ("get", url, kwargs)
-        return "resp"
+    def stream(self, method, url, **kwargs):
+        # ProxiedClient streams every request so it can cap the body.
+        _CapturingClient.captured["call"] = (method.lower(), url, kwargs)
+        import contextlib
 
-    async def post(self, url, **kwargs):
-        _CapturingClient.captured["call"] = ("post", url, kwargs)
-        return "resp"
+        import httpx
+
+        @contextlib.asynccontextmanager
+        async def _cm():
+            yield httpx.Response(200, content=b"resp", request=httpx.Request(method, url))
+
+        return _cm()
 
 
 async def test_proxied_client_get_forwards_params_direct(monkeypatch):
@@ -358,3 +363,81 @@ class TestThroughHttpx:
         with pytest.raises(ValueError):
             await proxy_mod.ProxiedClient(proxy_mod.ProxyConfig(mode="direct")).get("http://example.org/a")
         assert [ip for ip, _ in fake_socket_layer.connected] == ["93.184.216.34"]
+
+
+# ---------------------------------------------------------------------------
+# Response bodies are capped while they stream (C-6)
+# ---------------------------------------------------------------------------
+#
+# ProxiedClient read every body whole before returning it. Feeds, api_feed and
+# every enrichment provider go through it, so one hostile or broken endpoint
+# could hand the API process an unbounded body to hold in memory.
+
+
+@pytest.fixture
+def example_org(monkeypatch, fake_socket_layer):
+    monkeypatch.setattr(url_guard, "_getaddrinfo", _SequencedDNS({"example.org": ["93.184.216.34"]}))
+    return fake_socket_layer
+
+
+def _direct_client(**kwargs):
+    return proxy_mod.ProxiedClient(proxy_mod.ProxyConfig(mode="direct"), **kwargs)
+
+
+class TestBodyCap:
+    async def test_declared_oversized_body_is_refused(self, example_org):
+        example_org.responses["93.184.216.34"] = _http(b"x" * 2000)
+        with pytest.raises(proxy_mod.ResponseTooLarge):
+            await _direct_client().get("http://example.org/big", max_bytes=1000)
+
+    async def test_undeclared_oversized_body_is_refused_while_streaming(self, example_org):
+        """No Content-Length to check up front: the cap is enforced on the bytes."""
+        chunk = b"y" * 600
+        example_org.responses["93.184.216.34"] = [
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n",
+            b"258\r\n" + chunk + b"\r\n",
+            b"258\r\n" + chunk + b"\r\n",
+            b"0\r\n\r\n",
+        ]
+        with pytest.raises(proxy_mod.ResponseTooLarge):
+            await _direct_client(max_bytes=1000).get("http://example.org/stream")
+
+    async def test_too_large_is_an_httpx_error(self):
+        """Enrichment providers already treat httpx.HTTPError as a transport
+        failure, so the new refusal needs no new handling there."""
+        assert issubclass(proxy_mod.ResponseTooLarge, proxy_mod.httpx.HTTPError)
+
+    async def test_body_under_the_cap_reads_normally(self, example_org):
+        example_org.responses["93.184.216.34"] = _http(
+            b'{"ok": true}', extra="Content-Type: application/json\r\n",
+        )
+        resp = await _direct_client().get("http://example.org/api", max_bytes=1000)
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        resp.raise_for_status()
+
+    async def test_compressed_body_is_decoded_exactly_once(self, example_org):
+        import gzip
+
+        body = gzip.compress(b"plain text body")
+        example_org.responses["93.184.216.34"] = _http(body, extra="Content-Encoding: gzip\r\n")
+        resp = await _direct_client().get("http://example.org/gz")
+        assert resp.text == "plain text body"
+
+    async def test_decompressed_size_is_what_counts(self, example_org):
+        """A small gzip that inflates past the cap is still too large."""
+        import gzip
+
+        bomb = gzip.compress(b"z" * 50_000)
+        assert len(bomb) < 1000
+        example_org.responses["93.184.216.34"] = _http(bomb, extra="Content-Encoding: gzip\r\n")
+        with pytest.raises(proxy_mod.ResponseTooLarge):
+            await _direct_client().get("http://example.org/bomb", max_bytes=10_000)
+
+    async def test_fetch_text_honours_the_cap(self, example_org):
+        example_org.responses["93.184.216.34"] = _http(b"x" * 2000)
+        with pytest.raises(proxy_mod.ResponseTooLarge):
+            await _direct_client(max_bytes=1000).fetch_text("http://example.org/feed")
+
+    def test_default_cap_is_ten_megabytes(self):
+        assert proxy_mod._fetch_cap(None) == 10_000_000
