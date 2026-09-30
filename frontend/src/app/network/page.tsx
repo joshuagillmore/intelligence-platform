@@ -17,6 +17,7 @@ import { getErrorMessage } from '@/lib/errorMessages';
 import { collapseToCommunities } from '@/lib/graphLayout';
 import { useNotifications } from '@/components/NotificationProvider';
 import Markdown from '@/components/Markdown';
+import { filterGraph, createRequestSequencer } from './graphFilters';
 
 interface Entity {
   id: string;
@@ -223,6 +224,10 @@ function NetworkPageInner() {
   const [snapshotNameInput, setSnapshotNameInput] = useState('');
   const [snapshotFormOpen, setSnapshotFormOpen] = useState(false);
   const [activeSnapshotId, setActiveSnapshotId] = useState<string | null>(null);
+  // The viewed snapshot's entity ids — an input to the filter effect like any
+  // other filter, so it composes with them and clearing it restores the graph.
+  const [activeSnapshotIds, setActiveSnapshotIds] = useState<Set<string> | null>(null);
+  const snapshotSeqRef = useRef(createRequestSequencer());
   // Relationship evidence (rel.evidence is persisted on the edge — just toggle visibility, no fetch)
   const [relEvidenceOpen, setRelEvidenceOpen] = useState<Record<number, boolean>>({});
   // De-emphasize noise-tier ASSOCIATED_WITH edges in the Edge Overview stats
@@ -485,16 +490,12 @@ function NetworkPageInner() {
   }
 
   async function loadSnapshotView(snapshotId: string) {
+    const token = snapshotSeqRef.current.next();
     try {
       const res = await snapshotsApi.get(snapshotId);
-      const snap = res.data;
-      const snapEntityIds = new Set(snap.entity_ids || []);
-      setFilteredGraphNodes(graphNodes.filter(n => snapEntityIds.has(n.id)));
-      setFilteredGraphEdges(graphEdges.filter(e => {
-        const srcId = e.source_id || e.source;
-        const tgtId = e.target_id || e.target;
-        return snapEntityIds.has(srcId) && snapEntityIds.has(tgtId);
-      }));
+      // A slower load of a previously clicked snapshot must not win.
+      if (!snapshotSeqRef.current.isCurrent(token)) return;
+      setActiveSnapshotIds(new Set<string>(res.data.entity_ids || []));
       setActiveSnapshotId(snapshotId);
     } catch {
       console.error('Failed to load snapshot');
@@ -502,9 +503,9 @@ function NetworkPageInner() {
   }
 
   function clearSnapshotView() {
+    snapshotSeqRef.current.next(); // and a load still in flight must not re-apply it
     setActiveSnapshotId(null);
-    // Re-trigger the filter effect by resetting island threshold
-    setIslandThreshold(0);
+    setActiveSnapshotIds(null);
   }
 
   async function deleteSnapshot(snapshotId: string) {
@@ -558,97 +559,28 @@ function NetworkPageInner() {
     });
   }
 
-  // Combined filter: entity type + island threshold + relationship type + confidence + temporal range
+  // Combined filter: snapshot + entity type + event-date brush + relationship
+  // type + confidence + temporal range + island threshold. The logic lives in
+  // graphFilters.filterGraph; it always applies the brushed node set and never
+  // returns an edge whose endpoint is hidden (d3 cannot resolve one).
   useEffect(() => {
-    // Filter nodes by active entity type filters
-    let nodes = graphNodes;
-    if (activeTypeFilters.size > 0) {
-      nodes = graphNodes.filter(n => activeTypeFilters.has(n.entity_type));
-    }
-
-    // Event-date brush. Undated entities stay visible unless explicitly hidden:
-    // most of a graph carries no date, so removing them on every selection would
-    // empty the view and make the filter look broken.
-    const [evStart, evEnd] = eventRange;
-    if (evStart && evEnd) {
-      nodes = nodes.filter(n => {
-        const dt = n.event_datetime;
-        if (!dt) return !hideUndated;
-        const key = dt.slice(0, evStart.length);
-        return key >= evStart && key <= evEnd;
-      });
-    }
-
-    const visibleNodeIds = new Set(nodes.map(n => n.id));
-
-    // Filter edges by relationship type, confidence, temporal range, and visible nodes
-    let edges = graphEdges.filter(e => {
-      const srcId = e.source_id || e.source;
-      const tgtId = e.target_id || e.target;
-      if (activeTypeFilters.size > 0 && (!visibleNodeIds.has(String(srcId)) || !visibleNodeIds.has(String(tgtId)))) return false;
-      if (hiddenRelTypes.has(e.rel_type)) return false;
-      if (confidenceThreshold > 0 && (e.confidence === undefined || e.confidence < confidenceThreshold)) return false;
-      const [tStart, tEnd] = temporalRange;
-      if (tStart && e.last_seen && e.last_seen < tStart) return false;
-      if (tEnd && e.first_seen && e.first_seen > tEnd) return false;
-      return true;
+    const { nodes, edges } = filterGraph({
+      nodes: graphNodes,
+      edges: graphEdges,
+      activeTypeFilters,
+      eventRange,
+      hideUndated,
+      hiddenRelTypes,
+      confidenceThreshold,
+      temporalRange,
+      islandThreshold,
+      islandMetric,
+      entityStats: stats?.entity_statistics ?? null,
+      snapshotIds: activeSnapshotIds,
     });
-
-    // Then apply island threshold
-    if (islandThreshold > 0) {
-      const metricMap: Record<string, number> = {};
-
-      if (islandMetric === 'degree') {
-        for (const node of nodes) {
-          metricMap[node.id] = 0;
-        }
-        for (const edge of edges) {
-          const srcId = edge.source_id || edge.source;
-          const tgtId = edge.target_id || edge.target;
-          if (metricMap[srcId] !== undefined) metricMap[srcId]++;
-          if (metricMap[tgtId] !== undefined) metricMap[tgtId]++;
-        }
-      } else {
-        const statsLookup: Record<string, EntityStats> = {};
-        if (stats?.entity_statistics) {
-          for (const s of stats.entity_statistics) {
-            statsLookup[s.entity] = s;
-          }
-        }
-        for (const node of nodes) {
-          const s = statsLookup[node.name];
-          metricMap[node.id] = s ? s[islandMetric] : 0;
-        }
-      }
-
-      const filteredIds = new Set(nodes.filter(n => metricMap[n.id] >= islandThreshold).map(n => n.id));
-      setFilteredGraphNodes(nodes.filter(n => filteredIds.has(n.id)));
-      edges = edges.filter(e => {
-        const srcId = e.source_id || e.source;
-        const tgtId = e.target_id || e.target;
-        return filteredIds.has(srcId) && filteredIds.has(tgtId);
-      });
-    } else {
-      const connectedIds = new Set<string>();
-      for (const edge of edges) {
-        connectedIds.add(String(edge.source_id || edge.source));
-        connectedIds.add(String(edge.target_id || edge.target));
-      }
-      if (hiddenRelTypes.size === 0 && confidenceThreshold === 0 && activeTypeFilters.size === 0) {
-        setFilteredGraphNodes(graphNodes);
-      } else {
-        const originallyConnected = new Set<string>();
-        for (const e of graphEdges) {
-          originallyConnected.add(String(e.source_id || e.source));
-          originallyConnected.add(String(e.target_id || e.target));
-        }
-        setFilteredGraphNodes(nodes.filter(n =>
-          connectedIds.has(n.id) || !originallyConnected.has(n.id)
-        ));
-      }
-    }
+    setFilteredGraphNodes(nodes);
     setFilteredGraphEdges(edges);
-  }, [graphNodes, graphEdges, islandThreshold, islandMetric, hiddenRelTypes, confidenceThreshold, temporalRange, eventRange, hideUndated, stats, activeTypeFilters]);
+  }, [graphNodes, graphEdges, islandThreshold, islandMetric, hiddenRelTypes, confidenceThreshold, temporalRange, eventRange, hideUndated, stats, activeTypeFilters, activeSnapshotIds]);
 
   // Community collapse: reduce many nodes into community super-nodes
   const displayData = useMemo(() => {
