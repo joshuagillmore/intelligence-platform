@@ -48,13 +48,21 @@ def test_execute_collection_returns_202(client, auth_header):
     assert "collection_id" in data
 
 
-def test_execute_collection_rejects_already_running(client, auth_header):
-    """Cannot execute a collection that is already running."""
+def test_execute_collection_rejects_already_running(client, auth_header, monkeypatch):
+    """Cannot execute a collection whose run is in flight in this process.
+
+    "In flight" is the route's own registry of running tasks, not the stored
+    status: a PROGRESS left behind by a process that died used to refuse every
+    later execute with 409, forever (C-14).
+    """
+    from intel_platform.api.routes import collections as route
+
+    monkeypatch.setattr(route, "_running_collections", {"coll-test"})
     with patch("intel_platform.api.routes.collections.get_collection") as mock_get:
         mock_get.return_value = {
             "id": "coll-test",
             "project_id": "proj-1",
-            "plan": [],
+            "plan": [{"id": 1, "description": "test", "source_type": "web_search", "approved": True}],
             "status": "PROGRESS",
         }
 
