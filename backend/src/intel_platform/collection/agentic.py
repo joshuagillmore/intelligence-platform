@@ -14,6 +14,7 @@ import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+from intel_platform.collection.requirement_loop import plan_stop_requested
 from intel_platform.connectors.base import get_connector
 from intel_platform.db.models import (
     AcquisitionLog,
@@ -1098,16 +1099,11 @@ async def _run_agentic_loop(
         provider = await _get_agentic_provider(get_provider)
     except Exception as e:
         logger.error("Failed to get LLM provider for agentic loop: %s", e)
-        # Mark plan failed
-        async with db_factory() as db:
-            plan = await db.get(CollectionPlan, plan_id)
-            if plan:
-                plan.status = PlanStatus.COMPLETED
-                db.add(CollectionActivity(
-                    plan_id=plan_id, event="plan_failed",
-                    message=f"No LLM provider available: {e}",
-                ))
-                await db.commit()
+        # A run that could not start is a failure. It used to be marked
+        # COMPLETED, which reads as a collection that ran and found nothing.
+        await _record_plan_failed(
+            db_factory, plan_id, f"No LLM provider available ({type(e).__name__}); see server logs",
+        )
         return
 
     store = get_store()
@@ -1156,7 +1152,14 @@ async def _run_agentic_loop(
             await db.commit()
 
         attempted = 0
+        stopped = False
         for source in sources:
+            # Pause and Archive are the analyst's instructions; before this
+            # nothing in the loop read them and a paused plan kept collecting.
+            if await plan_stop_requested(db, plan_id):
+                stopped = True
+                break
+
             if source.collection_status == "failed":
                 failed += 1
                 continue
@@ -1290,14 +1293,16 @@ async def _run_agentic_loop(
     # behave exactly as before.
     outcome = None
     try:
-        from intel_platform.collection.requirement_loop import run_requirement_passes
+        from intel_platform.collection import requirement_loop
 
-        outcome = await run_requirement_passes(
-            plan_id, db_factory, get_store, provider, acquire_source,
-            source_limit=source_limit,
-            sources_already_used=planned_sources_used,
-            extraction_mode=extraction_mode,
-        )
+        if not stopped:
+            outcome = await requirement_loop.run_requirement_passes(
+                plan_id, db_factory, get_store, provider, acquire_source,
+                source_limit=source_limit,
+                sources_already_used=planned_sources_used,
+                extraction_mode=extraction_mode,
+            )
+            stopped = getattr(outcome, "stopped_on", "") == "plan_stopped"
     except Exception:
         # The planned sources are already collected and in the graph; losing
         # them to a fault in the follow-up loop would be worse than stopping
@@ -1313,12 +1318,20 @@ async def _run_agentic_loop(
     async with db_factory() as db:
         plan = await db.get(CollectionPlan, plan_id)
 
-        # Final status
+        # Final status. Read in this fresh session, and never written over a
+        # PAUSED or ARCHIVED plan: completion used to set COMPLETED
+        # unconditionally, un-archiving plans the analyst had archived mid-run.
         upload_sources = [s for s in (plan.sources or []) if s.source_type == "file_upload" and s.enabled]
         if not upload_sources:
-            plan.status = PlanStatus.COMPLETED
+            plan.status = _final_status(plan.status, failed=False)
 
-        summary = f"Collection complete: {completed} succeeded, {failed} failed"
+        if stopped:
+            summary = (
+                f"Collection stopped early: plan is {plan.status}. "
+                f"{completed} succeeded, {failed} failed before it stopped"
+            )
+        else:
+            summary = f"Collection complete: {completed} succeeded, {failed} failed"
         if upload_sources:
             summary += f", {len(upload_sources)} file uploads pending"
         if outcome is not None and outcome.passes_run:

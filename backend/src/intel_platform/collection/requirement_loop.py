@@ -110,6 +110,27 @@ async def sync_requirements(db, pir: Pir) -> list[PirRequirement]:
     return rows
 
 
+async def plan_stop_requested(db, plan_id) -> bool:
+    """True when the analyst has paused or archived the plan.
+
+    PAUSED and ARCHIVED were lifecycle flags the loops never read, so a paused
+    plan went on collecting. The rule lives in `plan_executor.plan_should_stop`
+    (it reads the column directly, so a stale session object cannot hide a
+    pause); until that exists this reports False and the run behaves as before.
+    A failed check is logged and the run continues: a transient read error is
+    not a decision to stop.
+    """
+    try:
+        from intel_platform.services.plan_executor import plan_should_stop
+    except ImportError:
+        return False
+    try:
+        return bool(await plan_should_stop(db, plan_id))
+    except Exception:
+        logger.warning("Could not read whether plan %s was paused; continuing", plan_id, exc_info=True)
+        return False
+
+
 def _source_urls(sources) -> set[str]:
     """Every page URL a plan's sources already cover.
 
@@ -178,8 +199,13 @@ async def run_requirement_passes(
     store = get_store()
     used = sources_already_used
 
+    stop = False
     for pass_num in range(1, max_passes + 1):
         async with db_factory() as db:
+            if await plan_stop_requested(db, plan_id):
+                outcome.stopped_on = "plan_stopped"
+                break
+
             open_rows = (await db.execute(
                 select(PirRequirement)
                 .where(PirRequirement.pir_id == plan.pir_id, PirRequirement.status == "pending")
@@ -212,6 +238,10 @@ async def run_requirement_passes(
 
             for row in open_rows:
                 if source_limit is not None and used >= source_limit:
+                    break
+                if await plan_stop_requested(db, plan_id):
+                    outcome.stopped_on = "plan_stopped"
+                    stop = True
                     break
 
                 assessment = await assess_requirement(
@@ -269,6 +299,9 @@ async def run_requirement_passes(
                     _log(db, plan_id, "requirement_no_sources",
                          f"No new sources found for: {row.text[:160]}")
                     await db.commit()
+
+            if stop:
+                break
 
     async with db_factory() as db:
         rows = (await db.execute(

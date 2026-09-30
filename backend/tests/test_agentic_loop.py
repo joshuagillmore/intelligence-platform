@@ -329,6 +329,64 @@ class TestAcquireSourceCountsWhatItKept:
 
 
 # ---------------------------------------------------------------------------
+# R-12: the loop honours PAUSED / ARCHIVED and never writes over them
+# ---------------------------------------------------------------------------
+
+async def _stop_when_paused_or_archived(db, plan_id):
+    """Stand-in for plan_executor.plan_should_stop (WP-E)."""
+    return getattr(db.plan, "status", None) in ("PAUSED", "ARCHIVED")
+
+
+class TestPauseAndArchive:
+    async def test_pausing_mid_run_stops_before_the_next_source(self, wired, monkeypatch):
+        monkeypatch.setattr(
+            "intel_platform.services.plan_executor.plan_should_stop", _stop_when_paused_or_archived, raising=False,
+        )
+        plan = _plan([_source(name="First"), _source(name="Second")])
+
+        async def acquire(n):
+            plan.status = "PAUSED"  # the analyst presses Pause during the first source
+            return _acquired()
+
+        wired.acquire = acquire
+        retasked = []
+
+        async def fake_passes(*a, **kw):
+            retasked.append(1)
+
+        monkeypatch.setattr("intel_platform.collection.requirement_loop.run_requirement_passes", fake_passes)
+        session = await _run(plan)
+
+        assert len(wired.acquire_calls) == 1, "the second source was collected after Pause"
+        assert retasked == [], "re-tasking ran after Pause"
+        assert plan.status == "PAUSED"
+        assert session.events()[-1] == "plan_completed"
+        assert "PAUSED" in session.messages("plan_completed")[-1]
+
+    async def test_completion_does_not_unarchive_a_plan(self, wired):
+        plan = _plan([_source()])
+
+        async def acquire(n):
+            plan.status = "ARCHIVED"
+            return _acquired()
+
+        wired.acquire = acquire
+        await _run(plan)
+        assert plan.status == "ARCHIVED", "completion wrote COMPLETED over ARCHIVED"
+
+    async def test_no_provider_is_a_failure_not_a_completion(self, wired):
+        async def no_provider():
+            raise RuntimeError("no LLM configured")
+
+        plan = _plan([_source()])
+        session = FakeSession(plan)
+        await agentic.run_agentic_loop(plan.id, _factory(session), lambda: None, no_provider)
+
+        assert plan.status == "FAILED"
+        assert "plan_failed" in session.events()
+
+
+# ---------------------------------------------------------------------------
 # R-3: a crashed run says it failed
 # ---------------------------------------------------------------------------
 

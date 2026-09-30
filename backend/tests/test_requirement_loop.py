@@ -275,6 +275,51 @@ class TestOutagesAreNotVerdicts:
         assert called == []
 
 
+class TestPauseStopsRetasking:
+    """PAUSED and ARCHIVED were never read by the loop (R-12)."""
+
+    async def test_a_paused_plan_is_not_retasked(self, monkeypatch, no_collection):
+        async def paused(db, plan_id):
+            return True
+
+        monkeypatch.setattr("intel_platform.services.plan_executor.plan_should_stop", paused, raising=False)
+        assessed = []
+
+        async def assessor(*a, **kw):
+            assessed.append(1)
+            return SimpleNamespace(satisfied=False, confidence="low", missing="", next_queries=["q"], assessed=True)
+
+        monkeypatch.setattr(rl, "assess_requirement", assessor)
+        rows = [_requirement(0, "a?"), _requirement(1, "b?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?", "b?"]))
+
+        out = await rl.run_requirement_passes("plan-1", _factory(db), lambda: None, object(), None)
+
+        assert assessed == []
+        assert out.stopped_on == "plan_stopped"
+        assert out.passes_run == 0
+
+    async def test_a_pause_between_elements_stops_the_pass(self, monkeypatch, no_collection):
+        calls = {"n": 0}
+
+        async def pause_after_first_element(db, plan_id):
+            calls["n"] += 1
+            return calls["n"] > 2  # pass check, element 1 check, then paused
+
+        monkeypatch.setattr(
+            "intel_platform.services.plan_executor.plan_should_stop", pause_after_first_element, raising=False,
+        )
+        monkeypatch.setattr(rl, "assess_requirement", _assessor([(False, ["q"])] * 5))
+        rows = [_requirement(0, "a?"), _requirement(1, "b?")]
+        db = _FakeDB(rows, plan=_plan(), pir=_pir(["a?", "b?"]))
+
+        out = await rl.run_requirement_passes(
+            "plan-1", _factory(db), lambda: None, object(), None, attempts_per_element=9,
+        )
+        assert rows[0].attempts == 1 and rows[1].attempts == 0
+        assert out.stopped_on == "plan_stopped"
+
+
 class TestRetasking:
     async def test_gap_queries_drive_the_next_collection(self, monkeypatch):
         seen = {}
