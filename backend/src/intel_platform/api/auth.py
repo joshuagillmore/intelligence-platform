@@ -1,4 +1,5 @@
 from __future__ import annotations
+import hmac
 import logging
 import time
 from collections import OrderedDict
@@ -267,7 +268,11 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
     # non-default key works. The browser frontend does NOT use this path; it
     # authenticates with a JWT obtained from login.
     from intel_platform.config import settings
-    if settings.api_key not in ("", _DEFAULT_API_KEY) and token == settings.api_key:
+    # Constant-time: `==` stops at the first differing byte, so response timing
+    # would reveal the key one prefix at a time.
+    if settings.api_key not in ("", _DEFAULT_API_KEY) and hmac.compare_digest(
+        token.encode("utf-8"), settings.api_key.encode("utf-8"),
+    ):
         return {"username": "api_key_user", "role": "admin"}
 
     # JWT token
@@ -322,9 +327,24 @@ def authenticate_user(username: str, password: str) -> dict | None:
             username=username,
         )
         record = result.single()
-        if not record:
-            return None
-        user = record["props"]
-        if not verify_password(password, user["hashed_password"]):
-            return None
-        return user
+    if not record:
+        # Spend the same bcrypt check an existing user costs. Returning at once
+        # made an unknown username measurably faster to refuse than a wrong
+        # password, which told an attacker which usernames exist.
+        verify_password(password, _dummy_hash())
+        return None
+    user = record["props"]
+    if not verify_password(password, user["hashed_password"]):
+        return None
+    return user
+
+
+_DUMMY_HASH: str | None = None
+
+
+def _dummy_hash() -> str:
+    """A real bcrypt hash of nothing anyone knows, made once, at the default cost."""
+    global _DUMMY_HASH
+    if _DUMMY_HASH is None:
+        _DUMMY_HASH = _hash_password("no user has this password")
+    return _DUMMY_HASH

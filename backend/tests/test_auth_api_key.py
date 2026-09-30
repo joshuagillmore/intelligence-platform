@@ -82,6 +82,52 @@ def test_boot_warns_on_default_secrets(monkeypatch, caplog):
     assert "insecure default" in caplog.text.lower()
 
 
+def test_the_api_key_is_compared_in_constant_time(monkeypatch):
+    """Low -> A: `==` returns at the first differing byte, leaking the key's
+    prefix through response timing."""
+    import hmac
+
+    calls = []
+    real = hmac.compare_digest
+
+    def spy(a, b):
+        calls.append((a, b))
+        return real(a, b)
+
+    monkeypatch.setattr(auth_module.hmac, "compare_digest", spy)
+    monkeypatch.setattr(
+        "intel_platform.config.settings",
+        types.SimpleNamespace(api_key="a-strong-unique-key", jwt_secret=_JWT),
+    )
+    assert auth_module.get_current_user(_creds("a-strong-unique-key"))["role"] == "admin"
+    assert calls, "the API key was not compared with hmac.compare_digest"
+
+
+def test_an_unknown_user_costs_a_password_check_too(monkeypatch):
+    """Low -> A: login returned before bcrypt for an unknown username, so its
+    speed told an attacker which usernames exist."""
+    checked = []
+    monkeypatch.setattr(auth_module, "verify_password", lambda plain, hashed: checked.append(hashed) or False)
+
+    class _Empty:
+        def single(self):
+            return None
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def run(self, *a, **kw):
+            return _Empty()
+
+    monkeypatch.setattr(auth_module, "_get_driver", lambda: types.SimpleNamespace(session=_Session))
+    assert auth_module.authenticate_user("no-such-user", "guess") is None
+    assert len(checked) == 1
+
+
 def test_register_request_invalid_input_raises_validation_error():
     """Invalid RegisterRequest must raise a Pydantic ValidationError (FastAPI ->
     422), not a bare ValueError from model_post_init (which escaped as 500)."""
