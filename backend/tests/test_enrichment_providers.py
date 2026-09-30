@@ -31,6 +31,14 @@ def _client(get_impl):
     return client
 
 
+@pytest.fixture(autouse=True)
+def _direct_egress(monkeypatch):
+    # geoip consults the collection egress mode; these fixtures run direct.
+    from intel_platform.enrichment.providers import geoip
+
+    monkeypatch.setattr(geoip, "_egress_mode", AsyncMock(return_value="direct"), raising=False)
+
+
 # --- DNS --------------------------------------------------------------------
 
 async def test_dns_records_and_resolves_to_edges():
@@ -67,6 +75,30 @@ async def test_geoip_handles_failure_status():
 
     result = await GeoIPProvider(client=_client(get)).lookup("10.0.0.1", "IPAddress")
     assert result.properties == {}
+
+
+async def test_geoip_is_skipped_over_tor(monkeypatch):
+    # ip-api's keyless endpoint is plain HTTP: through a Tor exit the exit node
+    # sees which IP is being investigated and can rewrite the answer.
+    from intel_platform.enrichment.providers import geoip
+
+    monkeypatch.setattr(geoip, "_egress_mode", AsyncMock(return_value="tor"))
+    client = _client(lambda *a, **k: _resp({"status": "success", "as": "AS1"}))
+
+    result = await GeoIPProvider(client=client).lookup("8.8.8.8", "IPAddress")
+    assert result.skipped == "plain-HTTP lookup not sent over Tor"
+    assert result.properties == {}
+    client.get.assert_not_called()
+
+
+async def test_geoip_runs_over_vpn(monkeypatch):
+    from intel_platform.enrichment.providers import geoip
+
+    monkeypatch.setattr(geoip, "_egress_mode", AsyncMock(return_value="vpn"))
+    client = _client(lambda *a, **k: _resp({"status": "success", "as": "AS15169 Google LLC"}))
+
+    result = await GeoIPProvider(client=client).lookup("8.8.8.8", "IPAddress")
+    assert result.properties["asn"] == "AS15169 Google LLC"
 
 
 # --- KEV --------------------------------------------------------------------

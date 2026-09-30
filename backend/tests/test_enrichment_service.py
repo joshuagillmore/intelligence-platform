@@ -542,6 +542,27 @@ def test_default_writer_passes_project_id_on_the_relationship(monkeypatch):
     assert captured and captured[0]["project_id"] == "test-p"
 
 
+async def test_geoip_over_tor_is_reported_skipped_and_writes_nothing(monkeypatch):
+    from intel_platform.enrichment.providers import geoip
+
+    monkeypatch.setattr(geoip, "_egress_mode", AsyncMock(return_value="tor"))
+    client = MagicMock()
+    client.get = AsyncMock()
+    monkeypatch.setattr(geoip, "ProxiedClient", lambda *a, **k: client)
+    register_provider(geoip.GeoIPProvider)
+    store = _store_with_entity(
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+    )
+    cache = _cache_miss()
+    out = await EnrichmentService(store, write_related=MagicMock(), cache=cache).enrich_entity(
+        "e1", only={"geoip"},
+    )
+    assert out["providers"]["geoip"] == {"status": "skipped", "reason": "plain-HTTP lookup not sent over Tor"}
+    store.update_entity.assert_not_called()
+    cache.set.assert_not_awaited()
+    client.get.assert_not_called()
+
+
 # --- Low -> E: KEV and NVD no longer overwrite each other's severity --------
 
 class _NodeStore:
