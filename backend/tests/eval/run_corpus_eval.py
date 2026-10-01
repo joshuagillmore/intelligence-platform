@@ -483,12 +483,19 @@ async def run(mode: str, sets: list[str], concurrency: int, retries: int, limit:
             "score": score_document(entities, rels, gold),
         }
         if driver is not None:
-            b = await asyncio.to_thread(_build, driver, mode, set_name, name, entities, rels)
-            doc["build"] = {k: b.get(k) for k in (
-                "entities_created", "entities_merged", "entities_filtered", "dates_absorbed",
-                "dates_orphaned", "relationships_created", "relationships_retired",
-                "relationships_dropped", "relationships_dropped_by_type",
-            )}
+            try:
+                b = await asyncio.to_thread(_build, driver, mode, set_name, name, entities, rels)
+            except Exception as exc:
+                # A build that raises is a finding about the build, not a reason
+                # to lose the run: recorded per document, by exception type.
+                doc["build"] = {"error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+                print(f"  {set_name}/{name}: graph build raised {type(exc).__name__}: {exc}", flush=True)
+            else:
+                doc["build"] = {k: b.get(k) for k in (
+                    "entities_created", "entities_merged", "entities_filtered", "dates_absorbed",
+                    "dates_orphaned", "relationships_created", "relationships_retired",
+                    "relationships_dropped", "relationships_dropped_by_type",
+                )}
         print(f"  {set_name}/{name}: {doc['method']}{' DEGRADED' if doc['degraded'] else ''} "
               f"{doc['seconds']}s", flush=True)
         return doc
@@ -498,10 +505,12 @@ async def run(mode: str, sets: list[str], concurrency: int, retries: int, limit:
     finally:
         if driver is not None:
             driver.close()
+        if cache is not None:
+            # Saved even when the run fails: the replies were paid for.
+            cache.save()
 
     docs = sorted(docs, key=lambda d: (d["set"], d["name"]))
     if cache is not None:
-        cache.save()
         provider_info["replies"] = {"live": cache.live, "replayed": cache.hits}
     report = {
         "mode": mode,
@@ -522,13 +531,17 @@ async def run(mode: str, sets: list[str], concurrency: int, retries: int, limit:
 def _build_totals(docs: list[dict]) -> dict:
     tot: Counter = Counter()
     dropped: Counter = Counter()
+    errors = []
     for d in docs:
         b = d.get("build") or {}
+        if "error" in b:
+            errors.append(f"{d['set']}/{d['name']}: {b['error']}")
         for k, v in b.items():
             if isinstance(v, int):
                 tot[k] += v
         dropped.update(b.get("relationships_dropped_by_type") or {})
-    return {**dict(sorted(tot.items())), "relationships_dropped_by_type": dict(dropped.most_common())}
+    return {**dict(sorted(tot.items())), "relationships_dropped_by_type": dict(dropped.most_common()),
+            "errors": errors}
 
 
 def _git_head() -> str:
@@ -603,6 +616,9 @@ def markdown(report: dict) -> str:
                   f"{b.get('relationships_dropped_by_type') or ''}; entities created "
                   f"{b.get('entities_created', 0)}, filtered {b.get('entities_filtered', 0)}, "
                   f"dates orphaned {b.get('dates_orphaned', 0)}."]
+        if b.get("errors"):
+            lines += ["", f"**The build raised on {len(b['errors'])} document(s):**", ""]
+            lines += [f"- {e}" for e in b["errors"]]
     cyber = [d for d in report["documents"] if d["set"] == "cyber"]
     if cyber:
         lines += ["", "## Cyber documents in full", ""]
@@ -614,7 +630,9 @@ def markdown(report: dict) -> str:
                       f"- extra: {', '.join(s['false_positives']) or 'none'}",
                       f"- edges: {'; '.join(s['relationships_predicted']) or 'none'}",
                       f"- gold edges missed: {'; '.join(s['relationships_missed']) or 'none'}"]
-            if d.get("build"):
+            if d.get("build", {}).get("error"):
+                lines.append(f"- build raised: {d['build']['error']}")
+            elif d.get("build"):
                 lines.append(f"- build: created {d['build']['relationships_created']}, dropped "
                              f"{d['build']['relationships_dropped']} {d['build']['relationships_dropped_by_type']}")
             lines.append("")
