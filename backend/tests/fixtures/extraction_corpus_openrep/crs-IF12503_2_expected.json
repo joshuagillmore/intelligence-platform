@@ -1,0 +1,178 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IF12503#2",
+    "doc_id": "crs-IF12503"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Harry S. Truman",
+      "entity_type": "Person",
+      "aliases": [
+        "Truman"
+      ]
+    },
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "PRC",
+      "entity_type": "Location",
+      "aliases": [
+        "China"
+      ]
+    },
+    {
+      "name": "Taiwan",
+      "entity_type": "Location",
+      "aliases": [
+        "Formosa"
+      ]
+    },
+    {
+      "name": "Korean War",
+      "entity_type": "Event"
+    },
+    {
+      "name": "Asia",
+      "entity_type": "Location"
+    },
+    {
+      "name": "January 1950",
+      "entity_type": "Date"
+    },
+    {
+      "name": "June 1950",
+      "entity_type": "Date"
+    },
+    {
+      "name": "U.S. Navy",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Seventh Fleet",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "1954",
+      "entity_type": "Date"
+    },
+    {
+      "name": "ROC",
+      "entity_type": "Location",
+      "aliases": [
+        "Republic of China"
+      ]
+    },
+    {
+      "name": "1955",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Congress",
+      "entity_type": "Organization",
+      "aliases": [
+        "84th Congress",
+        "93rd Congress"
+      ]
+    },
+    {
+      "name": "Formosa Resolution",
+      "entity_type": "Document",
+      "aliases": [
+        "P.L. 84-4"
+      ]
+    },
+    {
+      "name": "Penghu",
+      "entity_type": "Location"
+    },
+    {
+      "name": "1974",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Richard M. Nixon",
+      "entity_type": "Person",
+      "aliases": [
+        "Nixon"
+      ]
+    },
+    {
+      "name": "1969",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Soviet Union",
+      "entity_type": "Location"
+    },
+    {
+      "name": "1971",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Henry Kissinger",
+      "entity_type": "Person"
+    },
+    {
+      "name": "Beijing",
+      "entity_type": "Location"
+    },
+    {
+      "name": "October 1971",
+      "entity_type": "Date"
+    },
+    {
+      "name": "UN General Assembly",
+      "entity_type": "Organization",
+      "aliases": [
+        "General Assembly"
+      ]
+    },
+    {
+      "name": "Resolution 2758",
+      "entity_type": "Document",
+      "aliases": [
+        "UN General Assembly Resolution 2758",
+        "Resolution 2758 (XXVI)"
+      ]
+    },
+    {
+      "name": "United Nations",
+      "entity_type": "Organization",
+      "aliases": [
+        "UN"
+      ]
+    },
+    {
+      "name": "Chiang Kai-shek",
+      "entity_type": "Person"
+    },
+    {
+      "name": "Security Council",
+      "entity_type": "Organization",
+      "aliases": [
+        "UN Security Council"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Seventh Fleet",
+      "target": "U.S. Navy",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "Chiang Kai-shek",
+      "target": "ROC",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

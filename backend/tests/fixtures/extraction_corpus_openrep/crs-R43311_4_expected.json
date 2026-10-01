@@ -1,0 +1,104 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-R43311#4",
+    "doc_id": "crs-R43311"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Department of the Treasury",
+      "entity_type": "Organization",
+      "aliases": [
+        "Treasury"
+      ]
+    },
+    {
+      "name": "OFAC",
+      "entity_type": "Organization",
+      "aliases": [
+        "Office of Foreign Assets Control"
+      ]
+    },
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "State Department",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Congress",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Iran",
+      "entity_type": "Location"
+    },
+    {
+      "name": "June 27, 2018",
+      "entity_type": "Date"
+    },
+    {
+      "name": "General License H",
+      "entity_type": "Document"
+    },
+    {
+      "name": "January 16, 2016",
+      "entity_type": "Date"
+    },
+    {
+      "name": "August 6, 2018",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Central Bank of Iran",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "November 5, 2018",
+      "entity_type": "Date"
+    },
+    {
+      "name": "JCPOA",
+      "entity_type": "Document"
+    },
+    {
+      "name": "April 2019",
+      "entity_type": "Date"
+    },
+    {
+      "name": "IRGC",
+      "entity_type": "Organization",
+      "aliases": [
+        "Islamic Revolutionary Guards Corps"
+      ]
+    },
+    {
+      "name": "E.O. 13871",
+      "entity_type": "Document"
+    },
+    {
+      "name": "May 8, 2019",
+      "entity_type": "Date"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "OFAC",
+      "target": "Department of the Treasury",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "IRGC",
+      "target": "Iran",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

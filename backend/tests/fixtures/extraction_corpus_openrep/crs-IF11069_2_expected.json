@@ -1,0 +1,98 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IF11069#2",
+    "doc_id": "crs-IF11069"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "MTCR",
+      "entity_type": "Organization",
+      "aliases": [
+        "Missile Technology Control Regime"
+      ]
+    },
+    {
+      "name": "2017",
+      "entity_type": "Date"
+    },
+    {
+      "name": "MTCR Plenary",
+      "entity_type": "Event",
+      "aliases": [
+        "2017 MTCR Plenary meeting"
+      ]
+    },
+    {
+      "name": "MTCR Technical Experts Meeting",
+      "entity_type": "Event"
+    },
+    {
+      "name": "March 2018",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Department of State",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Congressional Research Service",
+      "entity_type": "Organization",
+      "aliases": [
+        "CRS"
+      ]
+    },
+    {
+      "name": "December 4, 2018",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Christopher Ford",
+      "entity_type": "Person"
+    },
+    {
+      "name": "July 24, 2020",
+      "entity_type": "Date"
+    },
+    {
+      "name": "April 2018",
+      "entity_type": "Date"
+    },
+    {
+      "name": "2015",
+      "entity_type": "Date"
+    },
+    {
+      "name": "January 12, 2021",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Department of Commerce",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Bureau of Industry and Security",
+      "entity_type": "Organization",
+      "aliases": [
+        "BIS"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Bureau of Industry and Security",
+      "target": "Department of Commerce",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

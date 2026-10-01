@@ -1,0 +1,128 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IF13115#0",
+    "doc_id": "crs-IF13115"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Golden Dome for America",
+      "entity_type": "Technology",
+      "aliases": [
+        "Golden Dome",
+        "Iron Dome for America"
+      ]
+    },
+    {
+      "name": "Donald J. Trump",
+      "entity_type": "Person",
+      "aliases": [
+        "President Donald J. Trump",
+        "President Trump",
+        "Trump"
+      ]
+    },
+    {
+      "name": "E.O. 14186",
+      "entity_type": "Document",
+      "aliases": [
+        "Executive Order (E.O.) 14186"
+      ]
+    },
+    {
+      "name": "January 27, 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "DOD",
+      "entity_type": "Organization",
+      "aliases": [
+        "Department of Defense",
+        "Department of War"
+      ]
+    },
+    {
+      "name": "May 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "E.O. 14347",
+      "entity_type": "Document"
+    },
+    {
+      "name": "September 5, 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Congress",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "One Big Beautiful Bill Act",
+      "entity_type": "Document",
+      "aliases": [
+        "P.L. 119-21",
+        "FY2025 reconciliation law"
+      ]
+    },
+    {
+      "name": "Senate",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "July 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "U.S. Space Force",
+      "entity_type": "Organization",
+      "aliases": [
+        "Space Force"
+      ]
+    },
+    {
+      "name": "Michael A. Guetlein",
+      "entity_type": "Person",
+      "aliases": [
+        "General Michael A. Guetlein"
+      ]
+    },
+    {
+      "name": "Office of Golden Dome for America",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "IRONDOME Act of 2025",
+      "entity_type": "Document",
+      "aliases": [
+        "S. 435"
+      ]
+    },
+    {
+      "name": "GOLDEN DOME Act of 2025",
+      "entity_type": "Document"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Office of Golden Dome for America",
+      "target": "DOD",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "Michael A. Guetlein",
+      "target": "U.S. Space Force",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

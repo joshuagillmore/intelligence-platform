@@ -1,0 +1,105 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-R40094#15",
+    "doc_id": "crs-R40094"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Iran",
+      "entity_type": "Location",
+      "aliases": [
+        "Tehran"
+      ]
+    },
+    {
+      "name": "IAEA",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "JCPOA",
+      "entity_type": "Document",
+      "aliases": [
+        "Joint Comprehensive Plan of Action"
+      ]
+    },
+    {
+      "name": "September 20-22, 2021",
+      "entity_type": "Date"
+    },
+    {
+      "name": "November 17, 2021",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Grossi",
+      "entity_type": "Person"
+    },
+    {
+      "name": "Karaj workshop",
+      "entity_type": "Location",
+      "aliases": [
+        "Karaj",
+        "Tessa Karaj Complex"
+      ]
+    },
+    {
+      "name": "Kazem Gharibabadi",
+      "entity_type": "Person",
+      "aliases": [
+        "Gharibabadi"
+      ]
+    },
+    {
+      "name": "September 27, 2021",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Vienna",
+      "entity_type": "Location"
+    },
+    {
+      "name": "December 2021",
+      "entity_type": "Date"
+    },
+    {
+      "name": "June 8, 2022",
+      "entity_type": "Date"
+    },
+    {
+      "name": "IAEA Board of Governors",
+      "entity_type": "Organization",
+      "aliases": [
+        "Board of Governors"
+      ]
+    },
+    {
+      "name": "Mohammad Eslami",
+      "entity_type": "Person"
+    },
+    {
+      "name": "Atomic Energy Organization of Iran",
+      "entity_type": "Organization",
+      "aliases": [
+        "AEOI"
+      ]
+    },
+    {
+      "name": "July 25, 2022",
+      "entity_type": "Date"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Mohammad Eslami",
+      "target": "Atomic Energy Organization of Iran",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "Kazem Gharibabadi",
+      "target": "Iran",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

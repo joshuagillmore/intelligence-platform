@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """Corpus-backed extraction eval: score nlp | llm | hybrid against reviewed gold.
 
-Scores the extractor against two fixture sets in the format the older eval
-harness reads (``<name>.txt`` + ``<name>_expected.json``):
+Scores the extractor against fixture sets in the format the older eval
+harness reads (``<name>.txt`` + ``<name>_expected.json``), each reported on
+its own and combined:
 
-- ``corpus``: ~40 fictional exercise reporting chunks built by
-  ``scripts/build_eval_corpus.py`` (``tests/fixtures/extraction_corpus``);
+- ``openrep`` (primary): 40 chunks of the ``openrep-deep`` exercise collection —
+  synthetic analyst products, public-domain CRS text and synthetic
+  contradiction documents — with hand-labelled gold
+  (``tests/fixtures/extraction_corpus_openrep``);
+- ``kestrel``: 40 fictional exercise reporting chunks whose gold was seeded
+  from their "Entities identified" line (``tests/fixtures/extraction_corpus``);
 - ``cyber``: the three documents from the 2026-09-30 end-to-end run that showed
   the known typing and relationship defects (``extraction_corpus_cyber``).
+
+Both corpora are built by ``scripts/build_eval_corpus.py``.
 
 Writes ``tests/eval/corpus_eval_<mode>.json`` (overall, per set, per type,
 relationship metrics, per-document detail) and ``corpus_eval_<mode>.md``.
@@ -51,7 +58,8 @@ BACKEND = Path(__file__).resolve().parents[2]
 REPO = BACKEND.parent
 FIXTURES = BACKEND / "tests" / "fixtures"
 SETS = {
-    "corpus": FIXTURES / "extraction_corpus",
+    "openrep": FIXTURES / "extraction_corpus_openrep",
+    "kestrel": FIXTURES / "extraction_corpus",
     "cyber": FIXTURES / "extraction_corpus_cyber",
     # The older hand-written sets, not run by default: a regression check that
     # a fix for this corpus does not cost what those already measure.
@@ -586,18 +594,24 @@ def markdown(report: dict) -> str:
     else:
         lines += ["No document degraded: every score below is the requested mode's own.", ""]
     lines += [
-        "| Metric | P | R | F1 | TP | Pred | Gold |",
+        "| Set | Docs | Entity P / R / F1 | Typed F1 | Type acc | Rel P / R / F1 | Rel TP / Pred / Gold |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for label, a in [*report["by_set"].items(), ("**combined**", o)]:
+        en, rl = a["entity"], a["relationship"]
+        lines.append(
+            f"| {label} | {a['documents']} | {en['precision']:.3f} / {en['recall']:.3f} / {en['f1']:.3f} "
+            f"| {a['entity_typed']['f1']:.3f} | {a['type_accuracy']:.3f} "
+            f"| {rl['precision']:.3f} / {rl['recall']:.3f} / {rl['f1']:.3f} | {rl['tp']} / {rl['predicted']} / {rl['expected']} |"
+        )
+    lines += [
+        "",
+        "| Combined metric | P | R | F1 | TP | Pred | Gold |",
         "|---|---|---|---|---|---|---|",
         _row("Entities (name)", o["entity"]),
         _row("Entities (name + type)", o["entity_typed"]),
         _row("Relationships", o["relationship"]),
     ]
-    for s, a in report["by_set"].items():
-        lines += [
-            _row(f"{s}: entities", a["entity"]),
-            _row(f"{s}: entities typed", a["entity_typed"]),
-            _row(f"{s}: relationships", a["relationship"]),
-        ]
     lines += [
         "",
         f"Type accuracy on matched entities: **{o['type_accuracy']:.3f}** "
@@ -646,18 +660,25 @@ def markdown(report: dict) -> str:
                 lines.append(f"- build: created {d['build']['relationships_created']}, dropped "
                              f"{d['build']['relationships_dropped']} {d['build']['relationships_dropped_by_type']}")
             lines.append("")
-    fp = Counter(x for d in report["documents"] if d["set"] == "corpus" for x in d["score"]["false_positives"])
-    fn = Counter(x for d in report["documents"] if d["set"] == "corpus" for x in d["score"]["false_negatives"])
-    lines += ["## Corpus: most frequent misses and extras", "",
-              "Missed: " + (", ".join(f"{k} x{v}" for k, v in fn.most_common(15)) or "none") + ".", "",
-              "Extra: " + (", ".join(f"{k} x{v}" for k, v in fp.most_common(15)) or "none") + ".", ""]
+    for set_name in report["by_set"]:
+        if set_name == "cyber":
+            continue
+        docs = [d for d in report["documents"] if d["set"] == set_name]
+        fp = Counter(x for d in docs for x in d["score"]["false_positives"])
+        fn = Counter(x for d in docs for x in d["score"]["false_negatives"])
+        mt = Counter(x.split(": ", 1)[1] for d in docs for x in d["score"]["mistyped"])
+        lines += [f"## {set_name}: most frequent misses, extras and mistypes", "",
+                  "Missed: " + (", ".join(f"{k} x{v}" for k, v in fn.most_common(15)) or "none") + ".", "",
+                  "Extra: " + (", ".join(f"{k} x{v}" for k, v in fp.most_common(15)) or "none") + ".", "",
+                  "Mistyped (gold -> predicted): "
+                  + (", ".join(f"{k} x{v}" for k, v in mt.most_common(10)) or "none") + ".", ""]
     return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Score extraction against the eval corpus.")
     ap.add_argument("--mode", choices=MODES, required=True)
-    ap.add_argument("--sets", nargs="+", choices=sorted(SETS), default=["corpus", "cyber"])
+    ap.add_argument("--sets", nargs="+", choices=sorted(SETS), default=["openrep", "kestrel", "cyber"])
     ap.add_argument("--out-dir", type=Path, default=Path(__file__).resolve().parent)
     ap.add_argument("--env-file", type=Path, default=None)
     ap.add_argument("--concurrency", type=int, default=4)

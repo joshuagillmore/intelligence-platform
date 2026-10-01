@@ -1,0 +1,75 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-R43543#4",
+    "doc_id": "crs-R43543"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Navy",
+      "entity_type": "Organization",
+      "aliases": [
+        "U.S. Navy",
+        "the Navy"
+      ]
+    },
+    {
+      "name": "LHA",
+      "entity_type": "Ship"
+    },
+    {
+      "name": "LHD",
+      "entity_type": "Ship"
+    },
+    {
+      "name": "LPD",
+      "entity_type": "Ship"
+    },
+    {
+      "name": "LSD",
+      "entity_type": "Ship"
+    },
+    {
+      "name": "Medium Landing Ship",
+      "entity_type": "Ship",
+      "aliases": [
+        "LSM",
+        "Light Amphibious Warship",
+        "LAW"
+      ]
+    },
+    {
+      "name": "FY2023 NDAA",
+      "entity_type": "Document",
+      "aliases": [
+        "FY2023 (NDAA)",
+        "H.R. 7776",
+        "P.L. 117-263"
+      ]
+    },
+    {
+      "name": "December 23, 2022",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Battle Force Ship Assessment and Requirement",
+      "entity_type": "Document",
+      "aliases": [
+        "BFSAR"
+      ]
+    },
+    {
+      "name": "June 2023",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Golden Fleet plan",
+      "entity_type": "Document",
+      "aliases": [
+        "Golden Fleet"
+      ]
+    }
+  ],
+  "relationships": []
+}

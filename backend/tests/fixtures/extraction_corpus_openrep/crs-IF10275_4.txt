@@ -1,0 +1,11 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IF10275#4) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+U.S. Policy Toward Taiwan
+
+With some of his statements and actions related to Taiwan, President Donald J. Trump has fed longstanding anxieties in Taiwan about the durability of U.S. support. The President has repeatedly alleged that Taiwan "stole" its semiconductor industry from the United States. While in Beijing for a May 2026 summit with PRC leader Xi Jinping, the President alleged in a Fox News interview that Taiwan President Lai Ching-te "wants to go independent." The President stated, "I'm not looking to have somebody go independent, and you know, we are supposed to travel 9,500 miles to fight a war. I'm not looking for that. I want them to cool down." (He added, "I want China to cool down.") In the same interview, the President stated that he was holding "in abeyance" a $14 billion arms sales package for Taiwan—a follow-on to the largest-ever package of U.S. arms sales to Taiwan by value, an $11 billion package that his Administration announced in December 2025. The President stated that the second arms package was "a very good negotiating chip for us" with the PRC. Returning to the United States from Beijing on Air Force One, the President told reporters that he and Xi had discussed Taiwan arms sales "in great detail."
+
+Under questioning from Members in June 2026 congressional budget hearings, Secretary of State and National Security Advisor Marco Rubio stated that the $14 billion arms sales package remained "under review," that "we don't consult with the Chinese on these sales," and that "our policy on Taiwan is not changing and did not change on this trip." He testified that Taiwan is "not just strategically important in terms of where it's located. It also is the message that it sends to the world if something were to happen to it." (See CRS In Focus IF12481, Taiwan: Defense and Military Issues.)

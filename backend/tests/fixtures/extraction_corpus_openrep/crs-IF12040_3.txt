@@ -1,0 +1,15 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IF12040#3) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Security Assistance During the Second Trump Administration
+
+The Trump Administration has announced some new security assistance for Ukraine, at levels lower than from FY2022 to FY2024, while continuing to provide certain previously committed assistance. In 2025, DOD reportedly twice briefly paused the provision of assistance to Ukraine. According to DOD, weapons shipments to Ukraine were resumed both times. Some NATO and European officials reportedly have expressed concern that U.S. military operations against Iran could lead to procurement shortages and delays that may affect assistance to Ukraine.
+
+PDA. DOD has not publicly reported the total value of drawdowns delivered to Ukraine to date. As of March 31, 2026, $4.96 billion in authorized PDA remained available for assistance to Ukraine, according to SIG-OAR (for more, see "Presidential Drawdown Authority," below).
+
+USAI. As of March 2026, DOD estimated that "the cost of defense articles and services funded with USAI appropriations and delivered to Ukraine equaled $19.21 billion, or 57 percent of total USAI appropriations" since FY2022. As noted above, in Section 1243 of P.L. 119-60, Congress authorized $400 million a year for USAI for FY2026 and FY2027. The Department of Defense Appropriations Act, 2026 (P.L. 119-75, Division A), did not specify funding for USAI. The accompanying explanatory statement included a $400 million security cooperation program increase for "European capacity building." In FY2027 DOD budget hearings, some Senators stated that DOD had notified Congress that this funding would be used for Ukraine.
+
+FMF. Between May 2025 and May 2026, the Defense Security Cooperation Agency (DSCA) announced approval of possible Foreign Military Sales (FMS) to Ukraine potentially valued at more than $3 billion in total, partially funded by FMF. According to SIG-OAR, about $2.2 billion in FMF assistance allocated for Ukraine since February 2022 had been disbursed as of March 2026.

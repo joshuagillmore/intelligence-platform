@@ -1,0 +1,10 @@
+SYNTHETIC DOCUMENT — FABRICATED FOR EXERCISE USE; ITS FIGURES ARE INVENTED.
+From an exercise collection (openrep-deep, chunk contra-10#1). All classification and
+releasability markings have been removed. Used only to evaluate entity extraction.
+--- BEGIN FIXTURE ---
+
+Assessment
+
+Partner Programmes Cell assesses the following. Japan is constrained in its ability to use military force by its U.S.-drafted pacifist constitution and by Japanese popular hesitation to engage in military conflict. However, as perceived threats from China and North Korea have grown, Japan's government and people have reconsidered the country's approach to national security. Japan has accelerated reforms to make its military (the Self-Defense Forces) more capable and flexible, as well as interoperable with U.S. forces. In 2022, the Japanese government released plans to raise the country's defense spending to 2% of its GDP by FY2027 and declared it would develop a "counterstrike" missile capability to attack enemy missile sites. Takaichi accelerated the defense spending timeline by two years. To fulfill its goal to acquire a "counterstrike" capability, Japan is procuring the Tomahawk Weapon System for an estimated $2.9 billion via the U.S. Foreign Military Sales program. Japan received its first Tomahawk missiles in March 2026. Deliveries were expected through March 2028 but reportedly have been delayed due to drawdowns during the military conflict with Iran.
+
+This figure differs from that reported by the Congressional Research Service. The difference is not reconciled here and both figures remain in circulation.

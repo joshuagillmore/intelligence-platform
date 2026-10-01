@@ -17,6 +17,7 @@ from intel_platform.models.type_hierarchy import get_parent_category
 BACKEND = Path(__file__).resolve().parents[2]
 CORPUS = BACKEND / "tests" / "fixtures" / "extraction_corpus"
 CYBER = BACKEND / "tests" / "fixtures" / "extraction_corpus_cyber"
+OPENREP = BACKEND / "tests" / "fixtures" / "extraction_corpus_openrep"
 
 # Independent of the builder's own check, so a change to one cannot quietly
 # disable both.
@@ -54,7 +55,23 @@ def test_corpus_text_carries_no_marking_and_keeps_the_banner(stem, text, gold):
     assert "Entities identified in this reporting:" in text
 
 
-@pytest.mark.parametrize("stem,text,gold", _fixtures(CORPUS) + _fixtures(CYBER),
+def test_openrep_has_about_forty_documents_across_its_parts():
+    stems = [s for s, _, _ in _fixtures(OPENREP)]
+    assert 35 <= len(stems) <= 45
+    assert sum(s.startswith("OPENREP-SUPINTREP") for s in stems) >= 10  # the synthetic products
+    assert sum(s.startswith("crs-") for s in stems) >= 20
+
+
+@pytest.mark.parametrize("stem,text,gold", _fixtures(OPENREP), ids=lambda v: v if isinstance(v, str) else "")
+def test_openrep_text_carries_no_marking_and_no_canary_material(stem, text, gold):
+    assert not _MARKING.search(text), f"{stem}: {_MARKING.search(text).group()!r}"
+    # The collection plants canary documents to detect leakage; none may be here.
+    assert "canary" not in text.lower()
+    notice, sep, _ = text.partition("--- BEGIN FIXTURE ---")
+    assert sep and "markings have been removed" in notice.replace("\n", " ")
+
+
+@pytest.mark.parametrize("stem,text,gold", _fixtures(CORPUS) + _fixtures(CYBER) + _fixtures(OPENREP),
                          ids=lambda v: v if isinstance(v, str) else "")
 def test_gold_is_consistent_with_its_text(stem, text, gold):
     lowered = text.lower()

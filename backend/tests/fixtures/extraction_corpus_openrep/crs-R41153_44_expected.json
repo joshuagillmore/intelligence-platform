@@ -1,0 +1,117 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-R41153#44",
+    "doc_id": "crs-R41153"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Nordic Council of Ministers",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Russia",
+      "entity_type": "Location",
+      "aliases": [
+        "Moscow"
+      ]
+    },
+    {
+      "name": "Belarus",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Finland",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Denmark",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Iceland",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Norway",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Sweden",
+      "entity_type": "Location"
+    },
+    {
+      "name": "EU",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Barents Euro-Arctic Council",
+      "entity_type": "Organization",
+      "aliases": [
+        "BEAC"
+      ]
+    },
+    {
+      "name": "1993",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Barents region",
+      "entity_type": "Location",
+      "aliases": [
+        "Barents"
+      ]
+    },
+    {
+      "name": "September 2023",
+      "entity_type": "Date"
+    },
+    {
+      "name": "October 2022",
+      "entity_type": "Date"
+    },
+    {
+      "name": "China",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Arctic",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Arctic Council",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "February 21, 2023",
+      "entity_type": "Date"
+    },
+    {
+      "name": "June 2023",
+      "entity_type": "Date",
+      "aliases": [
+        "mid-June 2023"
+      ]
+    },
+    {
+      "name": "May 11, 2023",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Nikolai Korchunov",
+      "entity_type": "Person"
+    },
+    {
+      "name": "August 29, 2023",
+      "entity_type": "Date"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Nikolai Korchunov",
+      "target": "Russia",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

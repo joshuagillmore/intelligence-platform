@@ -1,0 +1,15 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-R47390#22) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Kuwait and its Neighbors
+
+Kuwait's preference for multilateralism and diplomatic outreach has been evident in its officials' mediation efforts in the Middle East region and beyond since 2015.
+
+Gulf Cooperation Council and Yemen. Kuwaiti leaders contributed to rapprochement between Qatar and its critics in Saudi Arabia and the United Arab Emirates from 2017 to 2021, when those counties ended their isolation of Qatar. In 2016, Kuwait hosted peace talks between Yemeni government officials and representatives of the Ansar Allah (aka Houthi) movement.47 Kuwait also has sent military forces to support the Yemeni government as part of the military coalition led by neighboring Saudi Arabia.
+
+Iran. Kuwaiti officials have engaged with counterparts from neighboring Iran on a range of issues and generally support dialogue between Iran and its Arab neighbors. Unresolved maritime boundaries between Kuwait and Iran may have implications for the development of maritime energy resources and for commercial and military navigation in the northern Persian Gulf. In July 2023, Kuwait's Oil Minister asserted exclusive Kuwaiti/Saudi rights to develop the offshore Dorra/Arash gas field after an Iranian official preliminary consideration of development had begun.48 After Iranian and Kuwaiti officials indicated they would each pursue their own rival development projects, Kuwait and Saudi Arabia reasserted their position that they have an exclusive right to do so.49 An Iranian official said in March 2024 that Iran views the Dorra/Arash field as shared.50 In September 2025, the Khafji Joint Operations Company, a joint company of Saudi Aramco Gulf Operations Company and Kuwait Gulf Oil Company, issued tenders related to project management for the development of the Dorra Gas field.51
+
+Kuwait condemned Israel's June 2025 strikes on Iran as violations of Iran's sovereignty and expressed concern about U.S. strikes on Iran's nuclear program. Kuwait briefly closed its airspace following Iran's attack on U.S. forces based in Qatar.

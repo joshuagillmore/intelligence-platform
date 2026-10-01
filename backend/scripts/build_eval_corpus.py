@@ -219,8 +219,189 @@ def fixture_stem(chunk_id: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "_", chunk_id)
 
 
+# ── openrep-deep: hand-labelled, no seed line ───────────────────────────────
+#
+# Mostly public-domain Congressional Research Service text (17 U.S.C. 105) that
+# the exercise collection carries under invented classification metadata, plus
+# a few synthetic analyst products ("SUPINTREP") and synthetic contradiction
+# documents. The products are what makes it hard: long assessments that name
+# actors, systems and places in hedged analytic prose.
+
+OPENREP_OUT = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "extraction_corpus_openrep"
+
+OPENREP_NOTICES = {
+    "product": (
+        "SYNTHETIC ANALYST PRODUCT — FICTIONAL, NOT A REAL INTELLIGENCE ASSESSMENT.\n"
+        "Generated for an exercise collection ({collection}, chunk {chunk_id}) from public reporting;\n"
+        "its judgements are invented. All classification and releasability markings have been removed.\n"
+        "--- BEGIN FIXTURE ---\n"
+    ),
+    "crs": (
+        "PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.\n"
+        "U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection\n"
+        "({collection}, chunk {chunk_id}) that attached fictional classification metadata. All\n"
+        "classification and releasability markings have been removed. Used only to evaluate extraction.\n"
+        "--- BEGIN FIXTURE ---\n"
+    ),
+    "contra": (
+        "SYNTHETIC DOCUMENT — FABRICATED FOR EXERCISE USE; ITS FIGURES ARE INVENTED.\n"
+        "From an exercise collection ({collection}, chunk {chunk_id}). All classification and\n"
+        "releasability markings have been removed. Used only to evaluate entity extraction.\n"
+        "--- BEGIN FIXTURE ---\n"
+    ),
+}
+
+# How many chunks to take from each part of the collection: the synthetic
+# products (each distinct question once), two synthetic contradiction
+# documents, and CRS text by subject. The collection's own near-topic labels
+# are too loose to use ("indopac" holds a report on cryptocurrency mining), so
+# a CRS chunk's subject is read from the words it uses.
+OPENREP_QUOTAS = {
+    "product": 14, "contra": 2,
+    "iran_maritime": 5, "russia_hybrid": 5, "counter_uas": 4, "naval": 4, "indo_pacific": 4, "missile_space": 3,
+}
+OPENREP_TOPICS = {
+    "iran_maritime": ("Iran", "Hormuz", "Houthi", "Red Sea", "IRGC", "Persian Gulf", "Tehran"),
+    "russia_hybrid": ("Russia", "Baltic", "Ukraine", "sabotage", "hybrid", "undersea", "Kremlin", "Moscow"),
+    "counter_uas": ("counter-UAS", "C-UAS", "unmanned aircraft", "drone", "UAS"),
+    "naval": ("Navy", "shipbuilding", "destroyer", "submarine", "frigate", "fleet", "shipyard"),
+    "indo_pacific": ("China", "PRC", "Taiwan", "South China Sea", "Indo-Pacific", "Beijing", "PLA"),
+    "missile_space": ("missile defense", "Golden Dome", "satellite", "Space Force", "hypersonic", "interceptor"),
+}
+_SKIP_SECTIONS = {"related products", "author information", "disclaimer", "footnotes"}
+_PROPER_RUN = re.compile(r"\b[A-Z][A-Za-z.&-]+(?:\s(?:of\s|the\s)?[A-Z][A-Za-z.&-]+)*")
+_DATED = re.compile(
+    r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)"
+    r"\s+(?:\d{1,2},\s+)?\d{4}\b"
+)
+
+
+def _topic_hits(text: str) -> tuple[str, int]:
+    """The subject a CRS chunk is most about, and how many of its words it uses."""
+    best, hits = "", 0
+    for topic, words in OPENREP_TOPICS.items():
+        n = sum(len(re.findall(r"(?<![\w-])" + re.escape(w) + r"(?![\w-])", text)) for w in words)
+        if n > hits:
+            best, hits = topic, n
+    return best, hits
+
+
+def _openrep_kind(payload: dict) -> str:
+    doc_id = str(payload.get("doc_id") or "")
+    if doc_id.startswith("OPENREP-SUPINTREP"):
+        return "product"
+    if doc_id.startswith("contra"):
+        return "contra"
+    topic, hits = _topic_hits(payload.get("text") or "")
+    return topic if hits >= 4 else ""
+
+
+def openrep_candidates(points: list[dict], collection: str) -> list[dict]:
+    """Chunks worth labelling: body text that names things, no canary material.
+
+    The collection plants canary documents and tokens to detect leakage. Any
+    chunk that is one, carries a token, or cites a canary document by id is
+    excluded, so none of that material reaches the repository.
+    """
+    canary_tokens = {str(p["payload"]["canary_token"]) for p in points
+                     if (p.get("payload") or {}).get("canary_token")}
+    out = []
+    for p in points:
+        payload = p.get("payload") or {}
+        text = payload.get("text") or ""
+        kind = _openrep_kind(payload)
+        if kind not in OPENREP_QUOTAS or payload.get("is_canary"):
+            continue
+        if "canary" in text.lower() or any(t in text for t in canary_tokens):
+            continue
+        if kind == "contra" and not text.lstrip().startswith("Assessment"):
+            continue  # the other half of each pair is only the fabrication notice
+        if kind not in ("product", "contra"):
+            if payload.get("kind") != "body":
+                continue
+            if str(payload.get("section") or "").strip().lower() in _SKIP_SECTIONS:
+                continue
+            if "http" in text or len(re.findall(r"\(\d{4}\)|\bP\.L\. ", text)) > 3:
+                continue  # citation lists, not reporting
+            if re.match(r"\d+\s", text) or text.count("“") >= 6:
+                continue  # a footnote filed as body text, or a list of cited article titles
+        if not 800 <= len(text) <= 3600 or "Torvik" in text:
+            continue  # Torvik reporting is the kestrel corpus's
+        names = {m.group() for m in _PROPER_RUN.finditer(text)}
+        _, hits = _topic_hits(text)
+        out.append({
+            "collection": collection,
+            "chunk_id": str(payload.get("chunk_id") or p["id"]),
+            "doc_id": str(payload.get("doc_id") or ""),
+            "kind": kind,
+            "title": str(payload.get("title") or ""),
+            # Names (capped, so a list of names does not win) plus dated
+            # events, plus how squarely it is on its subject.
+            "score": min(len(names), 30) + 3 * min(3, len(_DATED.findall(text))) + min(hits, 10),
+            "text": text,
+        })
+    return sorted(out, key=lambda c: (c["kind"], c["chunk_id"]))
+
+
+def select_openrep(cands: list[dict]) -> list[dict]:
+    """Per kind: distinct documents (products: distinct questions), richest first.
+
+    Deterministic: ties break on chunk id.
+    """
+    chosen: list[dict] = []
+    for kind, quota in OPENREP_QUOTAS.items():
+        pool = sorted((c for c in cands if c["kind"] == kind), key=lambda c: (-c["score"], c["chunk_id"]))
+        if kind == "product":
+            # Several products answer the same question; take each question once.
+            pool = sorted((c for c in cands if c["kind"] == kind), key=lambda c: c["chunk_id"])
+        seen_docs: set[str] = set()
+        seen_titles: set[str] = set()
+        for c in pool:
+            if len([x for x in chosen if x["kind"] == kind]) >= quota:
+                break
+            key = c["title"][:60].lower()
+            if c["doc_id"] in seen_docs or (kind == "product" and key in seen_titles):
+                continue
+            seen_docs.add(c["doc_id"])
+            seen_titles.add(key)
+            chosen.append(c)
+    return chosen
+
+
+def build_openrep(args) -> int:
+    with httpx.Client(timeout=120) as client:
+        pts = scroll(client, args.qdrant.rstrip("/"), "openrep-deep")
+    cands = openrep_candidates(pts, "openrep-deep")
+    chosen = select_openrep(cands)
+    print(f"openrep-deep: {len(pts)} points, {len(cands)} candidates, selected {len(chosen)}: "
+          f"{dict(Counter(c['kind'] for c in chosen))}")
+    if args.dry_run:
+        for c in chosen:
+            print(f"  {c['chunk_id']:<26} {c['kind']:<13} {c['score']:>3}  {c['title'][:70]}")
+        return 0
+    out = args.out if args.out != DEFAULT_OUT else OPENREP_OUT
+    out.mkdir(parents=True, exist_ok=True)
+    for c in chosen:
+        stem = fixture_stem(c["chunk_id"])
+        notice_kind = c["kind"] if c["kind"] in ("product", "contra") else "crs"
+        notice = OPENREP_NOTICES[notice_kind].format(collection=c["collection"], chunk_id=c["chunk_id"])
+        (out / f"{stem}.txt").write_text(notice + "\n" + strip_markings(c["text"]), encoding="utf-8", newline="\n")
+        expected = out / f"{stem}_expected.json"
+        if args.reseed or not expected.exists():
+            # No seed line here: the gold set is written by reading the text.
+            skeleton = {
+                "source": {"collection": c["collection"], "chunk_id": c["chunk_id"], "doc_id": c["doc_id"]},
+                "review": "seed — not yet labelled",
+                "entities": [], "relationships": [],
+            }
+            expected.write_text(json.dumps(skeleton, indent=2) + "\n", encoding="utf-8", newline="\n")
+    print(f"wrote {len(chosen)} texts to {out}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--corpus", choices=["kestrel", "openrep-deep"], default="kestrel")
     ap.add_argument("--qdrant", default="http://127.0.0.1:6333")
     ap.add_argument("--collections", nargs="+", default=["kestrel", "openrep"])
     ap.add_argument("--count", type=int, default=40)
@@ -228,6 +409,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reseed", action="store_true", help="overwrite existing _expected.json with a fresh seed")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
+    if args.corpus == "openrep-deep":
+        return build_openrep(args)
 
     cands: list[dict] = []
     with httpx.Client(timeout=60) as client:

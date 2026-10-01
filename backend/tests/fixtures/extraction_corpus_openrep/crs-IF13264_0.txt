@@ -1,0 +1,11 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IF13264#0) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+What Is Golden Dome?
+
+The Golden Dome for America (Golden Dome)—initially known as the Iron Dome for America—refers to an integrated homeland air and missile defense system being developed by the Department of Defense (DOD), which is "using a secondary Department of War designation" under Executive Order (E.O.) 14347, dated September 5, 2025. President Donald J. Trump introduced the program in E.O. 14186 of January 27, 2025. According to a May 2025 Pentagon press release, DOD plans to combine a range of capabilities to create a "system of systems" to protect the United States from "aerial attacks from any foe." Golden Dome's development is managed by DOD's Office of Golden Dome for America, led by Senate-confirmed U.S. Space Force General Michael A. Guetlein, who reports directly to the Deputy Secretary of Defense (who is using "Deputy Secretary of War" as a "secondary title" under E.O. 14347). The system's operational lead is the Army Space and Missile Defense Command (ASMDC) in support of U.S. Northern Command (NORTHCOM).
+
+Some Members of Congress have considered information released by DOD about Golden Dome to be insufficient and have requested additional information. In the National Defense Authorization Act for Fiscal Year 2026, Congress required DOD to submit an annual report on Golden Dome efforts that is to include a threat assessment, system architecture, and cost and schedule estimate (P.L. 119-60, §1652). President Trump has said the system "should be fully operational before the end of my term." General Guetlein has testified the system will cost $185 billion through delivery in 2035. The Congressional Budget Office has estimated that the system will cost $1.2 trillion to develop, deploy, and operate over 20 years.

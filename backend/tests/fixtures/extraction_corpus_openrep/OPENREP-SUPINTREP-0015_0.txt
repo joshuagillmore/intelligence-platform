@@ -1,0 +1,38 @@
+SYNTHETIC ANALYST PRODUCT — FICTIONAL, NOT A REAL INTELLIGENCE ASSESSMENT.
+Generated for an exercise collection (openrep-deep, chunk OPENREP-SUPINTREP-0015#0) from public reporting;
+its judgements are invented. All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+Prior product OPENREP-SUPINTREP-0015 — Assess counter-unmanned aircraft authorities and capability gaps for defending fixed sites.
+
+BOTTOM LINE UP FRONT: Highly likely that significant technological capability gaps exist in counter-UAS systems for fixed sites. Technical and operational challenges, congressional concern over capability gaps, and specific but limited technological solutions all support this assessment.
+
+KEY JUDGEMENTS: Highly likely that significant technological capability gaps exist in counter-UAS systems for fixed sites. An analysis of competing hypotheses judged this a realistic possibility; this product assesses it as highly likely because the weight of reporting highlights technical and operational challenges, congressional concern over capability gaps, and specific but limited technological solutions.
+
+Likely that legal and regulatory authorities are not the primary gap limiting effective defence of fixed sites. Existing authorities reduce the validity of this hypothesis, despite implementation challenges.
+
+Unlikely that the U.S. has sufficient authorities and capabilities to defend fixed sites against drone threats. Widespread expressions of concern refute this hypothesis.
+
+ASSESSMENT: The U.S. Department of Defense (DOD) is investing in defending U.S. forces and facilities against drones, as well as making changes to doctrine, organization, and training. These efforts include the development and deployment of a variety of defensive weapons, ranging from air defense systems to handheld jammers. Within DOD, the Army has been assigned primary responsibility for coordinating counter-UAS strategy, capabilities, and related requirements across the services.
+
+Congress may play an important role in this area, including by authorizing and appropriating funds for counter-UAS activities; maintaining or changing relevant authorities, policies, and organizations; and exercising oversight of DOD's execution of its counter-UAS role.
+
+DOD's strategic direction for countering UAS;
+
+the level of coordination within the Department;
+
+DOD's authorities to protect military installations within the United States;
+
+the establishment and organization of military forces for countering UAS;
+
+the costs of conducting counter-UAS operations;
+
+DOD's ability to test and evaluate counter-UAS systems; and
+
+the technical maturity of proposed counter-UAS solutions.
+
+DOD has identified unmanned air, ground, and sea systems as an "urgent and enduring threat to U.S. personnel, facilities, and assets overseas" and said that drones "pose the most significant threat at this time and increasingly in the U.S. homeland." In response, U.S. policymakers and DOD officials have said that the Department should accelerate its investments in defensive counter-unmanned aircraft system (counter-UAS) capabilities.
+
+Since 2018, federal law enforcement agencies within the U.S. Department of Justice (DOJ) and U.S. Department of Homeland Security (DHS) have had counter-unmanned aircraft systems (C-UAS) authorities to respond to threats from malicious drones.
+
+Despite existing capabilities and authorities, questions remain whether actions taken have satisfactorily addressed public and congressional concerns. For example, H.R. 8610 would have required DHS to establish a list of approved drone detection and mitigation systems and develop training programs to certify system operators. It would have also expanded authorities to mitigate drone threats at airports and would

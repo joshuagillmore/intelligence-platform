@@ -1,0 +1,96 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-R44175#10",
+    "doc_id": "crs-R44175"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Navy",
+      "entity_type": "Organization",
+      "aliases": [
+        "the Navy"
+      ]
+    },
+    {
+      "name": "SSL Technology Maturation",
+      "entity_type": "Technology",
+      "aliases": [
+        "SSL-TM"
+      ]
+    },
+    {
+      "name": "Laser Weapons System Demonstrator",
+      "entity_type": "Weapon",
+      "aliases": [
+        "LWSD"
+      ]
+    },
+    {
+      "name": "BAE Systems",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Northrop Grumman",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Raytheon",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "October 22, 2015",
+      "entity_type": "Date"
+    },
+    {
+      "name": "DOD",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Laser Weapon System",
+      "entity_type": "Weapon",
+      "aliases": [
+        "LaWS"
+      ]
+    },
+    {
+      "name": "USS Ponce",
+      "entity_type": "Ship"
+    },
+    {
+      "name": "January 2018",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Portland",
+      "entity_type": "Ship",
+      "aliases": [
+        "Portland (LPD-27)",
+        "LPD-27"
+      ]
+    },
+    {
+      "name": "2019",
+      "entity_type": "Date",
+      "aliases": [
+        "fall of 2019"
+      ]
+    },
+    {
+      "name": "May 22, 2020",
+      "entity_type": "Date"
+    },
+    {
+      "name": "May 16, 2020",
+      "entity_type": "Date"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Portland",
+      "target": "Laser Weapons System Demonstrator",
+      "rel_type": "USES"
+    }
+  ]
+}

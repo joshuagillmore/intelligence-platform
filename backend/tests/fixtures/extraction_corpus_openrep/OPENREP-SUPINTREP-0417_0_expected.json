@@ -1,0 +1,46 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "OPENREP-SUPINTREP-0417#0",
+    "doc_id": "OPENREP-SUPINTREP-0417"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Strait of Hormuz",
+      "entity_type": "Location",
+      "aliases": [
+        "the Strait"
+      ]
+    },
+    {
+      "name": "Iran",
+      "entity_type": "Location"
+    },
+    {
+      "name": "GCC",
+      "entity_type": "Organization",
+      "aliases": [
+        "GCC states"
+      ]
+    },
+    {
+      "name": "NATO",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "Israel",
+      "entity_type": "Location"
+    }
+  ],
+  "relationships": []
+}

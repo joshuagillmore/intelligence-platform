@@ -1,0 +1,15 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IF13035#5) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Iran's Foreign and Defense Policies
+
+Along with support for a network of allied groups across the Middle East, Iran's missile programs have been central to the regime's apparent efforts to compensate for its conventional military shortcomings by developing asymmetrical capabilities. These two lines of effort have often overlapped, as Iran has provided missiles to external partners, including U.S.-designated terrorist organizations.
+
+Recipients of Iranian missile technology include the government of former Syrian President Bashar Al Asad, which worked with Iran to establish facilities inside Syria to produce ballistic missiles, including variants of the Fateh-110. In Lebanon, the now deceased head of Hezbollah, Hassan Nasrallah, claimed in 2015 that Hezbollah had acquired Fateh-110 SRBMs as early as 2006. DIA, in a 2024 report, stated that a variety of missiles and drones fielded by Yemen's Houthis were likely based on Iranian designs, including Iran's Qiam-1, Fateh-110, and Shahab-3 missiles. Iran has transferred close-range ballistic missiles to Russia, according to U.S. and other officials.
+
+Beyond providing them to partners, Iran has used its missiles against adversaries several times, including against Islamic State sites in Syria in September 2017 and October 2018; against Saudi oil facilities in September 2019; and against U.S. forces in Iraq in January 2020. In April and October 2024, Iran used ballistic missiles to directly attack Israel. Subsequent Israeli strikes on Iran "destroyed Iran's ability to produce ballistic missiles for a year," according to the United Kingdom's chief of defense staff.
+
+On June 13, Israel launched a military operation against Iran, the objectives of which included "eliminating the missile threat," according to Israeli Prime Minister Benjamin Netanyahu. As of June 16, Iran has reportedly launched an estimated 370 ballistic missiles and struck 30 sites in Israel. The Israel Defense Forces said on June 16 that it destroyed one-third of Iran's missile launchers.

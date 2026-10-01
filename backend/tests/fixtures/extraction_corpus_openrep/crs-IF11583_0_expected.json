@@ -1,0 +1,115 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IF11583#0",
+    "doc_id": "crs-IF11583"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "UN Security Council",
+      "entity_type": "Organization",
+      "aliases": [
+        "Security Council",
+        "the council"
+      ]
+    },
+    {
+      "name": "Resolution 2231",
+      "entity_type": "Document",
+      "aliases": [
+        "Resolution 2231 (2015)"
+      ]
+    },
+    {
+      "name": "JCPOA",
+      "entity_type": "Document",
+      "aliases": [
+        "Joint Comprehensive Plan of Action"
+      ]
+    },
+    {
+      "name": "Iran",
+      "entity_type": "Location",
+      "aliases": [
+        "Tehran"
+      ]
+    },
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "France",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Germany",
+      "entity_type": "Location"
+    },
+    {
+      "name": "United Kingdom",
+      "entity_type": "Location",
+      "aliases": [
+        "UK"
+      ]
+    },
+    {
+      "name": "E3",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "IAEA",
+      "entity_type": "Organization",
+      "aliases": [
+        "International Atomic Energy Agency"
+      ]
+    },
+    {
+      "name": "July 20, 2015",
+      "entity_type": "Date"
+    },
+    {
+      "name": "August 2020",
+      "entity_type": "Date"
+    },
+    {
+      "name": "August 28, 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "September 27, 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "October 18, 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "June 2025",
+      "entity_type": "Date"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "France",
+      "target": "E3",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "Germany",
+      "target": "E3",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "United Kingdom",
+      "target": "E3",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

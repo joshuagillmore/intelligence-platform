@@ -1,0 +1,61 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "OPENREP-SUPINTREP-0082#0",
+    "doc_id": "OPENREP-SUPINTREP-0082"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Russia",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Iran",
+      "entity_type": "Location"
+    },
+    {
+      "name": "NATO",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Baltic Sea region",
+      "entity_type": "Location",
+      "aliases": [
+        "Baltic Sea"
+      ]
+    },
+    {
+      "name": "Baltic Sentry",
+      "entity_type": "Event"
+    },
+    {
+      "name": "Houthi movement",
+      "entity_type": "Organization",
+      "aliases": [
+        "Houthis",
+        "Houthi"
+      ]
+    },
+    {
+      "name": "Saudi Arabia",
+      "entity_type": "Location"
+    },
+    {
+      "name": "China",
+      "entity_type": "Location"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Houthi movement",
+      "target": "Iran",
+      "rel_type": "FUNDED_BY"
+    },
+    {
+      "source": "Houthi movement",
+      "target": "Saudi Arabia",
+      "rel_type": "TARGETS"
+    }
+  ]
+}

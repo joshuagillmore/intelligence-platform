@@ -1,0 +1,11 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-R48477#18) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+DOD Counter-UAS Policies and Organizations
+
+Military personnel also gain proficiency with counter-UAS systems and tactics during military exercises, including those that focus specifically on counter-UAS. For example, in an effort to incorporate lessons learned from counter-UAS operations in the Middle East, the Army established in 2023 the Green Sands training initiative at the Army Central Command (ARCENT) Training and Readiness Center.77 In August 2024, the Army held the Operation Hard Kill to demonstrate various counter-UAS weapons in a live-fire environment.78 Meanwhile, in October 2024, NORTHCOM conducted the Falcon Peak exercise that, for the first time, sought to evaluate counter-UAS solutions for DOD installations within the United States.79 Counter-UAS has also been the focus of joint training exercises conducted by the United States and its allies and partners, such as the U.S.-Saudi Arabia Red Sands exercise.80
+
+The enacted FY2025 NDAA contained multiple provisions related to DOD's counter-UAS training activities. In Section 925 of the act, Congress directed the Secretary of Defense to submit a report to the congressional defense committees on the training efforts of the Department as they relate to countering UAS threats, and to provide a summary of training curricula provided to DOD's installation commanders and deployed forces.81 In Section 1073 of the FY2025 NDAA, Congress directed the Secretary of Defense to execute a "large-scale exercise in the special use airspace of the [DOD]" to test the Department's ability to respond to UAS threats.82

@@ -1,0 +1,59 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "OPENREP-SUPINTREP-0037#0",
+    "doc_id": "OPENREP-SUPINTREP-0037"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Iran",
+      "entity_type": "Location",
+      "aliases": [
+        "Tehran"
+      ]
+    },
+    {
+      "name": "2003",
+      "entity_type": "Date",
+      "aliases": [
+        "late 2003"
+      ]
+    },
+    {
+      "name": "February 28",
+      "entity_type": "Date"
+    },
+    {
+      "name": "February 2026",
+      "entity_type": "Date"
+    },
+    {
+      "name": "IAEA",
+      "entity_type": "Organization",
+      "aliases": [
+        "International Atomic Energy Agency"
+      ]
+    },
+    {
+      "name": "June 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "National Security Strategy",
+      "entity_type": "Document",
+      "aliases": [
+        "2025 U.S. National Security Strategy",
+        "2026 National Security Strategy"
+      ]
+    },
+    {
+      "name": "National Defense Strategy",
+      "entity_type": "Document",
+      "aliases": [
+        "2026 National Defense Strategy"
+      ]
+    }
+  ],
+  "relationships": []
+}

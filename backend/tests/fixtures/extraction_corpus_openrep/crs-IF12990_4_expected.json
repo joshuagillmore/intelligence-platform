@@ -1,0 +1,73 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IF12990#4",
+    "doc_id": "crs-IF12990"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Trade Expansion Act of 1962",
+      "entity_type": "Document",
+      "aliases": [
+        "Section 232 of the Trade Expansion Act of 1962"
+      ]
+    },
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "Trump",
+      "entity_type": "Person",
+      "aliases": [
+        "President Trump"
+      ]
+    },
+    {
+      "name": "PRC",
+      "entity_type": "Location",
+      "aliases": [
+        "China"
+      ]
+    },
+    {
+      "name": "2018",
+      "entity_type": "Date"
+    },
+    {
+      "name": "March 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "June 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "July 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "November 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "October 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "January 2026",
+      "entity_type": "Date"
+    },
+    {
+      "name": "April 2026",
+      "entity_type": "Date"
+    }
+  ],
+  "relationships": []
+}

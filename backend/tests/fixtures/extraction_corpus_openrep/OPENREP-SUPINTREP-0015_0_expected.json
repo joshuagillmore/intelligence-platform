@@ -1,0 +1,65 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "OPENREP-SUPINTREP-0015#0",
+    "doc_id": "OPENREP-SUPINTREP-0015"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "DOD",
+      "entity_type": "Organization",
+      "aliases": [
+        "Department of Defense",
+        "U.S. Department of Defense"
+      ]
+    },
+    {
+      "name": "Army",
+      "entity_type": "Organization",
+      "aliases": [
+        "the Army"
+      ]
+    },
+    {
+      "name": "Congress",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "DOJ",
+      "entity_type": "Organization",
+      "aliases": [
+        "U.S. Department of Justice",
+        "Department of Justice"
+      ]
+    },
+    {
+      "name": "DHS",
+      "entity_type": "Organization",
+      "aliases": [
+        "U.S. Department of Homeland Security",
+        "Department of Homeland Security"
+      ]
+    },
+    {
+      "name": "H.R. 8610",
+      "entity_type": "Document"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Army",
+      "target": "DOD",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

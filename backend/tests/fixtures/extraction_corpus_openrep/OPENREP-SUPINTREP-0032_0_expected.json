@@ -1,0 +1,67 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "OPENREP-SUPINTREP-0032#0",
+    "doc_id": "OPENREP-SUPINTREP-0032"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Taiwan Strait",
+      "entity_type": "Location"
+    },
+    {
+      "name": "PRC",
+      "entity_type": "Location",
+      "aliases": [
+        "Beijing"
+      ]
+    },
+    {
+      "name": "Taiwan",
+      "entity_type": "Location",
+      "aliases": [
+        "Taipei"
+      ]
+    },
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "South China Sea",
+      "entity_type": "Location",
+      "aliases": [
+        "SCS"
+      ]
+    },
+    {
+      "name": "Eurasia",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Xi",
+      "entity_type": "Person",
+      "aliases": [
+        "PRC leader Xi"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "source": "PRC",
+      "target": "Taiwan",
+      "rel_type": "TARGETS"
+    },
+    {
+      "source": "Xi",
+      "target": "PRC",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

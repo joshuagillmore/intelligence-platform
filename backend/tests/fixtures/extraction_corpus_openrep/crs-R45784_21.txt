@@ -1,0 +1,11 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-R45784#21) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Hybrid Threats
+
+Espionage and Sabotage. In April 2025, Poland's Internal Security Agency reported that since Russia's 2022 invasion of Ukraine, the agency had detained 44 people in relation to spying or sabotage in Poland on behalf of Russia or Belarus.63 Those apprehended have included Russians, Belarussians, Ukrainians, and Poles accused or convicted in connection with incidents including an arson attack against a Warsaw shopping center, surveillance of sensitive military locations, and plans to attack Polish railways carrying supplies for Ukraine.64 Since 2023, there also have been several incidents of suspected sabotage in the Baltic Sea involving vessels damaging underwater infrastructure by dragging their anchors across the seabed.65 In January 2025, NATO launched a new mission (Baltic Sentry) to increase its presence in the Baltic Sea and improve the allies' ability to protect critical infrastructure.66 In May 2025, Poland's armed forces intervened to divert a Russian tanker vessel reported to have performed suspicious maneuvers in the Baltic Sea near an underwater power cable connecting Poland and Sweden.67
+
+Weaponized Migration. Some analysts and European officials assert that Russia and its ally Belarus have sought to use migration to destabilize the EU. Since 2021, tens of thousands of migrants, primarily from countries in the Middle East and Africa, have traveled to Russia and Belarus and subsequently have attempted to enter the EU illegally through Poland, Lithuania, and Latvia.68 Prime Minister Tusk has described these migration flows as "state-led operations involving the regimes in Minsk and Moscow." 69 In response, Poland's government has made the security of its eastern border one of its top priorities. Poland has deployed armed forces personnel to reinforce border guards, constructed a barrier fence along its border with Belarus, invested in cameras and sensors, and adopted a law allowing the government to temporarily suspend the right to seek asylum.70

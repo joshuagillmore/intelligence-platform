@@ -1,0 +1,22 @@
+SYNTHETIC ANALYST PRODUCT — FICTIONAL, NOT A REAL INTELLIGENCE ASSESSMENT.
+Generated for an exercise collection (openrep-deep, chunk OPENREP-SUPINTREP-0010#0) from public reporting;
+its judgements are invented. All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+Prior product OPENREP-SUPINTREP-0010 — Assess the threat to undersea cables and energy infrastructure in the Baltic Sea.
+
+BOTTOM LINE UP FRONT: Highly likely that Russia is actively sabotaging undersea infrastructure in the Baltic Sea as part of hybrid warfare. Multiple high/medium-graded sources (B2, D2) explicitly attribute sabotage to Russia. Diagnostic evidence overwhelmingly supports this hypothesis. No single-source evidence drives this conclusion.
+
+KEY JUDGEMENTS: Highly likely that Russia is actively sabotaging undersea infrastructure in the Baltic Sea as part of hybrid warfare. Multiple high/medium-graded sources (B2, D2) explicitly attribute sabotage to Russia. Diagnostic evidence overwhelmingly supports this hypothesis. No single-source evidence drives this conclusion.
+
+Likely that NATO's response to Russian hybrid warfare in the Baltic remains fragmented and insufficient to deter aggression. While NATO has demonstrated strategic intent, including enhanced defense and deterrence measures, there are persistent capability gaps and insufficient resourcing.
+
+Realistic possibility that Russia will continue to adapt its hybrid warfare tactics, leveraging proxies, organized crime groups, and disposable agents to maintain operational flexibility and deniability. This assessment considers Russia's intelligence services' high operational tempo and adaptability.
+
+Unlikely that NATO's current force posture in the Baltic region would be adequate to deter or defend against a possible Russian military attack without significant reinforcement and resource allocation. This judgment is based on ongoing debates about NATO's capabilities and the U.S. role in response.
+
+ASSESSMENT: Since 2022, Russia has become more aggressive in employing hybrid threats against the Baltic states, including information operations, cyberattacks, and acts of violence. NATO has responded by reorienting its strategic focus and defense posture, increasing its military presence in Europe, and institutionalizing long-term support for Ukraine. It is highly likely that Russia will continue to escalate its hybrid warfare activities, and likely that NATO will further strengthen its defense and deterrence measures in response.
+
+Russia's foreign intelligence services conduct the full spectrum of clandestine operations, including intelligence collection, disinformation, and assassinations. U.S. and allied officials assess that Russia's intelligence services have a high operational tempo and demonstrate flexibility in adapting to changing conditions. The primary mission of Russia's foreign intelligence services is to conduct espionage using human, signals, electronic, and cyber methods. Some of these operations have been hampered by the expulsion of Russian diplomats from Europe and the United States following Russia's 2022 invasion of Ukraine. In response, Russia's services have adapted by using proxies, organized crime groups, and other disposable agents.
+
+Hybrid warfare activities attributed to Russia by U.S. and European officials and observers have included acts of sabotage, assassinations, airspace violations, global positioning system (GPS) jamming, the severing or damaging of critical underwater infrastructure (CUI), cyberattacks, weaponized migration, and political and election interference. In May 2026, Anne Keast-Butler, Director of the United Kingdom's Government Communications Headquarters (GCHQ), stated that "Russia is scaling up its daily hybrid activity against

@@ -1,0 +1,11 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IF11583#0) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+On July 20, 2015, the UN Security Council adopted Resolution 2231 (2015) to implement the Joint Comprehensive Plan of Action (JCPOA) and other provisions concerning Iran's nuclear program, Tehran's development of missiles, and arms transfers to and from Iran. In August 2020, the United States invoked the resolution's "snapback" mechanism, which required the Security Council to reimpose UN sanctions lifted pursuant to Resolution 2231 and the JCPOA. (CRS Report R40094, Iran's Nuclear Program: Tehran's Compliance with International Obligations.) Although that effort failed (see below), France, Germany, and the United Kingdom (UK), collectively known as the "E3," invoked the snapback mechanism on August 28, 2025, resulting in the sanctions' reimposition on September 27, 2025.
+
+Resolution 2231 stipulated that the council, "seized of the Iranian nuclear issue" since 2006, was to end its consideration of the matter on October 18, 2025. The resolution's snapback mechanism then would have ceased to operate. The JCPOA has effectively expired; snapback reimposed previously terminated UN sanctions and indefinitely extended both the sanctions and Iran's nuclear program as a subject of Security Council consideration.
+
+Prior to June 2025 U.S.-Israeli airstrikes on Iranian nuclear facilities, including those associated with Tehran's enrichment program, Tehran's expansion of that program had decreased the amount of time necessary for Iran to produce enough fissile material for use in a nuclear weapon. (CRS In Focus IF12106, Iran and Nuclear Weapons Production.) The International Atomic Energy Agency (IAEA) withdrew inspectors from Iran after the strikes.
