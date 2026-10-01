@@ -2,15 +2,15 @@
  * Hosts the browser is allowed to load images from, beyond this origin.
  *
  * Every entry is a tile or icon host `components/GeoMap.tsx` actually loads:
- * the four basemaps in its switcher (CARTO dark, OpenStreetMap, OpenTopoMap,
- * EOX Sentinel-2) and Leaflet's default marker icons on cdnjs. Anything else
+ * the three basemaps in its switcher (OpenStreetMap, OpenTopoMap, EOX
+ * Sentinel-2) and Leaflet's default marker icons on cdnjs. Anything else
  * (image markdown in a scraped document, say) is refused by the browser, so a
  * page cannot be made to fetch from an adversary's server. Adding a basemap
- * means adding its host here; `tests/unit/csp.test.ts` fails until you do.
+ * means adding its host here, and dropping one means removing it;
+ * `tests/unit/csp.test.ts` fails until you do either.
  */
 const IMAGE_HOSTS = [
-  'https://*.basemaps.cartocdn.com',
-  'https://*.tile.openstreetmap.org',
+  'https://tile.openstreetmap.org',
   'https://*.tile.opentopomap.org',
   'https://tiles.maps.eox.at',
   'https://cdnjs.cloudflare.com',

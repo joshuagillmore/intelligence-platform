@@ -110,16 +110,16 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
         const map = L.default.map(mapRef.current, { zoomControl: false }).setView([20, 40], 3);
         L.default.control.zoom({ position: 'bottomleft' }).addTo(map);
 
-        // Basemap / imagery switcher — dark default, plus streets, topo, and
+        // Basemap / imagery switcher — OpenStreetMap default, plus topo and
         // keyless satellite (EOX Sentinel-2 cloudless 2016, CC BY 4.0 —
         // commercial-safe, unlike the NC-licensed recent mosaics). All
-        // attributions carried per each source's terms.
+        // attributions carried per each source's terms. The CARTO dark tiles
+        // that used to be the default now carry a watermark, so they are gone
+        // (and so is their host from the CSP in next.config.mjs). OSM's tile
+        // server is addressed without the retired a/b/c subdomains.
         const baseLayers = {
-          Dark: L.default.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-          }),
-          Streets: L.default.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+          Streets: L.default.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
             maxZoom: 19,
           }),
           Topographic: L.default.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
@@ -131,7 +131,7 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
             maxZoom: 16,
           }),
         };
-        baseLayers.Dark.addTo(map);
+        baseLayers.Streets.addTo(map);
         L.default.control.layers(baseLayers, {}, { position: 'bottomright', collapsed: true }).addTo(map);
 
         // Report view bounds so the page can run AOI ("what's in this area") queries.
