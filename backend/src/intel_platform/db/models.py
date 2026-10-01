@@ -296,7 +296,7 @@ class CollectionPlan(Base):
     # a bare UUID (no FK constraint): collection_plans predates the pirs table on
     # existing deployments, where the column was added by a bare ALTER TABLE — a
     # constraint would only exist on freshly created databases.
-    # Unlinking on PIR delete is done explicitly in api/routes/pirs.py.
+    # Unlinking on PIR delete is done explicitly in api/routes/pirs/crud.py.
     pir_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True,
         comment="pirs.id this plan was generated for, if any")
