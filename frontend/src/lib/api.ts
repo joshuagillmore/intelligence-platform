@@ -1024,6 +1024,9 @@ export const exportApi = {
 
 export const adminApi = {
   config: () => http.get('/admin/config'),
+  /** Degraded outcomes since the API process started, by subsystem and
+   *  reason. Read the body with `readDegraded` (lib/degraded). */
+  degraded: () => http.get('/admin/degraded'),
   getProxy: () => http.get('/admin/proxy'),
   updateProxy: (data: BodyOf<'/api/admin/proxy', 'put'> & { mode: 'direct' | 'vpn' | 'tor' }) =>
     http.put('/admin/proxy', data),
