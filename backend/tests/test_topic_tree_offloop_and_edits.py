@@ -16,6 +16,7 @@ import pytest
 
 from intel_platform.services import topics as topics_svc
 from intel_platform.services.topics import TopicTreeService, apply_topic_edits
+from tests.ids import tp
 
 
 class _Store:
@@ -190,7 +191,7 @@ class TestRoute:
     def _get(self, client):
         from intel_platform.config import settings
 
-        return client.get("/api/topics", params={"project_id": "test-edits"},
+        return client.get("/api/topics", params={"project_id": tp("edits")},
                           headers={"Authorization": f"Bearer {settings.api_key}"}).json()
 
     def test_an_edit_is_visible_on_the_next_request_despite_the_cache(self, client):

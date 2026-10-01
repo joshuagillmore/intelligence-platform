@@ -19,8 +19,9 @@ from intel_platform.services import graph_rag as graph_rag_module
 from intel_platform.services.graph_builder import build_graph_from_extractions
 from intel_platform.services.graph_rag import GraphRAGPipeline
 from intel_platform.services.hybrid_retrieval import HybridRetriever
+from tests.ids import tp
 
-PROJECT = "test-entity-sources"
+PROJECT = tp("entity-sources")
 ORION = [{"name": "Orion Holdings", "entity_type": "Organization"}]
 
 

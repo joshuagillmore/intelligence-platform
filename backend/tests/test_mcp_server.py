@@ -14,6 +14,7 @@ from fastapi import FastAPI
 
 import intel_platform.mcp as platform_mcp
 from intel_platform.mcp import server as mcp_server
+from tests.ids import tp
 
 INITIALIZE = {
     "jsonrpc": "2.0",
@@ -254,7 +255,7 @@ async def test_ingest_document_builds_the_graph_off_the_event_loop(fake_store, m
 
     monkeypatch.setattr(mcp_server, "_mcp_extract", fake_extract)
 
-    out = await mcp_server.ingest_document("test-proj", "APT29 did things", extraction_mode="nlp")
+    out = await mcp_server.ingest_document(tp("proj"), "APT29 did things", extraction_mode="nlp")
     assert out["entities_created"] == 1
     assert build_on_loop == [False]
     assert fake_store.on_loop == [False]  # create_entity for the Document

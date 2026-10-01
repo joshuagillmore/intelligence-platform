@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -23,7 +24,10 @@ import pytest  # noqa: E402
 
 from intel_platform.models.entities import Document, Organization, Person  # noqa: E402
 
-PID = "test-a6-docs"
+PID = tp("a6-docs")
+
+# Shared Neo4j state (writes documents with no MENTIONS edges for the database-wide backfill): see tests/neo4j_lock.py.
+pytestmark = pytest.mark.neo4j_global
 
 
 @pytest.fixture
@@ -77,7 +81,7 @@ class TestDocumentEntities:
         assert [h["entity_name"] for h in data["highlights"]] == ["Kolvane"]
 
     def test_another_projects_entities_are_not_counted(self, corpus, graph_store):
-        graph_store.create_entity(Person(name="Intruder", project_id="test-a6-other", source_doc_id=corpus["d1"]))
+        graph_store.create_entity(Person(name="Intruder", project_id=tp("a6-other"), source_doc_id=corpus["d1"]))
         _, docs = _listed(corpus)
         assert docs[corpus["d1"]]["entity_count"] == 2
 

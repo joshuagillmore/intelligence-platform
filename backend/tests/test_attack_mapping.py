@@ -13,8 +13,12 @@ import pytest
 from intel_platform.llm.embeddings import EmbeddingResult
 from intel_platform.models.entities import TTP
 from intel_platform.services.attack import mapping
+from tests.ids import tp
 
-PROJECT_ID = "test-attack-mapping"
+PROJECT_ID = tp("attack-mapping")
+
+# Shared Neo4j state (global AttackTechnique nodes): see tests/neo4j_lock.py.
+pytestmark = pytest.mark.neo4j_global
 
 
 @pytest.fixture
@@ -298,8 +302,8 @@ async def test_llm_mapped_ttp_is_not_reselected(techniques, graph_store):
     # Every run used to re-send TTPs the LLM had already mapped: the query
     # excluded only method:'tcode' edges.
     driver = techniques
-    graph_store.create_entity(TTP(id="test-ttp-mapped", name="Spoofed email", project_id=PROJECT_ID))
-    _link(driver, "test-ttp-mapped", "T9995", "llm")
+    graph_store.create_entity(TTP(id=tp("ttp-mapped"), name="Spoofed email", project_id=PROJECT_ID))
+    _link(driver, tp("ttp-mapped"), "T9995", "llm")
 
     assert mapping._fetch_unresolved_ttps(driver, PROJECT_ID, 10) == []
 
@@ -316,28 +320,28 @@ async def test_llm_mapped_ttp_is_not_reselected(techniques, graph_store):
 
 def test_remap_reselects_llm_mapped_but_never_tcode(techniques, graph_store):
     driver = techniques
-    graph_store.create_entity(TTP(id="test-ttp-llm", name="Spoofed email", project_id=PROJECT_ID))
-    graph_store.create_entity(TTP(id="test-ttp-tcode", name="T9996 scripting", project_id=PROJECT_ID))
-    _link(driver, "test-ttp-llm", "T9995", "llm")
-    _link(driver, "test-ttp-tcode", "T9996", "tcode")
+    graph_store.create_entity(TTP(id=tp("ttp-llm"), name="Spoofed email", project_id=PROJECT_ID))
+    graph_store.create_entity(TTP(id=tp("ttp-tcode"), name="T9996 scripting", project_id=PROJECT_ID))
+    _link(driver, tp("ttp-llm"), "T9995", "llm")
+    _link(driver, tp("ttp-tcode"), "T9996", "tcode")
 
     ids = [t["id"] for t in mapping._fetch_unresolved_ttps(driver, PROJECT_ID, 10, remap=True)]
-    assert ids == ["test-ttp-llm"]
+    assert ids == [tp("ttp-llm")]
 
 
 def test_selection_is_ordered_by_id_so_the_cap_is_deterministic(techniques, graph_store):
     driver = techniques
     for suffix in ("c", "a", "d", "b"):
-        graph_store.create_entity(TTP(id=f"test-ttp-{suffix}", name=f"activity {suffix}", project_id=PROJECT_ID))
+        graph_store.create_entity(TTP(id=tp(f"ttp-{suffix}"), name=f"activity {suffix}", project_id=PROJECT_ID))
 
     ids = [t["id"] for t in mapping._fetch_unresolved_ttps(driver, PROJECT_ID, 2)]
-    assert ids == ["test-ttp-a", "test-ttp-b"]
+    assert ids == [tp("ttp-a"), tp("ttp-b")]
 
 
 async def test_remap_removes_a_stale_llm_edge_the_model_no_longer_confirms(techniques, graph_store):
     driver = techniques
-    graph_store.create_entity(TTP(id="test-ttp-stale", name="Spoofed email", project_id=PROJECT_ID))
-    _link(driver, "test-ttp-stale", "T9996", "llm")  # an earlier, wrong mapping
+    graph_store.create_entity(TTP(id=tp("ttp-stale"), name="Spoofed email", project_id=PROJECT_ID))
+    _link(driver, tp("ttp-stale"), "T9996", "llm")  # an earlier, wrong mapping
     session = _mock_session([
         {"id": "T9995", "text": "Synthetic Phishing.", "sim": 0.9},
         {"id": "T9996", "text": "Synthetic Scripting.", "sim": 0.4},
@@ -350,13 +354,13 @@ async def test_remap_removes_a_stale_llm_edge_the_model_no_longer_confirms(techn
 
     assert result["mapped"] == 1
     assert result["stale_removed"] == 1
-    assert _maps_to(driver, "test-ttp-stale") == {"T9995": "llm"}
+    assert _maps_to(driver, tp("ttp-stale")) == {"T9995": "llm"}
 
 
 async def test_remap_rejection_removes_the_llm_edge(techniques, graph_store):
     driver = techniques
-    graph_store.create_entity(TTP(id="test-ttp-rej", name="Spoofed email", project_id=PROJECT_ID))
-    _link(driver, "test-ttp-rej", "T9995", "llm")
+    graph_store.create_entity(TTP(id=tp("ttp-rej"), name="Spoofed email", project_id=PROJECT_ID))
+    _link(driver, tp("ttp-rej"), "T9995", "llm")
     session = _mock_session([{"id": "T9995", "text": "Synthetic Phishing.", "sim": 0.9}])
 
     with _patch_llm('{"matches": []}'):
@@ -365,14 +369,14 @@ async def test_remap_rejection_removes_the_llm_edge(techniques, graph_store):
         )
 
     assert result["skip_reasons"] == {"rejected": 1}
-    assert _maps_to(driver, "test-ttp-rej") == {}
+    assert _maps_to(driver, tp("ttp-rej")) == {}
 
 
 async def test_remap_keeps_the_edge_when_the_reply_is_unreadable(techniques, graph_store):
     # An unreadable reply is not a disagreement; it must not delete anything.
     driver = techniques
-    graph_store.create_entity(TTP(id="test-ttp-keep", name="Spoofed email", project_id=PROJECT_ID))
-    _link(driver, "test-ttp-keep", "T9995", "llm")
+    graph_store.create_entity(TTP(id=tp("ttp-keep"), name="Spoofed email", project_id=PROJECT_ID))
+    _link(driver, tp("ttp-keep"), "T9995", "llm")
     session = _mock_session([{"id": "T9995", "text": "Synthetic Phishing.", "sim": 0.9}])
 
     with _patch_llm("I think it is probably phishing."):
@@ -382,7 +386,7 @@ async def test_remap_keeps_the_edge_when_the_reply_is_unreadable(techniques, gra
 
     assert result["skip_reasons"] == {"unparsed": 1}
     assert result["stale_removed"] == 0
-    assert _maps_to(driver, "test-ttp-keep") == {"T9995": "llm"}
+    assert _maps_to(driver, tp("ttp-keep")) == {"T9995": "llm"}
 
 
 # --- contract 14: a provider failure is an error, not an empty mapping ------

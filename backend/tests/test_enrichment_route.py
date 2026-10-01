@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from tests.ids import tp
 
 
 @pytest.fixture
@@ -96,7 +97,7 @@ def test_cached_view_reads_a_vulnerability_under_its_cve_id(client, auth_header)
     store = MagicMock()
     store.get_entity = MagicMock(return_value={
         "id": "v1", "name": "Log4Shell", "entity_type": "Vulnerability",
-        "project_id": "test-p", "cve_id": "CVE-2021-44228",
+        "project_id": tp("p"), "cve_id": "CVE-2021-44228",
     })
     seen: list[str] = []
 
@@ -130,7 +131,7 @@ def test_cached_view_reads_the_graph_off_the_event_loop(client, auth_header):
             on_loop.append(True)
         except RuntimeError:
             on_loop.append(False)
-        return {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+        return {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": tp("p")}
 
     store = MagicMock()
     store.get_entity = get_entity
@@ -158,7 +159,7 @@ def _get_cached_view(client, auth_header, entity, cache_get):
         app.dependency_overrides.pop(get_graph_store, None)
 
 
-_IP = {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+_IP = {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": tp("p")}
 
 
 def test_cached_view_on_a_full_miss_is_empty(client, auth_header):

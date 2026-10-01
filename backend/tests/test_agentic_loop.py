@@ -14,6 +14,7 @@ import pytest
 
 from intel_platform.collection import agentic
 from intel_platform.db.models import CollectionActivity
+from tests.ids import tp
 
 
 class FakeSession:
@@ -66,7 +67,7 @@ def _source(source_type="rss_feed", config=None, name="Feed"):
 
 def _plan(sources):
     return SimpleNamespace(
-        id=uuid.uuid4(), project_id="test-agentic", pir_id=None,
+        id=uuid.uuid4(), project_id=tp("agentic"), pir_id=None,
         refined_pir="", pir="Who operates the Fordow site?", requirement="",
         routing_rules={"extraction_mode": "nlp"}, sources=sources,
         status="ACTIVE", updated_at=None,

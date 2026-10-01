@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -120,7 +121,7 @@ class TestRetype:
         from intel_platform.models.entities import Person
         from intel_platform.models.type_hierarchy import normalize_entity_type
 
-        wagner = Person(name="Wagner", project_id="test-a12-retype")
+        wagner = Person(name="Wagner", project_id=tp("a12-retype"))
         graph_store.create_entity(wagner)
         resp = client.put(
             f"/api/entities/{wagner.id}/type", json={"entity_type": "Organization"}, headers=headers,
@@ -136,7 +137,7 @@ class TestRetype:
         """The store package adds a shared :Entity label to every entity node."""
         from intel_platform.models.entities import Person
 
-        wagner = Person(name="Wagner", project_id="test-a12-retype")
+        wagner = Person(name="Wagner", project_id=tp("a12-retype"))
         graph_store.create_entity(wagner)
         with graph_store._driver.session() as session:
             session.run("MATCH (n {id: $id}) SET n:Entity", id=wagner.id)

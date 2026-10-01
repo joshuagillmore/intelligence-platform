@@ -22,9 +22,13 @@ from intel_platform.graph.schema import initialize_schema
 from intel_platform.models.entities import TTP, Vulnerability
 from intel_platform.services.attack import graph_ops, report
 from intel_platform.services.attack.stix_parser import parse_bundle
+from tests.ids import tp
 
-PROJECT_ID = "test-attack-report"
-EMPTY_PROJECT_ID = "test-attack-report-empty"
+PROJECT_ID = tp("attack-report")
+EMPTY_PROJECT_ID = tp("attack-report-empty")
+
+# Shared Neo4j state (the global ATT&CK catalogue and its AttackMeta node): see tests/neo4j_lock.py.
+pytestmark = pytest.mark.neo4j_global
 
 
 def _bundle():

@@ -12,8 +12,9 @@ import threading
 
 from intel_platform.models.entities import Organization
 from intel_platform.models.relationships import Relationship
+from tests.ids import tp
 
-PROJECT = "test-upsert-race"
+PROJECT = tp("upsert-race")
 WORKERS = 12
 
 

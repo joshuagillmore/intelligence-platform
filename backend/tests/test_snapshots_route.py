@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -32,7 +33,7 @@ def test_snapshot_edges_are_listed_once_in_their_true_direction(graph_store):
     from intel_platform.models.entities import Organization, Person, ThreatActor
     from intel_platform.models.relationships import Relationship
 
-    pid = "test-a11-snap"
+    pid = tp("a11-snap")
     actor = ThreatActor(name="APT Example", project_id=pid)
     victim = Organization(name="Kolvane", project_id=pid)
     handler = Person(name="Marek Ilyas", project_id=pid)

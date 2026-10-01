@@ -1,4 +1,5 @@
 from intel_platform.services.graph_builder import resolve_entity_name, build_graph_from_extractions
+from tests.ids import tp
 
 
 def test_resolve_exact_match():
@@ -33,7 +34,7 @@ def test_build_graph_creates_entities(graph_store):
         {"source_name": "Test Actor", "target_name": "Test Org", "rel_type": "TARGETS",
          "confidence": 0.6, "source": "doc-1", "method": "nlp"},
     ]
-    result = build_graph_from_extractions(graph_store, entities, relationships, project_id="test-proj-build")
+    result = build_graph_from_extractions(graph_store, entities, relationships, project_id=tp("proj-build"))
     assert result["entities_created"] == 2
     assert result["relationships_created"] == 1
 
@@ -42,7 +43,7 @@ def test_build_graph_deduplicates(graph_store):
     entities = [
         {"name": "Dedup Actor", "entity_type": "ThreatActor", "source": "doc-1", "method": "nlp", "confidence": 0.8},
     ]
-    build_graph_from_extractions(graph_store, entities, [], project_id="test-proj-dedup")
-    result = build_graph_from_extractions(graph_store, entities, [], project_id="test-proj-dedup")
+    build_graph_from_extractions(graph_store, entities, [], project_id=tp("proj-dedup"))
+    result = build_graph_from_extractions(graph_store, entities, [], project_id=tp("proj-dedup"))
     assert result["entities_created"] == 0
     assert result["entities_merged"] == 1

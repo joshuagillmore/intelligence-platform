@@ -5,7 +5,7 @@ NOT EXISTS` statements. It now runs `alembic upgrade head`, and every existing
 deployment is a database `create_all` populated with no `alembic_version`: that
 database must be adopted (stamped), never fail and never be re-created.
 
-These run against a scratch database on the exported Postgres (tests/pg_scratch.py)
+These run against a scratch database on the exported Postgres (tests/pg.py)
 and skip when none is exported.
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ from sqlalchemy import inspect, text
 
 from intel_platform.db import engine as engine_module
 from intel_platform.db.models import Base
-from tests.pg_scratch import pg_engine, scratch_pg_url  # noqa: F401
+from tests.pg import pg_engine, scratch_pg_url  # noqa: F401
 
 VECTOR_TABLES = {"chunk_embeddings", "attack_technique_embeddings"}
 

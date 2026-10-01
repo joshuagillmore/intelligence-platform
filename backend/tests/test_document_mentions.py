@@ -24,11 +24,15 @@ from intel_platform.graph.schema import ensure_mentions_edges
 from intel_platform.models.entities import Document, Organization, Person
 from intel_platform.models.relationships import Relationship
 from intel_platform.services.graph_builder import build_graph_from_extractions
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
-PROJECT = "test-doc-mentions"
-OTHER = "test-doc-mentions-other"
+PROJECT = tp("doc-mentions")
+OTHER = tp("doc-mentions-other")
+
+# Shared Neo4j state (database-wide ensure_mentions_edges counts): see tests/neo4j_lock.py.
+pytestmark = pytest.mark.neo4j_global
 
 
 def _mentions(driver, entity_id: str) -> dict[str, dict]:

@@ -12,8 +12,9 @@ import pytest
 from intel_platform.api.routes.geo import _compute_location_edges
 from intel_platform.models.entities import Location, Organization
 from intel_platform.models.relationships import Relationship
+from tests.ids import tp
 
-PROJECT = "test-geo-bulk"
+PROJECT = tp("geo-bulk")
 
 
 @pytest.fixture

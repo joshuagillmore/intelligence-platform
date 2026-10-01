@@ -11,9 +11,10 @@ from __future__ import annotations
 from intel_platform.models.entities import Organization, Person
 from intel_platform.models.relationships import Relationship
 from intel_platform.services.graph_builder import build_graph_from_extractions
+from tests.ids import tp
 
-P1 = "test-relproj-1"
-P2 = "test-relproj-2"
+P1 = tp("relproj-1")
+P2 = tp("relproj-2")
 
 
 def test_the_model_carries_a_project_defaulting_to_empty():

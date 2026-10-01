@@ -16,9 +16,10 @@ from neo4j import GraphDatabase
 from intel_platform.api import auth as auth_module
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
-PREFIX = "test-i12-"
+PREFIX = tp("i12-")
 
 
 # ---------------------------------------------------------------------------

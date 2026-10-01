@@ -20,10 +20,11 @@ from intel_platform.config import settings
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import Organization, Person, ThreatActor
 from intel_platform.models.relationships import Relationship
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
-PID = "test-a5-merge"
+PID = tp("a5-merge")
 
 
 def _contract_get_relationships(self, entity_id: str) -> list[dict]:
@@ -129,18 +130,18 @@ class TestMergeKeepsEachEdgeAsItWas:
         the ValueError and then deleted the node that held the edge."""
         with graph_store._driver.session() as session:
             session.run(
-                "CREATE (t:AttackTechnique {id: 'test-a5-T1566', name: 'Phishing', project_id: $pid})",
-                pid=PID,
+                "CREATE (t:AttackTechnique {id: $tid, name: 'Phishing', project_id: $pid})",
+                tid=tp("a5-T1566"), pid=PID,
             )
             session.run(
-                "MATCH (a {id: $a}), (t {id: 'test-a5-T1566'}) "
+                "MATCH (a {id: $a}), (t {id: $tid}) "
                 "CREATE (a)-[:MAPS_TO {method: 'tcode', confidence: 1.0}]->(t)",
-                a=world["dup"],
+                a=world["dup"], tid=tp("a5-T1566"),
             )
         out = _merge(world["primary"], [world["dup"]])
         edges = _edges(graph_store, world["primary"])
         assert [(e["src"], e["type"], e["tgt"]) for e in edges] == [
-            (world["primary"], "MAPS_TO", "test-a5-T1566"),
+            (world["primary"], "MAPS_TO", tp("a5-T1566")),
         ]
         assert edges[0]["props"]["method"] == "tcode"
         assert out["dropped_edges"] == 0

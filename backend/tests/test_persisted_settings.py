@@ -7,7 +7,7 @@ other process through `refresh_persisted_settings()`; the in-memory dicts are
 the cache. Built-in personas still cannot be overwritten, by a request or by a
 row someone edited.
 
-Runs against a scratch database (tests/pg_scratch.py); skips without Postgres.
+Runs against a scratch database (tests/pg.py); skips without Postgres.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from sqlalchemy import text
 from intel_platform.api.routes import admin_config
 from intel_platform.api.routes import personas
 from intel_platform.db import engine as engine_module
-from tests.pg_scratch import pg_engine, scratch_pg_url  # noqa: F401
+from tests.pg import pg_engine, scratch_pg_url  # noqa: F401
 
 
 @pytest.fixture

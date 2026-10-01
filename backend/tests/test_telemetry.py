@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from intel_platform.api.app import app
 from intel_platform.config import settings
 from intel_platform.services import telemetry
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -169,7 +170,7 @@ class TestEnrichment:
         limiter = MagicMock()
         limiter.acquire = AsyncMock()
         svc = EnrichmentService(MagicMock(), limiter=limiter)
-        entity = {"id": "e1", "name": "example.com", "entity_type": "Domain", "project_id": "test-t"}
+        entity = {"id": "e1", "name": "example.com", "entity_type": "Domain", "project_id": tp("t")}
         out = await svc._run(entity, [provider])
         assert out["providers"]["rdap"]["status"] == "error"
         assert _count("enrichment", "rdap: http 503") == 1
@@ -201,7 +202,7 @@ class TestAttackMapping:
             [SimpleNamespace(technique_id="T1566", text="Phishing.", similarity=0.9)],
         ])
         result = await mapping.map_project_ttps(
-            session, MagicMock(), "test-p", embedding_provider=_embedder([[0.1] * 8]),
+            session, MagicMock(), tp("p"), embedding_provider=_embedder([[0.1] * 8]),
         )
         assert result["skip_reasons"] == {"unparsed": 1}
         assert _count("attack_mapping", "unparsed") == 1
@@ -210,7 +211,7 @@ class TestAttackMapping:
         from intel_platform.services.attack import mapping
 
         monkeypatch.setattr(mapping, "_fetch_unresolved_ttps", lambda *a, **k: [{"id": "t1", "name": "x"}, {"id": "t2", "name": "y"}])
-        result = await mapping.map_project_ttps(MagicMock(), MagicMock(), "test-p", embedding_provider=_embedder(fail=True))
+        result = await mapping.map_project_ttps(MagicMock(), MagicMock(), tp("p"), embedding_provider=_embedder(fail=True))
         assert result["reason"] == "embedding_unavailable"
         assert _count("attack_mapping", "embedding_unavailable") == 2
 
@@ -229,7 +230,7 @@ class TestTopics:
 
         monkeypatch.setattr(document_clustering, "refine_labels_with_llm", _refine)
         monkeypatch.setattr("intel_platform.services.topics.cluster_documents", lambda pairs, pid: (tree, {}, {}))
-        await TopicTreeService(MagicMock())._build_topic_branch([{"id": "d1", "content": "text"}], "test-p")
+        await TopicTreeService(MagicMock())._build_topic_branch([{"id": "d1", "content": "text"}], tp("p"))
         assert _count("topics", "label_failed") == 2
 
     async def test_a_refinement_that_raises_is_counted(self, monkeypatch):
@@ -239,7 +240,7 @@ class TestTopics:
         tree = {"name": "root", "entity_type": "topic", "children": [], "count": 2}
         monkeypatch.setattr(document_clustering, "refine_labels_with_llm", AsyncMock(side_effect=RuntimeError("x")))
         monkeypatch.setattr("intel_platform.services.topics.cluster_documents", lambda pairs, pid: (tree, {}, {}))
-        branch = await TopicTreeService(MagicMock())._build_topic_branch([{"id": "d1", "content": "text"}], "test-p")
+        branch = await TopicTreeService(MagicMock())._build_topic_branch([{"id": "d1", "content": "text"}], tp("p"))
         assert branch["label_source"] == "keywords"
         assert _count("topics", "label_refinement_failed") == 1
 
@@ -252,7 +253,7 @@ class TestTopics:
         llm = MagicMock()
         llm.generate = AsyncMock(side_effect=RuntimeError("boom"))
         monkeypatch.setattr(providers, "_get_provider", AsyncMock(return_value=llm))
-        frames = [f async for f in svc.stream_summary("e-telemetry", "test-p")]
+        frames = [f async for f in svc.stream_summary("e-telemetry", tp("p"))]
         assert frames
         assert _count("topics", "summary_failed") == 1
 
@@ -341,5 +342,5 @@ class TestIngest:
         monkeypatch.setattr("intel_platform.db.engine.get_session_factory", lambda: factory)
         store = MagicMock()
         chunks = [{"content": "one"}, {"content": "two"}]
-        await ingest._ingest_chunks(store, chunks, "src", "test-p", "C3", "hybrid")
+        await ingest._ingest_chunks(store, chunks, "src", tp("p"), "C3", "hybrid")
         assert _count("extraction", "extraction failed (TimeoutError)") == 2

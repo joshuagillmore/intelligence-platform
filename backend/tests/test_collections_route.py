@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -9,23 +10,23 @@ headers = {"Authorization": f"Bearer {settings.api_key}"}
 
 def test_create_collection():
     response = client.post(
-        "/api/collections", json={"project_id": "test-proj", "pir": "Find info about APT-29"}, headers=headers
+        "/api/collections", json={"project_id": tp("proj"), "pir": "Find info about APT-29"}, headers=headers
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["project_id"] == "test-proj"
+    assert data["project_id"] == tp("proj")
     assert data["status"] == "PENDING"
 
 
 def test_get_collection():
-    create_resp = client.post("/api/collections", json={"project_id": "test-proj"}, headers=headers)
+    create_resp = client.post("/api/collections", json={"project_id": tp("proj")}, headers=headers)
     task_id = create_resp.json()["id"]
     response = client.get(f"/api/collections/{task_id}", headers=headers)
     assert response.status_code == 200
 
 
 def test_get_collection_status():
-    create_resp = client.post("/api/collections", json={"project_id": "test-proj"}, headers=headers)
+    create_resp = client.post("/api/collections", json={"project_id": tp("proj")}, headers=headers)
     task_id = create_resp.json()["id"]
     response = client.get(f"/api/collections/{task_id}/status", headers=headers)
     assert response.status_code == 200
@@ -33,7 +34,7 @@ def test_get_collection_status():
 
 
 def test_cancel_collection():
-    create_resp = client.post("/api/collections", json={"project_id": "test-proj"}, headers=headers)
+    create_resp = client.post("/api/collections", json={"project_id": tp("proj")}, headers=headers)
     task_id = create_resp.json()["id"]
     response = client.post(f"/api/collections/{task_id}/cancel", headers=headers)
     assert response.status_code == 200
@@ -57,7 +58,7 @@ def test_collection_not_found():
 def _approved_collection(status: str | None = None) -> str:
     plan = [{"id": 1, "description": "x", "source_type": "web_search", "approved": True}]
     task_id = client.post(
-        "/api/collections", json={"project_id": "test-proj", "plan": plan}, headers=headers,
+        "/api/collections", json={"project_id": tp("proj"), "plan": plan}, headers=headers,
     ).json()["id"]
     if status:
         client.put(f"/api/collections/{task_id}", json={"status": status}, headers=headers)
