@@ -259,32 +259,6 @@ export function createRequestSequencer() {
   };
 }
 
-/**
- * `fn` over `items` with at most `limit` calls in flight, results in input
- * order. Once `shouldContinue` returns false no further item is started (calls
- * already in flight finish, and unstarted slots stay `undefined`). A rejection
- * from `fn` rejects the whole run, so callers that want to skip failures catch
- * inside `fn`.
- */
-export async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T, index: number) => Promise<R>,
-  shouldContinue: () => boolean = () => true,
-): Promise<Array<R | undefined>> {
-  const results: Array<R | undefined> = new Array(items.length);
-  let nextIndex = 0;
-  async function worker() {
-    while (nextIndex < items.length && shouldContinue()) {
-      const i = nextIndex++;
-      results[i] = await fn(items[i], i);
-    }
-  }
-  const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, worker);
-  await Promise.all(workers);
-  return results;
-}
-
 /** `value`, but only once it has stopped changing for `delayMs`. */
 export function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);

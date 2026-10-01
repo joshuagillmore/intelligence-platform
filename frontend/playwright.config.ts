@@ -2,8 +2,9 @@ import { defineConfig, devices } from '@playwright/test';
 
 /**
  * E2E harness for the SENTINEL analyst UI. Runs against the docker-compose stack
- * (frontend :3000 + backend :8000 + datastores). Auth is injected as a JWT into
- * localStorage by global-setup — no login form, fully deterministic. Point at a
+ * (frontend :3000 + backend :8000 + datastores). global-setup logs in through the
+ * API and stores the session cookie in storageState: no login form, fully
+ * deterministic. Point at a
  * different instance with E2E_BASE_URL.
  */
 const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:3000';

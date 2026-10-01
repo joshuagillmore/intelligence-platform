@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
-import { collectionsApi, watchlistApi, healthApi, clearSession, readWatchlist } from '@/lib/api';
+import { authApi, collectionsApi, watchlistApi, healthApi, clearSession, readWatchlist } from '@/lib/api';
+import { useSession } from '@/lib/SessionContext';
 import { useNotifications, useNotificationCount } from '@/components/NotificationProvider';
 import { APP_NAME, APP_VERSION } from '@/lib/branding';
 import { readHealth, type HealthLevel } from '@/lib/health';
@@ -69,16 +70,10 @@ export default function Sidebar() {
   const { notifications, removeNotification } = useNotifications();
   const unreadCount = useNotificationCount();
 
-  const [username, setUsername] = useState('');
-  const [role, setRole] = useState('');
+  const { user } = useSession();
+  const username = user?.username ?? '';
+  const role = user?.role ?? '';
   const [backendHealth, setBackendHealth] = useState<HealthLevel>('checking');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setUsername(localStorage.getItem('auth_user') || '');
-      setRole(localStorage.getItem('auth_role') || 'analyst');
-    }
-  }, []);
 
   // Reflect real backend health (mirrors StatusBar) instead of a hardcoded dot.
   useEffect(() => {
@@ -161,10 +156,13 @@ export default function Sidebar() {
     }
   }
 
-  function handleSignOut() {
-    // Token, identity, selected project and assistant threads (RAG answers,
-    // verbatim excerpts) must not outlive the session on a shared workstation.
-    // The full navigation also drops the in-memory copies.
+  async function handleSignOut() {
+    // The cookie is httpOnly: only the backend can clear it. Sign out locally
+    // even if that call fails, so the next analyst at least starts at /login.
+    await authApi.logout().catch(() => undefined);
+    // Identity, selected project and assistant threads (RAG answers, verbatim
+    // excerpts) must not outlive the session on a shared workstation. The full
+    // navigation also drops the in-memory copies.
     clearSession();
     window.location.href = '/login';
   }

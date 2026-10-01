@@ -8,6 +8,8 @@ import { useProject } from '@/lib/ProjectContext';
 import { collectionsApi, collectionPlansApi, ingestApi, llmApi, pirsApi, isHttpStatus, CollectionPlan, CollectionActivityEntry, PlanExecutionStatus, Pir } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { planTitle } from '@/lib/planTitle';
+import { executeNotice, isRunStopping } from '@/lib/planRun';
+import { CancelRunButton, PlanRunBadge, RunDetails } from '@/components/PlanRunStatus';
 import { extractRefinedPir } from '@/lib/refinedPir';
 
 interface Collection {
@@ -83,6 +85,9 @@ function CollectionsWorkflow() {
   // Failures of the per-plan actions (run again, delete), shown by the plan
   // list rather than inside the step-3 panel, which is usually closed.
   const [planActionError, setPlanActionError] = useState<string | null>(null);
+  // What the last execute said that the run badge cannot: nothing to run, a
+  // queue wait, sources skipped.
+  const [planActionNotice, setPlanActionNotice] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadContent, setUploadContent] = useState('');
   const [uploadReliability, setUploadReliability] = useState('C3');
@@ -444,7 +449,8 @@ PIR: ${pirText}` }],
           setError(`Did not execute: could not remove rejected source${failed.length === 1 ? '' : 's'} ${failed.join('; ')}. Try again.`);
           return;
         }
-        await collectionPlansApi.execute(String(activePlan.id), maxResultsPerSource);
+        const run = await collectionPlansApi.execute(String(activePlan.id), maxResultsPerSource);
+        setPlanActionNotice(executeNotice(run.data));
         // Start watching this run now rather than on the next list load.
         loadRunState(String(activePlan.id));
       }
@@ -994,6 +1000,9 @@ PIR: ${pirText}` }],
             {planActionError && (
               <p role="alert" className="text-red-400 text-xs mb-3">{planActionError}</p>
             )}
+            {planActionNotice && (
+              <p role="status" className="text-amber-400/90 text-xs mb-3">{planActionNotice}</p>
+            )}
             <div className="space-y-2">
               {plans.map(plan => {
                 const statusColor = plan.status === 'ACTIVE' ? 'bg-emerald-500/20 text-emerald-400'
@@ -1022,20 +1031,17 @@ PIR: ${pirText}` }],
                           {/* Whether work is happening now, which the lifecycle
                               status cannot tell you. Without it a run in flight
                               and a plan someone activated by hand look alike. */}
-                          {isRunning && (
-                            <span className="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider bg-accent-periwinkle/20 text-accent-periwinkle flex items-center gap-1">
-                              <span className="material-symbols-outlined text-[12px] animate-spin">sync</span>
-                              Collecting
-                            </span>
-                          )}
-                          {run?.status === 'stalled' && (
-                            <span
-                              className="text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider bg-amber-500/20 text-amber-400"
-                              title={`Silent for ${Math.round((run.seconds_since_last_event || 0) / 60)} min — the run is presumed dead. Running again is safe.`}
-                            >
-                              Stalled
-                            </span>
-                          )}
+                          <PlanRunBadge run={run} />
+                          <CancelRunButton
+                            planId={String(plan.id)}
+                            run={run}
+                            onCancelled={() => {
+                              setPlanActionError(null);
+                              loadRunState(String(plan.id));
+                              loadActivity(String(plan.id));
+                            }}
+                            onError={setPlanActionError}
+                          />
                           <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${statusColor}`}>
                             {plan.status}
                           </span>
@@ -1098,6 +1104,8 @@ PIR: ${pirText}` }],
                           </div>
                         )}
 
+                        <RunDetails run={run} />
+
                         {/* Activity Log */}
                         {activityLogs[String(plan.id)] && activityLogs[String(plan.id)].length > 0 && (
                           <div>
@@ -1136,8 +1144,10 @@ PIR: ${pirText}` }],
                               disabled={isRunning}
                               onClick={async () => {
                                 setPlanActionError(null);
+                                setPlanActionNotice(null);
                                 try {
-                                  await collectionPlansApi.execute(String(plan.id));
+                                  const started = await collectionPlansApi.execute(String(plan.id));
+                                  setPlanActionNotice(executeNotice(started.data));
                                 } catch (e) {
                                   setPlanActionError(`Could not start the run: ${getErrorMessage(e)}`);
                                 }
@@ -1145,7 +1155,7 @@ PIR: ${pirText}` }],
                               }}
                               className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-4 py-2 rounded text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-900/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                             >
-                              {isRunning ? 'Collecting…'
+                              {isRunning ? (isRunStopping(run) ? 'Stopping…' : 'Collecting…')
                                 : plan.status === 'DRAFT' ? 'Approve & Execute'
                                 : 'Run Again'}
                             </button>

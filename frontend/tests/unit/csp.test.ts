@@ -60,12 +60,30 @@ describe('content security policy', () => {
 
   it('allows every tile and icon host GeoMap loads', () => {
     const hosts = geoMapImageHosts();
-    // Four basemaps plus the three marker-icon URLs.
-    expect(hosts.length).toBeGreaterThanOrEqual(7);
+    // Three basemaps plus the three marker-icon URLs.
+    expect(hosts.length).toBeGreaterThanOrEqual(6);
     const img = directive(policy, 'img-src');
     for (const host of hosts) {
       expect(hostAllowed(host, img), `${host} missing from img-src`).toBe(true);
     }
+  });
+
+  it('allows no image host GeoMap does not load', () => {
+    // A basemap dropped from the switcher must leave the policy too, or the
+    // allow-list quietly widens over time.
+    const hosts = geoMapImageHosts();
+    const remote = directive(policy, 'img-src').filter((src) => src.startsWith('https://'));
+    for (const src of remote) {
+      expect(hosts.some((h) => hostAllowed(h, [src])), `${src} allowed but unused`).toBe(true);
+    }
+  });
+
+  it('defaults the map to OpenStreetMap, not the watermarked CARTO tiles', () => {
+    const src = fs.readFileSync(path.resolve(__dirname, '../../src/components/GeoMap.tsx'), 'utf8');
+    expect(src).toMatch(/baseLayers\.Streets\.addTo\(map\)/);
+    expect(src).toMatch(/Streets: L\.default\.tileLayer\('https:\/\/tile\.openstreetmap\.org\//);
+    expect(src).not.toMatch(/cartocdn/);
+    expect(hostAllowed('a.basemaps.cartocdn.com', directive(policy, 'img-src'))).toBe(false);
   });
 
   it('allows the Google Fonts stylesheet and font files layout.tsx loads', () => {

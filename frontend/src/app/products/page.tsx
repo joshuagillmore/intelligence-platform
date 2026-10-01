@@ -449,7 +449,7 @@ function ProductsPageContent() {
     } else {
       // Fetch full content
       try {
-        const res = await reportsApi.get(report.id);
+        const res = await reportsApi.get(report.id, activeProject?.id);
         const full = res.data;
         setGeneratedReport(full.content || JSON.stringify(full));
       } catch {

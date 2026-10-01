@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Markdown from '@/components/Markdown';
-import api, { analysisApi, entitiesApi } from '@/lib/api';
+import { analysisApi, documentsApi, entitiesApi } from '@/lib/api';
 import { TYPE_COLOR_HEX } from '@/lib/entityStyles';
 import { useNotifications } from '@/components/NotificationProvider';
 import { getErrorMessage } from '@/lib/errorMessages';
@@ -93,7 +93,7 @@ export default function DocumentViewer() {
   useEffect(() => {
     if (!docId) return;
     setLoading(true);
-    api.get(`/documents/${docId}`)
+    documentsApi.get(docId)
       .then(res => setDoc(res.data))
       .catch((e) => addNotification({
         type: 'error',
