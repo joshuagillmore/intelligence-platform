@@ -41,7 +41,9 @@ that touch state no project scopes (the ATT&CK/CWE reference nodes and their
 meta nodes, schema constraints, database-wide backfill counts) carry
 `pytest.mark.neo4j_global`; concurrent suites on one machine take turns through
 those via a file lock keyed by the Neo4j host and port (`tests/neo4j_lock.py`).
-Bring Neo4j up with `docker compose up neo4j`
+Postgres tests use `tests/pg.py`: `pg_factory` on the exported database (its rows
+are under the run prefix too) and `scratch_pg_url`/`pg_engine` on a throwaway
+database. Bring Neo4j up with `docker compose up neo4j`
 (APOC is required — `graph/store.py` uses `apoc.create.relationship`) and
 initialize the schema once against a fresh DB:
 
