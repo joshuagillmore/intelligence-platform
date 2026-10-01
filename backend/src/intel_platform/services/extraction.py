@@ -540,6 +540,16 @@ _TYPE_HINTS: tuple[tuple[re.Pattern, str, tuple[str, ...]], ...] = (
     # Air platforms and UAV designators, e.g. "MQ-9 Reaper", "F/A-18".
     (re.compile(r'^(MQ|RQ|F/A|F-|SU-|MIG-|KC-|C-|P-8|E-3)\s?-?\d', re.IGNORECASE),
      "Aircraft", ("Custom", "Technology", "Organization", "")),
+    # Ship classes by hull designation: "LHA", "LPD-27", "DDG-51". spaCy and
+    # the model call them organizations and "Equipment".
+    (re.compile(r'^(?:DDG|FFG|LPD|LHA|LHD|LSD|LCS|CG|CVN|SSN|SSBN|SSGN|LSM|LST|AOR|T-AO|TAOL|LCU)(?:[- ]?\d+)?$'),
+     "Ship", ("Custom", "Organization", "Technology", "Person", "Location", "Product", "Equipment",
+              "EquipmentType", "Vehicle", "")),
+    # Missile designators: a name and a number, "Fateh-110", "Qiam-1".
+    (re.compile(r'^(?!Covid|COVID)[A-Z][a-z]{2,10}-\d{1,4}[A-Z]?$'),
+     "Weapon", ("Custom", "Organization", "Person", "Location", "Product", "Technology", "")),
+    # Named operations: "Operation Hard Kill".
+    (re.compile(r'^Operation\s+[A-Z]'), "Event", ("Custom", "Organization", "Location", "Person", "Product", "")),
 )
 
 
@@ -705,8 +715,12 @@ _KNOWN_VENDORS = frozenset({
 })
 
 
+# "the Falcon Peak exercise", "the Red Sands exercise": the noun says it is an event.
+_EVENT_NOUNS = frozenset({"exercise", "operation", "mission", "summit", "drill", "wargame"})
+
+
 def _product_type(ent) -> str:
-    """"Hardware" or "Software" when the noun this name modifies says so, else ""."""
+    """"Hardware", "Software" or "Event" when the noun this name modifies says so, else ""."""
     if ent.text.strip().lower() in _KNOWN_VENDORS:
         return ""
     root = ent.root
@@ -722,6 +736,8 @@ def _product_type(ent) -> str:
         return "Hardware"
     if noun in _SOFTWARE_NOUNS:
         return "Software"
+    if noun in _EVENT_NOUNS and ent.label_ in ("ORG", "GPE", "LOC", "FAC", "PERSON", "EVENT", "PRODUCT"):
+        return "Event"
     return ""
 
 
@@ -1756,7 +1772,7 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         # A product typed from the noun it modifies ("Windows tools", "ProSAFE
         # router") keeps that type: the keyword heuristics below read only the
         # name, and the name alone is what misled spaCy in the first place.
-        if e.get("entity_type") in ("Software", "Hardware"):
+        if e.get("entity_type") in ("Software", "Hardware", "Event"):
             corrected.append(e)
             continue
         if name_lower in _KNOWN_VENDORS:
@@ -1863,6 +1879,22 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             seen_names[ce["name"]] = ce
             entities.append(ce)
 
+    # Known multi-word places, as written. spaCy splits some of them — "the
+    # Strait of" (LOC) and "Hormuz" (PERSON) — so where one is found, any span
+    # overlapping it is not taken from spaCy.
+    gazetteer_spans: list[tuple[int, int]] = []
+    for place in sorted((p for p in (get_known_locations() or KNOWN_LOCATIONS) if " " in p), key=len, reverse=True):
+        for m in re.finditer(r"(?<!\w)" + re.escape(place) + r"(?!\w)", text, re.IGNORECASE):
+            if any(s < m.end() and m.start() < e for s, e in gazetteer_spans):
+                continue
+            gazetteer_spans.append(m.span())
+            name = m.group()
+            if name not in seen_names:
+                ent = {"name": name, "entity_type": "Location", "source": doc_id,
+                       "method": "regex", "confidence": 0.9}
+                seen_names[name] = ent
+                entities.append(ent)
+
     # 2. Count entity mention frequency for confidence scoring
     name_freq: dict[str, int] = {}
     for ent in doc.ents:
@@ -1891,6 +1923,8 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         if name in noise:
             continue
         if name in seen_names:
+            continue
+        if any(s < ent.end_char and ent.start_char < e for s, e in gazetteer_spans):
             continue
         if entity_type == "Date" and not _is_datable(name):
             continue

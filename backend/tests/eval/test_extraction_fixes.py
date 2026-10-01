@@ -615,6 +615,44 @@ def test_executive_orders_and_acts_are_documents():
     assert types.get("Worldwide Threat Assessment") == "Document"
 
 
+# ── Designators, named exercises, and place names spaCy cuts in two ───────────
+
+def test_ship_class_designators_are_ships_and_missile_designators_weapons():
+    types = _types(
+        "The Navy's current amphibious ship force includes the so-called big-deck amphibious assault ships, "
+        "designated LHA and LHD, and the smaller amphibious ships, designated LPD or LSD."
+    )
+    assert {types.get("LHA"), types.get("LHD"), types.get("LPD")} == {"Ship"}
+    types = _types(
+        "DIA stated that missiles fielded by Yemen's Houthis were likely based on Iranian designs, including "
+        "Iran's Qiam-1, Fateh-110, and Shahab-3 missiles."
+    )
+    assert types.get("Qiam-1") == "Weapon"
+
+
+def test_the_models_equipment_typed_ship_class_is_a_ship():
+    from intel_platform.services.extraction import _apply_type_hints
+
+    ents = _apply_type_hints([{"name": "LHD", "entity_type": "Equipment"}, {"name": "Covid-19", "entity_type": ""},
+                              {"name": "Shahed-136", "entity_type": "Drone"}])
+    assert [e["entity_type"] for e in ents] == ["Ship", "", "Drone"]
+
+
+def test_a_name_before_exercise_is_an_event():
+    types = _types("Meanwhile, in October 2024, NORTHCOM conducted the Falcon Peak exercise that sought to evaluate "
+                   "counter-UAS solutions.")
+    assert types.get("Falcon Peak") == "Event"
+
+
+def test_a_known_waterway_is_one_location_not_two_fragments():
+    types = _types(
+        "Iran's disruption of commercial shipping has reduced transit through the Strait of Hormuz, a crucial "
+        "conduit for energy resources and other commodities to reach global markets."
+    )
+    assert types.get("Strait of Hormuz") == "Location"
+    assert "Hormuz" not in types and "Strait of" not in types
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}
