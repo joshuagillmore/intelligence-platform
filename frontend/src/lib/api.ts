@@ -209,31 +209,18 @@ export const entitiesApi = {
    *  up to three passages, one page at a time. Read the body with
    *  `readEntityDocuments`. */
   documents: (id: string, limit?: number, offset?: number) =>
-    http.get<EntityDocumentsPage>(`/entities/${id}/documents`, { params: { limit, offset } }),
+    http.get<EntityDocumentsPage>(`/entities/${id}/documents`, {
+      params: { limit, offset } satisfies QueryOf<'/api/entities/{entity_id}/documents', 'get'>,
+    }),
 };
 
-/**
- * One document that mentions an entity, from `GET /entities/{id}/documents`
- * (2026-09-30 hardening, contract 6). Hand-written from the contract; switch to
- * `ResponseOf` once the route declares a response model.
- */
-export interface EntityDocument {
-  id: string;
-  name: string;
-  url: string;
-  source_doc_id: string;
-  mention_count: number;
-  /** Up to three passages that mention the entity, with their character offset. */
-  passages: Array<{ text: string; offset: number }>;
-}
+/** One document that mentions an entity (contract 6): its MENTIONS count and
+ *  up to three passages, each with its character offset. */
+export type EntityDocument = Model<'MentioningDocument'>;
 
-export interface EntityDocumentsPage {
-  documents: EntityDocument[];
-  /** Documents in this page. */
-  count: number;
-  /** Documents that mention the entity in all. */
-  total: number;
-}
+/** A page of `GET /entities/{id}/documents`: `count` in this page, `total`
+ *  that mention the entity in all. */
+export type EntityDocumentsPage = ResponseOf<'/api/entities/{entity_id}/documents', 'get'>;
 
 /**
  * The page in a `GET /entities/{id}/documents` body. Throws on any other

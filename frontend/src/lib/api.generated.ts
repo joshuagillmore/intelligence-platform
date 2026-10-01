@@ -857,6 +857,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/collection-plans/{plan_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Plan Run
+         * @description Cancel the plan's live run (queued, running, or stalled).
+         *
+         *     A running job is marked ``cancelled`` and stops before its next source
+         *     (``plan_should_stop`` reads it); ``stopping`` says so, and the run state
+         *     stays ``running`` until it has. A queued or stalled job has nothing left to
+         *     stop and is finished at once. 409 when no run is live.
+         */
+        post: operations["cancel_plan_run_api_collection_plans__plan_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/collection-plans/{plan_id}/catalog": {
         parameters: {
             query?: never;
@@ -902,11 +927,15 @@ export interface paths {
         put?: never;
         /**
          * Execute Plan Endpoint
-         * @description Approve and execute a collection plan — activates and triggers autonomous acquisition.
+         * @description Approve and execute a collection plan: 202 with the ``job_id`` of the run.
          *
-         *     Launches a background task that iterates over all sources, acquires data
-         *     via registered connectors, runs entity extraction, and builds the knowledge graph.
-         *     File upload sources are skipped (require manual upload).
+         *     Inserts a ``collection_jobs`` row. In ``inline`` worker mode the API process
+         *     runs it at once as a background task; in ``worker`` mode it is ``queued``
+         *     for ``python -m intel_platform.worker``. The run resolves sources, acquires
+         *     them through the registered connectors, extracts entities into the graph,
+         *     then re-tasks against the requirement's open elements. File upload sources
+         *     are skipped (they need a manual upload). With nothing to run the plan is
+         *     still activated, and ``job_id`` is null.
          */
         post: operations["execute_plan_endpoint_api_collection_plans__plan_id__execute_post"];
         delete?: never;
@@ -924,12 +953,12 @@ export interface paths {
         };
         /**
          * Get Execution Status
-         * @description Poll the execution progress of a running collection plan.
+         * @description Poll the execution progress of a collection plan's latest run.
          *
-         *     The in-memory plan_executor tracker only covers the synchronous plan_executor
-         *     path; the agentic loop (run_agentic_loop) records progress to CollectionActivity
-         *     instead. Fall back to that trail so the endpoint reflects a real agentic run
-         *     (previously it always reported "idle" while a crawl was in flight).
+         *     ``status`` is the job table's answer (``current_run_state``), the same one
+         *     the execute guard enforces; the activity trail supplies the message and the
+         *     per-run counts. ``job_status``, ``seconds_since_heartbeat`` and ``error``
+         *     come from the job row so a caller can see why a run reads as it does.
          */
         get: operations["get_execution_status_api_collection_plans__plan_id__execution_status_get"];
         put?: never;
@@ -1468,6 +1497,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/entities/{entity_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Entity Documents
+         * @description The documents that mention an entity, with evidence passages: its evidence chain.
+         *
+         *     One call, from the entity's MENTIONS edges, in its own project; the
+         *     network page used to request evidence document by document. Most-
+         *     mentioning documents first. Each carries up to PASSAGES_PER_DOCUMENT
+         *     passages around the entity's name — matched exactly first, then ignoring
+         *     case, since reporting does not keep an extractor's capitalisation.
+         *     `count` is this page, `total` every document that mentions the entity.
+         */
+        get: operations["get_entity_documents_api_entities__entity_id__documents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/entities/{entity_id}/type": {
         parameters: {
             query?: never;
@@ -1502,7 +1558,8 @@ export interface paths {
          * @description Merge entities into the primary, moving every edge as it was.
          *
          *     Each edge keeps its direction, type and properties (evidence, provenance,
-         *     polarity). An entity is deleted only once every one of its edges has been
+         *     polarity), and the documents that mention a merged entity move to the
+         *     primary. An entity is deleted only once every one of its edges has been
          *     recreated on the primary; otherwise it is kept, and the response says so —
          *     deleting it anyway is how edges used to disappear behind a success message.
          */
@@ -2910,6 +2967,22 @@ export interface components {
             /** Auto Enabled */
             auto_enabled: boolean;
         };
+        /** EntityDocumentsResponse */
+        EntityDocumentsResponse: {
+            /** Count */
+            count: number;
+            /** Documents */
+            documents: components["schemas"]["MentioningDocument"][];
+            /** Total */
+            total: number;
+        };
+        /** EvidencePassage */
+        EvidencePassage: {
+            /** Offset */
+            offset: number;
+            /** Text */
+            text: string;
+        };
         /** ExecuteRequest */
         ExecuteRequest: {
             /**
@@ -3169,6 +3242,21 @@ export interface components {
             password: string;
             /** Username */
             username: string;
+        };
+        /** MentioningDocument */
+        MentioningDocument: {
+            /** Id */
+            id: string;
+            /** Mention Count */
+            mention_count: number;
+            /** Name */
+            name: string;
+            /** Passages */
+            passages: components["schemas"]["EvidencePassage"][];
+            /** Source Doc Id */
+            source_doc_id: string;
+            /** Url */
+            url: string;
         };
         /** MergeEntitiesRequest */
         MergeEntitiesRequest: {
@@ -5059,6 +5147,37 @@ export interface operations {
             };
         };
     };
+    cancel_plan_run_api_collection_plans__plan_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_catalog_api_collection_plans__plan_id__catalog_get: {
         parameters: {
             query?: never;
@@ -5137,7 +5256,7 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6192,6 +6311,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_entity_documents_api_entities__entity_id__documents_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EntityDocumentsResponse"];
                 };
             };
             /** @description Validation Error */
