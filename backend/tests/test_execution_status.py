@@ -1,42 +1,47 @@
 """A dead collection must not report "running" forever.
 
-`execution-status` derived "running" purely from the absence of a terminal
-event, so a process killed mid-collection kept claiming to run — confirmed by
-restarting the backend and watching a dead plan keep saying so. It cost two
-measurements during testing: an assessment ran against a graph that was still
-being built, and reported the requirement unanswered.
+`execution-status` once derived "running" purely from the absence of a
+terminal event, so a process killed mid-collection kept claiming to run —
+confirmed by restarting the backend and watching a dead plan keep saying so. It
+cost two measurements during testing: an assessment ran against a graph that was
+still being built, and reported the requirement unanswered.
+
+Liveness is now the job row's heartbeat, refreshed every
+`HEARTBEAT_SECONDS` by whichever process runs the job; silence past
+`collection_stall_seconds` is `stalled`.
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
-from intel_platform.api.routes.collection_plans import _STALL_AFTER_SECONDS
+from intel_platform.collection import job_runner
+from intel_platform.db import jobs
+
+NOW = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
 
 
 def _age_state(seconds: float) -> str:
-    """The status derivation for a plan with no terminal event."""
-    return "stalled" if seconds > _STALL_AFTER_SECONDS else "running"
+    """The state of a running job whose last heartbeat was `seconds` ago."""
+    job = SimpleNamespace(status=jobs.RUNNING, heartbeat_at=NOW - timedelta(seconds=seconds),
+                          started_at=None, created_at=None, finished_at=None)
+    return job_runner.run_state(job, NOW)
 
 
 class TestStallDerivation:
-    def test_recent_activity_is_running(self):
+    def test_recent_heartbeat_is_running(self):
         assert _age_state(5) == "running"
-        assert _age_state(_STALL_AFTER_SECONDS - 1) == "running"
+        assert _age_state(job_runner.stall_seconds() - 1) == "running"
 
     def test_prolonged_silence_is_stalled(self):
-        assert _age_state(_STALL_AFTER_SECONDS + 1) == "stalled"
+        assert _age_state(job_runner.stall_seconds() + 1) == "stalled"
         assert _age_state(3600) == "stalled"
 
     def test_threshold_exceeds_the_heartbeat_interval(self):
-        """Must not cry wolf between extraction heartbeats on a slow model.
+        """Must not cry wolf between heartbeats. The heartbeat comes from its
+        own task every 10 s, independent of how slow a chunk's model call is,
+        so the window only has to clear a few missed beats."""
+        assert job_runner.stall_seconds() >= 3 * job_runner.HEARTBEAT_SECONDS
 
-        Heartbeats land every few chunks; a chunk against a local 14B model is
-        tens of seconds, so the threshold has to clear several chunks with room
-        to spare.
-        """
-        assert _STALL_AFTER_SECONDS >= 300
-
-    def test_age_is_computed_from_the_latest_event(self):
-        now = datetime.now(timezone.utc)
-        latest = now - timedelta(seconds=_STALL_AFTER_SECONDS + 60)
-        assert _age_state((now - latest).total_seconds()) == "stalled"
+    def test_the_default_window_is_two_minutes(self):
+        assert job_runner._DEFAULT_STALL_SECONDS == 120

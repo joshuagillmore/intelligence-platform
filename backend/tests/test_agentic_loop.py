@@ -700,3 +700,162 @@ class TestACrashIsRecorded:
         with pytest.raises(asyncio.CancelledError):
             await agentic.run_agentic_loop(plan.id, _factory(session), lambda: None, _provider)
         assert "plan_failed" in session.events()
+
+
+# ---------------------------------------------------------------------------
+# WP-W: the loop reports how it ended, for the job row
+# ---------------------------------------------------------------------------
+
+class TestTheLoopReportsHowItEnded:
+    """The job runner writes this onto collection_jobs.error, which analysts
+    see, so it is the same sanitised reason the trail records."""
+
+    async def test_a_finished_run_returns_none(self, wired):
+        wired.acquire = lambda n: _async(_acquired())
+        assert await agentic.run_agentic_loop(
+            (plan := _plan([_source()])).id, _factory(FakeSession(plan)), lambda: None, _provider,
+        ) is None
+
+    async def test_a_crash_returns_the_recorded_reason(self, monkeypatch):
+        async def boom(plan, sources, db, provider, max_results=10):
+            raise RuntimeError("secret internal detail")
+
+        monkeypatch.setattr(agentic, "resolve_sources", boom)
+        plan = _plan([_source()])
+        session = FakeSession(plan)
+        reason = await agentic.run_agentic_loop(plan.id, _factory(session), lambda: None, _provider)
+        assert reason == session.messages("plan_failed")[-1]
+        assert "RuntimeError" in reason and "secret" not in reason
+
+    async def test_no_provider_returns_the_reason(self, wired):
+        async def no_provider():
+            raise RuntimeError("no LLM configured")
+
+        plan = _plan([_source()])
+        reason = await agentic.run_agentic_loop(plan.id, _factory(FakeSession(plan)), lambda: None, no_provider)
+        assert reason and reason.startswith("No LLM provider available")
+
+    async def test_a_cancelled_job_is_summarised_as_cancelled_and_not_completed(self, wired, monkeypatch):
+        """Cancel stops the loop through plan_should_stop; the plan's lifecycle
+        status is left alone rather than set COMPLETED."""
+        async def stop_after_first(db, plan_id):
+            return len(wired.acquire_calls) >= 1
+
+        async def latest_status(db, plan_id):
+            return "cancelled"
+
+        monkeypatch.setattr("intel_platform.services.plan_executor.plan_should_stop", stop_after_first)
+        monkeypatch.setattr("intel_platform.db.jobs.latest_job_status", latest_status)
+        wired.acquire = lambda n: _async(_acquired())
+        plan = _plan([_source(name="First"), _source(name="Second")])
+        session = await _run(plan)
+
+        assert len(wired.acquire_calls) == 1
+        assert plan.status == "ACTIVE", "a cancelled run is not a completed plan"
+        assert session.messages("plan_completed")[-1].startswith("Collection cancelled:")
+
+
+async def _async(value):
+    return value
+
+
+class _Telemetry:
+    def __init__(self):
+        self.calls: list[tuple[str, str, str]] = []
+
+    def record_degraded(self, subsystem, reason, *, detail=""):
+        self.calls.append((subsystem, reason, detail))
+
+
+@pytest.fixture
+def telemetry(monkeypatch):
+    fake = _Telemetry()
+    monkeypatch.setattr(agentic, "_telemetry", fake)
+    return fake
+
+
+class TestDegradedOutcomesAreCounted:
+    """Contract 1: degraded extraction chunks and failed sources reach
+    services.telemetry (and from there /health), not only the trail."""
+
+    async def test_a_failed_source(self, wired, telemetry):
+        async def acquire(n):
+            raise RuntimeError("connector down")
+
+        wired.acquire = acquire
+        await _run(_plan([_source()]))
+        assert ("collection", "source_failed", "RuntimeError") in telemetry.calls
+
+    async def test_a_source_with_no_usable_content(self, wired, telemetry):
+        async def acquire(n):
+            out = _acquired(records=2, accepted=0)
+            out["rejected_pages"] = [("https://x.example/a", "login wall")]
+            return out
+
+        wired.acquire = acquire
+        await _run(_plan([_source()]))
+        assert ("collection", "no_usable_content", "login wall") in telemetry.calls
+
+    async def test_a_source_that_could_not_be_resolved(self, monkeypatch, telemetry):
+        async def no_search(*a, **kw):
+            return None
+
+        monkeypatch.setattr(agentic, "_resolve_via_search", no_search)
+        monkeypatch.setattr(agentic.asyncio, "sleep", _no_sleep)
+        source = _source("web_scrape", {})
+        await agentic.resolve_sources(_plan([source]), [source], FakeSession(None), _DownProvider())
+        assert [c[:2] for c in telemetry.calls] == [("collection", "resolution_failed")]
+
+    async def test_degraded_and_failed_chunks(self, monkeypatch, telemetry):
+        from intel_platform.connectors.base import AcquireResult
+
+        class Connector:
+            async def acquire(self, config):
+                page = {"url": "https://example.org/report", "title": "Report", "content": REPORT}
+                return AcquireResult(success=True, record_count=1, records=[page])
+
+        class ExtractionResult(tuple):
+            degraded = True
+            reason = "LLMProviderError"
+
+        calls = []
+
+        async def extract(text, doc_id, mode):
+            calls.append(1)
+            if len(calls) == 1:
+                raise LLMProviderError("down")
+            return ExtractionResult(([], []))
+
+        async def no_embed(chunks, doc_id, project_id, db):
+            return 0
+
+        monkeypatch.setattr(agentic, "get_connector", lambda t: Connector())
+        monkeypatch.setattr(agentic, "rejection_reason", lambda url, content, title="": "")
+        monkeypatch.setattr(agentic, "_extract_entities", extract)
+        # Two chunks: the first fails outright, the second falls back to NLP.
+        monkeypatch.setattr(agentic, "ingest_text", lambda text, size, overlap: [{"content": text}, {"content": text}])
+        monkeypatch.setattr("intel_platform.services.vector_search.embed_and_store_chunks", no_embed)
+        source = _source("api_feed", {"base_url": "https://example.org/api"})
+
+        await agentic.acquire_source(source, _plan([source]), FakeSession(None),
+                                     SimpleNamespace(create_entity=lambda e: None), "hybrid")
+        assert ("extraction", "chunk_failed", "LLMProviderError") in telemetry.calls
+        assert ("extraction", "nlp_fallback", "LLMProviderError") in telemetry.calls
+
+    async def test_a_broken_counter_never_fails_the_run(self, wired, monkeypatch):
+        class Broken:
+            def record_degraded(self, *a, **kw):
+                raise RuntimeError("telemetry down")
+
+        monkeypatch.setattr(agentic, "_telemetry", Broken())
+
+        async def acquire(n):
+            raise RuntimeError("connector down")
+
+        wired.acquire = acquire
+        session = await _run(_plan([_source()]))
+        assert "plan_completed" in session.events()
+
+    def test_without_the_telemetry_module_it_is_a_no_op(self, monkeypatch):
+        monkeypatch.setattr(agentic, "_telemetry", None)
+        agentic._record_degraded("collection", "source_failed")

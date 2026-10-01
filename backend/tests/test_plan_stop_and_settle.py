@@ -74,6 +74,14 @@ class TestPlanShouldStop:
     async def test_accepts_a_string_id(self):
         assert await pe.plan_should_stop(_Db(statuses=["PAUSED"]), str(uuid.uuid4())) is True
 
+    @pytest.mark.parametrize("job_status,expected", [
+        ("cancelled", True), ("running", False), (None, False),
+    ])
+    async def test_a_cancelled_job_stops_the_run(self, job_status, expected):
+        """`POST /collection-plans/{id}/cancel` marks the latest job cancelled;
+        the plan's own status is untouched (ACTIVE), so the job decides."""
+        assert await pe.plan_should_stop(_Db(statuses=["ACTIVE", job_status]), uuid.uuid4()) is expected
+
 
 class TestFinalStatus:
     @pytest.mark.parametrize("current", ["PAUSED", "ARCHIVED"])
@@ -116,7 +124,6 @@ def run(monkeypatch):
 
         monkeypatch.setattr(pe, "_execute_source", _fake_source)
         db = _Db(plan, statuses)
-        pe._running_executions.pop(str(plan.id), None)
         return db, pe.execute_plan(str(plan.id), lambda: db, store=None)
 
     _go.collected = collected

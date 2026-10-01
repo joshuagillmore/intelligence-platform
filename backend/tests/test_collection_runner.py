@@ -2,9 +2,11 @@ import uuid
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
+from intel_platform.collection import job_runner
 from intel_platform.collection.proxy import ProxyConfig
 from intel_platform.collection.runner import CollectionRunner
 from intel_platform.config import settings
+from tests.pg import PROJECT, pg_factory_fixture  # noqa: F401  (the pg_factory fixture)
 
 
 @pytest.fixture(autouse=True)
@@ -14,6 +16,23 @@ def direct_mode(monkeypatch):
         return ProxyConfig(mode="direct")
 
     monkeypatch.setattr("intel_platform.collection.runner.get_active_proxy_config", _direct)
+
+
+@pytest.fixture(autouse=True)
+def no_job_rows(request, monkeypatch):
+    """The runner also records each run in collection_jobs. Tests that are not
+    about that keep it off the database; TestLegacyRunsAreJobs uses a real one."""
+    if "pg_factory" in request.fixturenames:
+        return
+
+    async def _start(self):
+        return None
+
+    async def _finish(self, status, error=None):
+        return None
+
+    monkeypatch.setattr(job_runner.LegacyJob, "start", _start)
+    monkeypatch.setattr(job_runner.LegacyJob, "finish", _finish)
 
 
 @pytest.fixture
@@ -251,3 +270,65 @@ class TestLegacyRunnerStatus:
             await CollectionRunner(graph_store).execute(cid, "test-legacy-runner", _items(1))
 
         assert len(stored[0].content) <= 100
+
+
+class TestLegacyRunsAreJobs:
+    """The /collections runner writes collection_jobs rows too (kind `legacy`),
+    so every collection run in the system is visible in one place."""
+
+    async def _jobs(self, factory, cid):
+        from sqlalchemy import select
+
+        from intel_platform.db import jobs
+
+        async with factory() as db:
+            return (await db.execute(
+                select(jobs.CollectionJob).where(jobs.CollectionJob.plan_id == job_runner.legacy_job_key(cid))
+            )).scalars().all()
+
+    async def _run(self, graph_store, factory, cid, crawl):
+        with patch("intel_platform.collection.runner.web_search", return_value=[{"url": PAGE["url"]}]), \
+             patch("intel_platform.collection.runner.crawl_urls", new=crawl), \
+             patch("intel_platform.collection.runner.extract_entities_nlp", return_value=([], [])):
+            return await CollectionRunner(graph_store, db_factory=factory).execute(cid, PROJECT, _items(1))
+
+    async def test_a_successful_run_is_a_succeeded_job(self, graph_store, pg_factory):
+        cid = _collection(graph_store)
+        await self._run(graph_store, pg_factory, cid, AsyncMock(return_value=[PAGE]))
+        [job] = await self._jobs(pg_factory, cid)
+        assert job.kind == "legacy" and job.status == "succeeded" and job.finished_at is not None
+        assert job.worker_id.startswith("api:")
+
+    async def test_a_failed_run_is_a_failed_job_with_a_clean_error(self, graph_store, pg_factory):
+        cid = _collection(graph_store)
+        await self._run(graph_store, pg_factory, cid, AsyncMock(side_effect=RuntimeError("chromium at /opt/x")))
+        [job] = await self._jobs(pg_factory, cid)
+        assert job.status == "failed" and "item" in job.error and "/opt/x" not in job.error
+
+    async def test_a_cancelled_run_is_a_cancelled_job(self, graph_store, pg_factory):
+        cid = _collection(graph_store, status="REVOKED")
+        await self._run(graph_store, pg_factory, cid, AsyncMock(return_value=[PAGE]))
+        [job] = await self._jobs(pg_factory, cid)
+        assert job.status == "cancelled"
+
+    async def test_a_rerun_supersedes_a_run_a_dead_process_left_live(self, graph_store, pg_factory):
+        from intel_platform.db import jobs
+
+        cid = _collection(graph_store)
+        async with pg_factory() as db:
+            await jobs.insert_job(db, plan_id=job_runner.legacy_job_key(cid), project_id=PROJECT,
+                                  kind=jobs.KIND_LEGACY, claimed_by="api:dead:1")
+            await db.commit()
+        await self._run(graph_store, pg_factory, cid, AsyncMock(return_value=[PAGE]))
+        statuses = sorted(j.status for j in await self._jobs(pg_factory, cid))
+        assert statuses == ["failed", "succeeded"]
+
+    async def test_no_database_does_not_stop_the_run(self, graph_store, pg_factory):
+        """Postgres is optional on this path; recording the run must never be
+        what stops it."""
+        def broken():
+            raise OSError("postgres is down")
+
+        cid = _collection(graph_store)
+        result = await self._run(graph_store, broken, cid, AsyncMock(return_value=[PAGE]))
+        assert result["status"] == "SUCCESS"
