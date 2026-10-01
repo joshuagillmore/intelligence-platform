@@ -96,6 +96,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/degraded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Degraded
+         * @description Degraded outcomes since this process started (contract 1).
+         *
+         *     ``{"since": iso8601, <subsystem>: {<reason>: count}}`` — only subsystems
+         *     that degraded at least once appear. Per process: the collection worker
+         *     counts its own.
+         */
+        get: operations["get_degraded_api_admin_degraded_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/enrichment": {
         parameters: {
             query?: never;
@@ -144,7 +168,10 @@ export interface paths {
         get?: never;
         /**
          * Select Llm
-         * @description Switch the active LLM provider and model at runtime.
+         * @description Switch the active LLM provider and model; persisted, so it survives a restart.
+         *
+         *     Saved before it takes effect: a choice that would silently revert on the
+         *     next restart is refused (503) instead.
          */
         put: operations["select_llm_api_admin_llm_select_put"];
         post?: never;
@@ -621,8 +648,54 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Login */
+        /**
+         * Login
+         * @description Sign in: sets the session cookie (contract 8). The token is not in the body.
+         */
         post: operations["login_api_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout
+         * @description Clear the session cookie.
+         *
+         *     Needs no live session (an expired one must still be clearable) but does
+         *     need the session header: a cross-site form must not sign the analyst out.
+         */
+        post: operations["logout_api_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Me
+         * @description The signed-in user, from the cookie or a bearer token.
+         */
+        get: operations["me_api_auth_me_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2157,7 +2230,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Report */
+        /**
+         * Get Report
+         * @description A saved report. Only a Report node, and only in `project_id` when given.
+         *
+         *     It used to return whatever node carried the id — an entity, a Document,
+         *     another project's report. Scoped as DELETE is; `project_id` stays optional
+         *     so existing clients keep working, and a client that passes it can no longer
+         *     be handed another project's report.
+         */
         get: operations["get_report_api_reports__report_id__get"];
         put?: never;
         post?: never;
@@ -2624,6 +2705,8 @@ export interface components {
              * @default C3
              */
             reliability_rating?: string;
+            /** Source Name */
+            source_name?: string | null;
         };
         /** Body_upload_file_to_source_api_collection_plans__plan_id__sources__source_id__upload_post */
         Body_upload_file_to_source_api_collection_plans__plan_id__sources__source_id__upload_post: {
@@ -2949,8 +3032,15 @@ export interface components {
              */
             use_vector?: boolean;
         };
-        /** HealthResponse */
-        HealthResponse: {
+        /**
+         * HealthStatus
+         * @description HealthResponse plus the degraded-outcome totals (contract 1).
+         */
+        HealthStatus: {
+            /** Degraded */
+            degraded?: {
+                [key: string]: number;
+            };
             /**
              * Embeddings
              * @default ok
@@ -3379,6 +3469,17 @@ export interface components {
             /** Query */
             query: string;
         };
+        /**
+         * SessionUser
+         * @description Who a session belongs to. Login answers with it (the token itself is in
+         *     the httpOnly cookie, out of reach of page scripts), and so does /auth/me.
+         */
+        SessionUser: {
+            /** Role */
+            role: string;
+            /** Username */
+            username: string;
+        };
         /** SkillListResponse */
         SkillListResponse: {
             /** Skills */
@@ -3718,6 +3819,26 @@ export interface operations {
         };
     };
     get_config_api_admin_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_degraded_api_admin_degraded_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4529,7 +4650,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenResponse"];
+                    "application/json": components["schemas"]["SessionUser"];
                 };
             };
             /** @description Validation Error */
@@ -4539,6 +4660,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_api_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    me_api_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionUser"];
                 };
             };
         };
@@ -7572,7 +7733,9 @@ export interface operations {
     };
     get_report_api_reports__report_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                project_id?: string | null;
+            };
             header?: never;
             path: {
                 report_id: string;
@@ -8275,7 +8438,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HealthResponse"];
+                    "application/json": components["schemas"]["HealthStatus"];
                 };
             };
         };

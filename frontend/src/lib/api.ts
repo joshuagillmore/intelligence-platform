@@ -1,7 +1,7 @@
 import axios, { type AxiosRequestConfig } from 'axios';
 import { createSummaryStreamParser, type SummaryStreamEvent } from './sse';
 import type { AttackMapResult } from './attackMapping';
-import type { BodyOf, CallablePath, Model, QueryOf, ResponseOf } from './apiTypes';
+import type { BodyOf, ClientPath, Model, QueryOf, ResponseOf } from './apiTypes';
 
 // Use relative URL so it works on both localhost and Railway (same-origin)
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
@@ -89,11 +89,8 @@ api.interceptors.response.use(
   }
 );
 
-/** Who is signed in, as `GET /api/auth/me` reports it. */
-export interface SessionUser {
-  username: string;
-  role: string;
-}
+/** Who is signed in, as `GET /api/auth/me` (and the login body) report it. */
+export type SessionUser = Model<'SessionUser'>;
 
 /** Record the identity `/api/auth/me` returned, for display and UI gating. */
 export function rememberSessionUser(user: SessionUser): void {
@@ -150,31 +147,24 @@ type Undeclared = any;
 
 /**
  * The axios instance with each URL checked against the generated route list
- * (`ClientPath`, plus the few `PendingRoutes`): calling a route the backend
- * does not serve for that method is a compile error. Same instance, same interceptors, same runtime.
+ * (`ClientPath`): calling a route the backend does not serve for that method
+ * is a compile error. Same instance, same interceptors, same runtime.
  */
 const http = {
-  get: <T = Undeclared>(url: CallablePath<'get'>, config?: AxiosRequestConfig) => api.get<T>(url, config),
-  post: <T = Undeclared>(url: CallablePath<'post'>, data?: unknown, config?: AxiosRequestConfig) =>
+  get: <T = Undeclared>(url: ClientPath<'get'>, config?: AxiosRequestConfig) => api.get<T>(url, config),
+  post: <T = Undeclared>(url: ClientPath<'post'>, data?: unknown, config?: AxiosRequestConfig) =>
     api.post<T>(url, data, config),
-  put: <T = Undeclared>(url: CallablePath<'put'>, data?: unknown, config?: AxiosRequestConfig) =>
+  put: <T = Undeclared>(url: ClientPath<'put'>, data?: unknown, config?: AxiosRequestConfig) =>
     api.put<T>(url, data, config),
-  delete: <T = Undeclared>(url: CallablePath<'delete'>, config?: AxiosRequestConfig) => api.delete<T>(url, config),
+  delete: <T = Undeclared>(url: ClientPath<'delete'>, config?: AxiosRequestConfig) => api.delete<T>(url, config),
 };
-
-/**
- * The login body as far as this client reads it. It no longer stores the
- * `access_token` older backends also return (the session is the cookie the
- * same response sets), so the field is neither required nor read.
- */
-export type LoginResult = Pick<ResponseOf<'/api/auth/login', 'post'>, 'username' | 'role'>;
 
 export const authApi = {
   /** Sets the `sentinel_session` cookie. Confirm it took with `me()`. */
   login: (credentials: BodyOf<'/api/auth/login', 'post'>) =>
-    http.post<LoginResult>('/auth/login', credentials),
+    http.post<ResponseOf<'/api/auth/login', 'post'>>('/auth/login', credentials),
   /** Who the session cookie belongs to; 401 when there is no session. */
-  me: () => http.get<SessionUser>('/auth/me'),
+  me: () => http.get<ResponseOf<'/api/auth/me', 'get'>>('/auth/me'),
   /** Clears the session cookie server-side; the only way to, since script
    *  cannot touch an httpOnly cookie. */
   logout: () => http.post('/auth/logout'),
@@ -929,7 +919,9 @@ export const reportsApi = {
   // "LLM provider unavailable" when no model could draft it.
   generate: (data: BodyOf<'/api/reports/generate', 'post'>) => http.post('/reports/generate', data),
   list: (projectId: string) => http.get('/reports', { params: { project_id: projectId } satisfies QueryOf<'/api/reports', 'get'> }),
-  get: (id: string) => http.get(`/reports/${id}`),
+  /** 404 unless `id` is a Report in `projectId`. */
+  get: (id: string, projectId?: string) =>
+    http.get(`/reports/${id}`, { params: { project_id: projectId } satisfies QueryOf<'/api/reports/{report_id}', 'get'> }),
   delete: (id: string) => http.delete(`/reports/${id}`),
 };
 

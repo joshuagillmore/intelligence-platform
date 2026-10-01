@@ -22,8 +22,8 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      // Sets the httpOnly session cookie. The body may still carry an
-      // access_token from an older backend; it is deliberately not read.
+      // Sets the httpOnly session cookie. Only `{username, role}` comes back;
+      // nothing token-shaped is read from the body, whatever the backend sends.
       await authApi.login({ username, password });
     } catch (err) {
       setError(loginError(err));
