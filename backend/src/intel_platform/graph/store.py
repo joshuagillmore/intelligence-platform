@@ -3,8 +3,9 @@ from __future__ import annotations
 import re
 
 from neo4j import Driver
+from neo4j.exceptions import ConstraintError
 
-from intel_platform.models.entities import Entity
+from intel_platform.models.entities import Entity, normalize_name
 
 
 # Enough terms for any real query. A bound exists because each term becomes
@@ -92,9 +93,6 @@ class GraphStore:
         _, parent_category = normalize_entity_type(specific_type)
 
         label = _validate_label(specific_type)
-        # Every entity also carries the shared :Entity label, whose unique `id`
-        # constraint is what makes the by-id lookups an index seek.
-        labels = label if label == "Entity" else f"{label}:Entity"
         props = self._serialize_props(entity.model_dump(exclude={"entity_type"}))
         props["entity_type"] = specific_type
         props["entity_category"] = parent_category
@@ -102,13 +100,40 @@ class GraphStore:
         # merge by record_entity_source. source_doc_id stays the first.
         if props.get("source_doc_id"):
             props["source_doc_ids"] = [props["source_doc_id"]]
-        with self._driver.session() as session:
-            result = session.run(
-                f"CREATE (n:{labels} $props) RETURN n",
-                props=props,
+
+        # One MERGE on the entity's key. A named entity is keyed by
+        # (project_id, normalized_name, entity_type), which the entity_name_key
+        # constraint makes unique, so two builds that meet the same entity at
+        # once make one node: the constraint's index lock serialises them and
+        # the second matches what the first created. A record type (Document,
+        # Report, Assessment) has no normalized_name and is keyed by its id.
+        #
+        # On a match nothing is overwritten: the node keeps the name, id and
+        # properties of whoever created it, and the caller learns that it
+        # merged from the returned id differing from the one it sent.
+        if props.get("normalized_name"):
+            key = (
+                "{project_id: $props.project_id, normalized_name: $props.normalized_name, "
+                "entity_type: $props.entity_type}"
             )
-            record = result.single()
-            node = dict(record["n"]) if record else {}
+        else:
+            key = "{id: $props.id}"
+        # Every entity also carries the shared :Entity label, whose unique `id`
+        # constraint is what makes the by-id lookups an index seek.
+        add_label = "" if label == "Entity" else f", n:{label}"
+        cypher = f"MERGE (n:Entity {key}) ON CREATE SET n += $props{add_label} RETURN n"
+
+        def _merge(tx) -> dict:
+            record = tx.run(cypher, props=props).single()
+            return dict(record["n"]) if record else {}
+
+        with self._driver.session() as session:
+            try:
+                node = session.execute_write(_merge)
+            except ConstraintError:
+                # A concurrent creator committed between this MERGE's lookup
+                # and its write. The key now exists, so the retry matches it.
+                node = session.execute_write(_merge)
 
         # Invalidate graph cache for the project
         project_id = getattr(entity, "project_id", None) or props.get("project_id")
@@ -138,16 +163,23 @@ class GraphStore:
         if not props:
             return self.get_entity(entity_id)
         clean = self._serialize_props(props)
+        # normalized_name is derived from the name, never written directly: a
+        # caller setting it could move the node onto another entity's key. A
+        # rename moves the key with it, on nodes that are keyed at all.
+        clean.pop("normalized_name", None)
+        rekey = ""
+        params: dict = {"id": entity_id, "props": clean}
+        if "name" in clean:
+            rekey = " SET n.normalized_name = CASE WHEN n.normalized_name IS NULL THEN NULL ELSE $nn END"
+            params["nn"] = normalize_name(str(clean["name"])) or None
         with self._driver.session() as session:
             record = session.run(
-                "MATCH (n:Entity {id: $id}) SET n += $props RETURN n",
-                id=entity_id, props=clean,
+                f"MATCH (n:Entity {{id: $id}}) SET n += $props{rekey} RETURN n", parameters=params,
             ).single()
             if record is None:
                 # Unlabelled node (see get_entity).
                 record = session.run(
-                    "MATCH (n {id: $id}) SET n += $props RETURN n",
-                    id=entity_id, props=clean,
+                    f"MATCH (n {{id: $id}}) SET n += $props{rekey} RETURN n", parameters=params,
                 ).single()
             node = dict(record["n"]) if record else None
 
@@ -184,6 +216,51 @@ class GraphStore:
                 """,
                 id=entity_id, doc=source_doc_id,
             )
+
+    def move_mentions(self, from_id: str, to_id: str) -> int:
+        """Re-point the documents that mention `from_id` at `to_id`. Returns edges moved.
+
+        For a merge: counts add up, the earlier `first_seen` wins, and the
+        merged entity's `source_doc_ids` join the survivor's, so neither the
+        evidence chain nor the retrievers lose a document to the merge.
+        """
+        def _move(tx) -> int:
+            moved = tx.run(
+                """
+                MATCH (d:Document)-[old:MENTIONS]->(src:Entity {id: $from_id})
+                MATCH (dst:Entity {id: $to_id})
+                MERGE (d)-[m:MENTIONS]->(dst)
+                ON CREATE SET m = properties(old)
+                ON MATCH SET
+                    m.count = coalesce(m.count, 0) + coalesce(old.count, 1),
+                    m.first_seen = CASE
+                        WHEN m.first_seen IS NULL OR (old.first_seen IS NOT NULL AND old.first_seen < m.first_seen)
+                        THEN old.first_seen ELSE m.first_seen END
+                DELETE old
+                RETURN count(*) AS n
+                """,
+                from_id=from_id, to_id=to_id,
+            ).single()["n"]
+            tx.run(
+                """
+                MATCH (src:Entity {id: $from_id}), (dst:Entity {id: $to_id})
+                WITH dst, [x IN [src.source_doc_id] + coalesce(src.source_doc_ids, [])
+                           WHERE x IS NOT NULL AND x <> ''] AS extra
+                WHERE size(extra) > 0
+                SET dst._sources_lock = true
+                WITH dst, extra, coalesce(
+                    dst.source_doc_ids,
+                    CASE WHEN coalesce(dst.source_doc_id, '') = '' THEN [] ELSE [dst.source_doc_id] END
+                ) AS docs
+                SET dst.source_doc_ids = reduce(acc = docs, x IN extra | CASE WHEN x IN acc THEN acc ELSE acc + x END)
+                REMOVE dst._sources_lock
+                """,
+                from_id=from_id, to_id=to_id,
+            ).consume()
+            return moved
+
+        with self._driver.session() as session:
+            return session.execute_write(_move)
 
     def get_geolocatable_entities(self, project_id: str, limit: int = 2000) -> list[dict]:
         """Nodes that can appear on the map: any Location-category node, an

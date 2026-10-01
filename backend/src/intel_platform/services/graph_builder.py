@@ -550,12 +550,21 @@ def build_graph_from_extractions(
                 et = EntityType.CUSTOM
             entity = Entity(name=name, entity_type=et, project_id=project_id, source_doc_id=entity_doc_id)
 
-        store.create_entity(entity)
-        recorded_sources.add((entity.id, entity_doc_id))
-        name_to_id[name] = entity.id
+        # create_entity is a MERGE on (project, normalized name, type). When
+        # the key already exists — another build created the entity between
+        # the lookup above and this write, or resolution missed an exact
+        # match — the store returns that node, and this mention merges into it.
+        node = store.create_entity(entity)
+        entity_id = (node.get("id") if isinstance(node, dict) else None) or entity.id
+        name_to_id[name] = entity_id
         batch_names.append(name)
-        batch_name_to_id[name] = entity.id
+        batch_name_to_id[name] = entity_id
         batch_name_to_type[name] = raw_type
+        if entity_id != entity.id:
+            _merged_into(entity_id, entity_doc_id)
+            merged += 1
+            continue
+        recorded_sources.add((entity.id, entity_doc_id))
         new_entities.append({
             "id": entity.id, "name": name,
             "entity_type": entity.entity_type.value, "project_id": project_id,
