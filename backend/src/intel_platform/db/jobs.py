@@ -216,11 +216,12 @@ async def heartbeat(db, job_id: uuid.UUID, worker_id: str, degraded: dict | None
 
 
 async def finish(db, job_id: uuid.UUID, worker_id: str, status: str, error: str | None = None,
-                 degraded: dict | None = None) -> bool:
+                 degraded: dict | None = None) -> str | None:
     """Write the terminal status (and the run's degraded counts). Commits.
 
-    Returns False if the job was no longer ours. A job the analyst cancelled
-    stays ``cancelled`` whatever the run did after.
+    Returns the status actually stored, or None if the job was no longer
+    ours. A job the analyst cancelled stays ``cancelled`` whatever the run
+    did after, so the stored status can differ from the one asked for.
     """
     values: dict = {
         "status": _keep_cancelled(status),
@@ -234,11 +235,11 @@ async def finish(db, job_id: uuid.UUID, worker_id: str, status: str, error: str 
         update(CollectionJob)
         .where(*_owned_and_unfinished(job_id, worker_id))
         .values(**values)
-        .returning(CollectionJob.id)
+        .returning(CollectionJob.status)
     )
-    owned = result.first() is not None
+    row = result.first()
     await db.commit()
-    return owned
+    return row[0] if row is not None else None
 
 
 def _keep_cancelled(status: str):

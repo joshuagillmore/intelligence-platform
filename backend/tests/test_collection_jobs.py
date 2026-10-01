@@ -234,7 +234,7 @@ class TestJobRows:
         async with pg_factory() as db:
             await jobs.close_unfinished(db, pid, "Stalled")
             await db.commit()
-            assert await jobs.finish(db, job_id, "owner", jobs.SUCCEEDED) is False
+            assert await jobs.finish(db, job_id, "owner", jobs.SUCCEEDED) is None
         row = await _row(pg_factory, job_id)
         assert row.status == jobs.FAILED and row.error == "Stalled"
 

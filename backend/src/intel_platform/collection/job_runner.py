@@ -157,15 +157,24 @@ async def _heartbeat(job_id, worker_id, db_factory, interval, run_task, ownershi
             return
 
 
-async def _finish(db_factory, job_id, worker_id, status, error, counts: dict | None = None) -> None:
+async def _finish(db_factory, job_id, worker_id, status, error, counts: dict | None = None) -> str:
+    """Record the end of the run; returns the status actually stored.
+
+    A run the analyst cancelled keeps ``cancelled`` whatever it did after, so
+    the stored status is what the log line must report, not the one asked for.
+    """
     try:
         async with db_factory() as db:
-            if not await jobs.finish(db, job_id, worker_id, status, error, _snapshot(counts or {})):
+            stored = await jobs.finish(db, job_id, worker_id, status, error, _snapshot(counts or {}))
+            if stored is None:
                 logger.warning("Collection job %s was closed by someone else before it finished", job_id)
+                return status
+            return stored
     except Exception:
         # The row stays `running` and goes `stalled` after the window, which
         # still frees the plan; the run itself is over either way.
         logger.exception("Could not record the end of collection job %s", job_id)
+        return status
 
 
 def _max_results(rules: dict) -> int:
@@ -271,7 +280,7 @@ async def run_job(
     finally:
         beat.cancel()
     if not ownership.lost:
-        await _finish(db_factory, job_id, worker_id, status, error, counts)
+        status = await _finish(db_factory, job_id, worker_id, status, error, counts)
     logger.info("Collection job %s for plan %s finished: %s", job_id, plan.id, status)
     return status
 

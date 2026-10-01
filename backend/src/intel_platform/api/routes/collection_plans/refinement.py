@@ -187,6 +187,19 @@ class SubmitPIRRequest(BaseModel):
 # PIR → Plan (LLM-driven collection plan generation)
 # ---------------------------------------------------------------------------
 
+
+def _count_generation_failure(failure: str) -> None:
+    """Record one plan-generation failure as a degraded collection outcome.
+
+    The reason is the failure's fixed wording without its bracketed detail
+    ("source generation failed (LLMProviderError)" -> source_generation_failed),
+    so the counts stay a small vocabulary.
+    """
+    from intel_platform.services import telemetry
+
+    reason = failure.split(" (")[0].strip().lower().replace(" ", "_")
+    telemetry.record_degraded("collection", reason, detail=failure)
+
 @router.post("/collection-plans/from-pir")
 async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends(get_db)):
     """Submit a PIR → LLM refines it, generates a collection plan with sources.
@@ -386,6 +399,11 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
     # "the LLM may have been rate-limited" for every cause including the ones
     # that were nothing of the sort.
     result["generation_failures"] = failures
+    # Each failure is also counted: a plan generated with no sources because
+    # the model was unavailable used to be indistinguishable, on /health and
+    # the admin card, from a project with nothing to plan against.
+    for failure in failures:
+        _count_generation_failure(failure)
     result["eeis_captured"] = len(getattr(pir_record, "eeis", None) or []) if pir_record else 0
     if not llm_available:
         result["llm_requirements"] = {
