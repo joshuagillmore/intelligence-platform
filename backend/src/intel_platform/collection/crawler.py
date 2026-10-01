@@ -8,10 +8,28 @@ from urllib.parse import urlsplit
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from crawl4ai import ProxyConfig as Crawl4aiProxyConfig
 
+from intel_platform.collection.egress_proxy import EgressProxy
 from intel_platform.collection.proxy import get_active_proxy_config
 from intel_platform.collection.url_guard import _is_private_ip, is_safe_url_async
+from intel_platform.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Chromium flags whenever its traffic goes through a proxy.
+_PROXIED_BROWSER_ARGS = [
+    "--dns-prefetch-disable",
+    # Chromium sends loopback straight out, bypassing any proxy, unless told
+    # otherwise; through the proxy it is refused like any internal target.
+    "--proxy-bypass-list=<-loopback>",
+    # Neither QUIC nor WebRTC's UDP goes through an HTTP proxy.
+    "--disable-quic",
+    "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+]
+
+
+def _egress_proxy_enabled() -> bool:
+    """settings.egress_proxy_enabled (default True): route Chromium through EgressProxy."""
+    return bool(getattr(settings, "egress_proxy_enabled", True))
 
 # Rejection reasons reported for a crawled page the guard refused to keep.
 REDIRECT_UNSAFE = "redirect_unsafe"
@@ -68,22 +86,22 @@ class _BrowserGuard:
       and a page is rejected if any hop was unsafe. A public → internal →
       public chain ends on a safe-looking URL, so the final URL alone is not
       enough.
-    * In direct mode, the address Chromium actually connected to is checked
-      for every response. A rebinding hostname can give the guard's lookup and
-      the browser's different answers; the connected socket cannot. Behind a
-      proxy that address is the proxy's, so the check is skipped there.
+    * In direct mode without the egress proxy, the address Chromium actually
+      connected to is checked for every response. A rebinding hostname can give
+      the guard's lookup and the browser's different answers; the connected
+      socket cannot. Behind any proxy that address is the proxy's, so the check
+      is skipped there.
 
-    What this cannot do: stop the browser *sending* a redirected request to an
-    internal host (the hop is only visible once issued), or stop a rebinding
-    name answering the route check with a public address and Chromium's own
-    lookup with an internal one, in which case page JavaScript could read the
-    response before the page is rejected. It guarantees the response never
-    becomes a Document. Closing the rest needs Chromium's egress to go through
-    a pinned local proxy, as the httpx path's does.
+    On its own this cannot stop the browser *sending* a redirected request to
+    an internal host, or a rebinding name answering the route check with a
+    public address and Chromium's own lookup with an internal one. That is what
+    ``egress_proxy.EgressProxy`` closes (on by default): Chromium's every
+    connection goes through it, and it connects only to the address it vetted.
     """
 
-    def __init__(self, *, direct: bool):
+    def __init__(self, *, direct: bool, check_address: bool | None = None):
         self._direct = direct
+        self._address_checked = direct if check_address is None else check_address
         self._verdicts: dict[str, bool] = {}
         self._start_url: dict[Any, str] = {}
         self._hops: list[tuple[Any, str]] = []
@@ -124,7 +142,7 @@ class _BrowserGuard:
         if route_web_socket is not None:
             await route_web_socket("**/*", self._route_ws)
         page.on("request", lambda request: self._on_request(page, request))
-        if self._direct:
+        if self._address_checked:
             page.on("response", lambda response: self._on_response(page, response))
         return page
 
@@ -208,6 +226,11 @@ async def crawl_urls(
 ) -> list[dict]:
     """Crawl a list of URLs with headless Chromium and return structured documents.
 
+    With ``egress_proxy_enabled`` (the default) the browser's only route out is
+    a local ``EgressProxy`` started for this crawl: in direct mode it connects
+    only to addresses the SSRF guard vetted, and with Tor or the VPN selected it
+    chains to that proxy without resolving anything locally.
+
     Args:
         urls: URLs to crawl.
         timeout_ms: Per-page timeout in milliseconds.
@@ -244,16 +267,39 @@ async def crawl_urls(
     if not urls:
         return []
 
-    crawl_proxy = Crawl4aiProxyConfig(server=_browser_proxy_server(purl)) if purl else None
+    if _egress_proxy_enabled():
+        try:
+            egress = EgressProxy(upstream=purl)
+        except ValueError:
+            # An upstream scheme the egress proxy cannot chain to: hand it to
+            # Chromium directly, as before the egress proxy existed.
+            logger.warning("Egress proxy cannot chain to %s; the browser connects to it directly", purl)
+        else:
+            async with egress:
+                # The browser's connected address is now the egress proxy's,
+                # which pins and vets every target itself.
+                return await _crawl(
+                    urls, timeout_ms, on_progress, rejected,
+                    browser_proxy=egress.url, guard=_BrowserGuard(direct=direct, check_address=False),
+                )
+    return await _crawl(
+        urls, timeout_ms, on_progress, rejected,
+        browser_proxy=_browser_proxy_server(purl) if purl else None, guard=_BrowserGuard(direct=direct),
+    )
+
+
+async def _crawl(urls, timeout_ms, on_progress, rejected, *, browser_proxy: str | None, guard: _BrowserGuard):
+    """Run the browser over `urls` (already vetted), through `browser_proxy` if set."""
+    crawl_proxy = Crawl4aiProxyConfig(server=browser_proxy) if browser_proxy else None
 
     browser_cfg = BrowserConfig(
         headless=True,
         browser_type="chromium",
+        # Becomes Chromium's --proxy-server.
         proxy_config=crawl_proxy,
-        extra_args=["--dns-prefetch-disable"] if purl else [],
+        extra_args=list(_PROXIED_BROWSER_ARGS) if browser_proxy else [],
     )
     run_cfg = _make_run_cfg(timeout_ms, crawl_proxy)
-    guard = _BrowserGuard(direct=direct)
     documents = []
 
     async with AsyncWebCrawler(config=browser_cfg) as crawler:
