@@ -148,6 +148,8 @@ EMAIL_PATTERN = re.compile(r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b'
 # Date patterns for intelligence documents
 MONTH_NAMES = r'(?:January|February|March|April|May|June|July|August|September|October|November|December)'
 DATE_PATTERNS = [
+    # "24 May 2023" — first, so the "May 2023" inside it is not taken as well.
+    re.compile(rf'\b\d{{1,2}}\s+{MONTH_NAMES}\s+\d{{4}}\b'),
     # "May 7, 2021" or "May 2021"
     re.compile(rf'\b{MONTH_NAMES}\s+\d{{1,2}},?\s+\d{{4}}\b'),
     re.compile(rf'\b{MONTH_NAMES}\s+\d{{4}}\b'),
@@ -156,6 +158,37 @@ DATE_PATTERNS = [
     # "Q1 2026", "Q3 2021"
     re.compile(r'\bQ[1-4]\s+\d{4}\b'),
 ]
+
+# What makes a span a date rather than a duration: a month or weekday name, a
+# year, or a quarter. "6 months", "3 days earlier", "quarterly", "1742Z" and
+# "the period" have none, cannot date an event, and reach the graph only as
+# orphans the build discards.
+_DATE_ANCHOR = re.compile(
+    rf"\b(?:{MONTH_NAMES}|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec"
+    r"|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b"
+    r"|\b(?:1[89]|20)\d{2}\b|\bQ[1-4]\b",
+    re.IGNORECASE,
+)
+
+
+def _is_datable(name: str) -> bool:
+    return bool(_DATE_ANCHOR.search(name or ""))
+
+
+def _drop_undatable_dates(entities: list[dict], relationships: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Drop Date entities that name no date, and the edges that point at them.
+
+    An edge left pointing at a removed entity would be counted as a loss at
+    graph build; it is removed with its endpoint instead.
+    """
+    gone = {e.get("name") for e in entities if e.get("entity_type") == "Date" and not _is_datable(e.get("name", ""))}
+    if not gone:
+        return entities, relationships
+    return (
+        [e for e in entities if e.get("name") not in gone],
+        [r for r in relationships if r.get("source_name") not in gone and r.get("target_name") not in gone],
+    )
+
 
 # Fills in date components a match doesn't specify (e.g. "May 2021" has no
 # day) so parses are deterministic instead of silently borrowing today's date.
@@ -1095,9 +1128,13 @@ def _extract_cyber_entities(text: str, doc_id: str, raw_text: str | None = None)
             })
 
     # Date extraction
+    date_spans: list[tuple[int, int]] = []
     for pattern in DATE_PATTERNS:
         for match in pattern.finditer(text):
             date_str = match.group().strip()
+            if any(s <= match.start() and match.end() <= e for s, e in date_spans):
+                continue  # part of a fuller date already taken
+            date_spans.append(match.span())
             if date_str not in seen and len(date_str) >= 4:
                 seen.add(date_str)
                 cyber_entities.append({
@@ -1551,6 +1588,8 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             continue
         if name in seen_names:
             continue
+        if entity_type == "Date" and not _is_datable(name):
+            continue
 
         # Context-aware confidence scoring
         confidence = 0.7  # base
@@ -1880,6 +1919,7 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
     # The same provenance rule the regex pass applies (G-8): a citation link
     # is not an indicator because the model, rather than a regex, read it.
     entities = _drop_model_sourcing(entities, text)
+    entities, relationships = _drop_undatable_dates(entities, relationships)
     _apply_vessel_hints(_apply_type_hints(entities), text)
     _link_event_dates(entities, relationships)
     return entities, relationships, skipped

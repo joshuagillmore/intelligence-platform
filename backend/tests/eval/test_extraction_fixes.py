@@ -302,6 +302,39 @@ async def test_hybrid_points_an_nlp_edge_at_the_entity_its_endpoint_merged_into(
     assert all(r["source_name"] in names and r["target_name"] in names for r in rels)
 
 
+# ── Dates that date nothing ───────────────────────────────────────────────────
+# NLP returned 25 Dates on the corpus against 3 in the gold: durations and
+# relative spans ("6 months", "3 days earlier", "quarterly"). None can date an
+# event, and every one becomes an orphan the graph build discards.
+
+def test_durations_and_relative_spans_are_not_dates():
+    entities, _ = extract_entities_nlp(
+        "Source assessed approximately 20 personnel involved, which source described as without precedent in "
+        "6 months of access. Comparison against imagery of 3 days earlier shows 20 additional objects. "
+        "The routine quarterly maintenance period ended the same day.",
+        "doc-fix",
+    )
+    assert not [e for e in entities if e["entity_type"] == "Date"]
+
+
+def test_a_day_month_year_date_is_not_also_extracted_as_its_month_and_year():
+    entities, _ = extract_entities_nlp(DOC_1, "doc-fix")
+    assert {e["name"] for e in entities if e["entity_type"] == "Date"} == {"2023", "24 May 2023"}
+
+
+def test_the_model_dates_that_date_nothing_go_with_their_edges():
+    from intel_platform.services.extraction import _drop_undatable_dates
+
+    entities = [{"name": n, "entity_type": "Date"} for n in ("1742Z", "Period", "Second Night",
+                                                             "15-18 August", "Q1 2026", "24 May 2023")]
+    entities.append({"name": "activity passed at 1742Z", "entity_type": "Event"})
+    rels = [{"source_name": "activity passed at 1742Z", "target_name": "1742Z", "rel_type": "OCCURRED_ON"},
+            {"source_name": "activity passed at 1742Z", "target_name": "Q1 2026", "rel_type": "OCCURRED_ON"}]
+    entities, rels = _drop_undatable_dates(entities, rels)
+    assert {e["name"] for e in entities if e["entity_type"] == "Date"} == {"15-18 August", "Q1 2026", "24 May 2023"}
+    assert [r["target_name"] for r in rels] == ["Q1 2026"]
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}
