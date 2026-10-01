@@ -1,10 +1,11 @@
 import logging
-import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.graph.evidence import find_passages
+from intel_platform.graph.merge import copy_edge_verbatim, merge_entity_into, transfer_edge
 from intel_platform.graph.store import GraphStore
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,71 @@ def get_entity(entity_id: str, store: GraphStore = Depends(get_graph_store)):
         raise HTTPException(status_code=404, detail="Entity not found")
     relationships = store.get_relationships(entity_id)
     return {"entity": entity, "relationships": relationships}
+
+
+# Evidence passages quoted per document in the evidence chain.
+PASSAGES_PER_DOCUMENT = 3
+
+
+class EvidencePassage(BaseModel):
+    text: str
+    # Character offset of the mention in the document's content.
+    offset: int
+
+
+class MentioningDocument(BaseModel):
+    id: str
+    name: str
+    url: str
+    source_doc_id: str
+    # How many extracted mentions of the entity the document carries.
+    mention_count: int
+    passages: list[EvidencePassage]
+
+
+class EntityDocumentsResponse(BaseModel):
+    documents: list[MentioningDocument]
+    count: int
+    total: int
+
+
+@router.get("/entities/{entity_id}/documents", response_model=EntityDocumentsResponse)
+def get_entity_documents(
+    entity_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    store: GraphStore = Depends(get_graph_store),
+):
+    """The documents that mention an entity, with evidence passages: its evidence chain.
+
+    One call, from the entity's MENTIONS edges, in its own project; the
+    network page used to request evidence document by document. Most-
+    mentioning documents first. Each carries up to PASSAGES_PER_DOCUMENT
+    passages around the entity's name — matched exactly first, then ignoring
+    case, since reporting does not keep an extractor's capitalisation.
+    `count` is this page, `total` every document that mentions the entity.
+    """
+    entity = store.get_entity(entity_id)
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    rows, total = store.documents_mentioning(
+        entity_id, entity.get("project_id") or "", limit=limit, offset=offset,
+    )
+    name = entity.get("name") or ""
+    documents = []
+    for row in rows:
+        passages, _ = find_passages(row["content"], name, PASSAGES_PER_DOCUMENT)
+        if not passages:
+            passages, _ = find_passages(row["content"], name, PASSAGES_PER_DOCUMENT, ignore_case=True)
+        documents.append({
+            "id": row["id"],
+            "name": row["name"] or "",
+            "url": row["url"],
+            "source_doc_id": row["source_doc_id"],
+            "mention_count": int(row["mention_count"]),
+            "passages": passages,
+        })
+    return {"documents": documents, "count": len(documents), "total": total}
 
 
 _NO_SCOPE = (
@@ -115,65 +181,11 @@ class MergeEntitiesRequest(BaseModel):
     project_id: str
 
 
-# Keys `get_relationships` adds about the endpoints; everything else on a
-# relationship row is a property of the edge itself.
-_REL_ENDPOINT_KEYS = frozenset({"rel_type", "source_id", "target_id", "source_name", "target_name", "direction"})
-# A relationship type as Neo4j stores it. Checked before a type read from the
-# graph is handed to APOC, although it came from the graph and not a request.
-_REL_TYPE_SHAPE = re.compile(r"[A-Z][A-Z0-9_]*")
-
-
-def _copy_edge_verbatim(store: GraphStore, rel_type: str, props: dict, source_id: str, target_id: str) -> bool:
-    """Recreate an edge with its exact type and properties. False if nothing was created."""
-    if not _REL_TYPE_SHAPE.fullmatch(rel_type or ""):
-        return False
-    with store._driver.session() as session:
-        record = session.run(
-            """
-            MATCH (a {id: $source_id})
-            MATCH (b {id: $target_id})
-            CALL apoc.create.relationship(a, $rel_type, $props, b) YIELD rel
-            RETURN count(rel) AS created
-            """,
-            source_id=source_id, target_id=target_id, rel_type=rel_type,
-            props=store._serialize_props(props),
-        ).single()
-    return bool(record and record["created"])
-
-
-def _transfer_edge(store: GraphStore, rel: dict, source_id: str, target_id: str, project_id: str) -> bool:
-    """Recreate one edge between new endpoints, keeping its type and properties.
-
-    Allowlisted types go through `create_relationship`, so an edge the primary
-    already has is corroborated rather than duplicated. Types outside that
-    allowlist — the ATT&CK/CWE catalog edges (MAPS_TO, HAS_WEAKNESS, ENABLES) —
-    are copied verbatim: the allowlist guards types arriving from requests and
-    model output, and this type is already in the graph. A property the model
-    will not accept also falls back to the verbatim copy, so a merge is never
-    refused over one odd value.
-    """
-    from pydantic import ValidationError
-
-    from intel_platform.models.relationships import Relationship
-
-    rel_type = rel.get("rel_type", "")
-    props = {k: v for k, v in rel.items() if k not in _REL_ENDPOINT_KEYS}
-    if rel_type in store.VALID_REL_TYPES:
-        fields = {k: v for k, v in props.items() if k in Relationship.model_fields}
-        try:
-            created = store.create_relationship(Relationship(
-                source_id=source_id, target_id=target_id, rel_type=rel_type,
-                project_id=project_id, **fields,
-            ))
-            if created:
-                return True
-        except (ValueError, ValidationError):
-            logger.warning("Merge: %s edge did not fit the model; copying it verbatim", rel_type, exc_info=True)
-    try:
-        return _copy_edge_verbatim(store, rel_type, props, source_id, target_id)
-    except Exception:
-        logger.exception("Merge: could not recreate a %s edge %s -> %s", rel_type, source_id, target_id)
-        return False
+# The edge-moving logic lives in graph.merge, shared with the startup backfill
+# that merges entities found to share a name key. These names stay here because
+# they are the route's seam: tests patch `_transfer_edge` on this module.
+_copy_edge_verbatim = copy_edge_verbatim
+_transfer_edge = transfer_edge
 
 
 @router.post("/entities/merge")
@@ -181,7 +193,8 @@ def merge_entities(req: MergeEntitiesRequest, store: GraphStore = Depends(get_gr
     """Merge entities into the primary, moving every edge as it was.
 
     Each edge keeps its direction, type and properties (evidence, provenance,
-    polarity). An entity is deleted only once every one of its edges has been
+    polarity), and the documents that mention a merged entity move to the
+    primary. An entity is deleted only once every one of its edges has been
     recreated on the primary; otherwise it is kept, and the response says so —
     deleting it anyway is how edges used to disappear behind a success message.
     """
@@ -203,29 +216,17 @@ def merge_entities(req: MergeEntitiesRequest, store: GraphStore = Depends(get_gr
             not_found.append(merge_id)
             continue
 
-        failed = 0
-        for rel in store.get_relationships(merge_id):
-            if "direction" in rel:
-                outgoing = rel["direction"] == "out"
-            else:
-                outgoing = rel.get("source_id") == merge_id
-            other = rel.get("target_id") if outgoing else rel.get("source_id")
-            # An edge to the primary, or to another entity being merged into it,
-            # would become a self-loop on the primary.
-            if other == req.primary_id or other in merge_set:
-                continue
-            source_id, target_id = (req.primary_id, other) if outgoing else (other, req.primary_id)
-            if _transfer_edge(store, rel, source_id, target_id, req.project_id):
-                relationships_transferred += 1
-            else:
-                failed += 1
-
-        if failed:
-            dropped_edges += failed
+        # An edge to the primary, or to another entity being merged into it,
+        # would become a self-loop on the primary, so those are skipped.
+        outcome = merge_entity_into(
+            store, req.primary_id, merge_id, project_id=req.project_id,
+            skip_ids=merge_set, transfer=_transfer_edge,
+        )
+        relationships_transferred += outcome.transferred
+        if not outcome.deleted:
+            dropped_edges += outcome.failed
             not_merged.append(merge_id)
-            logger.warning("Merge: kept %s; %d of its edges could not be moved", merge_id, failed)
             continue
-        store.delete_entity(merge_id)
         merged_count += 1
 
     return {
@@ -270,18 +271,30 @@ def update_entity_type(entity_id: str, req: UpdateEntityTypeRequest, store: Grap
     new_label = _validate_label(req.entity_type)
     old_label = _validate_label(entity.get("entity_type") or "")
     remove = [old_label] if old_label not in (new_label, "Entity") else []
+    from neo4j.exceptions import ConstraintError
+
     with store._driver.session() as session:
-        session.run(
-            """
-            MATCH (n {id: $id})
-            CALL apoc.create.removeLabels(n, $remove) YIELD node
-            WITH node
-            CALL apoc.create.addLabels(node, [$new_label]) YIELD node AS retyped
-            SET retyped.entity_type = $new_type, retyped.entity_category = $new_category
-            """,
-            id=entity_id, remove=remove, new_label=new_label,
-            new_type=req.entity_type, new_category=new_category,
-        )
+        try:
+            session.run(
+                """
+                MATCH (n {id: $id})
+                CALL apoc.create.removeLabels(n, $remove) YIELD node
+                WITH node
+                CALL apoc.create.addLabels(node, [$new_label]) YIELD node AS retyped
+                SET retyped.entity_type = $new_type, retyped.entity_category = $new_category
+                """,
+                id=entity_id, remove=remove, new_label=new_label,
+                new_type=req.entity_type, new_category=new_category,
+            ).consume()
+        except ConstraintError:
+            # The type is part of the entity's key: another entity of that
+            # type with this name already exists in the project. Two nodes
+            # for one entity is what the key forbids; the analyst merges them.
+            logger.info("Retype of %s to %s refused: the name is taken for that type", entity_id, req.entity_type)
+            raise HTTPException(
+                status_code=409,
+                detail=f"A {req.entity_type} with this name already exists in the project; merge the two instead",
+            )
     if entity.get("project_id"):
         from intel_platform.services.graph_cache import graph_cache
         graph_cache.invalidate(entity["project_id"])

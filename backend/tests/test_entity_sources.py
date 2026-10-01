@@ -6,7 +6,9 @@ and hybrid retrieval could only ever reach the first document — the rest of
 the reporting on an entity was invisible to every question asked about it.
 
 The fix: `source_doc_ids`, a list appended on merge, read by both retrievers.
-`source_doc_id` stays the first document.
+`source_doc_id` stays the first document. Since contract 6 the retrievers read
+the (:Document)-[:MENTIONS]->(:Entity) edges the same builds write; the list is
+still kept for one release.
 """
 from __future__ import annotations
 
@@ -74,21 +76,37 @@ class TestRetrieversReadIt:
 
     def test_graph_rag_bounds_how_many_documents_it_fetches(self, graph_store, monkeypatch):
         """A hub entity mentioned in hundreds of documents must not turn into
-        hundreds of lookups per question."""
+        hundreds of lookups per question.
+
+        The documents now come from MENTIONS edges (contract 6): one ranked
+        query, then one read of the budgeted few in full — never a lookup per
+        document."""
         monkeypatch.setattr(graph_rag_module, "_MAX_SOURCE_DOCS", 3)
         person = Person(name="Hub Person", project_id=PROJECT)
         graph_store.create_entity(person)
-        graph_store.update_entity(person.id, {"source_doc_ids": [f"doc-{i}" for i in range(20)]})
+        docs = [Document(name=f"Doc {i:02d}", project_id=PROJECT, content=f"Hub Person, item {i}") for i in range(20)]
+        for doc in docs:
+            graph_store.create_entity(doc)
+        graph_store.record_mentions(PROJECT, {(d.id, person.id): 1 for d in docs})
         fetched: list[str] = []
-        real = graph_store.get_entity
+        read_in_full: list[list[str]] = []
+        real_get, real_content = graph_store.get_entity, graph_store.documents_content
 
         def counting(entity_id):
             fetched.append(entity_id)
-            return real(entity_id)
+            return real_get(entity_id)
+
+        def counting_content(doc_ids, project_id):
+            read_in_full.append(list(doc_ids))
+            return real_content(doc_ids, project_id)
 
         monkeypatch.setattr(graph_store, "get_entity", counting)
-        GraphRAGPipeline(graph_store).retrieve_context({"target_entities": [{"id": person.id}]}, PROJECT)
-        assert len([f for f in fetched if f.startswith("doc-")]) == 3
+        monkeypatch.setattr(graph_store, "documents_content", counting_content)
+        retrieved = GraphRAGPipeline(graph_store).retrieve_context({"target_entities": [{"id": person.id}]}, PROJECT)
+        assert not {d.id for d in docs} & set(fetched), "no per-document lookups"
+        assert [len(batch) for batch in read_in_full] == [3]
+        assert len(retrieved["doc_texts"]) == 3
+        assert len(retrieved["document_ids"]) == 20, "the ranking still sees every document"
 
     async def test_hybrid_retrieval_ranks_the_later_document(self, graph_store):
         alpha, bravo = _docs(graph_store)

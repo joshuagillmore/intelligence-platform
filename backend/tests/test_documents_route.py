@@ -27,13 +27,15 @@ PID = "test-a6-docs"
 
 
 @pytest.fixture
-def corpus(graph_store):
-    """Two documents; entities point back at them the way ingestion writes them.
+def corpus(graph_store, neo4j_driver):
+    """Two documents; entities point back at them the way older ingestion wrote them.
 
-    Nothing in ingestion creates an edge to a Document — `graph_builder` sets
+    Ingestion used to create no edge to a Document — `graph_builder` set
     `source_doc_id` on each entity — so the old edge count read 0 for every
     document. `source_doc_ids` is the list the store package appends when a
-    later document mentions an existing entity (G-11).
+    later document mentions an existing entity (G-11). Those properties are
+    now turned into MENTIONS edges by the startup backfill, which the routes
+    read (contract 6); the fixture runs it, as startup would.
     """
     d1 = Document(name="A first report", project_id=PID, content="x" * 1234)
     d2 = Document(name="B second report", project_id=PID, content="Marek Ilyas met Kolvane.")
@@ -47,6 +49,9 @@ def corpus(graph_store):
     graph_store.create_entity(other)
     # Kolvane was also found in d2: the store appends it to source_doc_ids.
     graph_store.update_entity(kolvane.id, {"source_doc_ids": [d1.id, d2.id]})
+    from intel_platform.graph.schema import ensure_mentions_edges
+
+    ensure_mentions_edges(neo4j_driver)
     return {"d1": d1.id, "d2": d2.id, "marek": marek.id, "kolvane": kolvane.id, "other": other.id}
 
 
