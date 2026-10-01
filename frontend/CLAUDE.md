@@ -1,6 +1,6 @@
 # Frontend — Analyst UI
 
-Next.js **14** (App Router) · TypeScript · Tailwind · **npm** · Node **22** (CI and
+Next.js **15** (App Router) · React **19** · TypeScript · Tailwind · **npm** · Node **22** (CI and
 every Docker image). The analyst-facing workbench over the backend API. The product name is **SENTINEL** — keep it
 consistent in UI copy; shared name/version/tagline constants live in
 `src/lib/branding.ts`. See the root `CLAUDE.md` for architecture, branching, and
@@ -32,7 +32,10 @@ assertions, in `tests/e2e/`; needs the stack up + `backend/scripts/seed_demo.py`
 ## Stack conventions
 
 - **App Router:** be deliberate about server vs client components. Anything using
-  hooks, d3, or leaflet is a client component (`"use client"`).
+  hooks, d3, or leaflet is a client component (`"use client"`). Every page is a
+  client component today and reads route state through `useParams` /
+  `useSearchParams` (synchronous); a new *server* page receives `params` and
+  `searchParams` as Promises under Next 15 and must `await` them.
 - **State:** cross-view state flows through React context — `lib/ProjectContext.tsx`
   for the active project, `lib/AssistantContext.tsx` for the assistant — plus
   local component state; don't scatter global state. There is no global store

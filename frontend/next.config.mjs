@@ -29,7 +29,7 @@ function apiOrigin(value) {
 /**
  * The Content-Security-Policy sent with every page.
  *
- * Next 14's App Router hydrates through inline scripts and injects inline
+ * Next 15's App Router hydrates through inline scripts and injects inline
  * styles (next/font, the dev overlay), so `script-src` and `style-src` need
  * 'unsafe-inline'; dev mode also needs 'unsafe-eval' for webpack's eval source
  * maps and a websocket for hot reload. The Material Symbols stylesheet and its

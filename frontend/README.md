@@ -1,6 +1,6 @@
 # SENTINEL — Frontend
 
-The analyst-facing UI for SENTINEL: a Next.js 14 (App Router) single-page
+The analyst-facing UI for SENTINEL: a Next.js 15 (App Router, React 19) single-page
 workbench over the FastAPI backend. TypeScript, Tailwind, React context + local
 state, d3 for the knowledge graph, and leaflet for the map.
 
