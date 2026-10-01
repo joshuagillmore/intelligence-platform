@@ -527,6 +527,65 @@ def _apply_type_hints(entities: list[dict]) -> list[dict]:
     return entities
 
 
+# ── Vessels ──────────────────────────────────────────────────────────────────
+# Reporting names a ship the way no other entity is named: with its pennant or
+# hull number in brackets ("Ostravik (A-411)"), or right after what kind of
+# vessel it is ("bulk carrier Mirenda", "patrol vessels Brenna and Sarn").
+# spaCy reads those names as people and companies — on the exercise corpus it
+# typed none of forty vessels a Ship — and the model does it often enough.
+
+_HULL_NUMBER = re.compile(r"\b([A-Z][a-z][\w'-]*(?:\s[A-Z][a-z][\w'-]*){0,2})\s\(([A-Z]{1,3}-\d{2,4})\)")
+# Bracketed references that look like hull numbers and are not.
+_NOT_VESSELS = frozenset({
+    "annex", "appendix", "form", "figure", "table", "exhibit", "section", "route",
+    "grid", "highway", "road", "item", "page", "paragraph", "serial",
+})
+_VESSEL_NOUN = (
+    r"(?i:vessels?|ships?|tankers?|freighters?|trawlers?|ferry|ferries|frigates?|corvettes?"
+    r"|destroyers?|cruisers?|submarines?|tugs?|barges?|yachts?|cutters?|dhows?|boats?"
+    r"|(?:bulk|ore|container|lng|lpg|aircraft|vehicle|car)\s+carriers?)"
+)
+# A capitalised name of up to three words. All-capitals words are not part of
+# it, so "fishing vessel Ekhaven AIS gap" names Ekhaven, not "Ekhaven AIS".
+_VESSEL_NAME = r"[A-Z][a-z][\w'-]*(?:\s[A-Z][a-z][\w'-]*){0,2}"
+_VESSEL_AFTER_NOUN = re.compile(
+    rf"\b{_VESSEL_NOUN}\s+({_VESSEL_NAME}(?:\s*(?:,\s*and|,|and)\s+{_VESSEL_NAME})*)"
+)
+_VESSEL_LIST_SPLIT = re.compile(r"\s*(?:,\s*and|,|\band)\s+")
+# Types the vessel evidence may replace; never a specific one the model chose.
+_VESSEL_OVERRIDABLE = frozenset({
+    "", "Person", "Organization", "Location", "Custom", "Technology", "Vehicle", "Product",
+    "Equipment", "EquipmentType", "Facility", "Hardware",
+})
+
+
+def _hull_numbers(text: str) -> list[tuple[str, str]]:
+    """(name, hull number) for every "Name (A-411)" in the text."""
+    return [
+        (m.group(1), m.group(2)) for m in _HULL_NUMBER.finditer(text or "")
+        if m.group(1).lower() not in _NOT_VESSELS
+    ]
+
+
+def _vessel_names(text: str) -> set[str]:
+    """Lower-cased names the text marks as vessels."""
+    names = {name.lower() for name, _ in _hull_numbers(text)}
+    for m in _VESSEL_AFTER_NOUN.finditer(text or ""):
+        names.update(n.lower() for n in _VESSEL_LIST_SPLIT.split(m.group(1)) if n)
+    return names
+
+
+def _apply_vessel_hints(entities: list[dict], text: str) -> list[dict]:
+    """Type as a Ship every entity the text itself marks as a vessel."""
+    names = _vessel_names(text)
+    if names:
+        for ent in entities:
+            if (ent.get("entity_type") or "") in _VESSEL_OVERRIDABLE \
+                    and (ent.get("name") or "").strip().lower() in names:
+                ent["entity_type"] = "Ship"
+    return entities
+
+
 # ── Software and hardware ────────────────────────────────────────────────────
 # spaCy has no label for either, so a product reached the graph as whatever it
 # guessed: "built-in Windows tools" made Windows a Location (LOC) and "A Netgear
@@ -1000,6 +1059,16 @@ def _extract_cyber_entities(text: str, doc_id: str, raw_text: str | None = None)
             seen.add(ttp)
             cyber_entities.append({
                 "name": ttp, "entity_type": "TTP",
+                "source": doc_id, "method": "regex", "confidence": 0.9,
+            })
+
+    # Vessels named with their hull number ("Hallgrim (A-425)"). spaCy tags the
+    # hull number, as a nationality, and often not the name at all.
+    for name, hull in _hull_numbers(text):
+        if name not in seen:
+            seen.add(name)
+            cyber_entities.append({
+                "name": name, "entity_type": "Ship", "aliases": [f"{name} ({hull})", hull],
                 "source": doc_id, "method": "regex", "confidence": 0.9,
             })
 
@@ -1501,7 +1570,13 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         entities.append(entity)
 
     # 4. Postprocess to fix misclassifications
-    entities = _apply_type_hints(_postprocess_entities(entities))
+    entities = _apply_vessel_hints(_apply_type_hints(_postprocess_entities(entities)), text)
+    # Postprocessing renames ("Kalvar (A-417" -> "Kalvar"), which can land on
+    # a name already taken; the first, regex-extracted one is kept.
+    unique: dict[str, dict] = {}
+    for e in entities:
+        unique.setdefault(e["name"], e)
+    entities = list(unique.values())
 
     # 5. Optional coreference resolution
     from intel_platform.config import settings
@@ -1636,10 +1711,31 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
                 if (j - i) <= COOCCURRENCE_WINDOW and frozenset((e1["name"], e2["name"])) not in linked_pairs:
                     _add_rel(e1["name"], e2["name"], "ASSOCIATED_WITH", 0.5, sent_text)
 
+    # "torvald (A-430) of 2nd Naval Auxiliary Group": a vessel of a unit
+    # belongs to it. Read off the text, since the parse attaches the unit to the
+    # hull number as often as to the name.
+    ships = {e["name"].lower(): e["name"] for e in entities if e.get("entity_type") == "Ship"}
+    orgs = sorted((e["name"] for e in entities if e.get("entity_type") == "Organization"), key=len, reverse=True)
+    if ships and orgs:
+        for m in _SHIP_OF_UNIT.finditer(text):
+            words = m.group(1).split()
+            ship = next((ships[" ".join(words[k:]).lower()] for k in range(len(words))
+                         if " ".join(words[k:]).lower() in ships), None)
+            after = text[m.end():].lower()
+            unit = next((o for o in orgs if after.startswith(o.lower())), None)
+            if ship and unit:
+                _add_rel(ship, unit, "BELONGS_TO", 0.7, text[max(0, m.start() - 60):m.end() + len(unit) + 60])
+
     # Resolve event_datetime on Event entities from their OCCURRED_ON Date links
     _link_event_dates(entities, relationships)
 
     return ExtractionResult(entities, relationships, method="nlp")
+
+
+# "<name> (<hull>) of [the] " — what follows is checked against extracted units.
+_SHIP_OF_UNIT = re.compile(
+    r"\b([A-Za-z][\w'-]*(?:\s[A-Za-z][\w'-]*){0,2})\s\([A-Z]{1,3}-\d{2,4}\)\s+of\s+(?:the\s+)?"
+)
 
 
 def _confidence(raw, default: float) -> float:
@@ -1784,7 +1880,7 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
     # The same provenance rule the regex pass applies (G-8): a citation link
     # is not an indicator because the model, rather than a regex, read it.
     entities = _drop_model_sourcing(entities, text)
-    _apply_type_hints(entities)
+    _apply_vessel_hints(_apply_type_hints(entities), text)
     _link_event_dates(entities, relationships)
     return entities, relationships, skipped
 
@@ -1871,10 +1967,17 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
     # NLP names already kept. Deliberately *not* part of the fuzzy pool: adding
     # them there is what let each sibling indicator match the one kept before it.
     kept_nlp_keys: set[str] = set()
+    # NLP name -> the model entity it merged into, when the two differ.
+    merged_into: dict[str, str] = {}
 
     for e in nlp_entities:
         key = _merge_key(e.get("name", ""))
         match = llm_by_key.get(key)
+        if match is None:
+            # A vessel read from its hull number carries the written form as an
+            # alias ("Hallgrim" / "Hallgrim (A-425)"), which is the name the
+            # model usually returns; without this both were kept.
+            match = next((llm_by_key[k] for k in map(_merge_key, e.get("aliases") or []) if k in llm_by_key), None)
         if match is None and not _exact_match_only(e):
             for pool_key, candidate in fuzzy_pool:
                 if jellyfish.jaro_winkler_similarity(key, pool_key) >= 0.92:
@@ -1884,6 +1987,8 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
             # Found by both — merge NLP attributes/confidence into the LLM entity.
             match["confidence"] = max(match.get("confidence", 0), e.get("confidence", 0))
             _merge_attributes(match, e)
+            if match.get("name") != e.get("name"):
+                merged_into[e.get("name", "")] = match["name"]
             continue
         if key in kept_nlp_keys:
             continue
@@ -1905,6 +2010,15 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
     for r in nlp_rels:
         if r["rel_type"] == "ASSOCIATED_WITH":
             continue
+        # An endpoint whose entity merged into a differently named model entity
+        # is renamed with it; otherwise the edge names an entity that is no
+        # longer extracted and the graph build drops it.
+        src = merged_into.get(r["source_name"], r["source_name"])
+        tgt = merged_into.get(r["target_name"], r["target_name"])
+        if src == tgt:
+            continue
+        if (src, tgt) != (r["source_name"], r["target_name"]):
+            r = {**r, "source_name": src, "target_name": tgt}
         key = (r["source_name"], r["target_name"], r["rel_type"])
         if key not in seen_rels:
             seen_rels.add(key)
@@ -1917,6 +2031,6 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
     # Naming-convention re-typing runs last, over the merged set: applying it
     # inside the LLM branch alone was ineffective, because an NLP entity of the
     # same name could still carry the generic type into the merge.
-    _apply_type_hints(merged_entities)
+    _apply_vessel_hints(_apply_type_hints(merged_entities), text)
 
     return ExtractionResult(merged_entities, merged_rels, method="hybrid", skipped_items=skipped)

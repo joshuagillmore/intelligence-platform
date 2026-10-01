@@ -195,6 +195,113 @@ async def test_the_llm_path_keeps_the_synonym_and_drops_the_off_vocabulary_edge(
     assert result.skipped_items == 0, "an off-vocabulary type is not a malformed item"
 
 
+# ── Vessels ───────────────────────────────────────────────────────────────────
+# Forty of the corpus's gold entities are vessels; NLP typed none of them a
+# Ship (Person 21, Organization 16) and missed some entirely.
+
+KES_0008 = (
+    "1. Imagery of Torvik collected during the period shows that hallgrim (A-425) arrives Torvik from Nyhavn, "
+    "berths quay 5.\n\n2. Entities identified in this reporting: Hallgrim (A-425), 3rd Naval Auxiliary Group."
+)
+
+
+def test_a_name_with_a_hull_number_is_a_ship():
+    types = _types(KES_0008)
+    assert types.get("Hallgrim") == "Ship"
+    assert "A-425" not in types
+
+
+def test_a_vessel_arriving_at_a_port_is_located_there():
+    assert ("Hallgrim", "LOCATED_AT", "Torvik") in _rels(KES_0008)
+
+
+def test_a_name_after_a_vessel_noun_is_a_ship():
+    types = _types(
+        "1. Source reported on own initiative that commercial bulk carrier Mirenda loads aggregate at quay 1.\n\n"
+        "2. Entities identified in this reporting: Mirenda, Torvik Harbour Authority."
+    )
+    assert types["Mirenda"] == "Ship"
+    assert types["Torvik Harbour Authority"] == "Organization"
+    types = _types(
+        "1. Liaison reporting received during the period states that escort tasking was passed to patrol "
+        "vessels Brenna and Sarn for a movement not yet timed."
+    )
+    assert types.get("Brenna") == "Ship" and types.get("Sarn") == "Ship"
+
+
+def test_a_ship_of_a_unit_belongs_to_it():
+    rels = _rels(
+        "1. Partner service reporting passed by liaison indicates that torvald (A-430) of 2nd Naval Auxiliary "
+        "Group loads at Nyhavn.\n\n2. Entities identified in this reporting: Torvald (A-430), 2nd Naval "
+        "Auxiliary Group."
+    )
+    assert ("Torvald", "BELONGS_TO", "2nd Naval Auxiliary Group") in rels
+
+
+def test_carriers_and_annexes_that_are_not_ships_stay_what_they_were():
+    types = _types("The telecommunications carrier Verizon restored service. See Annex (A-12) for the order.")
+    assert types.get("Verizon") != "Ship"
+    assert types.get("Annex") != "Ship"
+
+
+def test_the_vessel_evidence_retypes_what_the_model_called_a_person():
+    from intel_platform.services.extraction import _apply_vessel_hints
+
+    text = "Commercial and press reporting states that commercial bulk carrier Mirenda loads aggregate at quay 1."
+    ents = _apply_vessel_hints([
+        {"name": "Mirenda", "entity_type": "Person"}, {"name": "quay 1", "entity_type": "Location"},
+    ], text)
+    assert [e["entity_type"] for e in ents] == ["Ship", "Location"]
+
+
+async def test_hybrid_does_not_add_the_hull_numbered_vessel_twice():
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    reply = {"entities": [{"name": "Hallgrim (A-425)", "entity_type": "Ship", "confidence": 0.9},
+                          {"name": "Torvik", "entity_type": "Location", "confidence": 0.9}],
+             "relationships": []}
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        ents, _ = await extraction.extract_entities_hybrid(KES_0008, "doc-fix")
+    names = [e["name"] for e in ents]
+    assert "Hallgrim (A-425)" in names
+    assert "Hallgrim" not in names, names
+
+
+async def test_hybrid_points_an_nlp_edge_at_the_entity_its_endpoint_merged_into():
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    reply = {"entities": [{"name": "Hallgrim (A-425)", "entity_type": "Ship", "confidence": 0.9},
+                          {"name": "Torvik", "entity_type": "Location", "confidence": 0.9}],
+             "relationships": []}
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        ents, rels = await extraction.extract_entities_hybrid(KES_0008, "doc-fix")
+    names = {e["name"] for e in ents}
+    # The NLP edge named "Hallgrim", which is no longer an entity: the graph
+    # build would have dropped it as naming something never extracted.
+    assert ("Hallgrim (A-425)", "LOCATED_AT", "Torvik") in {
+        (r["source_name"], r["rel_type"], r["target_name"]) for r in rels
+    }
+    assert all(r["source_name"] in names and r["target_name"] in names for r in rels)
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}
