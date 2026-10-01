@@ -460,6 +460,72 @@ def test_place_subtypes_the_model_invents_are_locations():
         assert _normalize_llm_entity_type(raw) == "Location", raw
 
 
+# ── Replies that parse to nothing ─────────────────────────────────────────────
+# openrep-deep: Cohere's reply for the Burkina Faso chunk ended
+# `..."relationships": [], "entities": []}` after the full lists, and json.loads
+# kept the last of each duplicate key — 17 entities scored as none extracted.
+# Its reply for the Navy-lasers chunk ran past the token limit, so nothing
+# parsed and the chunk degraded to NLP.
+
+async def _llm_reply(content: str, text: str = "Russia supplied weapons to Burkina Faso."):
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=content, model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        return await extraction.extract_entities_llm(text, "doc-fix")
+
+
+async def test_a_reply_that_repeats_its_keys_keeps_what_it_extracted():
+    content = (
+        '{"entities": [{"name": "Burkina Faso", "entity_type": "Country"}, {"name": "Russia", "entity_type": '
+        '"Country"}], "relationships": [{"source_entity": "Burkina Faso", "target_entity": "Russia", '
+        '"relationship_type": "SUPPLIED_BY"}], "relationships": [], "entities": []}'
+    )
+    result = await _llm_reply(content)
+    assert result.degraded is False
+    assert {e["name"] for e in result[0]} >= {"Burkina Faso", "Russia"}
+    assert [(r["source_name"], r["rel_type"]) for r in result[1]] == [("Burkina Faso", "SUPPLIED_BY")]
+
+
+async def test_a_reply_cut_off_at_the_token_limit_keeps_its_complete_items():
+    content = (
+        '```json\n{\n  "entities": [\n    {"name": "Northrop Grumman", "entity_type": "Organization"},\n'
+        '    {"name": "Portland", "entity_type": "Ship", "aliases": ["LPD-27"]},\n'
+        '    {"name": "LWSD", "entity_type": "Wea'
+    )
+    result = await _llm_reply(content, "Northrop Grumman built the LWSD installed on Portland (LPD-27).")
+    assert result.degraded is False and result.method == "llm"
+    assert {e["name"] for e in result[0] if e.get("method") == "llm"} == {"Northrop Grumman", "Portland"}
+
+
+def test_llm_output_merges_repeated_list_keys_only_when_asked():
+    from intel_platform.services.llm_output import json_object
+
+    reply = '{"entities": [1, 2], "note": "a", "entities": [], "note": ""}'
+    assert json_object(reply) == {"entities": [], "note": ""}
+    assert json_object(reply, merge_duplicate_lists=True) == {"entities": [1, 2], "note": "a"}
+
+
+def test_llm_output_reads_the_complete_items_of_a_cut_off_array():
+    from intel_platform.services.llm_output import json_array_items
+
+    cut = '{"relationships": [ {"a": "{x}"} , {"b": 2},\n {"c": [1, {"d": 3}]}, {"e": "unterminated'
+    assert json_array_items(cut, "relationships") == [{"a": "{x}"}, {"b": 2}, {"c": [1, {"d": 3}]}]
+    assert json_array_items('{"entities": []}', "entities") == []
+    assert json_array_items("no array here", "entities") == []
+
+
+async def test_a_list_reply_with_no_keys_still_degrades():
+    result = await _llm_reply('[{"name": "Russia", "entity_type": "Country"}]')
+    assert result.degraded is True
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}

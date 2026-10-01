@@ -1937,7 +1937,7 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
     # Resolved inside the failure boundary: the lookup reads the key store, and
     # a failure there escaped as a 500 from /ingest.
     from intel_platform.llm.providers import _get_extraction_provider
-    from intel_platform.services.llm_output import json_object
+    from intel_platform.services.llm_output import json_array_items, json_object
 
     try:
         provider = await _get_extraction_provider()
@@ -1964,7 +1964,19 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
 
     # The first JSON object anywhere in the reply — fenced, prose-led or bold-
     # labelled. `{}` means nothing parsed.
-    data = json_object(result.content or "")
+    content = result.content or ""
+    # A repeated key ("relationships": [], "entities": [] after the full lists)
+    # must not empty the reply; see llm_output.json_object.
+    data = json_object(content, merge_duplicate_lists=True)
+    if "entities" not in data and "relationships" not in data:
+        # A reply that ran past the token limit is not JSON at all, but its
+        # complete items are; reading none of them threw away a long report's
+        # whole extraction.
+        salvaged = {k: json_array_items(content, k) for k in ("entities", "relationships")}
+        if salvaged["entities"] or salvaged["relationships"]:
+            logger.warning("LLM extraction reply for doc %s was cut off; kept %d entities and %d relationships",
+                           doc_id, len(salvaged["entities"]), len(salvaged["relationships"]))
+            data = salvaged
     if not data:
         raise _LLMExtractionFailed("reply contained no JSON object")
     if "entities" not in data and "relationships" not in data:
