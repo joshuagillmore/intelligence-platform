@@ -560,6 +560,18 @@ def _apply_type_hints(entities: list[dict]) -> list[dict]:
     return entities
 
 
+# spaCy labels whose spans are names, so a lower-case one is a misfire.
+_NAME_LABELS = frozenset({"PERSON", "ORG", "GPE", "LOC", "FAC", "NORP", "PRODUCT", "EVENT"})
+
+# Signal, navigation and collection-discipline acronyms spaCy tags as
+# organizations ("ceases AIS transmission", "GNSS position jumps").
+_TECHNICAL_ACRONYMS = frozenset({
+    "AIS", "VHF", "UHF", "HF", "GNSS", "GPS", "SAR", "NIIRS", "SIGINT", "HUMINT", "IMINT",
+    "GEOINT", "OSINT", "ELINT", "COMINT", "MASINT", "ISR", "EW", "UAV", "UAS", "IED",
+    "C2", "C4ISR", "SATCOM", "RF",
+})
+
+
 # ── Vessels ──────────────────────────────────────────────────────────────────
 # Reporting names a ship the way no other entity is named: with its pennant or
 # hull number in brackets ("Ostravik (A-411)"), or right after what kind of
@@ -1589,6 +1601,20 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         if name in seen_names:
             continue
         if entity_type == "Date" and not _is_datable(name):
+            continue
+        # A nationality used as an adjective — "Valdorian naval liaison",
+        # "Ravenskan hydrographic survey" — names no organization. A group
+        # named in front of its members ("Taliban fighters") is a proper noun
+        # in compound, not an adjective, and is kept.
+        if len(ent) == 1 and ent.root.pos_ == "ADJ" and ent.root.dep_ == "amod":
+            continue
+        # spaCy tags the odd lower-case common noun ("liaison", "quay 4") as a
+        # person or a facility. A name is capitalised; extracted lower-case
+        # values (tools, indicators) come from the regex pass, not here.
+        # Amounts and quantities are not names and are left alone.
+        if ent.label_ in _NAME_LABELS and name.islower():
+            continue
+        if name in _TECHNICAL_ACRONYMS:
             continue
 
         # Context-aware confidence scoring

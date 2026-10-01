@@ -335,6 +335,38 @@ def test_the_model_dates_that_date_nothing_go_with_their_edges():
     assert [r["target_name"] for r in rels] == ["Q1 2026"]
 
 
+# ── Words that are not names ──────────────────────────────────────────────────
+
+def test_an_adjectival_nationality_is_not_an_organization():
+    types = _types("Valdorian naval liaison passed that liaison partner reporting corroborates the airframe type.")
+    assert "Valdorian" not in types
+    types = _types(
+        "Communications passed in the clear establish that interference ceases for 36 hours, coinciding with "
+        "a Ravenskan hydrographic survey transit.\n\nEntities identified in this reporting: RVK Hydrographic "
+        "Service, Lysgard."
+    )
+    assert "Ravenskan" not in types
+    assert types.get("RVK Hydrographic Service") == "Organization"
+
+
+def test_a_group_named_in_front_of_its_fighters_is_still_extracted():
+    types = _types("Taliban fighters attacked the post while the Taliban seized Kabul.")
+    assert "Taliban" in types
+
+
+def test_a_lower_case_common_noun_is_not_a_person():
+    assert "liaison" not in _types("Valdorian naval liaison passed that liaison partner reporting corroborates it.")
+
+
+def test_signal_and_navigation_acronyms_are_not_organizations():
+    types = _types(
+        "Publicly available shipping data indicate that product tanker Stellar Vane ceases AIS transmission "
+        "for 14 hours, and merchant traffic reports GNSS position jumps and VHF interference in the approaches."
+    )
+    assert not {"AIS", "GNSS", "VHF"} & set(types)
+    assert types.get("Stellar Vane") == "Ship"
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}
