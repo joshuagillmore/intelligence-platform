@@ -104,6 +104,41 @@ class TestManualIngestIsBounded:
         assert doc["content"] == text
 
 
+class TestTextSourceName:
+    """Pasted text was always stored as `text_input`, so every pasted document in
+    a project had the same name; `source_name` lets the analyst name it."""
+
+    def _ingest(self, **extra):
+        data = {"project_id": PID, "content": "Marek Ilyas met Kolvane in Riga.", "extraction_mode": "nlp", **extra}
+        return client.post("/api/ingest", data=data, headers=headers)
+
+    def test_a_named_text_document_keeps_its_name(self, graph_store):
+        resp = self._ingest(source_name="Embassy cable 14 May")
+        assert resp.status_code == 200
+        assert resp.json()["document_name"] == "Embassy cable 14 May"
+        (doc,) = _documents(graph_store)
+        assert doc["name"] == "Embassy cable 14 May"
+
+    def test_the_default_is_still_text_input(self, graph_store):
+        assert self._ingest().json()["document_name"] == "text_input"
+
+    def test_a_blank_name_is_the_default(self, graph_store):
+        assert self._ingest(source_name="   ").json()["document_name"] == "text_input"
+
+    def test_the_name_is_tidied_and_bounded(self, graph_store):
+        name = self._ingest(source_name="  Field\nreport\t" + "x" * 1000).json()["document_name"]
+        assert name.startswith("Field report x")
+        assert len(name) <= ingest_route.MAX_SOURCE_NAME_CHARS
+
+    def test_a_file_keeps_its_filename(self, graph_store):
+        resp = client.post(
+            "/api/ingest", data={"project_id": PID, "extraction_mode": "nlp", "source_name": "ignored"},
+            files={"file": ("note.txt", b"Marek Ilyas met Kolvane in Riga.", "text/plain")},
+            headers=headers,
+        )
+        assert resp.json()["document_name"] == "note.txt"
+
+
 class TestBlockingWorkLeavesTheEventLoop:
     """Contract 15: parsing, spaCy and the sync Neo4j driver stalled /health and
     every other request while one document was ingested."""

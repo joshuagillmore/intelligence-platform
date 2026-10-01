@@ -19,6 +19,15 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.md', '.csv', '.json'}
+# Name given to pasted text when the caller does not supply `source_name`.
+DEFAULT_TEXT_SOURCE_NAME = "text_input"
+MAX_SOURCE_NAME_CHARS = 256
+
+
+def _text_source_name(source_name: str | None) -> str:
+    """The analyst's name for pasted text: whitespace collapsed, bounded, or the default."""
+    name = " ".join((source_name or "").split())[:MAX_SOURCE_NAME_CHARS].strip()
+    return name or DEFAULT_TEXT_SOURCE_NAME
 
 # Everything below that parses, runs spaCy or talks to Neo4j is synchronous, and
 # these handlers run on the event loop that also serves /health and every other
@@ -158,6 +167,9 @@ async def ingest_document(
     file: UploadFile | None = File(None),
     reliability_rating: str = Form("C3"),
     extraction_mode: str | None = Form(None),
+    # The document's name when `content` is pasted text (default "text_input").
+    # An uploaded file is always named by its filename.
+    source_name: str | None = Form(None),
     store: GraphStore = Depends(get_graph_store),
 ):
     # None -> the configured default (hybrid). Explicit value still honored.
@@ -170,7 +182,7 @@ async def ingest_document(
         )
     elif content:
         chunks = await asyncio.to_thread(ingest_text, content, settings.chunk_size, settings.chunk_overlap)
-        source_name = "text_input"
+        source_name = _text_source_name(source_name)
     else:
         raise HTTPException(status_code=400, detail="Provide either content or file")
 
