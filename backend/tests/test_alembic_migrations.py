@@ -50,9 +50,16 @@ async def _check(engine) -> None:
 
 
 async def _create_all_like_the_old_init_db(engine) -> None:
+    """The schema a pre-Alembic deployment has: exactly the baseline tables.
+
+    `Base.metadata` keeps growing (collection_jobs arrived with its own
+    revision), so a bare `create_all` would build tables no old deployment
+    ever had and the later revisions would then collide with them.
+    """
+    baseline = [t for t in Base.metadata.sorted_tables if t.name in engine_module.BASELINE_TABLES]
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=baseline))
 
 
 class TestEmptyDatabase:
