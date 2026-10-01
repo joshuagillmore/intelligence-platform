@@ -142,6 +142,59 @@ def test_linking_a_campaign_to_intrusions_is_not_the_analysts_attribution():
     assert not {r for r in rels if r[1] == "ATTRIBUTED_TO" and r[0] == "Microsoft"}
 
 
+def test_a_model_synonym_keeps_its_type_and_an_unknown_type_is_not_stored_as_an_association():
+    from intel_platform.services.extraction import _normalize_rel_type
+
+    # From Cohere's replies on the corpus: "ostravik (A-411) berth at quay 4".
+    assert _normalize_rel_type("BERTHS_AT") == "LOCATED_AT"
+    assert _normalize_rel_type("located in") == "LOCATED_AT"
+    assert _normalize_rel_type("occurred-in") == "LOCATED_AT"
+    assert _normalize_rel_type("TARGETED") == "TARGETS"
+    assert _normalize_rel_type("member_of") == "BELONGS_TO"
+    assert _normalize_rel_type("uses") == "USES"
+    assert _normalize_rel_type("ASSOCIATED_WITH") == "ASSOCIATED_WITH"
+    # "Source REPORTED Ostravik", "Imagery DOES_NOT_ESTABLISH Intent": no type
+    # in the vocabulary, and calling them associations asserts what the model
+    # did not.
+    assert _normalize_rel_type("REPORTED") is None
+    assert _normalize_rel_type("DOES_NOT_ESTABLISH") is None
+    assert _normalize_rel_type("") is None
+
+
+async def test_the_llm_path_keeps_the_synonym_and_drops_the_off_vocabulary_edge():
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    reply = {
+        "entities": [
+            {"name": "Ostravik", "entity_type": "Ship", "confidence": 0.9},
+            {"name": "Torvik", "entity_type": "Location", "confidence": 0.9},
+            {"name": "Source", "entity_type": "Person", "confidence": 0.7},
+        ],
+        "relationships": [
+            {"source_entity": "Ostravik", "target_entity": "Torvik", "relationship_type": "BERTHS_AT",
+             "confidence": 0.9},
+            {"source_entity": "Source", "target_entity": "Ostravik", "relationship_type": "REPORTED",
+             "confidence": 0.8},
+        ],
+    }
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        result = await extraction.extract_entities_llm("Ostravik berths at Torvik.", "doc-fix")
+    assert result.degraded is False
+    assert [(r["source_name"], r["rel_type"], r["target_name"]) for r in result[1]] == [
+        ("Ostravik", "LOCATED_AT", "Torvik"),
+    ]
+    assert result.skipped_items == 0, "an off-vocabulary type is not a malformed item"
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}

@@ -582,10 +582,41 @@ def _product_type(ent) -> str:
     return ""
 
 
-def _normalize_rel_type(raw: str) -> str:
-    """Collapse an unrecognized LLM relationship type to ASSOCIATED_WITH."""
-    rt = (raw or "").strip().upper()
-    return rt if rt in _VALID_REL_TYPES else "ASSOCIATED_WITH"
+# What the model writes for a relationship the vocabulary already has. Only
+# same-direction synonyms: "COMMANDS" is COMMANDED_BY reversed, and reversing
+# an edge on a guess is worse than not storing it.
+_REL_TYPE_SYNONYMS = {
+    "LOCATED_AT": (
+        "LOCATED_IN", "BASED_AT", "BASED_IN", "HEADQUARTERED_AT", "HEADQUARTERED_IN",
+        "BERTHS_AT", "BERTHED_AT", "DOCKED_AT", "MOORED_AT", "POSITIONED_AT", "OCCURRED_AT", "OCCURRED_IN",
+    ),
+    "DEPLOYED_AT": ("DEPLOYED_TO", "DEPLOYED_IN", "STATIONED_AT", "STATIONED_IN"),
+    "TARGETS": ("TARGETED", "ATTACKS", "ATTACKED", "COMPROMISED", "COMPROMISES", "BREACHED", "STRUCK"),
+    "USES": ("USED", "EMPLOYS", "EMPLOYED", "LEVERAGES", "LEVERAGED", "OPERATES", "OPERATED", "DEPLOYS"),
+    "EXPLOITS": ("EXPLOITED", "EXPLOITING"),
+    "BELONGS_TO": ("MEMBER_OF", "PART_OF", "SUBORDINATE_TO", "ASSIGNED_TO", "UNIT_OF"),
+    "ATTRIBUTED_TO": ("ATTRIBUTED", "LINKED_TO"),
+    "COMMUNICATES_WITH": ("CONNECTS_TO", "CONNECTED_TO", "BEACONS_TO", "CONTACTED"),
+    "RESOLVES_TO": ("RESOLVED_TO", "POINTS_TO"),
+    "COMMANDED_BY": ("LED_BY",),
+    "FUNDED_BY": ("FINANCED_BY", "SPONSORED_BY"),
+    "SUPPLIED_BY": ("PROVIDED_BY",),
+}
+_REL_TYPE_CANON = {syn: canon for canon, syns in _REL_TYPE_SYNONYMS.items() for syn in syns}
+
+
+def _normalize_rel_type(raw: str) -> str | None:
+    """The vocabulary type a model relationship type means, or None.
+
+    A synonym keeps its type: "BERTHS_AT" is LOCATED_AT, and collapsing it to
+    ASSOCIATED_WITH threw away the one thing the sentence said. A type with no
+    meaning in the vocabulary ("REPORTED", "DOES_NOT_ESTABLISH") returns None:
+    storing it as ASSOCIATED_WITH asserted an association the model never made.
+    """
+    rt = re.sub(r"[\s-]+", "_", (raw or "").strip().upper())
+    if rt in _VALID_REL_TYPES:
+        return rt
+    return _REL_TYPE_CANON.get(rt)
 
 
 def _clean_evidence(sentence: str, name_a: str, name_b: str, pad: int = 45, max_len: int = 300) -> str:
@@ -1729,13 +1760,26 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
         except (TypeError, ValueError, AttributeError):
             skipped += 1
     relationships: list[dict] = []
+    untyped: dict[str, int] = {}
     for r in raw_rels:
         try:
-            relationships.append(_llm_relationship(r, doc_id))
+            rel = _llm_relationship(r, doc_id)
         except (TypeError, ValueError, AttributeError):
             skipped += 1
+            continue
+        if rel["rel_type"] is None:
+            # Well-formed, but its type means nothing the graph can store
+            # ("REPORTED", "DOES_NOT_ESTABLISH"). Not malformed, so not a
+            # skipped item; counted here so the loss is visible.
+            raw_type = str(r.get("relationship_type", r.get("rel_type", "")))[:40]
+            untyped[raw_type] = untyped.get(raw_type, 0) + 1
+            continue
+        relationships.append(rel)
     if skipped:
         logger.warning("LLM extraction for doc %s skipped %d malformed item(s)", doc_id, skipped)
+    if untyped:
+        logger.info("LLM extraction for doc %s dropped %d relationship(s) of no vocabulary type: %s",
+                    doc_id, sum(untyped.values()), untyped)
 
     # The same provenance rule the regex pass applies (G-8): a citation link
     # is not an indicator because the model, rather than a regex, read it.
