@@ -244,6 +244,13 @@ def test_carriers_and_annexes_that_are_not_ships_stay_what_they_were():
     assert types.get("Annex") != "Ship"
 
 
+def test_a_unit_written_with_its_designator_in_brackets_is_not_a_ship():
+    from intel_platform.services.extraction import _hull_numbers
+
+    text = "Combined Task Force (CTF-150) and the Harbour Authority (HA-12) met Ostravik (A-411)."
+    assert _hull_numbers(text) == [("Ostravik", "A-411")]
+
+
 def test_the_vessel_evidence_retypes_what_the_model_called_a_person():
     from intel_platform.services.extraction import _apply_vessel_hints
 

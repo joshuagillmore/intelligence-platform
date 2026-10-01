@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 
 import spacy
 
@@ -611,11 +612,21 @@ _VESSEL_OVERRIDABLE = frozenset({
 })
 
 
+# A unit or body written with its designator ("Combined Task Force (CTF-150)")
+# has the same shape as a hull number; its own name says what it is.
+_UNIT_WORDS = frozenset({
+    "force", "group", "command", "authority", "regiment", "battalion", "brigade", "division",
+    "squadron", "agency", "ministry", "service", "unit", "wing", "fleet", "detachment", "corps",
+    "army", "navy", "council", "committee",
+})
+
+
 def _hull_numbers(text: str) -> list[tuple[str, str]]:
     """(name, hull number) for every "Name (A-411)" in the text."""
     return [
         (m.group(1), m.group(2)) for m in _HULL_NUMBER.finditer(text or "")
         if m.group(1).lower() not in _NOT_VESSELS
+        and not _UNIT_WORDS.intersection(m.group(1).lower().split())
     ]
 
 
@@ -1261,6 +1272,7 @@ def _strip_determiner(name: str) -> str:
 _CASELESS_MIN = 4
 
 
+@lru_cache(maxsize=4096)
 def _name_pattern(name: str) -> re.Pattern:
     flags = re.IGNORECASE if len(name) >= _CASELESS_MIN else 0
     return re.compile(r"(?<!\w)" + re.escape(name) + r"(?!\w)", flags)
