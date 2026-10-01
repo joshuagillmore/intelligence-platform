@@ -1,48 +1,38 @@
 {
   "mode": "llm",
-  "generated_at": "2026-10-01T04:26:38+00:00",
-  "git_commit": "85559543",
+  "generated_at": "2026-10-01T12:19:09+00:00",
+  "git_commit": "719b9ca6",
   "spacy_model": "en_core_web_sm",
   "llm": {
     "provider": "CohereProvider",
     "model": "command-a-plus-05-2026",
     "replies": {
       "live": 0,
-      "replayed": 86
+      "replayed": 83
     }
   },
-  "degraded_documents": [
-    "openrep/crs-R44175_10: reply had no entities or relationships list"
-  ],
+  "degraded_documents": [],
   "overall": {
     "documents": 83,
     "entity": {
-      "precision": 0.6161,
-      "recall": 0.905,
-      "f1": 0.7331,
-      "tp": 581,
+      "precision": 0.6448,
+      "recall": 0.947,
+      "f1": 0.7672,
+      "tp": 608,
       "predicted": 943,
       "expected": 642
     },
     "entity_typed": {
-      "precision": 0.5578,
-      "recall": 0.8193,
-      "f1": 0.6637,
-      "tp": 526,
+      "precision": 0.5949,
+      "recall": 0.8738,
+      "f1": 0.7079,
+      "tp": 561,
       "predicted": 943,
       "expected": 642
     },
-    "type_accuracy": 0.9053,
-    "category_accuracy": 0.9053,
+    "type_accuracy": 0.9227,
+    "category_accuracy": 0.9227,
     "per_type": {
-      "Activity": {
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "tp": 0,
-        "predicted": 1,
-        "expected": 0
-      },
       "Aircraft": {
         "precision": 0.0,
         "recall": 0.0,
@@ -59,28 +49,20 @@
         "predicted": 13,
         "expected": 0
       },
-      "Concept": {
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "tp": 0,
-        "predicted": 2,
-        "expected": 0
-      },
       "Date": {
-        "precision": 0.7183,
-        "recall": 0.8095,
-        "f1": 0.7612,
-        "tp": 102,
-        "predicted": 142,
+        "precision": 0.7279,
+        "recall": 0.8492,
+        "f1": 0.7839,
+        "tp": 107,
+        "predicted": 147,
         "expected": 126
       },
       "Document": {
-        "precision": 0.3243,
-        "recall": 0.7059,
-        "f1": 0.4444,
-        "tp": 24,
-        "predicted": 74,
+        "precision": 0.4384,
+        "recall": 0.9412,
+        "f1": 0.5981,
+        "tp": 32,
+        "predicted": 73,
         "expected": 34
       },
       "Domain": {
@@ -104,15 +86,15 @@
         "recall": 0.0,
         "f1": 0.0,
         "tp": 0,
-        "predicted": 16,
+        "predicted": 9,
         "expected": 0
       },
       "Event": {
-        "precision": 0.1039,
+        "precision": 0.093,
         "recall": 0.6667,
-        "f1": 0.1798,
+        "f1": 0.1633,
         "tp": 8,
-        "predicted": 77,
+        "predicted": 86,
         "expected": 12
       },
       "Financial": {
@@ -139,14 +121,6 @@
         "predicted": 2,
         "expected": 2
       },
-      "Indicator": {
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "tp": 0,
-        "predicted": 5,
-        "expected": 0
-      },
       "Infrastructure": {
         "precision": 0.0,
         "recall": 0.0,
@@ -156,35 +130,27 @@
         "expected": 0
       },
       "Location": {
-        "precision": 0.7937,
-        "recall": 0.8108,
-        "f1": 0.8021,
-        "tp": 150,
-        "predicted": 189,
+        "precision": 0.8,
+        "recall": 0.8432,
+        "f1": 0.8211,
+        "tp": 156,
+        "predicted": 195,
         "expected": 185
       },
-      "Material": {
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "tp": 0,
-        "predicted": 3,
-        "expected": 0
-      },
       "Organization": {
-        "precision": 0.661,
-        "recall": 0.9017,
-        "f1": 0.7628,
-        "tp": 156,
-        "predicted": 236,
+        "precision": 0.6838,
+        "recall": 0.9249,
+        "f1": 0.7862,
+        "tp": 160,
+        "predicted": 234,
         "expected": 173
       },
       "Person": {
-        "precision": 0.6596,
-        "recall": 0.9118,
-        "f1": 0.7654,
-        "tp": 31,
-        "predicted": 47,
+        "precision": 0.6875,
+        "recall": 0.9706,
+        "f1": 0.8049,
+        "tp": 33,
+        "predicted": 48,
         "expected": 34
       },
       "Product": {
@@ -192,23 +158,15 @@
         "recall": 0.0,
         "f1": 0.0,
         "tp": 0,
-        "predicted": 26,
-        "expected": 0
-      },
-      "Program": {
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "tp": 0,
-        "predicted": 10,
+        "predicted": 25,
         "expected": 0
       },
       "Ship": {
-        "precision": 0.9118,
-        "recall": 0.62,
-        "f1": 0.7381,
-        "tp": 31,
-        "predicted": 34,
+        "precision": 0.907,
+        "recall": 0.78,
+        "f1": 0.8387,
+        "tp": 39,
+        "predicted": 43,
         "expected": 50
       },
       "Software": {
@@ -260,66 +218,65 @@
         "expected": 2
       },
       "Weapon": {
-        "precision": 0.6154,
-        "recall": 0.8,
-        "f1": 0.6957,
-        "tp": 8,
-        "predicted": 13,
+        "precision": 0.6667,
+        "recall": 1.0,
+        "f1": 0.8,
+        "tp": 10,
+        "predicted": 15,
         "expected": 10
       }
     },
     "type_confusion": {
-      "Location -> Organization": 13,
+      "Location -> Organization": 14,
       "Ship -> Person": 7,
-      "Ship -> Equipment": 7,
-      "Ship -> Location": 4,
+      "Ship -> Location": 3,
       "Location -> ThreatActor": 3,
       "Organization -> Software": 3,
       "Date -> Document": 3,
       "Event -> Campaign": 2,
-      "Weapon -> Organization": 2,
       "Organization -> ThreatActor": 1,
       "Location -> TTP": 1,
       "Location -> Campaign": 1,
       "Date -> Organization": 1,
-      "Ship -> Organization": 1,
       "Technology -> Campaign": 1,
       "Person -> Organization": 1,
       "Document -> Treaty": 1,
       "Organization -> Event": 1,
       "Location -> Document": 1,
+      "Technology -> Organization": 1,
+      "Ship -> Equipment": 1,
       "Location -> Event": 1
     },
     "relationship": {
-      "precision": 0.0468,
-      "recall": 0.4167,
-      "f1": 0.0842,
-      "tp": 40,
-      "predicted": 854,
+      "precision": 0.0529,
+      "recall": 0.4583,
+      "f1": 0.0948,
+      "tp": 44,
+      "predicted": 832,
       "expected": 96
     },
-    "relationship_pairs_found": 64,
+    "relationship_pairs_found": 69,
     "relationship_types_predicted": {
-      "ASSOCIATED_WITH": 299,
-      "TARGETS": 138,
-      "OCCURRED_ON": 123,
-      "USES": 65,
+      "ASSOCIATED_WITH": 276,
+      "TARGETS": 139,
+      "OCCURRED_ON": 125,
+      "USES": 64,
       "BELONGS_TO": 60,
-      "LOCATED_AT": 44,
-      "SUPPLIED_BY": 42,
-      "MENTIONED_IN": 27,
-      "DEPLOYED_AT": 19,
-      "ATTRIBUTED_TO": 12,
-      "COMMUNICATES_WITH": 8,
-      "FUNDED_BY": 5,
+      "LOCATED_AT": 49,
+      "SUPPLIED_BY": 38,
+      "MENTIONED_IN": 25,
+      "DEPLOYED_AT": 21,
+      "ATTRIBUTED_TO": 10,
+      "COMMUNICATES_WITH": 10,
       "COMMANDED_BY": 3,
+      "FUNDED_BY": 3,
       "EXPLOITS": 2,
       "ASSESSES": 2,
       "SUPPORTED_BY": 2,
       "RELATED_TO": 2,
       "RESOLVES_TO": 1
     },
-    "associated_with_share": 0.3501,
+    "associated_with_share": 0.3317,
     "relationship_recall_by_type": {
       "ATTRIBUTED_TO": {
         "tp": 2,
@@ -334,7 +291,7 @@
         "expected": 3
       },
       "DEPLOYED_AT": {
-        "tp": 2,
+        "tp": 4,
         "expected": 6
       },
       "EXPLOITS": {
@@ -346,7 +303,7 @@
         "expected": 1
       },
       "LOCATED_AT": {
-        "tp": 4,
+        "tp": 5,
         "expected": 13
       },
       "SUPPLIED_BY": {
@@ -358,7 +315,7 @@
         "expected": 23
       },
       "USES": {
-        "tp": 4,
+        "tp": 5,
         "expected": 6
       }
     }
@@ -367,32 +324,24 @@
     "openrep": {
       "documents": 40,
       "entity": {
-        "precision": 0.5767,
-        "recall": 0.8843,
-        "f1": 0.6981,
-        "tp": 451,
+        "precision": 0.6113,
+        "recall": 0.9373,
+        "f1": 0.7399,
+        "tp": 478,
         "predicted": 782,
         "expected": 510
       },
       "entity_typed": {
-        "precision": 0.5192,
-        "recall": 0.7961,
-        "f1": 0.6285,
-        "tp": 406,
+        "precision": 0.5639,
+        "recall": 0.8647,
+        "f1": 0.6827,
+        "tp": 441,
         "predicted": 782,
         "expected": 510
       },
-      "type_accuracy": 0.9002,
-      "category_accuracy": 0.9002,
+      "type_accuracy": 0.9226,
+      "category_accuracy": 0.9226,
       "per_type": {
-        "Activity": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1": 0.0,
-          "tp": 0,
-          "predicted": 1,
-          "expected": 0
-        },
         "Aircraft": {
           "precision": 0.0,
           "recall": 0.0,
@@ -409,28 +358,20 @@
           "predicted": 13,
           "expected": 0
         },
-        "Concept": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1": 0.0,
-          "tp": 0,
-          "predicted": 2,
-          "expected": 0
-        },
         "Date": {
-          "precision": 0.7143,
-          "recall": 0.813,
-          "f1": 0.7605,
-          "tp": 100,
-          "predicted": 140,
+          "precision": 0.7241,
+          "recall": 0.8537,
+          "f1": 0.7836,
+          "tp": 105,
+          "predicted": 145,
           "expected": 123
         },
         "Document": {
-          "precision": 0.3239,
-          "recall": 0.697,
-          "f1": 0.4423,
-          "tp": 23,
-          "predicted": 71,
+          "precision": 0.4429,
+          "recall": 0.9394,
+          "f1": 0.6019,
+          "tp": 31,
+          "predicted": 70,
           "expected": 33
         },
         "Drone": {
@@ -446,15 +387,15 @@
           "recall": 0.0,
           "f1": 0.0,
           "tp": 0,
-          "predicted": 16,
+          "predicted": 9,
           "expected": 0
         },
         "Event": {
-          "precision": 0.1404,
+          "precision": 0.1212,
           "recall": 0.6667,
-          "f1": 0.2319,
+          "f1": 0.2051,
           "tp": 8,
-          "predicted": 57,
+          "predicted": 66,
           "expected": 12
         },
         "Financial": {
@@ -473,14 +414,6 @@
           "predicted": 1,
           "expected": 0
         },
-        "Indicator": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1": 0.0,
-          "tp": 0,
-          "predicted": 5,
-          "expected": 0
-        },
         "Infrastructure": {
           "precision": 0.0,
           "recall": 0.0,
@@ -490,35 +423,27 @@
           "expected": 0
         },
         "Location": {
-          "precision": 0.7959,
-          "recall": 0.7697,
-          "f1": 0.7826,
-          "tp": 117,
-          "predicted": 147,
+          "precision": 0.8039,
+          "recall": 0.8092,
+          "f1": 0.8066,
+          "tp": 123,
+          "predicted": 153,
           "expected": 152
         },
-        "Material": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1": 0.0,
-          "tp": 0,
-          "predicted": 3,
-          "expected": 0
-        },
         "Organization": {
-          "precision": 0.5949,
-          "recall": 0.8788,
-          "f1": 0.7095,
-          "tp": 116,
-          "predicted": 195,
+          "precision": 0.6218,
+          "recall": 0.9091,
+          "f1": 0.7385,
+          "tp": 120,
+          "predicted": 193,
           "expected": 132
         },
         "Person": {
-          "precision": 0.775,
-          "recall": 0.9118,
-          "f1": 0.8378,
-          "tp": 31,
-          "predicted": 40,
+          "precision": 0.8049,
+          "recall": 0.9706,
+          "f1": 0.88,
+          "tp": 33,
+          "predicted": 41,
           "expected": 34
         },
         "Product": {
@@ -526,23 +451,15 @@
           "recall": 0.0,
           "f1": 0.0,
           "tp": 0,
-          "predicted": 26,
-          "expected": 0
-        },
-        "Program": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1": 0.0,
-          "tp": 0,
-          "predicted": 10,
+          "predicted": 25,
           "expected": 0
         },
         "Ship": {
-          "precision": 0.3333,
-          "recall": 0.1,
-          "f1": 0.1538,
-          "tp": 1,
-          "predicted": 3,
+          "precision": 0.75,
+          "recall": 0.9,
+          "f1": 0.8182,
+          "tp": 9,
+          "predicted": 12,
           "expected": 10
         },
         "Software": {
@@ -586,63 +503,61 @@
           "expected": 0
         },
         "Weapon": {
-          "precision": 0.6154,
-          "recall": 0.8,
-          "f1": 0.6957,
-          "tp": 8,
-          "predicted": 13,
+          "precision": 0.6667,
+          "recall": 1.0,
+          "f1": 0.8,
+          "tp": 10,
+          "predicted": 15,
           "expected": 10
         }
       },
       "type_confusion": {
-        "Location -> Organization": 13,
-        "Ship -> Equipment": 7,
+        "Location -> Organization": 14,
         "Location -> ThreatActor": 3,
         "Organization -> Software": 3,
         "Date -> Document": 3,
         "Event -> Campaign": 2,
-        "Weapon -> Organization": 2,
         "Organization -> ThreatActor": 1,
         "Location -> TTP": 1,
         "Location -> Campaign": 1,
         "Date -> Organization": 1,
-        "Ship -> Organization": 1,
         "Technology -> Campaign": 1,
         "Person -> Organization": 1,
         "Document -> Treaty": 1,
         "Organization -> Event": 1,
         "Location -> Document": 1,
-        "Ship -> Location": 1,
+        "Technology -> Organization": 1,
+        "Ship -> Equipment": 1,
         "Location -> Event": 1
       },
       "relationship": {
-        "precision": 0.0336,
-        "recall": 0.3425,
-        "f1": 0.0612,
-        "tp": 25,
-        "predicted": 744,
+        "precision": 0.0402,
+        "recall": 0.3973,
+        "f1": 0.073,
+        "tp": 29,
+        "predicted": 722,
         "expected": 73
       },
-      "relationship_pairs_found": 43,
+      "relationship_pairs_found": 48,
       "relationship_types_predicted": {
-        "ASSOCIATED_WITH": 253,
-        "TARGETS": 125,
-        "OCCURRED_ON": 120,
-        "USES": 56,
+        "ASSOCIATED_WITH": 230,
+        "TARGETS": 126,
+        "OCCURRED_ON": 122,
+        "USES": 55,
         "BELONGS_TO": 54,
-        "SUPPLIED_BY": 41,
-        "LOCATED_AT": 29,
-        "MENTIONED_IN": 19,
-        "DEPLOYED_AT": 17,
-        "ATTRIBUTED_TO": 10,
-        "COMMUNICATES_WITH": 6,
-        "FUNDED_BY": 5,
+        "SUPPLIED_BY": 37,
+        "LOCATED_AT": 34,
+        "DEPLOYED_AT": 19,
+        "MENTIONED_IN": 17,
+        "ATTRIBUTED_TO": 8,
+        "COMMUNICATES_WITH": 8,
         "COMMANDED_BY": 3,
+        "FUNDED_BY": 3,
         "ASSESSES": 2,
         "SUPPORTED_BY": 2,
         "RELATED_TO": 2
       },
-      "associated_with_share": 0.3401,
+      "associated_with_share": 0.3186,
       "relationship_recall_by_type": {
         "BELONGS_TO": {
           "tp": 11,
@@ -653,7 +568,7 @@
           "expected": 3
         },
         "DEPLOYED_AT": {
-          "tp": 2,
+          "tp": 4,
           "expected": 6
         },
         "FUNDED_BY": {
@@ -661,7 +576,7 @@
           "expected": 1
         },
         "LOCATED_AT": {
-          "tp": 0,
+          "tp": 1,
           "expected": 3
         },
         "SUPPLIED_BY": {
@@ -673,7 +588,7 @@
           "expected": 18
         },
         "USES": {
-          "tp": 0,
+          "tp": 1,
           "expected": 2
         }
       }
@@ -962,7 +877,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 11,
@@ -1087,7 +1002,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 13,
@@ -1198,7 +1113,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 13,
@@ -1308,7 +1223,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 4,
@@ -1382,7 +1297,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 4,
@@ -1460,7 +1375,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 4,
@@ -1557,7 +1472,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -1618,7 +1533,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 4,
@@ -1687,7 +1602,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 5,
@@ -1746,7 +1661,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 4,
@@ -1827,7 +1742,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -1902,7 +1817,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 3,
@@ -1971,7 +1886,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -2037,7 +1952,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 1,
@@ -2086,7 +2001,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -2144,7 +2059,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -2210,7 +2125,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 4,
@@ -2291,7 +2206,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -2349,7 +2264,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -2411,7 +2326,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 3,
@@ -2471,7 +2386,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -2551,7 +2466,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 1,
@@ -2611,7 +2526,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -2669,7 +2584,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -2722,7 +2637,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -3001,7 +2916,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 1,
@@ -3059,7 +2974,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.08,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -3126,7 +3041,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 1,
@@ -3186,7 +3101,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 1,
@@ -3235,7 +3150,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -3293,7 +3208,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 3,
@@ -3371,7 +3286,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -3445,7 +3360,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 3,
@@ -3507,7 +3422,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -3561,7 +3476,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 3,
@@ -3629,7 +3544,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.07,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 1,
@@ -3691,7 +3606,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 2,
@@ -3745,7 +3660,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 3,
@@ -3819,7 +3734,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 1,
@@ -3868,7 +3783,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 1.91,
+      "seconds": 0.64,
       "score": {
         "entities": {
           "tp": 6,
@@ -4125,7 +4040,7 @@
       "score": {
         "entities": {
           "tp": 12,
-          "pred": 17,
+          "pred": 15,
           "exp": 12,
           "typed_tp": 12,
           "category_tp": 12
@@ -4151,11 +4066,6 @@
             "pred": 1,
             "exp": 1
           },
-          "Indicator": {
-            "tp": 0,
-            "pred": 2,
-            "exp": 0
-          },
           "Date": {
             "tp": 2,
             "pred": 2,
@@ -4175,13 +4085,12 @@
         "confusion": {},
         "relationships": {
           "tp": 2,
-          "pred": 15,
+          "pred": 13,
           "exp": 5,
           "pair_found": 3
         },
         "rel_types_predicted": {
           "TARGETS": 5,
-          "ATTRIBUTED_TO": 2,
           "DEPLOYED_AT": 1,
           "BELONGS_TO": 1,
           "OCCURRED_ON": 1,
@@ -4203,8 +4112,6 @@
           }
         },
         "false_positives": [
-          "B2 [Indicator]",
-          "D2 [Indicator]",
           "Hybrid warfare [Campaign]",
           "OPENREP-SUPINTREP-0010 [Document]",
           "Undersea infrastructure sabotage [Event]"
@@ -4218,8 +4125,6 @@
         ],
         "relationships_predicted": [
           "Anne Keast-Butler -BELONGS_TO-> GCHQ",
-          "B2 -ATTRIBUTED_TO-> Russia",
-          "D2 -ATTRIBUTED_TO-> Russia",
           "NATO -ASSOCIATED_WITH-> Hybrid warfare",
           "NATO -DEPLOYED_AT-> Baltic Sea",
           "OPENREP-SUPINTREP-0010 -TARGETS-> Baltic Sea",
@@ -4235,12 +4140,12 @@
         ]
       },
       "build": {
-        "entities_created": 14,
+        "entities_created": 12,
         "entities_merged": 1,
         "entities_filtered": 0,
         "dates_absorbed": 1,
         "dates_orphaned": 1,
-        "relationships_created": 12,
+        "relationships_created": 10,
         "relationships_retired": 1,
         "relationships_dropped": 2,
         "relationships_dropped_by_type": {
@@ -4434,11 +4339,11 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 7,
-          "pred": 13,
+          "pred": 10,
           "exp": 7,
           "typed_tp": 4,
           "category_tp": 4
@@ -4463,11 +4368,6 @@
             "tp": 0,
             "pred": 1,
             "exp": 0
-          },
-          "Indicator": {
-            "tp": 0,
-            "pred": 3,
-            "exp": 0
           }
         },
         "confusion": {
@@ -4475,7 +4375,7 @@
         },
         "relationships": {
           "tp": 2,
-          "pred": 13,
+          "pred": 10,
           "exp": 2,
           "pair_found": 2
         },
@@ -4484,8 +4384,7 @@
           "TARGETS": 2,
           "LOCATED_AT": 3,
           "ASSOCIATED_WITH": 3,
-          "BELONGS_TO": 1,
-          "USES": 3
+          "BELONGS_TO": 1
         },
         "rel_gold_by_type": {
           "TARGETS": {
@@ -4500,9 +4399,6 @@
         "false_positives": [
           "Beijing [Location]",
           "Taipei [Location]",
-          "crs-IF12481 [Indicator]",
-          "crs-IF12604 [Indicator]",
-          "crs-RL33153 [Indicator]",
           "grey zone coercion campaign [Campaign]"
         ],
         "false_negatives": [],
@@ -4520,21 +4416,18 @@
           "PRC -LOCATED_AT-> South China Sea",
           "PRC -LOCATED_AT-> Taiwan Strait",
           "PRC -TARGETS-> Taiwan",
-          "PRC -USES-> crs-IF12481",
-          "PRC -USES-> crs-IF12604",
-          "PRC -USES-> crs-RL33153",
           "United States -ASSOCIATED_WITH-> PRC",
           "Xi -BELONGS_TO-> PRC",
           "Xi -TARGETS-> Taiwan"
         ]
       },
       "build": {
-        "entities_created": 12,
-        "entities_merged": 1,
+        "entities_created": 10,
+        "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 0,
-        "relationships_created": 13,
+        "relationships_created": 10,
         "relationships_retired": 0,
         "relationships_dropped": 0,
         "relationships_dropped_by_type": {}
@@ -4550,7 +4443,7 @@
       "score": {
         "entities": {
           "tp": 7,
-          "pred": 20,
+          "pred": 14,
           "exp": 8,
           "typed_tp": 7,
           "category_tp": 7
@@ -4576,22 +4469,7 @@
             "pred": 3,
             "exp": 4
           },
-          "Material": {
-            "tp": 0,
-            "pred": 3,
-            "exp": 0
-          },
-          "Program": {
-            "tp": 0,
-            "pred": 2,
-            "exp": 0
-          },
           "Equipment": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Activity": {
             "tp": 0,
             "pred": 1,
             "exp": 0
@@ -4600,30 +4478,24 @@
         "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 16,
+          "pred": 10,
           "exp": 0,
           "pair_found": 0
         },
         "rel_types_predicted": {
           "TARGETS": 3,
-          "ASSOCIATED_WITH": 10,
+          "ASSOCIATED_WITH": 4,
           "OCCURRED_ON": 3
         },
         "rel_gold_by_type": {},
         "false_positives": [
-          "HEU [Material]",
           "Israel [Location]",
           "OPENREP-SUPINTREP-0037 [Document]",
           "Tehran [Location]",
           "U.S. [Location]",
           "U.S.-Israeli [Organization]",
-          "fissile material [Material]",
-          "low-enriched uranium [Material]",
           "nuclear facilities [Location]",
-          "nuclear power reactors [Equipment]",
-          "nuclear weapons program [Program]",
-          "peaceful nuclear applications [Activity]",
-          "uranium enrichment program [Program]"
+          "nuclear power reactors [Equipment]"
         ],
         "false_negatives": [
           "2003 [Date]"
@@ -4633,29 +4505,23 @@
         "relationships_predicted": [
           "2025 U.S. National Security Strategy -ASSOCIATED_WITH-> nuclear facilities",
           "2026 National Defense Strategy -ASSOCIATED_WITH-> nuclear facilities",
-          "HEU -ASSOCIATED_WITH-> fissile material",
           "International Atomic Energy Agency -ASSOCIATED_WITH-> Iran",
           "International Atomic Energy Agency -OCCURRED_ON-> June 2025",
           "Iran -ASSOCIATED_WITH-> nuclear weapons",
-          "Iran -ASSOCIATED_WITH-> nuclear weapons program",
-          "Iran -ASSOCIATED_WITH-> uranium enrichment program",
           "OPENREP-SUPINTREP-0037 -TARGETS-> Iran",
-          "Tehran -ASSOCIATED_WITH-> uranium enrichment program",
           "U.S.-Israeli -OCCURRED_ON-> February 2026",
           "U.S.-Israeli -OCCURRED_ON-> February 28",
           "U.S.-Israeli -TARGETS-> nuclear facilities",
-          "U.S.-Israeli -TARGETS-> nuclear facilities",
-          "uranium enrichment program -ASSOCIATED_WITH-> HEU",
-          "uranium enrichment program -ASSOCIATED_WITH-> low-enriched uranium"
+          "U.S.-Israeli -TARGETS-> nuclear facilities"
         ]
       },
       "build": {
-        "entities_created": 17,
+        "entities_created": 11,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 3,
-        "relationships_created": 12,
+        "relationships_created": 6,
         "relationships_retired": 3,
         "relationships_dropped": 1,
         "relationships_dropped_by_type": {
@@ -4669,7 +4535,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 4,
@@ -4757,7 +4623,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 8,
@@ -4878,7 +4744,7 @@
       "score": {
         "entities": {
           "tp": 4,
-          "pred": 18,
+          "pred": 16,
           "exp": 4,
           "typed_tp": 2,
           "category_tp": 2
@@ -4914,11 +4780,6 @@
             "pred": 2,
             "exp": 0
           },
-          "Concept": {
-            "tp": 0,
-            "pred": 2,
-            "exp": 0
-          },
           "Event": {
             "tp": 0,
             "pred": 2,
@@ -4941,13 +4802,13 @@
         },
         "relationships": {
           "tp": 1,
-          "pred": 22,
+          "pred": 20,
           "exp": 1,
           "pair_found": 1
         },
         "rel_types_predicted": {
-          "TARGETS": 4,
-          "ASSOCIATED_WITH": 7,
+          "TARGETS": 3,
+          "ASSOCIATED_WITH": 6,
           "ATTRIBUTED_TO": 1,
           "USES": 1,
           "FUNDED_BY": 1,
@@ -4962,7 +4823,6 @@
         "false_positives": [
           "Baltic region [Location]",
           "Baltic states' infrastructure [Infrastructure]",
-          "European security [Concept]",
           "NATO officials [Organization]",
           "NATO reinforcement schedules [Event]",
           "OPENREP-SUPINTREP-0161 [Document]",
@@ -4971,7 +4831,6 @@
           "defense spending [Financial]",
           "logistical disruptions [Event]",
           "since 2014 [Date]",
-          "strategic focus [Concept]",
           "underwater communication and energy cables [Infrastructure]",
           "winter 2023-2024 [Date]"
         ],
@@ -4983,7 +4842,6 @@
         "relationships_missed": [],
         "relationships_predicted": [
           "Baltic states' infrastructure -ASSOCIATED_WITH-> vulnerabilities",
-          "NATO -ASSOCIATED_WITH-> strategic focus",
           "NATO -FUNDED_BY-> defense spending",
           "NATO officials -ASSOCIATED_WITH-> Russian hybrid warfare activities",
           "No reporting -ASSOCIATED_WITH-> impact of Russian hybrid warfare tactics against Baltic states on NATO reinforcement timelines during winter 2023-2024",
@@ -4996,7 +4854,6 @@
           "OPENREP-SUPINTREP-0161 -MENTIONED_IN-> undersea and cable infrastructure",
           "OPENREP-SUPINTREP-0161 -MENTIONED_IN-> winter 2023-2024",
           "Russian hybrid operations -ASSOCIATED_WITH-> logistical disruptions",
-          "Russian hybrid warfare activities -TARGETS-> European security",
           "Russian hybrid warfare tactics -TARGETS-> Baltic states",
           "Russian hybrid warfare tactics -TARGETS-> NATO reinforcement timelines",
           "Russian hybrid warfare tactics -TARGETS-> undersea and cable infrastructure",
@@ -5007,16 +4864,16 @@
         ]
       },
       "build": {
-        "entities_created": 16,
+        "entities_created": 14,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 2,
-        "relationships_created": 12,
+        "relationships_created": 11,
         "relationships_retired": 0,
-        "relationships_dropped": 10,
+        "relationships_dropped": 9,
         "relationships_dropped_by_type": {
-          "TARGETS": 3,
+          "TARGETS": 2,
           "ASSOCIATED_WITH": 4,
           "MENTIONED_IN": 3
         }
@@ -5140,7 +4997,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 14,
@@ -5307,7 +5164,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 5,
@@ -5484,7 +5341,7 @@
       "score": {
         "entities": {
           "tp": 11,
-          "pred": 16,
+          "pred": 15,
           "exp": 11,
           "typed_tp": 11,
           "category_tp": 11
@@ -5510,11 +5367,6 @@
             "pred": 1,
             "exp": 1
           },
-          "Program": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
           "Date": {
             "tp": 2,
             "pred": 3,
@@ -5524,14 +5376,14 @@
         "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 13,
+          "pred": 12,
           "exp": 1,
           "pair_found": 1
         },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 6,
           "BELONGS_TO": 2,
-          "SUPPLIED_BY": 2,
+          "SUPPLIED_BY": 1,
           "USES": 1,
           "OCCURRED_ON": 2
         },
@@ -5544,7 +5396,6 @@
         "false_positives": [
           "Japanese government [Organization]",
           "March 2028 [Date]",
-          "U.S. Foreign Military Sales program [Program]",
           "U.S. [Location]",
           "U.S. forces [Organization]"
         ],
@@ -5565,17 +5416,16 @@
           "Japanese government -SUPPLIED_BY-> Tomahawk Weapon System",
           "Self-Defense Forces -ASSOCIATED_WITH-> U.S. forces",
           "Takaichi -BELONGS_TO-> Japanese government",
-          "Tomahawk Weapon System -ASSOCIATED_WITH-> Iran",
-          "U.S. Foreign Military Sales program -SUPPLIED_BY-> Tomahawk Weapon System"
+          "Tomahawk Weapon System -ASSOCIATED_WITH-> Iran"
         ]
       },
       "build": {
-        "entities_created": 13,
+        "entities_created": 12,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 3,
-        "relationships_created": 11,
+        "relationships_created": 10,
         "relationships_retired": 2,
         "relationships_dropped": 0,
         "relationships_dropped_by_type": {}
@@ -5587,7 +5437,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 10,
@@ -5720,100 +5570,139 @@
       "seconds": 0.01,
       "score": {
         "entities": {
-          "tp": 0,
-          "pred": 0,
+          "tp": 16,
+          "pred": 28,
           "exp": 17,
-          "typed_tp": 0,
-          "category_tp": 0
+          "typed_tp": 16,
+          "category_tp": 16
         },
         "per_type": {
           "Location": {
-            "tp": 0,
-            "pred": 0,
+            "tp": 6,
+            "pred": 8,
             "exp": 6
           },
           "Person": {
-            "tp": 0,
-            "pred": 0,
+            "tp": 2,
+            "pred": 2,
             "exp": 2
           },
           "Organization": {
-            "tp": 0,
-            "pred": 0,
+            "tp": 4,
+            "pred": 4,
             "exp": 4
           },
           "Date": {
-            "tp": 0,
-            "pred": 0,
+            "tp": 4,
+            "pred": 5,
             "exp": 4
           },
           "Event": {
             "tp": 0,
-            "pred": 0,
+            "pred": 9,
             "exp": 1
           }
         },
         "confusion": {},
         "relationships": {
-          "tp": 0,
-          "pred": 0,
+          "tp": 3,
+          "pred": 30,
           "exp": 4,
-          "pair_found": 0
+          "pair_found": 4
         },
-        "rel_types_predicted": {},
+        "rel_types_predicted": {
+          "OCCURRED_ON": 7,
+          "DEPLOYED_AT": 2,
+          "ASSOCIATED_WITH": 10,
+          "USES": 1,
+          "TARGETS": 2,
+          "SUPPLIED_BY": 2,
+          "LOCATED_AT": 4,
+          "COMMUNICATES_WITH": 2
+        },
         "rel_gold_by_type": {
           "SUPPLIED_BY": {
             "tp": 0,
             "exp": 1
           },
           "DEPLOYED_AT": {
-            "tp": 0,
+            "tp": 2,
             "exp": 2
           },
           "LOCATED_AT": {
-            "tp": 0,
+            "tp": 1,
             "exp": 1
           }
         },
-        "false_positives": [],
-        "false_negatives": [
-          "1992 [Date]",
-          "2023 [Date]",
-          "Africa Initiative [Organization]",
-          "Africa Summit [Event]",
-          "Alliance of Sahel States [Organization]",
-          "April 2025 [Date]",
-          "Burkina Faso [Location]",
-          "Mali [Location]",
-          "May 2025 [Date]",
-          "Niger [Location]",
-          "Nordgold [Organization]",
-          "Ouagadougou [Location]",
+        "false_positives": [
+          "Government awarded mining license to Nordgold [Event]",
+          "Malian rebel groups killed Russian personnel [Event]",
           "Russia [Location]",
-          "Traoré [Person]",
-          "Ukraine [Location]",
-          "Vladimir Putin [Person]",
-          "Wagner Group [Organization]"
+          "Russia pledged arms to Alliance of Sahel States [Event]",
+          "Russia reopened embassy in Ouagadougou [Event]",
+          "Russia supplied weapons to Burkina Faso [Event]",
+          "Russian personnel deployed to Burkina Faso [Event]",
+          "Traoré held talks with Putin [Event]",
+          "Traoré referred to Russia as strategic ally [Event]",
+          "Traoré visited Russia [Event]",
+          "U.S. [Location]",
+          "late 2023 [Date]"
+        ],
+        "false_negatives": [
+          "Africa Summit [Event]"
         ],
         "mistyped": [],
         "relationships_missed": [
-          "Africa Initiative -LOCATED_AT-> Burkina Faso",
-          "Burkina Faso -SUPPLIED_BY-> Russia",
-          "Russia -DEPLOYED_AT-> Burkina Faso",
-          "Russia -DEPLOYED_AT-> Mali"
+          "Burkina Faso -SUPPLIED_BY-> Russia"
         ],
-        "relationships_predicted": []
+        "relationships_predicted": [
+          "Africa Initiative -LOCATED_AT-> Burkina Faso",
+          "Burkina -ASSOCIATED_WITH-> Ukraine",
+          "Government awarded mining license to Nordgold -OCCURRED_ON-> April 2025",
+          "Government awarded mining license to Nordgold -SUPPLIED_BY-> Nordgold",
+          "Mali -ASSOCIATED_WITH-> Ukraine",
+          "Malian rebel groups -LOCATED_AT-> Mali",
+          "Malian rebel groups -TARGETS-> Russian personnel",
+          "Moscow -ASSOCIATED_WITH-> Wagner Group",
+          "Niger -ASSOCIATED_WITH-> Ukraine",
+          "Nordgold -ASSOCIATED_WITH-> U.S.",
+          "Russia -ASSOCIATED_WITH-> Mali",
+          "Russia -ASSOCIATED_WITH-> Wagner Group",
+          "Russia -USES-> Russia supplied weapons to Burkina Faso",
+          "Russia pledged arms to Alliance of Sahel States -OCCURRED_ON-> April 2025",
+          "Russia pledged arms to Alliance of Sahel States -SUPPLIED_BY-> Alliance of Sahel States",
+          "Russia reopened embassy in Ouagadougou -ASSOCIATED_WITH-> 1992",
+          "Russia reopened embassy in Ouagadougou -LOCATED_AT-> Ouagadougou",
+          "Russia reopened embassy in Ouagadougou -OCCURRED_ON-> 2023",
+          "Russia supplied weapons to Burkina Faso -TARGETS-> Burkina Faso",
+          "Russian personnel -DEPLOYED_AT-> Mali",
+          "Russian personnel deployed to Burkina Faso -DEPLOYED_AT-> Burkina Faso",
+          "Russian personnel deployed to Burkina Faso -OCCURRED_ON-> late 2023",
+          "Traoré -ASSOCIATED_WITH-> Russian personnel deployed to Burkina Faso",
+          "Traoré -COMMUNICATES_WITH-> Vladimir Putin",
+          "Traoré held talks with Putin -COMMUNICATES_WITH-> Vladimir Putin",
+          "Traoré held talks with Putin -OCCURRED_ON-> 2023",
+          "Traoré referred to Russia as strategic ally -ASSOCIATED_WITH-> Russia",
+          "Traoré referred to Russia as strategic ally -OCCURRED_ON-> 2023",
+          "Traoré visited Russia -LOCATED_AT-> Russia",
+          "Traoré visited Russia -OCCURRED_ON-> May 2025"
+        ]
       },
       "build": {
-        "entities_created": 0,
+        "entities_created": 23,
         "entities_merged": 0,
         "entities_filtered": 0,
-        "dates_absorbed": 0,
-        "dates_orphaned": 0,
-        "relationships_created": 0,
-        "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "dates_absorbed": 4,
+        "dates_orphaned": 1,
+        "relationships_created": 18,
+        "relationships_retired": 7,
+        "relationships_dropped": 5,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 2,
+          "TARGETS": 1,
+          "LOCATED_AT": 1,
+          "DEPLOYED_AT": 1
+        }
       }
     },
     {
@@ -5822,7 +5711,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 14,
@@ -5949,7 +5838,7 @@
       "score": {
         "entities": {
           "tp": 16,
-          "pred": 23,
+          "pred": 22,
           "exp": 16,
           "typed_tp": 16,
           "category_tp": 16
@@ -5979,23 +5868,18 @@
             "tp": 0,
             "pred": 2,
             "exp": 0
-          },
-          "Program": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
           }
         },
         "confusion": {},
         "relationships": {
           "tp": 3,
-          "pred": 31,
+          "pred": 29,
           "exp": 3,
           "pair_found": 3
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 18,
-          "BELONGS_TO": 4,
+          "ASSOCIATED_WITH": 17,
+          "BELONGS_TO": 3,
           "OCCURRED_ON": 6,
           "TARGETS": 1,
           "MENTIONED_IN": 2
@@ -6011,7 +5895,6 @@
           "CRS In Focus IF12106 [Document]",
           "CRS Report R40094 [Document]",
           "Iranian nuclear facilities [Location]",
-          "Tehran's enrichment program [Program]",
           "U.S.-Israeli airstrikes [Event]",
           "UN sanctions [Event]"
         ],
@@ -6035,8 +5918,6 @@
           "Resolution 2231 -ASSOCIATED_WITH-> UN Security Council",
           "Resolution 2231 -ASSOCIATED_WITH-> UN sanctions",
           "Resolution 2231 -OCCURRED_ON-> July 20, 2015",
-          "Tehran's enrichment program -ASSOCIATED_WITH-> Iranian nuclear facilities",
-          "Tehran's enrichment program -BELONGS_TO-> Iran",
           "U.S.-Israeli airstrikes -OCCURRED_ON-> June 2025",
           "U.S.-Israeli airstrikes -TARGETS-> Iranian nuclear facilities",
           "UN Security Council -ASSOCIATED_WITH-> Iranian nuclear issue",
@@ -6053,12 +5934,12 @@
         ]
       },
       "build": {
-        "entities_created": 16,
+        "entities_created": 15,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 2,
         "dates_orphaned": 5,
-        "relationships_created": 23,
+        "relationships_created": 21,
         "relationships_retired": 6,
         "relationships_dropped": 2,
         "relationships_dropped_by_type": {
@@ -6078,13 +5959,18 @@
           "tp": 5,
           "pred": 14,
           "exp": 5,
-          "typed_tp": 4,
-          "category_tp": 4
+          "typed_tp": 5,
+          "category_tp": 5
         },
         "per_type": {
+          "Ship": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
+          },
           "Organization": {
             "tp": 4,
-            "pred": 8,
+            "pred": 7,
             "exp": 4
           },
           "Campaign": {
@@ -6096,16 +5982,9 @@
             "tp": 0,
             "pred": 3,
             "exp": 0
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
           }
         },
-        "confusion": {
-          "Ship -> Organization": 1
-        },
+        "confusion": {},
         "relationships": {
           "tp": 0,
           "pred": 12,
@@ -6137,9 +6016,7 @@
           "Surface Action Group [Organization]"
         ],
         "false_negatives": [],
-        "mistyped": [
-          "TAOL: Ship -> Organization"
-        ],
+        "mistyped": [],
         "relationships_missed": [
           "Combat Logistics Force -BELONGS_TO-> Navy"
         ],
@@ -6178,11 +6055,11 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 9,
-          "pred": 23,
+          "pred": 19,
           "exp": 9,
           "typed_tp": 9,
           "category_tp": 9
@@ -6197,11 +6074,6 @@
             "tp": 2,
             "pred": 2,
             "exp": 2
-          },
-          "Program": {
-            "tp": 0,
-            "pred": 4,
-            "exp": 0
           },
           "Document": {
             "tp": 1,
@@ -6222,74 +6094,52 @@
         "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 23,
+          "pred": 8,
           "exp": 0,
           "pair_found": 0
         },
         "rel_types_predicted": {
-          "SUPPLIED_BY": 6,
-          "OCCURRED_ON": 7,
+          "SUPPLIED_BY": 2,
+          "OCCURRED_ON": 2,
           "ATTRIBUTED_TO": 1,
           "ASSOCIATED_WITH": 2,
-          "TARGETS": 1,
-          "BELONGS_TO": 2,
-          "FUNDED_BY": 2,
-          "MENTIONED_IN": 2
+          "TARGETS": 1
         },
         "rel_gold_by_type": {},
         "false_positives": [
           "European officials [Organization]",
-          "FMF [Program]",
           "February 2022 [Date]",
-          "Foreign Military Sales [Program]",
           "March 2026 [Date]",
           "March 31, 2026 [Date]",
           "May 2025 [Date]",
           "May 2026 [Date]",
           "P.L. 119-60 [Document]",
           "Pause of assistance to Ukraine [Event]",
-          "Presidential Drawdown Authority [Program]",
           "Resumption of weapons shipments to Ukraine [Event]",
-          "Trump Administration [Organization]",
-          "USAI [Program]"
+          "Trump Administration [Organization]"
         ],
         "false_negatives": [],
         "mistyped": [],
         "relationships_missed": [],
         "relationships_predicted": [
-          "Congress -FUNDED_BY-> USAI",
-          "Defense Security Cooperation Agency -SUPPLIED_BY-> Foreign Military Sales",
           "Department of Defense -ATTRIBUTED_TO-> Resumption of weapons shipments to Ukraine",
           "Department of Defense -SUPPLIED_BY-> Ukraine",
           "European officials -ASSOCIATED_WITH-> Ukraine",
-          "FMF -FUNDED_BY-> Foreign Military Sales",
-          "FMF -OCCURRED_ON-> February 2022",
-          "FMF -OCCURRED_ON-> March 2026",
-          "Foreign Military Sales -OCCURRED_ON-> May 2025",
-          "Foreign Military Sales -OCCURRED_ON-> May 2026",
-          "Foreign Military Sales -SUPPLIED_BY-> Ukraine",
           "NATO -ASSOCIATED_WITH-> Ukraine",
-          "P.L. 119-60 -MENTIONED_IN-> USAI",
-          "P.L. 119-75 -MENTIONED_IN-> USAI",
           "Pause of assistance to Ukraine -OCCURRED_ON-> 2025",
-          "Presidential Drawdown Authority -OCCURRED_ON-> March 31, 2026",
-          "Presidential Drawdown Authority -SUPPLIED_BY-> Ukraine",
           "Resumption of weapons shipments to Ukraine -OCCURRED_ON-> 2025",
-          "SIG-OAR -BELONGS_TO-> FMF",
-          "SIG-OAR -BELONGS_TO-> Presidential Drawdown Authority",
           "Trump Administration -SUPPLIED_BY-> Ukraine",
-          "U.S. military operations -TARGETS-> Iran",
-          "USAI -SUPPLIED_BY-> Ukraine"
+          "U.S. military operations -TARGETS-> Iran"
         ]
       },
       "build": {
-        "entities_created": 16,
+        "entities_created": 12,
         "entities_merged": 1,
         "entities_filtered": 0,
         "dates_absorbed": 1,
         "dates_orphaned": 5,
-        "relationships_created": 15,
-        "relationships_retired": 7,
+        "relationships_created": 5,
+        "relationships_retired": 2,
         "relationships_dropped": 1,
         "relationships_dropped_by_type": {
           "TARGETS": 1
@@ -6302,7 +6152,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 26,
@@ -6439,14 +6289,14 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
-          "tp": 14,
+          "tp": 19,
           "pred": 22,
           "exp": 19,
-          "typed_tp": 11,
-          "category_tp": 11
+          "typed_tp": 15,
+          "category_tp": 15
         },
         "per_type": {
           "Organization": {
@@ -6460,7 +6310,7 @@
             "exp": 0
           },
           "Document": {
-            "tp": 0,
+            "tp": 4,
             "pred": 4,
             "exp": 4
           },
@@ -6476,6 +6326,7 @@
           }
         },
         "confusion": {
+          "Location -> Organization": 1,
           "Organization -> Software": 3
         },
         "relationships": {
@@ -6500,23 +6351,13 @@
         },
         "false_positives": [
           "China's internet regulator [Organization]",
-          "Executive Order 13873 [Document]",
-          "Executive Order 13942 [Document]",
-          "Executive Order 13943 [Document]",
-          "Executive Order 13971 [Document]",
           "February 2021 [Date]",
-          "PRC government [Organization]",
           "U.S. Government [Organization]"
         ],
-        "false_negatives": [
-          "E.O. 13873 [Document]",
-          "E.O. 13942 [Document]",
-          "E.O. 13943 [Document]",
-          "E.O. 13971 [Document]",
-          "PRC [Location]"
-        ],
+        "false_negatives": [],
         "mistyped": [
           "Musical.ly: Organization -> Software",
+          "PRC government: Location -> Organization",
           "TikTok: Organization -> Software",
           "WeChat: Organization -> Software"
         ],
@@ -6568,7 +6409,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 7,
@@ -6882,14 +6723,14 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
-          "tp": 15,
+          "tp": 17,
           "pred": 24,
           "exp": 18,
-          "typed_tp": 13,
-          "category_tp": 13
+          "typed_tp": 15,
+          "category_tp": 15
         },
         "per_type": {
           "Campaign": {
@@ -6908,7 +6749,7 @@
             "exp": 2
           },
           "Document": {
-            "tp": 3,
+            "tp": 5,
             "pred": 8,
             "exp": 5
           },
@@ -6960,8 +6801,6 @@
         },
         "false_positives": [
           "$24.4 billion [Financial]",
-          "Executive Order 14186 [Document]",
-          "Executive Order 14347 [Document]",
           "FY2026 appropriations legislation [Document]",
           "FY2026 defense authorization legislation [Document]",
           "House Golden Dome caucus [Organization]",
@@ -6970,8 +6809,6 @@
           "second Trump Administration [Organization]"
         ],
         "false_negatives": [
-          "E.O. 14186 [Document]",
-          "E.O. 14347 [Document]",
           "United States [Location]"
         ],
         "mistyped": [
@@ -7028,14 +6865,14 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
-          "tp": 12,
+          "tp": 14,
           "pred": 18,
           "exp": 17,
-          "typed_tp": 11,
-          "category_tp": 11
+          "typed_tp": 13,
+          "category_tp": 13
         },
         "per_type": {
           "Technology": {
@@ -7049,7 +6886,7 @@
             "exp": 7
           },
           "Document": {
-            "tp": 1,
+            "tp": 3,
             "pred": 5,
             "exp": 3
           },
@@ -7095,14 +6932,10 @@
         "false_positives": [
           "2035 [Date]",
           "Deputy Secretary of Defense [Person]",
-          "Executive Order 14186 [Document]",
-          "Executive Order 14347 [Document]",
           "Iron Dome for America [Technology]",
           "P.L. 119-60 [Document]"
         ],
         "false_negatives": [
-          "E.O. 14186 [Document]",
-          "E.O. 14347 [Document]",
           "January 27, 2025 [Date]",
           "September 5, 2025 [Date]",
           "U.S. Space Force [Organization]"
@@ -7248,7 +7081,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 17,
@@ -7384,11 +7217,11 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 5,
-          "pred": 14,
+          "pred": 12,
           "exp": 6,
           "typed_tp": 5,
           "category_tp": 5
@@ -7409,11 +7242,6 @@
             "pred": 1,
             "exp": 0
           },
-          "Program": {
-            "tp": 0,
-            "pred": 2,
-            "exp": 0
-          },
           "Technology": {
             "tp": 0,
             "pred": 1,
@@ -7423,14 +7251,14 @@
         "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 15,
+          "pred": 13,
           "exp": 1,
           "pair_found": 0
         },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 7,
           "BELONGS_TO": 3,
-          "SUPPLIED_BY": 3,
+          "SUPPLIED_BY": 1,
           "OCCURRED_ON": 1,
           "USES": 1
         },
@@ -7442,10 +7270,8 @@
         },
         "false_positives": [
           "C-UAS [Technology]",
-          "Community Oriented Policing Services [Program]",
           "Department of Defense [Organization]",
           "Department of Transportation [Organization]",
-          "Edward Byrne Memorial Justice Assistance Grant [Program]",
           "June 2026 [Date]",
           "SLTT law enforcement [Organization]",
           "U.S. Department of Homeland Security [Organization]",
@@ -7459,7 +7285,6 @@
           "National Security Division -BELONGS_TO-> DOJ"
         ],
         "relationships_predicted": [
-          "Community Oriented Policing Services -SUPPLIED_BY-> C-UAS",
           "Congress -ASSOCIATED_WITH-> SLTT law enforcement",
           "Congress -ASSOCIATED_WITH-> correctional agencies",
           "DOJ -ASSOCIATED_WITH-> Department of Defense",
@@ -7467,7 +7292,6 @@
           "DOJ -ASSOCIATED_WITH-> U.S. Department of Homeland Security",
           "DOJ -OCCURRED_ON-> June 2026",
           "DOJ -SUPPLIED_BY-> C-UAS",
-          "Edward Byrne Memorial Justice Assistance Grant -SUPPLIED_BY-> C-UAS",
           "FBI -USES-> C-UAS",
           "FY2026 NDAA -ASSOCIATED_WITH-> SLTT law enforcement",
           "FY2026 NDAA -ASSOCIATED_WITH-> correctional agencies",
@@ -7477,12 +7301,12 @@
         ]
       },
       "build": {
-        "entities_created": 13,
+        "entities_created": 11,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 1,
-        "relationships_created": 14,
+        "relationships_created": 12,
         "relationships_retired": 1,
         "relationships_dropped": 0,
         "relationships_dropped_by_type": {}
@@ -7494,7 +7318,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 16,
@@ -7636,7 +7460,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 20,
@@ -7765,7 +7589,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 16,
@@ -7890,8 +7714,8 @@
           "tp": 11,
           "pred": 15,
           "exp": 11,
-          "typed_tp": 6,
-          "category_tp": 6
+          "typed_tp": 11,
+          "category_tp": 11
         },
         "per_type": {
           "Organization": {
@@ -7904,25 +7728,18 @@
             "pred": 5,
             "exp": 3
           },
-          "Equipment": {
-            "tp": 0,
+          "Ship": {
+            "tp": 5,
             "pred": 6,
-            "exp": 0
+            "exp": 5
           },
           "Date": {
             "tp": 2,
             "pred": 3,
             "exp": 2
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 5
           }
         },
-        "confusion": {
-          "Ship -> Equipment": 5
-        },
+        "confusion": {},
         "relationships": {
           "tp": 0,
           "pred": 17,
@@ -7937,17 +7754,11 @@
         "false_positives": [
           "10 U.S.C. 8062(b) [Document]",
           "381-ship plan [Document]",
-          "Light Amphibious Warship (LAW) program [Equipment]",
+          "Light Amphibious Warship (LAW) program [Ship]",
           "mid-January 2026 [Date]"
         ],
         "false_negatives": [],
-        "mistyped": [
-          "LHA: Ship -> Equipment",
-          "LHD: Ship -> Equipment",
-          "LPD: Ship -> Equipment",
-          "LSD: Ship -> Equipment",
-          "Medium Landing Ship (LSM) program: Ship -> Equipment"
-        ],
+        "mistyped": [],
         "relationships_missed": [],
         "relationships_predicted": [
           "10 U.S.C. 8062(b) -ASSOCIATED_WITH-> U.S. Navy",
@@ -7986,161 +7797,112 @@
     {
       "set": "openrep",
       "name": "crs-R44175_10",
-      "method": "nlp",
-      "degraded": true,
-      "reason": "reply had no entities or relationships list",
-      "seconds": 13.79,
+      "method": "llm",
+      "degraded": false,
+      "reason": "",
+      "seconds": 0.01,
       "score": {
         "entities": {
-          "tp": 13,
-          "pred": 33,
+          "tp": 15,
+          "pred": 26,
           "exp": 15,
-          "typed_tp": 10,
-          "category_tp": 10
+          "typed_tp": 14,
+          "category_tp": 14
         },
         "per_type": {
-          "Ship": {
-            "tp": 1,
-            "pred": 1,
-            "exp": 2
-          },
-          "Date": {
-            "tp": 4,
-            "pred": 9,
-            "exp": 5
-          },
           "Organization": {
             "tp": 5,
-            "pred": 17,
+            "pred": 12,
             "exp": 5
           },
-          "Product": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Location": {
-            "tp": 0,
+          "Weapon": {
+            "tp": 2,
             "pred": 2,
-            "exp": 0
+            "exp": 2
+          },
+          "Ship": {
+            "tp": 2,
+            "pred": 2,
+            "exp": 2
           },
           "Person": {
             "tp": 0,
-            "pred": 2,
-            "exp": 0
-          },
-          "Document": {
-            "tp": 0,
             "pred": 1,
             "exp": 0
+          },
+          "Date": {
+            "tp": 5,
+            "pred": 9,
+            "exp": 5
           },
           "Technology": {
             "tp": 0,
             "pred": 0,
             "exp": 1
-          },
-          "Weapon": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 2
           }
         },
         "confusion": {
-          "Weapon -> Organization": 2,
-          "Ship -> Location": 1
+          "Technology -> Organization": 1
         },
         "relationships": {
-          "tp": 0,
-          "pred": 28,
+          "tp": 1,
+          "pred": 9,
           "exp": 1,
-          "pair_found": 0
+          "pair_found": 1
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 28
+          "ASSOCIATED_WITH": 3,
+          "LOCATED_AT": 1,
+          "BELONGS_TO": 3,
+          "USES": 1,
+          "SUPPLIED_BY": 1
         },
         "rel_gold_by_type": {
           "USES": {
-            "tp": 0,
+            "tp": 1,
             "exp": 1
           }
         },
         "false_positives": [
-          "Arabian Gulf [Location]",
           "August 17, 2022 [Date]",
           "CRS [Organization]",
           "David Smalley [Person]",
           "December 10, 2014 [Date]",
-          "Historic Leap: [Document]",
-          "Innovation, Technology Missions [Organization]",
-          "LaWS [Product]",
-          "May 16 [Date]",
+          "Innovation, Technology Missions, and Test and Evaluation Division [Organization]",
           "May 16, 2024 [Date]",
-          "N94 [Organization]",
-          "N96 [Organization]",
-          "Navy Laser Weapon Development Approach [Organization]",
           "Navy News Service [Organization]",
           "Navy Office of Legislative Affairs [Organization]",
           "November 17, 2014 [Date]",
           "Office of Chief of Naval Operations [Organization]",
-          "Shipboard Laser Operates [Person]",
-          "Surface Warfare Division [Organization]",
-          "Test and Evaluation Division [Organization]"
+          "Surface Warfare Division [Organization]"
         ],
-        "false_negatives": [
-          "2019 [Date]",
-          "SSL Technology Maturation [Technology]"
-        ],
+        "false_negatives": [],
         "mistyped": [
-          "Laser Weapon System: Weapon -> Organization",
-          "Laser Weapons System Demonstrator: Weapon -> Organization",
-          "USS Ponce\n\nSource: Ship -> Location"
+          "SSL Technology Maturation: Technology -> Organization"
         ],
-        "relationships_missed": [
-          "Portland -USES-> Laser Weapons System Demonstrator"
-        ],
+        "relationships_missed": [],
         "relationships_predicted": [
-          "Arabian Gulf -ASSOCIATED_WITH-> Navy News Service",
-          "BAE Systems -ASSOCIATED_WITH-> Northrop Grumman",
-          "BAE Systems -ASSOCIATED_WITH-> Raytheon",
-          "David Smalley -ASSOCIATED_WITH-> Historic Leap:",
-          "David Smalley -ASSOCIATED_WITH-> Shipboard Laser Operates",
-          "Historic Leap: -ASSOCIATED_WITH-> Arabian Gulf",
-          "Historic Leap: -ASSOCIATED_WITH-> Shipboard Laser Operates",
-          "Innovation, Technology Missions -ASSOCIATED_WITH-> Test and Evaluation Division",
-          "LaWS -ASSOCIATED_WITH-> Navy",
-          "LaWS -ASSOCIATED_WITH-> USS Ponce\n\nSource",
-          "Laser Weapon System -ASSOCIATED_WITH-> LaWS",
-          "Laser Weapon System -ASSOCIATED_WITH-> USS Ponce\n\nSource",
-          "N94 -ASSOCIATED_WITH-> Innovation, Technology Missions",
-          "N94 -ASSOCIATED_WITH-> Test and Evaluation Division",
-          "N96 -ASSOCIATED_WITH-> Office of Chief of Naval Operations",
-          "N96 -ASSOCIATED_WITH-> Surface Warfare Division",
-          "Navy -ASSOCIATED_WITH-> CRS",
-          "Navy -ASSOCIATED_WITH-> David Smalley",
-          "Navy -ASSOCIATED_WITH-> Navy Office of Legislative Affairs",
+          "David Smalley -BELONGS_TO-> Navy News Service",
+          "Innovation, Technology Missions, and Test and Evaluation Division -BELONGS_TO-> Office of Chief of Naval Operations",
+          "Laser Weapons System Demonstrator -LOCATED_AT-> USS Ponce",
           "Navy -ASSOCIATED_WITH-> Portland",
-          "Navy Laser Weapon Development Approach -ASSOCIATED_WITH-> Navy",
-          "Navy Office of Legislative Affairs -ASSOCIATED_WITH-> CRS",
-          "Northrop Grumman -ASSOCIATED_WITH-> Raytheon",
-          "Raytheon -ASSOCIATED_WITH-> DOD",
-          "Shipboard Laser Operates -ASSOCIATED_WITH-> Arabian Gulf",
-          "Shipboard Laser Operates -ASSOCIATED_WITH-> Navy News Service",
-          "Surface Warfare Division -ASSOCIATED_WITH-> Office of Chief of Naval Operations",
-          "USS Ponce\n\nSource -ASSOCIATED_WITH-> Navy"
+          "Navy Office of Legislative Affairs -SUPPLIED_BY-> CRS",
+          "Northrop Grumman -ASSOCIATED_WITH-> SSL Technology Maturation",
+          "Portland -USES-> Laser Weapons System Demonstrator",
+          "SSL Technology Maturation -ASSOCIATED_WITH-> Laser Weapons System Demonstrator",
+          "Surface Warfare Division -BELONGS_TO-> Office of Chief of Naval Operations"
         ]
       },
       "build": {
-        "entities_created": 23,
+        "entities_created": 17,
         "entities_merged": 0,
-        "entities_filtered": 1,
+        "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 9,
-        "relationships_created": 0,
+        "relationships_created": 9,
         "relationships_retired": 0,
-        "relationships_dropped": 3,
-        "relationships_dropped_by_type": {
-          "ASSOCIATED_WITH": 3
-        }
+        "relationships_dropped": 0,
+        "relationships_dropped_by_type": {}
       }
     },
     {
@@ -8149,25 +7911,30 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 9,
           "pred": 19,
           "exp": 9,
-          "typed_tp": 7,
-          "category_tp": 7
+          "typed_tp": 8,
+          "category_tp": 8
         },
         "per_type": {
           "Equipment": {
             "tp": 0,
-            "pred": 3,
+            "pred": 2,
             "exp": 0
           },
           "Organization": {
             "tp": 4,
             "pred": 7,
             "exp": 4
+          },
+          "Ship": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 2
           },
           "Person": {
             "tp": 1,
@@ -8183,15 +7950,10 @@
             "tp": 1,
             "pred": 4,
             "exp": 1
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 2
           }
         },
         "confusion": {
-          "Ship -> Equipment": 2
+          "Ship -> Equipment": 1
         },
         "relationships": {
           "tp": 0,
@@ -8224,7 +7986,6 @@
         ],
         "false_negatives": [],
         "mistyped": [
-          "Constellation-class frigate: Ship -> Equipment",
           "FREMM Parent design: Ship -> Equipment"
         ],
         "relationships_missed": [
@@ -8270,7 +8031,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 19,
@@ -8417,7 +8178,7 @@
       "method": "llm",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.01,
       "score": {
         "entities": {
           "tp": 17,
@@ -8764,22 +8525,22 @@
     }
   ],
   "build": {
-    "dates_absorbed": 43,
-    "dates_orphaned": 99,
-    "entities_created": 786,
-    "entities_filtered": 1,
-    "entities_merged": 14,
+    "dates_absorbed": 47,
+    "dates_orphaned": 100,
+    "entities_created": 783,
+    "entities_filtered": 0,
+    "entities_merged": 13,
     "relationships_created": 649,
-    "relationships_dropped": 74,
-    "relationships_retired": 106,
+    "relationships_dropped": 75,
+    "relationships_retired": 108,
     "relationships_dropped_by_type": {
-      "ASSOCIATED_WITH": 42,
+      "ASSOCIATED_WITH": 41,
       "TARGETS": 14,
       "OCCURRED_ON": 6,
-      "LOCATED_AT": 4,
+      "LOCATED_AT": 5,
       "MENTIONED_IN": 3,
       "USES": 3,
-      "DEPLOYED_AT": 1,
+      "DEPLOYED_AT": 2,
       "BELONGS_TO": 1
     },
     "errors": []
