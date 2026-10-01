@@ -513,11 +513,73 @@ def _apply_type_hints(entities: list[dict]) -> list[dict]:
         if not name:
             continue
         current = (ent.get("entity_type") or "").strip()
+        # A system binary is software whatever the model called it: Cohere
+        # typed netsh, ntdsutil and wmic as TTPs ("living-off-the-land
+        # techniques including netsh, ntdsutil and wmic"), which put a tool in
+        # the technique column and left it unmatched against ATT&CK.
+        if current != "Software" and _KNOWN_SOFTWARE_NAME.fullmatch(name):
+            ent["entity_type"] = "Software"
+            continue
         for pattern, better, overridable in _TYPE_HINTS:
             if current in overridable and pattern.match(name):
                 ent["entity_type"] = better
                 break
     return entities
+
+
+# ── Software and hardware ────────────────────────────────────────────────────
+# spaCy has no label for either, so a product reached the graph as whatever it
+# guessed: "built-in Windows tools" made Windows a Location (LOC) and "A Netgear
+# ProSAFE router" made the router line an Organization. The noun the name
+# modifies is the evidence, and it is in the sentence.
+
+# Windows system binaries and admin tools reported as living-off-the-land
+# tooling. Matched as whole words, so "netshell" and "shellcode" are not tools.
+_KNOWN_SOFTWARE = (
+    "netsh", "ntdsutil", "wmic", "powershell", "psexec", "rundll32", "regsvr32",
+    "certutil", "bitsadmin", "vssadmin", "mshta", "schtasks", "wevtutil", "nltest",
+    "dsquery", "ldifde", "procdump", "plink", "cmd.exe",
+)
+_KNOWN_SOFTWARE_ALT = "|".join(re.escape(s) for s in _KNOWN_SOFTWARE)
+_KNOWN_SOFTWARE_RE = re.compile(rf"(?<![\w.-])(?:{_KNOWN_SOFTWARE_ALT})(?:\.exe)?(?![\w-])", re.IGNORECASE)
+_KNOWN_SOFTWARE_NAME = re.compile(rf"(?:{_KNOWN_SOFTWARE_ALT})(?:\.exe)?", re.IGNORECASE)
+
+# Head nouns that make the name modifying them a product of that kind.
+_HARDWARE_NOUNS = frozenset({
+    "router", "device", "firewall", "appliance", "modem", "gateway", "camera", "switch", "nas",
+})
+_SOFTWARE_NOUNS = frozenset({
+    "tool", "software", "application", "binary", "utility", "browser", "plugin", "library", "script",
+})
+
+# Vendors named on their own are companies. spaCy calls Cisco a GPE; and a
+# vendor followed by a product noun must still not become the product.
+_KNOWN_VENDORS = frozenset({
+    "microsoft", "cisco", "netgear", "fortinet", "asus", "juniper", "ivanti", "citrix",
+    "vmware", "sonicwall", "zyxel", "mikrotik", "tp-link", "d-link", "ubiquiti", "draytek",
+    "hikvision", "dahua", "huawei", "zte", "palo alto networks", "f5", "solarwinds",
+    "jetbrains", "atlassian", "progress", "kaseya", "barracuda", "sophos",
+})
+
+
+def _product_type(ent) -> str:
+    """"Hardware" or "Software" when the noun this name modifies says so, else ""."""
+    if ent.text.strip().lower() in _KNOWN_VENDORS:
+        return ""
+    root = ent.root
+    head = root.head
+    noun = ""
+    if head.i >= ent.end and head.pos_ in ("NOUN", "PROPN") and root.dep_ in ("compound", "amod", "nmod"):
+        noun = head.lemma_.lower()
+    elif ent.end < len(ent.doc) and ent.doc[ent.end].pos_ == "NOUN":
+        # The parse sometimes leaves the name heading its own phrase; the noun
+        # written straight after it is still what the name is.
+        noun = ent.doc[ent.end].lemma_.lower()
+    if noun in _HARDWARE_NOUNS:
+        return "Hardware"
+    if noun in _SOFTWARE_NOUNS:
+        return "Software"
+    return ""
 
 
 def _normalize_rel_type(raw: str) -> str:
@@ -910,6 +972,17 @@ def _extract_cyber_entities(text: str, doc_id: str, raw_text: str | None = None)
                 "source": doc_id, "method": "regex", "confidence": 0.9,
             })
 
+    # System binaries named as tooling ("techniques including netsh, ntdsutil
+    # and wmic"). spaCy tags none of them: lower-case words, no entity shape.
+    for match in _KNOWN_SOFTWARE_RE.finditer(text):
+        tool = match.group()
+        if tool.lower() not in {s.lower() for s in seen}:
+            seen.add(tool)
+            cyber_entities.append({
+                "name": tool, "entity_type": "Software",
+                "source": doc_id, "method": "regex", "confidence": 0.85,
+            })
+
     # Military hardware designations (e.g. "Type 075", "Type 052D") — spaCy
     # misses these entirely, so extract them as EquipmentType directly.
     for match in re.finditer(r'\bType[- ]?\d{2,4}[A-Z]?\b', text):
@@ -1084,6 +1157,15 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         elif name_lower in KNOWN_MALWARE:
             e["entity_type"] = "Malware"
 
+        # A product typed from the noun it modifies ("Windows tools", "ProSAFE
+        # router") keeps that type: the keyword heuristics below read only the
+        # name, and the name alone is what misled spaCy in the first place.
+        if e.get("entity_type") in ("Software", "Hardware"):
+            corrected.append(e)
+            continue
+        if name_lower in _KNOWN_VENDORS:
+            e["entity_type"] = "Organization"
+
         # Force known persons
         if name_lower in known_pers:
             e["entity_type"] = "Person"
@@ -1224,7 +1306,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             confidence = 0.5  # short ambiguous entity
 
         entity = {
-            "name": name, "entity_type": entity_type,
+            "name": name, "entity_type": _product_type(ent) or entity_type,
             "source": doc_id, "method": "nlp", "confidence": confidence,
         }
         seen_names[name] = entity

@@ -48,6 +48,10 @@ FIXTURES = BACKEND / "tests" / "fixtures"
 SETS = {
     "corpus": FIXTURES / "extraction_corpus",
     "cyber": FIXTURES / "extraction_corpus_cyber",
+    # The older hand-written sets, not run by default: a regression check that
+    # a fix for this corpus does not cost what those already measure.
+    "legacy": FIXTURES / "extraction",
+    "holdout": FIXTURES / "extraction_holdout",
 }
 MODES = ("nlp", "llm", "hybrid")
 
