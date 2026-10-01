@@ -63,3 +63,26 @@ export type ClientPath<M extends Method> = {
       ? Templated<Rest>
       : never;
 }[ApiRoute];
+
+/**
+ * Routes the 2026-09-30 hardening contracts add that the committed schema
+ * does not have yet, because the backend packages that add them land in
+ * parallel: the session endpoints (contract 8) and the degraded snapshot
+ * (contract 10). Calls to them are unchecked until then.
+ *
+ * Once `npm run gen:api` picks a route up, `PendingRoutesStillMissing` below
+ * stops compiling and names it: delete it from this list.
+ */
+export interface PendingRoutes {
+  get: '/auth/me' | '/admin/degraded';
+  post: '/auth/logout';
+  put: never;
+  delete: never;
+}
+
+/** A URL `api.ts` may call with method `M`. */
+export type CallablePath<M extends Method> = ClientPath<M> | PendingRoutes[M];
+
+type NowInSchema = { [M in Method]: Extract<PendingRoutes[M], ClientPath<M>> }[Method];
+/** Compile-time reminder: `true` while every pending route is still missing. */
+export const PendingRoutesStillMissing: [NowInSchema] extends [never] ? true : NowInSchema = true;

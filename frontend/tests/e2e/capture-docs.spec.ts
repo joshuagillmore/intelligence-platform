@@ -32,10 +32,8 @@ test.beforeEach(async ({ page }) => {
   if (!PROJECT_ID) return;
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.evaluate(async (id) => {
-    const token = localStorage.getItem('auth_token');
-    const res = await fetch(`/api/projects/${id}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
+    // The session cookie rides along on a same-origin fetch.
+    const res = await fetch(`/api/projects/${id}`);
     if (res.ok) localStorage.setItem('activeProject', JSON.stringify(await res.json()));
   }, PROJECT_ID);
 });

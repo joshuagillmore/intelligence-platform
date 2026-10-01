@@ -24,19 +24,15 @@ test('derive the evidence-chain card from the live component', async ({ page }) 
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.evaluate(async (id) => {
-    const token = localStorage.getItem('auth_token');
-    const res = await fetch(`/api/projects/${id}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
+    // The session cookie rides along on a same-origin fetch.
+    const res = await fetch(`/api/projects/${id}`);
     if (res.ok) localStorage.setItem('activeProject', JSON.stringify(await res.json()));
   }, PROJECT_ID);
 
   // Pull the real relationship the card will document.
   const rel = await page.evaluate(async (eid) => {
-    const token = localStorage.getItem('auth_token');
-    const res = await fetch(`/api/entities/${eid}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
+    // The session cookie rides along on a same-origin fetch.
+    const res = await fetch(`/api/entities/${eid}`);
     if (!res.ok) return null;
     const data = await res.json();
     const rels = data.relationships || [];

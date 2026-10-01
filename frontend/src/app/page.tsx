@@ -61,13 +61,11 @@ export default function ProjectsPage() {
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check auth before loading — redirect to login if no token
-    if (typeof window !== 'undefined' && !localStorage.getItem('auth_token')) {
-      router.push('/login');
-      return;
-    }
+    // No client-side auth gate: the session cookie is httpOnly, so only the
+    // backend can say whether there is one. A 401 here (or from SessionProvider's
+    // /api/auth/me) sends the analyst to /login via the axios interceptor.
     loadProjects();
-    // Mount-only: auth gate + initial load. loadProjects/router are stable here.
+    // Mount-only initial load. loadProjects is stable here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

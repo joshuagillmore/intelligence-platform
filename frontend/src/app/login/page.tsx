@@ -1,7 +1,15 @@
 'use client';
 import { useState } from 'react';
 import { APP_NAME, APP_TAGLINE } from '@/lib/branding';
-import { clearSession } from '@/lib/api';
+import axios from 'axios';
+import { authApi, clearSession, rememberSessionUser } from '@/lib/api';
+
+/** The backend's `detail` for a failed login, or a generic line. */
+function loginError(error: unknown): string {
+  if (!axios.isAxiosError(error) || !error.response) return 'Connection error';
+  const detail = (error.response.data as { detail?: unknown } | undefined)?.detail;
+  return typeof detail === 'string' && detail.trim() ? detail : 'Login failed';
+}
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -14,32 +22,31 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.detail || 'Login failed');
-        return;
-      }
-      const data = await res.json();
+      // Sets the httpOnly session cookie. The body may still carry an
+      // access_token from an older backend; it is deliberately not read.
+      await authApi.login({ username, password });
+    } catch (err) {
+      setError(loginError(err));
+      setLoading(false);
+      return;
+    }
+    try {
       // Nothing from a previous analyst's session (selected project, assistant
       // threads) may carry into this one on a shared workstation.
       clearSession();
-      localStorage.setItem('auth_token', data.access_token);
-      localStorage.setItem('auth_user', data.username);
-      localStorage.setItem('auth_role', data.role);
-      // A full navigation, not router.push: the project and assistant
-      // contexts live in the root layout and would otherwise keep the previous
-      // analyst's in-memory state (and write it back to storage).
-      window.location.href = '/';
+      // Proves the cookie took: a browser that refused it (a Secure cookie
+      // over plain http, say) would otherwise bounce straight back here.
+      const me = await authApi.me();
+      rememberSessionUser(me.data);
     } catch {
-      setError('Connection error');
-    } finally {
+      setError('Signed in, but this browser did not keep the session cookie.');
       setLoading(false);
+      return;
     }
+    // A full navigation, not router.push: the project and assistant contexts
+    // live in the root layout and would otherwise keep the previous analyst's
+    // in-memory state (and write it back to storage).
+    window.location.href = '/';
   }
 
   return (

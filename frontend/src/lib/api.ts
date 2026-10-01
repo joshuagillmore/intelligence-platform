@@ -1,42 +1,59 @@
 import axios, { type AxiosRequestConfig } from 'axios';
 import { createSummaryStreamParser, type SummaryStreamEvent } from './sse';
 import type { AttackMapResult } from './attackMapping';
-import type { BodyOf, ClientPath, Model, QueryOf, ResponseOf } from './apiTypes';
+import type { BodyOf, CallablePath, Model, QueryOf, ResponseOf } from './apiTypes';
 
 // Use relative URL so it works on both localhost and Railway (same-origin)
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
+/**
+ * Sent on every request. The session is an httpOnly cookie the browser
+ * attaches by itself, so a cross-site form could otherwise post as the
+ * analyst; the backend refuses a cookie-authenticated state-changing request
+ * that lacks this header, and a cross-site page cannot add a custom header
+ * without a CORS preflight the backend does not grant.
+ */
+export const CSRF_HEADER = { 'X-Requested-With': 'sentinel' } as const;
+
+/**
+ * No token is read or stored here: `POST /api/auth/login` sets the
+ * `sentinel_session` cookie (httpOnly, so script cannot read it) and
+ * `withCredentials` makes the browser send it even when the API is on another
+ * origin (`NEXT_PUBLIC_API_URL`).
+ */
 const api = axios.create({
   baseURL: `${API_BASE}/api`,
   timeout: 300000,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
+    ...CSRF_HEADER,
   },
 });
 
-// Add auth interceptor
-api.interceptors.request.use((config) => {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  // No fallback API key — if no token, the request goes unauthenticated
-  // and the 401 interceptor below will redirect to login
-  return config;
-});
+/** Where the bearer token lived before the session moved to a cookie. A
+ *  browser that signed in under the old client may still hold a live one, so
+ *  it is cleared with the session and on every load (`forgetLegacyToken`). */
+const LEGACY_TOKEN_KEY = 'auth_token';
+/** The signed-in identity as `/api/auth/me` last reported it: display and UI
+ *  gating only, never a credential. */
+const USER_KEY = 'auth_user';
+const ROLE_KEY = 'auth_role';
 
 /** Keys that belong to one analyst's session. */
-const SESSION_KEYS = ['auth_token', 'auth_user', 'auth_role', 'activeProject'];
+const SESSION_KEYS = [LEGACY_TOKEN_KEY, USER_KEY, ROLE_KEY, 'activeProject'];
 /** Per-project assistant threads (see `AssistantContext`): RAG answers and
  *  verbatim source-document excerpts. */
 const ASSISTANT_THREAD_PREFIX = 'assistant_thread:';
 
 /**
  * Forget everything the current analyst's session left in this browser: the
- * token and identity, the selected project, and every assistant thread. Called
- * on sign-out, on a 401, and before storing a new login, because workstations
- * are shared and none of it may carry over to the next analyst. Per-browser
- * display preferences (layout choices) are kept.
+ * cached identity (and any legacy token), the selected project, and every
+ * assistant thread. Called on sign-out, on a 401, and before recording a new
+ * login, because workstations are shared and none of it may carry over to the
+ * next analyst. Per-browser display preferences (layout choices) are kept.
+ * The session cookie itself is httpOnly: only `authApi.logout` (the backend)
+ * can clear it.
  */
 export function clearSession(): void {
   if (typeof window === 'undefined') return;
@@ -72,16 +89,49 @@ api.interceptors.response.use(
   }
 );
 
-/** Whether the signed-in user is an admin, per the role stored at login.
- *  UI gating only: the backend enforces admin on every admin route, this just
- *  keeps analysts from being offered buttons that can only 403. */
-export function isAdminSession(): boolean {
-  if (typeof window === 'undefined') return false;
+/** Who is signed in, as `GET /api/auth/me` reports it. */
+export interface SessionUser {
+  username: string;
+  role: string;
+}
+
+/** Record the identity `/api/auth/me` returned, for display and UI gating. */
+export function rememberSessionUser(user: SessionUser): void {
+  if (typeof window === 'undefined') return;
   try {
-    return localStorage.getItem('auth_role') === 'admin';
+    localStorage.setItem(USER_KEY, user.username);
+    localStorage.setItem(ROLE_KEY, user.role);
   } catch {
-    return false;
+    /* storage unavailable: the identity is simply not cached */
   }
+}
+
+/** The identity `/api/auth/me` last reported in this browser, or null. */
+export function cachedSessionUser(): SessionUser | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const username = localStorage.getItem(USER_KEY);
+    return username ? { username, role: localStorage.getItem(ROLE_KEY) || 'analyst' } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Drop a bearer token an older client left in storage. */
+export function forgetLegacyToken(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+  } catch {
+    /* storage unavailable: nothing to remove */
+  }
+}
+
+/** Whether the signed-in user is an admin, per the role `/api/auth/me` last
+ *  reported. UI gating only: the backend enforces admin on every admin route,
+ *  this just keeps analysts from being offered buttons that can only 403. */
+export function isAdminSession(): boolean {
+  return cachedSessionUser()?.role === 'admin';
 }
 
 /** True for an axios error the backend answered with `status`. */
@@ -100,16 +150,34 @@ type Undeclared = any;
 
 /**
  * The axios instance with each URL checked against the generated route list
- * (`ClientPath`): calling a route the backend does not serve for that method
- * is a compile error. Same instance, same interceptors, same runtime.
+ * (`ClientPath`, plus the few `PendingRoutes`): calling a route the backend
+ * does not serve for that method is a compile error. Same instance, same interceptors, same runtime.
  */
 const http = {
-  get: <T = Undeclared>(url: ClientPath<'get'>, config?: AxiosRequestConfig) => api.get<T>(url, config),
-  post: <T = Undeclared>(url: ClientPath<'post'>, data?: unknown, config?: AxiosRequestConfig) =>
+  get: <T = Undeclared>(url: CallablePath<'get'>, config?: AxiosRequestConfig) => api.get<T>(url, config),
+  post: <T = Undeclared>(url: CallablePath<'post'>, data?: unknown, config?: AxiosRequestConfig) =>
     api.post<T>(url, data, config),
-  put: <T = Undeclared>(url: ClientPath<'put'>, data?: unknown, config?: AxiosRequestConfig) =>
+  put: <T = Undeclared>(url: CallablePath<'put'>, data?: unknown, config?: AxiosRequestConfig) =>
     api.put<T>(url, data, config),
-  delete: <T = Undeclared>(url: ClientPath<'delete'>, config?: AxiosRequestConfig) => api.delete<T>(url, config),
+  delete: <T = Undeclared>(url: CallablePath<'delete'>, config?: AxiosRequestConfig) => api.delete<T>(url, config),
+};
+
+/**
+ * The login body as far as this client reads it. It no longer stores the
+ * `access_token` older backends also return (the session is the cookie the
+ * same response sets), so the field is neither required nor read.
+ */
+export type LoginResult = Pick<ResponseOf<'/api/auth/login', 'post'>, 'username' | 'role'>;
+
+export const authApi = {
+  /** Sets the `sentinel_session` cookie. Confirm it took with `me()`. */
+  login: (credentials: BodyOf<'/api/auth/login', 'post'>) =>
+    http.post<LoginResult>('/auth/login', credentials),
+  /** Who the session cookie belongs to; 401 when there is no session. */
+  me: () => http.get<SessionUser>('/auth/me'),
+  /** Clears the session cookie server-side; the only way to, since script
+   *  cannot touch an httpOnly cookie. */
+  logout: () => http.post('/auth/logout'),
 };
 
 export type Project = Model<'ProjectResponse'>;
@@ -364,9 +432,9 @@ export const attackApi = {
     http.get<AttackTechniqueDetail>(`/attack/technique/${techniqueId}`, {
       params: { project_id: projectId } satisfies QueryOf<'/api/attack/technique/{tid}', 'get'>,
     }),
-  // Downloadable Navigator layer JSON. Fetched via axios so the auth header is
-  // sent (Bearer token in localStorage, not a cookie a plain <a> could carry),
-  // then turned into a blob download — matching the other exports in the app.
+  // Downloadable Navigator layer JSON. Fetched via axios and turned into a blob
+  // download, matching the other exports in the app (a plain <a> would carry
+  // the session cookie too, but not an API base on another origin).
   navigatorLayer: (projectId: string) =>
     http.get('/attack/navigator-layer', { params: { project_id: projectId } satisfies QueryOf<'/api/attack/navigator-layer', 'get'> }),
   // (Phase 3b) D3FEND defensive countermeasures for a technique — a lazy, live
@@ -793,13 +861,12 @@ export const topicsApi = {
     body: BodyOf<'/api/topics/{entity_id}/summarize', 'post'>,
     onText?: (textSoFar: string) => void,
   ): Promise<string> => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    // fetch, not axios, to read the stream as it arrives; so it must ask for
+    // the session cookie and send the CSRF header itself (this is a POST).
     const response = await fetch(topicsApi.summarizeUrl(entityId), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...CSRF_HEADER },
       body: JSON.stringify(body),
     });
     if (response.status === 401) handleUnauthorized();
@@ -1009,17 +1076,12 @@ export const documentsApi = {
 };
 
 export const healthApi = {
-  check: () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-    // SECURITY: only use token if available, don't fall back to hardcoded keys
-    const headers: Record<string, string> = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+  // `/health` is public and sits outside `/api`, hence plain axios: no
+  // session, and a 401 here must not sign the analyst out.
+  check: () =>
     // Polled every 30 s by the sidebar and status bar. Without its own timeout
     // a hung backend left the check pending (and the dot green) for minutes.
-    return axios.get<ResponseOf<'/health', 'get'>>(`${API_BASE}/health`, { headers, timeout: 5000 });
-  },
+    axios.get<ResponseOf<'/health', 'get'>>(`${API_BASE}/health`, { timeout: 5000 }),
 };
 
 /**

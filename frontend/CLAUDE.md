@@ -28,7 +28,7 @@ assertions, in `tests/e2e/`; needs the stack up + `backend/scripts/seed_demo.py`
 |------|------|
 | `app/` | App Router pages — one folder per view: `page.tsx` (dashboard), `collections`, `collection-plans`, `data-sources`, `network` (graph), `geo`, `timeline`, `search`, `watchlist`, `analysis` (structured analytic techniques), `products`, `cyber`, `llm-hub`, `admin`, `login`, plus the dynamic routes `documents/[id]` and `project/[id]`. `layout.tsx` is the shell. |
 | `components/` | Shared UI: `GraphVisualization`, `GeoMap`, `TopicMindMap`, `TemporalSlider`/`TemporalHistogram`, `Sidebar`, `StatusBar`, `MobileHeader`/`MobileBottomNav`, `NotificationProvider`, `KeyboardShortcuts`, `HighlightedExcerpt`, `MindMapControls`, `LoadingSpinner`, `Markdown`, `SelectProjectPrompt`. Feature panels: `AssistantPanel`/`AssistantCitations`, `AttackMatrix`/`AttackAttribution`, `EnrichmentPanel`, `EvidenceChain`, `PirPanel`, `PrintableProduct`. |
-| `lib/` | `api.ts` (axios client → backend), `api.generated.ts` + `apiTypes.ts` (the backend contract, generated; see below), `ProjectContext.tsx` and `AssistantContext.tsx` (the two React contexts), `assistantGrounding.ts`, `branding.ts` (app name/version), `entityStyles.ts` (entity-color SSOT), `graphLayout.ts`, `projectOrder.ts` (dashboard ordering), `reportExport.ts`, `format.ts`, `errorMessages.ts`. |
+| `lib/` | `api.ts` (axios client → backend), `api.generated.ts` + `apiTypes.ts` (the backend contract, generated; see below), `SessionContext.tsx`, `ProjectContext.tsx` and `AssistantContext.tsx` (the three React contexts), `assistantGrounding.ts`, `branding.ts` (app name/version), `entityStyles.ts` (entity-color SSOT), `graphLayout.ts`, `projectOrder.ts` (dashboard ordering), `reportExport.ts`, `format.ts`, `errorMessages.ts`. |
 
 ## Stack conventions
 
@@ -37,14 +37,25 @@ assertions, in `tests/e2e/`; needs the stack up + `backend/scripts/seed_demo.py`
   client component today and reads route state through `useParams` /
   `useSearchParams` (synchronous); a new *server* page receives `params` and
   `searchParams` as Promises under Next 15 and must `await` them.
-- **State:** cross-view state flows through React context — `lib/ProjectContext.tsx`
-  for the active project, `lib/AssistantContext.tsx` for the assistant — plus
+- **State:** cross-view state flows through React context — `lib/SessionContext.tsx`
+  for the signed-in analyst, `lib/ProjectContext.tsx` for the active project,
+  `lib/AssistantContext.tsx` for the assistant — plus
   local component state; don't scatter global state. There is no global store
   library and no `src/stores/` directory: the old zundo-based `graphStore` and
   both `zustand`/`zundo` deps were removed, and the network page hand-rolls its
   own local undo/redo, so leave that as-is.
 - **API:** all backend calls go through `lib/api.ts` (axios). Don't hardcode base
   URLs or an API key in components (a hardcoded fallback key was a past finding).
+- **Session:** an httpOnly `sentinel_session` cookie that `POST /api/auth/login`
+  sets; no token is stored in the browser (a legacy `auth_token` is deleted on
+  load). `api.ts` sends `withCredentials` and `X-Requested-With: sentinel` on
+  every request, because the backend refuses a cookie-authenticated
+  state-changing request without that header (the CSRF guard); a `fetch` outside
+  axios must do both (see `topicsApi.streamSummary`). `SessionProvider` asks
+  `GET /api/auth/me` on every load (a 401 is the sign-in gate for all views);
+  `auth_user`/`auth_role` in storage are a display cache of that answer, never a
+  credential. Sign-out calls `POST /api/auth/logout`, the only way to clear an
+  httpOnly cookie.
 - **Generated types:** `lib/api.generated.ts` is generated from
   `backend/openapi.json` (`backend/scripts/export_openapi.py` writes it) by
   `npm run gen:api`; never edit it by hand. `lib/apiTypes.ts` derives
