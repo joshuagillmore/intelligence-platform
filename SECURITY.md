@@ -71,6 +71,28 @@ logged as warnings at boot):
 A signed-in user changes their own password with `POST /api/auth/change-password`
 (current password required; throttled like a login).
 
+### Browser sessions
+
+The UI does not hold its token. `POST /api/auth/login` sets the JWT in an
+**httpOnly** cookie (`sentinel_session`, `SameSite=Lax`, `Path=/`, lifetime
+`SESSION_COOKIE_MAX_AGE`, default 24 h) and returns only `{username, role}`, so
+script running in the page — an XSS in rendered document or model text — cannot
+read it. `POST /api/auth/logout` clears it; `GET /api/auth/me` says who it
+belongs to.
+
+Because the browser attaches a cookie on its own, a cookie-authenticated request
+that changes state (anything but `GET`/`HEAD`/`OPTIONS`), and logout itself,
+must also carry the header `X-Requested-With: sentinel`; without it the API
+answers **403**. A cross-site form cannot set a header, and a cross-site script
+that tries needs a CORS preflight that `CORS_ORIGINS` refuses, so another site
+cannot act as a signed-in analyst. `SameSite=Lax` is the second layer.
+
+- Set `SESSION_COOKIE_SECURE=true` on any deployment served over HTTPS, so the
+  cookie is never sent over plain HTTP.
+- Callers with a bearer JWT or the `API_KEY` in the `Authorization` header are
+  unaffected and need no extra header; the API key is accepted only in that
+  header, never from the cookie.
+
 The local `docker compose` stack binds all services to `127.0.0.1` by design;
 do not rebind app ports to `0.0.0.0` on an untrusted network.
 

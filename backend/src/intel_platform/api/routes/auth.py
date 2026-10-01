@@ -1,15 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from datetime import timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, field_validator
 from intel_platform.api.auth import (
     authenticate_user,
     check_login_rate_limit,
     clear_failed_logins,
+    clear_session_cookie,
     create_access_token,
     get_current_user,
     record_failed_login,
     register_user,
     require_admin,
+    require_session_header,
     set_password,
+    set_session_cookie,
 )
 
 router = APIRouter()
@@ -71,9 +76,20 @@ class TokenResponse(BaseModel):
     role: str
 
 
-@router.post("/auth/login", response_model=TokenResponse)
-def login(req: LoginRequest, request: Request):
+class SessionUser(BaseModel):
+    """Who a session belongs to. Login answers with it (the token itself is in
+    the httpOnly cookie, out of reach of page scripts), and so does /auth/me."""
+
+    username: str
+    role: str
+
+
+@router.post("/auth/login", response_model=SessionUser)
+def login(req: LoginRequest, request: Request, response: Response):
+    """Sign in: sets the session cookie (contract 8). The token is not in the body."""
     from intel_platform.api.middleware import client_ip
+    from intel_platform.config import settings
+
     ip = client_ip(request)
     check_login_rate_limit(ip, req.username)
 
@@ -83,12 +99,30 @@ def login(req: LoginRequest, request: Request):
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     clear_failed_logins(ip, req.username)
-    token = create_access_token(user["username"], user["role"])
-    return TokenResponse(
-        access_token=token,
-        username=user["username"],
-        role=user["role"],
+    # The token lasts exactly as long as the cookie carrying it.
+    token = create_access_token(
+        user["username"], user["role"], expires_in=timedelta(seconds=settings.session_cookie_max_age),
     )
+    set_session_cookie(response, token)
+    return SessionUser(username=user["username"], role=user["role"])
+
+
+@router.post("/auth/logout")
+def logout(request: Request, response: Response):
+    """Clear the session cookie.
+
+    Needs no live session (an expired one must still be clearable) but does
+    need the session header: a cross-site form must not sign the analyst out.
+    """
+    require_session_header(request)
+    clear_session_cookie(response)
+    return {"status": "logged_out"}
+
+
+@router.get("/auth/me", response_model=SessionUser)
+def me(user: dict = Depends(get_current_user)):
+    """The signed-in user, from the cookie or a bearer token."""
+    return SessionUser(username=user["username"], role=user.get("role", "analyst"))
 
 
 @router.post("/auth/register", response_model=TokenResponse)

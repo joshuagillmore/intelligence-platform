@@ -4,7 +4,7 @@ import logging
 import time
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 import bcrypt
@@ -245,32 +245,101 @@ def set_password(username: str, new_password: str) -> bool:
     return bool(record and record["n"])
 
 
-def create_access_token(username: str, role: str = "analyst") -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRE_HOURS)
+def create_access_token(username: str, role: str = "analyst", expires_in: timedelta | None = None) -> str:
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": username,
         "role": role,
-        "exp": expire,
+        "iat": now,
+        "exp": now + (expires_in if expires_in is not None else timedelta(hours=TOKEN_EXPIRE_HOURS)),
     }
     return jwt.encode(payload, _jwt_secret(), algorithm=ALGORITHM)
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(security)) -> dict:
-    """Verify JWT token OR legacy API key."""
-    if not credentials:
+# ---------------------------------------------------------------------------
+# Session cookie (contract 8)
+#
+# The browser UI authenticates with an httpOnly cookie set by /api/auth/login,
+# so no script in the page can read the token. A cookie is attached by the
+# browser to every request to this origin, including one a hostile page makes
+# it send, so a cookie-authenticated request that changes state must also carry
+# SESSION_HEADER: SESSION_HEADER_VALUE. A cross-site form cannot set a header,
+# and a cross-site fetch that sets one needs a CORS preflight CORS_ORIGINS
+# refuses. SameSite=Lax is the second layer.
+# ---------------------------------------------------------------------------
+
+SESSION_HEADER = "X-Requested-With"
+SESSION_HEADER_VALUE = "sentinel"
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def has_session_header(request: Request) -> bool:
+    return request.headers.get(SESSION_HEADER, "").strip().lower() == SESSION_HEADER_VALUE
+
+
+def require_session_header(request: Request) -> None:
+    if not has_session_header(request):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Cookie-authenticated requests that change state need the {SESSION_HEADER}: "
+                   f"{SESSION_HEADER_VALUE} header",
+        )
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    from intel_platform.config import settings
+
+    response.set_cookie(
+        settings.session_cookie_name, token,
+        max_age=settings.session_cookie_max_age, path="/",
+        httponly=True, samesite="lax", secure=bool(settings.session_cookie_secure),
+    )
+
+
+def clear_session_cookie(response: Response) -> None:
+    from intel_platform.config import settings
+
+    response.delete_cookie(
+        settings.session_cookie_name, path="/",
+        httponly=True, samesite="lax", secure=bool(settings.session_cookie_secure),
+    )
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    request: Request = None,  # injected by FastAPI; direct callers pass credentials only
+) -> dict:
+    """The caller: a bearer JWT, the API key, or the session cookie.
+
+    A bearer header wins when present. The cookie is read only without one, and
+    on a state-changing method it also needs the session header (see above).
+    """
+    if credentials:
+        return _user_from_token(credentials.credentials, allow_api_key=True)
+
+    from intel_platform.config import settings
+
+    token = request.cookies.get(settings.session_cookie_name) if request is not None else None
+    if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    # The API key is a header credential only: a cookie carrying it is nothing.
+    user = _user_from_token(token, allow_api_key=False)
+    if request.method.upper() not in _SAFE_METHODS:
+        require_session_header(request)
+    return user
 
-    token = credentials.credentials
 
+def _user_from_token(token: str, *, allow_api_key: bool) -> dict:
+    """Verify a JWT or (when allowed) the API key."""
     # Support a legacy API key for programmatic / service-to-service callers.
     # SECURITY: the built-in default key must never authenticate — otherwise
     # anyone who reads .env.example gets admin on a naive deploy — so only a
     # non-default key works. The browser frontend does NOT use this path; it
-    # authenticates with a JWT obtained from login.
+    # authenticates with the session cookie login sets.
     from intel_platform.config import settings
     # Constant-time: `==` stops at the first differing byte, so response timing
     # would reveal the key one prefix at a time.
-    if settings.api_key not in ("", _DEFAULT_API_KEY) and hmac.compare_digest(
+    if allow_api_key and settings.api_key not in ("", _DEFAULT_API_KEY) and hmac.compare_digest(
         token.encode("utf-8"), settings.api_key.encode("utf-8"),
     ):
         return {"username": "api_key_user", "role": "admin"}
