@@ -779,3 +779,36 @@ async def test_hybrid_merges_an_nlp_entity_named_by_one_of_the_models_aliases():
     for duplicate in ("Navy", "DOD", "E.O. 14347", "Executive Order (E.O.) 14347"):
         assert duplicate not in names, names
     assert {"U.S. Navy", "Department of Defense", "Executive Order 14347"} <= set(names)
+
+
+async def test_hybrid_keeps_the_nlp_entity_a_kept_nlp_edge_names():
+    # openrep crs-IF13264: the model listed Guetlein but not the U.S. Space
+    # Force. Hybrid kept NLP's BELONGS_TO edge and not its endpoint, so the
+    # graph build dropped the edge as naming something never extracted.
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    text = (
+        "Golden Dome's development is managed by DOD's Office of Golden Dome for America, led by Senate-confirmed "
+        "U.S. Space Force General Michael A. Guetlein, who reports directly to the Deputy Secretary of Defense."
+    )
+    reply = {"entities": [
+        {"name": "Michael A. Guetlein", "entity_type": "Person", "confidence": 0.95},
+        {"name": "Office of Golden Dome for America", "entity_type": "Organization", "confidence": 0.95},
+    ], "relationships": []}
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        ents, rels = await extraction.extract_entities_hybrid(text, "doc-fix")
+    names = {e["name"] for e in ents}
+    assert ("Michael A. Guetlein", "BELONGS_TO", "U.S. Space Force") in {
+        (r["source_name"], r["rel_type"], r["target_name"]) for r in rels
+    }
+    assert "U.S. Space Force" in names
+    assert all(r["source_name"] in names and r["target_name"] in names for r in rels)

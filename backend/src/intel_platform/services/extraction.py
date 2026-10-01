@@ -2523,6 +2523,7 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
     # supplies the real relationships, so co-occurrence is pure noise.
     seen_rels = {(r["source_name"], r["target_name"], r["rel_type"]) for r in llm_rels}
     merged_rels = list(llm_rels)
+    nlp_by_name = {e.get("name", ""): e for e in nlp_entities}
     for r in nlp_rels:
         if r["rel_type"] == "ASSOCIATED_WITH":
             continue
@@ -2539,6 +2540,15 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
         if key not in seen_rels:
             seen_rels.add(key)
             merged_rels.append(r)
+            # A typed edge read from the sentence is evidence for both ends. An
+            # NLP endpoint below the keep threshold above ("U.S. Space Force",
+            # named once) is kept with it; without it the graph build drops
+            # the edge as naming an entity that was never extracted.
+            for end in (r["source_name"], r["target_name"]):
+                end_key = _merge_key(end)
+                if end_key not in kept_nlp_keys and end_key not in llm_by_key and end in nlp_by_name:
+                    merged_entities.append(nlp_by_name[end])
+                    kept_nlp_keys.add(end_key)
 
     # Re-resolve event_datetime over the merged set — catches cases where the
     # Event came from one method and its OCCURRED_ON Date from the other.
