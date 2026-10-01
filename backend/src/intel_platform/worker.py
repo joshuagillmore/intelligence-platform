@@ -71,14 +71,20 @@ async def run_worker(
     logger.info("Collection worker %s started", worker_id)
     ran = 0
     backoff = poll_seconds
+    failing = False
     while not stop.is_set():
         try:
             async with db_factory() as db:
                 job_id = await jobs.claim_next(db, worker_id)
-            backoff = poll_seconds
+            if failing:
+                logger.info("Collection worker %s is polling again", worker_id)
+            backoff, failing = poll_seconds, False
         except Exception:
-            # Postgres down, or the API has not created the table yet.
-            logger.warning("Collection worker could not poll for jobs; retrying in %.0f s", backoff, exc_info=True)
+            # Postgres down, or the API has not created the table yet (the
+            # usual first-boot race). The traceback once, then one line a retry.
+            logger.warning("Collection worker could not poll for jobs; retrying in %.0f s", backoff,
+                           exc_info=not failing)
+            failing = True
             await _wait(stop, backoff)
             backoff = min(backoff * 2, _MAX_BACKOFF_SECONDS)
             continue
