@@ -34,6 +34,29 @@ logger = logging.getLogger(__name__)
 _running_collections: set[str] = set()
 
 
+async def _legacy_run_is_live(collection_id: str) -> bool:
+    """Whether the job table shows a live run for this legacy collection.
+
+    The in-memory set above only knows about runs started by this process; a
+    run started by another API process (or one that survived a restart) is
+    visible only through the ``collection_jobs`` row the runner writes. The
+    legacy path has always worked without Postgres, so a database problem
+    here means "unknown", which is answered as "not live" rather than an
+    error.
+    """
+    try:
+        from intel_platform.collection import job_runner
+        from intel_platform.db import jobs
+        from intel_platform.db.engine import get_session_factory
+
+        async with get_session_factory()() as db:
+            job, now = await jobs.latest_job(db, job_runner.legacy_job_key(collection_id))
+        return job is not None and job_runner.run_state(job, now) == "running"
+    except Exception:  # pragma: no cover - exercised by the unit test below
+        logger.debug("Could not read the job table for legacy collection %s", collection_id, exc_info=True)
+        return False
+
+
 class CreateCollectionRequest(BaseModel):
     project_id: str
     pir: str = ""
@@ -197,7 +220,7 @@ async def execute_collection(
     """Execute an approved collection plan: search -> crawl -> ingest -> extract."""
     # An async handler: the sync Neo4j read runs in a thread, not on the loop.
     coll = await asyncio.to_thread(get_collection, task_id, store)
-    if task_id in _running_collections:
+    if task_id in _running_collections or await _legacy_run_is_live(task_id):
         raise HTTPException(status_code=409, detail="Collection is already running")
 
     plan = coll.get("plan", [])

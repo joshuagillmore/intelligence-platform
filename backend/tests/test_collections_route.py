@@ -120,3 +120,72 @@ def test_cancel_records_revoked():
     task_id = _approved_collection()
     client.post(f"/api/collections/{task_id}/cancel", headers=headers)
     assert client.get(f"/api/collections/{task_id}/status", headers=headers).json()["status"] == "REVOKED"
+
+
+# ---------------------------------------------------------------------------
+# A run started by another API process is visible only through its job row.
+# ---------------------------------------------------------------------------
+
+class _JobRow:
+    def __init__(self, status: str, seconds_ago: int):
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        self.status = status
+        self.heartbeat_at = now - timedelta(seconds=seconds_ago)
+        self.started_at = self.heartbeat_at
+        self.created_at = self.heartbeat_at
+        self.finished_at = None
+        self.now = now
+
+
+def _patch_job_table(monkeypatch, row: _JobRow | None, *, raise_error: bool = False):
+    """Point the route's job-table read at an in-memory row (or a failure)."""
+    from contextlib import asynccontextmanager
+
+    from intel_platform.api.routes import collections as route
+    from intel_platform.db import jobs
+
+    @asynccontextmanager
+    async def _session():
+        yield object()
+
+    class _Factory:
+        def __call__(self):
+            return _session()
+
+    async def _latest(db, plan_id):
+        if raise_error:
+            raise RuntimeError("postgres is away")
+        return (row, row.now) if row else (None, None)
+
+    monkeypatch.setattr(route, "get_session_factory", lambda: _Factory(), raising=False)
+    import intel_platform.db.engine as engine_module
+
+    monkeypatch.setattr(engine_module, "get_session_factory", lambda: _Factory())
+    monkeypatch.setattr(jobs, "latest_job", _latest)
+
+
+def test_a_live_job_row_from_another_process_blocks(monkeypatch):
+    monkeypatch.setattr("intel_platform.api.routes.collections.CollectionRunner", _NoopRunner)
+    cid = _approved_collection()
+    _patch_job_table(monkeypatch, _JobRow("running", seconds_ago=5))
+    resp = client.post(f"/api/collections/{cid}/execute", headers=headers)
+    assert resp.status_code == 409
+
+
+def test_a_stalled_job_row_does_not_block(monkeypatch):
+    monkeypatch.setattr("intel_platform.api.routes.collections.CollectionRunner", _NoopRunner)
+    cid = _approved_collection()
+    _patch_job_table(monkeypatch, _JobRow("running", seconds_ago=10_000))
+    resp = client.post(f"/api/collections/{cid}/execute", headers=headers)
+    assert resp.status_code == 202
+
+
+def test_an_unreadable_job_table_means_not_live(monkeypatch):
+    """The legacy path never needed Postgres; a database error must not become a 500."""
+    monkeypatch.setattr("intel_platform.api.routes.collections.CollectionRunner", _NoopRunner)
+    cid = _approved_collection()
+    _patch_job_table(monkeypatch, None, raise_error=True)
+    resp = client.post(f"/api/collections/{cid}/execute", headers=headers)
+    assert resp.status_code == 202
