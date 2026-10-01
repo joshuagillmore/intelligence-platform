@@ -1384,12 +1384,45 @@ def _mention_spans(sent_text: str, entities: list[dict]) -> list[tuple[int, int,
     """
     spans = []
     for e in entities:
-        name = e.get("name") or ""
-        if not name:
-            continue
-        for m in _name_pattern(name).finditer(sent_text):
-            spans.append((m.start(), m.end(), e))
+        for name in [e.get("name") or "", *(e.get("aliases") or [])]:
+            if not name:
+                continue
+            for m in _name_pattern(name).finditer(sent_text):
+                spans.append((m.start(), m.end(), e))
     return spans
+
+
+_BRACKETED = r"\s*\(([A-Z][A-Za-z0-9&.\-]{1,11})\)"
+
+
+def _merge_bracketed_acronyms(entities: list[dict], text: str) -> list[dict]:
+    """"Office of Foreign Assets Control (OFAC)": the acronym is an alias, not a second entity.
+
+    Reporting defines an acronym once and then uses it; extracting both made
+    two nodes for one body, and an edge read off a sentence that uses the
+    acronym ("Within DOD, the Army ...") went to the second. Only an
+    all-capitals token, or a shortening of the name ("Russian Federation
+    (Russia)"), counts — "Israel (Tel Aviv)" is not an acronym.
+    """
+    by_name = {e["name"]: e for e in entities}
+    drop: set[str] = set()
+    for e in entities:
+        name = e.get("name") or ""
+        if " " not in name or e.get("entity_type") in _INDICATOR_TYPES:
+            continue
+        for m in re.finditer(re.escape(name) + _BRACKETED, text):
+            acr = m.group(1)
+            letters = re.sub(r"[^A-Za-z]", "", acr)
+            if acr == name or not (letters.isupper() or acr.lower() in name.lower()):
+                continue
+            aliases = list(e.get("aliases") or [])
+            if acr not in aliases:
+                aliases.append(acr)
+            e["aliases"] = aliases
+            other = by_name.get(acr)
+            if other is not None and other is not e and other.get("method") != "regex":
+                drop.add(acr)
+    return [e for e in entities if e["name"] not in drop]
 
 
 def _entity_at(token, sent, spans: list[tuple[int, int, dict]]) -> dict | None:
@@ -1755,6 +1788,9 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         # Foreign Intelligence Service" -> "Russian Foreign Intelligence Service")
         # — inflates false positives and breaks dedup against the canonical name.
         stripped = _strip_determiner(name)
+        # ...and the possessive it sometimes swallows: "Department of the
+        # Treasury's" is the Department of the Treasury.
+        stripped = re.sub(r"['’]s$", "", stripped).strip()
         if stripped and stripped != name:
             name = stripped
             e["name"] = name
@@ -2008,7 +2044,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
     unique: dict[str, dict] = {}
     for e in entities:
         unique.setdefault(e["name"], e)
-    entities = list(unique.values())
+    entities = _merge_bracketed_acronyms(list(unique.values()), text)
 
     # 5. Optional coreference resolution
     from intel_platform.config import settings
@@ -2091,8 +2127,9 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         # Hallgrim. The co-occurrence fallback below keeps to tagged mentions.
         typed_candidates = list(sent_entities_list)
         for e in entities:
-            if e not in typed_candidates and len(e["name"]) >= _CASELESS_MIN \
-                    and _name_pattern(e["name"]).search(sent_text):
+            if e not in typed_candidates and any(
+                    len(n) >= _CASELESS_MIN and _name_pattern(n).search(sent_text)
+                    for n in [e["name"], *(e.get("aliases") or [])]):
                 typed_candidates.append(e)
         mention_spans = _mention_spans(sent_text, typed_candidates)
 

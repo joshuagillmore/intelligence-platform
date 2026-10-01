@@ -707,6 +707,28 @@ def test_a_company_or_council_named_after_the_gulf_is_an_organization():
     assert types.get("Persian Gulf") == "Location"
 
 
+# ── An acronym defined in brackets is the same entity ─────────────────────────
+
+def test_an_acronym_defined_in_brackets_is_an_alias_not_a_second_entity():
+    text = (
+        "The Department of the Treasury's Office of Foreign Assets Control (OFAC) issued a new set of Frequently "
+        "Asked Questions. On June 27, 2018, OFAC began a wind-down of the importation of Iranian-origin carpets."
+    )
+    entities, rels = extract_entities_nlp(text, "doc-fix")
+    by_name = {e["name"]: e for e in entities}
+    assert "OFAC" not in by_name
+    assert "OFAC" in by_name["Office of Foreign Assets Control"].get("aliases", [])
+    assert ("Office of Foreign Assets Control", "BELONGS_TO", "Department of the Treasury") in {
+        (r["source_name"], r["rel_type"], r["target_name"]) for r in rels
+    }
+
+
+def test_a_bracketed_aside_that_is_not_an_acronym_is_left_alone():
+    entities, _ = extract_entities_nlp("Iran launched a missile at Israel (Tel Aviv) in April 2024.", "doc-fix")
+    names = {e["name"] for e in entities}
+    assert "Tel Aviv" in names and "Israel" in names
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}
