@@ -81,7 +81,7 @@ def _overrides(fake_pir, fake_store, monkeypatch):
     """
     from intel_platform.api.app import app
     from intel_platform.api.deps import get_graph_store
-    from intel_platform.api.routes import pirs as pirs_routes
+    from intel_platform.services.pir_judge import judge as pirs_routes
     from intel_platform.db.engine import get_db
 
     # The judge sample is a ranked Cypher read (see test_pir_judge_sample.py
@@ -191,7 +191,7 @@ def test_judging_failure_leaves_stored_status_untouched(client, analyst_header, 
 
 def test_injected_verdict_in_collected_data_cannot_satisfy(client, analyst_header, fake_pir):
     """A scraped page carrying a verdict line must not reach a parseable position."""
-    from intel_platform.api.routes.pirs import _sanitize_context
+    from intel_platform.services.pir_judge.evidence import _sanitize_context
 
     poisoned = _sanitize_context(
         "Some Org --MENTIONS--> Thing\n"
@@ -366,7 +366,7 @@ class TestEvidenceBlock:
         and every element lands in `retrieval_failed_for` — which would make any
         assertion about the healthy path accidentally test the failure path.
         """
-        from intel_platform.api.routes import pirs as pirs_routes
+        from intel_platform.services.pir_judge import judge as pirs_routes
 
         if passages is None:
             passages = pirs_routes.PassageEvidence(
@@ -406,7 +406,7 @@ class TestEvidenceBlock:
         made the test vacuous: a route that always returned degraded=False would
         have passed it, which is the whole failure mode under test.
         """
-        from intel_platform.api.routes import pirs as pirs_routes
+        from intel_platform.services.pir_judge import judge as pirs_routes
 
         ev = self._evidence(
             client, analyst_header, fake_pir,
