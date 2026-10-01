@@ -10,6 +10,10 @@ job), stamps its ``worker_id``, heartbeats it every 10 s from a background task
 while the agentic loop and the requirement passes run, and writes the terminal
 status and a sanitised error. See ``collection/job_runner.py``.
 
+At start it runs ``init_db`` (migrations, and the hook that loads persisted
+settings), and before each job it re-reads the settings an admin can change at
+runtime, so the worker selects the same LLM provider and persona the API would.
+
 One job at a time per process; run more processes for more parallelism. On
 SIGTERM/SIGINT it stops claiming, cancels the job in hand (recorded ``failed``:
 "the worker stopped") and exits 0. A worker that dies without that leaves its
@@ -21,6 +25,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import inspect
 import itertools
 import logging
 import signal
@@ -46,6 +51,58 @@ def new_worker_id() -> str:
 async def _wait(stop: asyncio.Event, seconds: float) -> None:
     with contextlib.suppress(asyncio.TimeoutError):
         await asyncio.wait_for(stop.wait(), timeout=seconds)
+
+
+async def refresh_persisted_settings() -> None:
+    """Re-read the settings an admin changes at runtime (LLM provider override,
+    active persona) before a job, so a change reaches the worker without a
+    restart. The API process sees its own writes; this process does not.
+
+    ``admin_config.refresh_persisted_settings`` belongs to the platform package;
+    where it is absent there is nothing persisted to read. A failed read leaves
+    the job on the settings read last, and is not a reason to fail it.
+    """
+    try:
+        from intel_platform.api.routes import admin_config
+
+        refresh = admin_config.refresh_persisted_settings
+    except (ImportError, AttributeError):
+        return
+    try:
+        result = refresh()
+        if inspect.isawaitable(result):
+            await result
+    except Exception:
+        logger.warning("Could not refresh persisted settings; the job runs with the last ones read", exc_info=True)
+
+
+async def prepare_schema(stop: asyncio.Event, *, init=None, retry_seconds: float = _POLL_SECONDS) -> bool:
+    """Run ``init_db`` (migrations and the persisted-settings hook) before taking work.
+
+    ``api.routes.admin_config`` is imported first: it registers the
+    ``on_schema_ready`` hook through which init_db loads persisted settings.
+    The API runs the same init at its own start; migrations run under an
+    advisory lock, so two processes starting together are safe, and any other
+    failure (Postgres not up yet) is retried until it succeeds or ``stop`` is set.
+    Returns False if stopped first.
+    """
+    with contextlib.suppress(ImportError, AttributeError):
+        from intel_platform.api.routes import admin_config  # noqa: F401
+    if init is None:
+        from intel_platform.db.engine import init_db as init
+    backoff = retry_seconds
+    first = True
+    while not stop.is_set():
+        try:
+            await init()
+            return True
+        except Exception:
+            logger.warning("Collection worker could not initialise the database; retrying in %.0f s", backoff,
+                           exc_info=first)
+            first = False
+            await _wait(stop, backoff)
+            backoff = min(backoff * 2, _MAX_BACKOFF_SECONDS)
+    return False
 
 
 async def run_worker(
@@ -95,6 +152,7 @@ async def run_worker(
             continue
 
         logger.info("Collection worker %s claimed job %s", worker_id, job_id)
+        await refresh_persisted_settings()
         task = asyncio.create_task(job_runner.run_job(
             job_id, worker_id=worker_id, db_factory=db_factory,
             get_store=get_store, get_provider=get_provider, heartbeat_seconds=heartbeat_seconds,
@@ -139,7 +197,8 @@ async def _main(args: argparse.Namespace) -> int:
     driver = get_neo4j_driver()
     store = GraphStore(driver)
     try:
-        await run_worker(stop=stop, get_store=lambda: store, poll_seconds=args.poll_seconds, once=args.once)
+        if await prepare_schema(stop, retry_seconds=args.poll_seconds):
+            await run_worker(stop=stop, get_store=lambda: store, poll_seconds=args.poll_seconds, once=args.once)
     finally:
         driver.close()
         await get_engine().dispose()

@@ -996,6 +996,9 @@ def _job_fields(job, now) -> dict:
         "heartbeat_at": job.heartbeat_at.isoformat() if job.heartbeat_at else None,
         "seconds_since_heartbeat": job_runner.seconds_since(job.heartbeat_at, now),
         "error": job.error,
+        # This run's degraded outcomes ({subsystem: {reason: count}}), which
+        # /health cannot show when a worker process ran it.
+        "degraded": job.degraded or {},
     }
 
 

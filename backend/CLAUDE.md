@@ -159,6 +159,14 @@ locked out forever.
   stalled job is finished at once.
 - All job timestamps, and staleness, use the **database clock** (`now()`), so a
   worker whose clock disagrees with the API's cannot make a live run look dead.
+- **Degraded outcomes travel on the row.** `services.telemetry` counts per
+  process, so a worker's counts never reach the API's `/health`; the run's own
+  counts go in `collection_jobs.degraded` (`{subsystem: {reason: n}}`, refreshed
+  with each heartbeat) and `/execution-status` returns them.
+- **The worker starts like the API**: it imports `api.routes.admin_config`
+  (which registers the persisted-settings hook) and runs `init_db()`, then
+  re-reads persisted settings before each job, so an admin's provider or
+  persona change reaches it without a restart.
 - The legacy `/collections` runner writes rows too (kind `legacy`, best
   effort); the worker never claims those.
 

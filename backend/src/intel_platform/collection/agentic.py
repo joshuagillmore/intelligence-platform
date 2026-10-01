@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+from intel_platform.collection import job_runner
 from intel_platform.collection.requirement_loop import plan_stop_requested
 from intel_platform.collection.url_guard import validate_url
 from intel_platform.connectors.base import get_connector
@@ -38,12 +39,18 @@ except ImportError:  # pragma: no cover - the counters ship separately; without 
 
 
 def _record_degraded(subsystem: str, reason: str, detail: str = "") -> None:
-    """Count a degraded outcome in services.telemetry (surfaced on /health).
+    """Count a degraded outcome, for this process and for the run's job row.
 
     Each one is already in the activity trail, which only says so for one plan
-    at a time; the counters say how often it is happening across all of them.
-    Recording must never be what fails a run.
+    at a time. services.telemetry (surfaced on /health) counts per process, so
+    a worker's counts would never reach the API: the job row carries the run's
+    own counts too (``collection_jobs.degraded``). Recording must never be what
+    fails a run.
     """
+    try:
+        job_runner.record_run_degraded(subsystem, reason)
+    except Exception:
+        logger.debug("Could not count a degraded %s outcome for the job", subsystem, exc_info=True)
     if _telemetry is None:
         return
     try:

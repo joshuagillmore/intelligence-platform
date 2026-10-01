@@ -15,6 +15,7 @@ and :func:`run_state` turns the latest row into the state the execute guard and
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import os
 import socket
@@ -96,6 +97,31 @@ def seconds_since(moment: datetime | None, now: datetime | None) -> int | None:
 
 
 # ---------------------------------------------------------------------------
+# Degraded outcomes, per run
+# ---------------------------------------------------------------------------
+
+# The counts for the run executing in this context: {subsystem: {reason: n}}.
+# run_job sets a fresh dict before it starts the run's task, which copies the
+# context, so everything the run does (including tasks and threads it starts)
+# adds to that one dict. services.telemetry counts per process, so without
+# this a worker's counts would never reach the API.
+_run_degraded: contextvars.ContextVar[dict | None] = contextvars.ContextVar("collection_run_degraded", default=None)
+
+
+def record_run_degraded(subsystem: str, reason: str) -> None:
+    """Count a degraded outcome against the job running in this context, if any."""
+    counts = _run_degraded.get()
+    if counts is None:
+        return
+    bucket = counts.setdefault(subsystem, {})
+    bucket[reason] = bucket.get(reason, 0) + 1
+
+
+def _snapshot(counts: dict) -> dict | None:
+    return {subsystem: dict(reasons) for subsystem, reasons in counts.items()} or None
+
+
+# ---------------------------------------------------------------------------
 # Executing a claimed job
 # ---------------------------------------------------------------------------
 
@@ -106,8 +132,9 @@ class _Ownership:
     statuses: list = field(default_factory=list)
 
 
-async def _heartbeat(job_id, worker_id, db_factory, interval, run_task, ownership: _Ownership) -> None:
-    """Refresh the job's heartbeat until cancelled.
+async def _heartbeat(job_id, worker_id, db_factory, interval, run_task, ownership: _Ownership,
+                     counts: dict | None = None) -> None:
+    """Refresh the job's heartbeat (and its degraded counts so far) until cancelled.
 
     A database error is logged and retried: a blip is not a reason to stop a
     run. Finding the job no longer ours is: it was closed as stalled and a new
@@ -117,7 +144,7 @@ async def _heartbeat(job_id, worker_id, db_factory, interval, run_task, ownershi
         await asyncio.sleep(interval)
         try:
             async with db_factory() as db:
-                status = await jobs.heartbeat(db, job_id, worker_id)
+                status = await jobs.heartbeat(db, job_id, worker_id, _snapshot(counts or {}))
         except Exception:
             logger.warning("Heartbeat for collection job %s failed; retrying", job_id, exc_info=True)
             continue
@@ -130,10 +157,10 @@ async def _heartbeat(job_id, worker_id, db_factory, interval, run_task, ownershi
             return
 
 
-async def _finish(db_factory, job_id, worker_id, status, error) -> None:
+async def _finish(db_factory, job_id, worker_id, status, error, counts: dict | None = None) -> None:
     try:
         async with db_factory() as db:
-            if not await jobs.finish(db, job_id, worker_id, status, error):
+            if not await jobs.finish(db, job_id, worker_id, status, error, _snapshot(counts or {})):
                 logger.warning("Collection job %s was closed by someone else before it finished", job_id)
     except Exception:
         # The row stays `running` and goes `stalled` after the window, which
@@ -206,16 +233,22 @@ async def run_job(
 
     from intel_platform.collection import agentic
 
-    run = asyncio.create_task(agentic.run_agentic_loop(
-        plan_id=plan.id,
-        db_factory=db_factory,
-        get_store=get_store,
-        get_provider=get_provider,
-        max_results_per_source=_max_results(rules),
-        source_limit=_source_limit(rules),
-    ))
+    # The run's task copies this context, so its degraded outcomes land here.
+    counts: dict = {}
+    token = _run_degraded.set(counts)
+    try:
+        run = asyncio.create_task(agentic.run_agentic_loop(
+            plan_id=plan.id,
+            db_factory=db_factory,
+            get_store=get_store,
+            get_provider=get_provider,
+            max_results_per_source=_max_results(rules),
+            source_limit=_source_limit(rules),
+        ))
+    finally:
+        _run_degraded.reset(token)
     ownership = _Ownership()
-    beat = asyncio.create_task(_heartbeat(job_id, worker_id, db_factory, interval, run, ownership))
+    beat = asyncio.create_task(_heartbeat(job_id, worker_id, db_factory, interval, run, ownership, counts))
     status, error = jobs.SUCCEEDED, None
     try:
         failure = await run
@@ -230,7 +263,7 @@ async def run_job(
         )
         if not ownership.lost:
             beat.cancel()
-            await _finish(db_factory, job_id, worker_id, status, error)
+            await _finish(db_factory, job_id, worker_id, status, error, counts)
             raise
     except Exception as exc:
         logger.exception("Collection job %s failed", job_id)
@@ -238,7 +271,7 @@ async def run_job(
     finally:
         beat.cancel()
     if not ownership.lost:
-        await _finish(db_factory, job_id, worker_id, status, error)
+        await _finish(db_factory, job_id, worker_id, status, error, counts)
     logger.info("Collection job %s for plan %s finished: %s", job_id, plan.id, status)
     return status
 

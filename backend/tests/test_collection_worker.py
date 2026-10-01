@@ -193,6 +193,121 @@ class TestTheWorkerLoop:
         assert await asyncio.wait_for(task, 10) == 2
         assert ran == [first, second]
 
+    async def test_the_runs_degraded_outcomes_travel_on_its_row(self, pg_factory, monkeypatch):
+        """services.telemetry counts per process, so a worker's counts never
+        reach the API's /health. The run's own counts go on its job row: with
+        each heartbeat while it runs, and in full when it ends."""
+        pid = await make_plan(pg_factory)
+        job_id = await _queue(pg_factory, pid)
+        midway = asyncio.Event()
+        release = asyncio.Event()
+
+        async def loop(**kw):
+            agentic._record_degraded("extraction", "nlp_fallback", detail="LLMProviderError")
+            midway.set()
+            await release.wait()
+
+            async def in_a_subtask():   # tasks the run starts count too
+                agentic._record_degraded("extraction", "nlp_fallback")
+                agentic._record_degraded("collection", "source_failed", detail="RuntimeError")
+            await asyncio.create_task(in_a_subtask())
+
+        monkeypatch.setattr(agentic, "run_agentic_loop", loop)
+        _stop, task = _start_worker(pg_factory, once=True)
+        await asyncio.wait_for(midway.wait(), 10)
+
+        async def counted_so_far():
+            return (await _row(pg_factory, job_id)).degraded == {"extraction": {"nlp_fallback": 1}}
+        await _until(counted_so_far)
+
+        release.set()
+        await asyncio.wait_for(task, 10)
+        row = await _row(pg_factory, job_id)
+        assert row.status == jobs.SUCCEEDED
+        assert row.degraded == {"extraction": {"nlp_fallback": 2}, "collection": {"source_failed": 1}}
+
+        async with pg_factory() as db:
+            from intel_platform.api.routes import collection_plans as cp
+            status = await cp.get_execution_status(str(pid), db=db)
+        assert status["degraded"] == row.degraded
+
+    async def test_outside_a_job_nothing_is_counted_against_one(self):
+        job_runner.record_run_degraded("collection", "source_failed")   # no job: a no-op
+        assert job_runner._run_degraded.get() is None
+
+    async def test_settings_are_refreshed_before_each_job(self, pg_factory, monkeypatch):
+        from intel_platform.api.routes import admin_config
+
+        refreshed: list = []
+
+        async def refresh():
+            refreshed.append(1)
+
+        async def loop(**kw):
+            # The refresh happened before this job started.
+            assert len(refreshed) == len(ran) + 1
+            ran.append(kw["plan_id"])
+
+        ran: list = []
+        monkeypatch.setattr(admin_config, "refresh_persisted_settings", refresh, raising=False)
+        monkeypatch.setattr(agentic, "run_agentic_loop", loop)
+        for _ in range(2):
+            await _queue(pg_factory, await make_plan(pg_factory))
+        stop, task = _start_worker(pg_factory)
+
+        async def both_ran():
+            return len(ran) == 2
+        await _until(both_ran)
+        stop.set()
+        await asyncio.wait_for(task, 10)
+        assert refreshed == [1, 1]
+
+    async def test_a_failed_refresh_does_not_fail_the_job(self, pg_factory, monkeypatch):
+        from intel_platform.api.routes import admin_config
+
+        async def broken():
+            raise RuntimeError("app_settings unreadable")
+
+        monkeypatch.setattr(admin_config, "refresh_persisted_settings", broken, raising=False)
+        loop = _Loop()
+        loop.release.set()
+        monkeypatch.setattr(agentic, "run_agentic_loop", loop)
+        job_id = await _queue(pg_factory, await make_plan(pg_factory))
+        _stop, task = _start_worker(pg_factory, once=True)
+        await asyncio.wait_for(task, 10)
+        assert (await _row(pg_factory, job_id)).status == jobs.SUCCEEDED
+
+    async def test_without_the_platform_hook_the_refresh_is_skipped(self, monkeypatch):
+        from intel_platform.api.routes import admin_config
+
+        monkeypatch.delattr(admin_config, "refresh_persisted_settings", raising=False)
+        await worker.refresh_persisted_settings()   # no AttributeError
+
+    async def test_the_schema_is_prepared_with_the_settings_hook_first(self):
+        """init_db loads persisted settings through a hook admin_config
+        registers, so it is imported first; a database that is not up yet is
+        retried rather than fatal."""
+        import sys
+
+        calls: list = []
+
+        async def init():
+            calls.append("intel_platform.api.routes.admin_config" in sys.modules)
+            if len(calls) < 3:
+                raise OSError("postgres is starting")
+
+        assert await worker.prepare_schema(asyncio.Event(), init=init, retry_seconds=0.01) is True
+        assert calls == [True, True, True]
+
+    async def test_preparing_the_schema_stops_when_asked(self):
+        stop = asyncio.Event()
+
+        async def never_up():
+            stop.set()
+            raise OSError("down")
+
+        assert await worker.prepare_schema(stop, init=never_up, retry_seconds=0.01) is False
+
     async def test_an_unreachable_database_is_retried_not_fatal(self):
         attempts = []
 

@@ -41,7 +41,7 @@ from sqlalchemy import (
     text,
     update,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from intel_platform.db.models import Base
@@ -83,6 +83,11 @@ class CollectionJob(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True,
         comment="Sanitised failure reason, safe to show an analyst; never exception text")
+    # Telemetry counters are per process, so what a worker counted never
+    # reaches the API's /health. The run's own counts travel on its row
+    # instead, refreshed with each heartbeat and written at the end.
+    degraded: Mapped[dict | None] = mapped_column(JSONB, nullable=True,
+        comment="Degraded outcomes during this run: {subsystem: {reason: count}}")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -189,17 +194,20 @@ def _owned_and_unfinished(job_id: uuid.UUID, worker_id: str):
     )
 
 
-async def heartbeat(db, job_id: uuid.UUID, worker_id: str) -> str | None:
-    """Refresh the heartbeat. Commits.
+async def heartbeat(db, job_id: uuid.UUID, worker_id: str, degraded: dict | None = None) -> str | None:
+    """Refresh the heartbeat (and the run's degraded counts, when given). Commits.
 
     Returns the job's status, or None when this process no longer owns a live
     job by that id (it was closed as stalled and superseded) — the caller must
     stop the run, because another may already be under way.
     """
+    values: dict = {"heartbeat_at": func.now()}
+    if degraded:
+        values["degraded"] = degraded
     result = await db.execute(
         update(CollectionJob)
         .where(*_owned_and_unfinished(job_id, worker_id))
-        .values(heartbeat_at=func.now())
+        .values(**values)
         .returning(CollectionJob.status)
     )
     status = result.scalar_one_or_none()
@@ -207,20 +215,25 @@ async def heartbeat(db, job_id: uuid.UUID, worker_id: str) -> str | None:
     return status
 
 
-async def finish(db, job_id: uuid.UUID, worker_id: str, status: str, error: str | None = None) -> bool:
-    """Write the terminal status. Commits. Returns False if the job was no longer ours.
+async def finish(db, job_id: uuid.UUID, worker_id: str, status: str, error: str | None = None,
+                 degraded: dict | None = None) -> bool:
+    """Write the terminal status (and the run's degraded counts). Commits.
 
-    A job the analyst cancelled stays ``cancelled`` whatever the run did after.
+    Returns False if the job was no longer ours. A job the analyst cancelled
+    stays ``cancelled`` whatever the run did after.
     """
+    values: dict = {
+        "status": _keep_cancelled(status),
+        "error": _keep_cancelled_error(sanitise_error(error)),
+        "finished_at": func.now(),
+        "heartbeat_at": func.now(),
+    }
+    if degraded:
+        values["degraded"] = degraded
     result = await db.execute(
         update(CollectionJob)
         .where(*_owned_and_unfinished(job_id, worker_id))
-        .values(
-            status=_keep_cancelled(status),
-            error=_keep_cancelled_error(sanitise_error(error)),
-            finished_at=func.now(),
-            heartbeat_at=func.now(),
-        )
+        .values(**values)
         .returning(CollectionJob.id)
     )
     owned = result.first() is not None

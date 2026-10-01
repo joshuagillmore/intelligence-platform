@@ -105,7 +105,10 @@ class TestModel:
         assert set(jobs.CollectionJob.__table__.columns.keys()) == {
             "id", "plan_id", "project_id", "kind", "status", "worker_id",
             "heartbeat_at", "started_at", "finished_at", "error", "created_at",
+            # Added at integration: per-run degraded counts (telemetry is per process).
+            "degraded",
         }
+        assert jobs.CollectionJob.__table__.c.degraded.nullable
 
     def test_it_is_on_the_shared_metadata(self):
         from intel_platform.db.models import Base
