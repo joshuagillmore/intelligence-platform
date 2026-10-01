@@ -9,6 +9,11 @@ import { getErrorMessage } from '@/lib/errorMessages';
 import { planTitle } from '@/lib/planTitle';
 import Markdown from '@/components/Markdown';
 import { humanize } from '@/lib/format';
+import { usePlanRunState } from '@/lib/usePlanRunState';
+import { CancelRunButton, PlanRunBadge, RunDetails } from '@/components/PlanRunStatus';
+
+// How often the selected plan's run state is re-read while a run is in flight.
+const RUN_POLL_MS = 3000;
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
@@ -138,6 +143,13 @@ export default function CollectionPlansPage() {
       setDetailError(getErrorMessage(e));
     }
   }, []);
+
+  // Whether the selected plan has a run in flight (collecting, queued or
+  // stopping), polled while it does; when the run ends, re-read what it changed.
+  const { run: selectedRun, refresh: refreshRun } = usePlanRunState(selectedPlanId, RUN_POLL_MS, () => {
+    if (detailFor.current) loadPlanDetail(detailFor.current);
+    loadPlans();
+  });
 
   useEffect(() => {
     // Clear first, so the previous plan's actions are gone while this loads.
@@ -473,9 +485,23 @@ export default function CollectionPlansPage() {
                         </details>
                       )}
                     </div>
-                    <span className={`px-2 py-1 text-[10px] rounded border font-bold ${STATUS_COLORS[selectedPlan.status] || 'text-gray-400'}`}>
-                      {selectedPlan.status}
-                    </span>
+                    <div className="flex items-center gap-2 flex-none ml-3">
+                      {/* Whether work is happening now, which the lifecycle
+                          status beside it cannot tell you. */}
+                      <PlanRunBadge run={selectedRun} />
+                      <CancelRunButton
+                        planId={String(selectedPlan.id)}
+                        run={selectedRun}
+                        onCancelled={() => refreshRun()}
+                        onError={setError}
+                      />
+                      <span className={`px-2 py-1 text-[10px] rounded border font-bold ${STATUS_COLORS[selectedPlan.status] || 'text-gray-400'}`}>
+                        {selectedPlan.status}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <RunDetails run={selectedRun} />
                   </div>
                   <div className="flex flex-wrap gap-2 mt-4">
                     {selectedPlan.status === 'DRAFT' && (

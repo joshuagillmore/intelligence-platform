@@ -629,7 +629,9 @@ export interface CollectionPlan {
  *  sets by hand and says nothing about whether work is happening now. */
 export interface PlanExecutionStatus {
   plan_id: string;
-  /** idle | running | stalled | completed | failed | error */
+  /** idle | running | stalled | completed | failed | cancelled, from the job
+   *  table. A queued run, and a cancelled run still winding down, read
+   *  `running`; `job_status` tells them apart. */
   status: string;
   message?: string;
   last_event?: string;
@@ -639,6 +641,45 @@ export interface PlanExecutionStatus {
   /** How long the plan has been silent. `stalled` means past the backend's
    *  threshold, i.e. presumed dead rather than merely slow. */
   seconds_since_last_event?: number;
+  /** The latest run's job row (null before any run). */
+  job_id?: string | null;
+  job_status?: CollectionJobStatus | null;
+  heartbeat_at?: string | null;
+  seconds_since_heartbeat?: number | null;
+  /** Why the run failed, sanitised. */
+  error?: string | null;
+  /** This run's degraded outcomes, `{subsystem: {reason: count}}`: the only
+   *  place they show when a worker process ran it. */
+  degraded?: Record<string, Record<string, number>>;
+}
+
+export type CollectionJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+/** `POST /collection-plans/{id}/execute` (202): the plan plus how the run started. */
+export type PlanExecuteResult = CollectionPlan & {
+  /** null when nothing could run. */
+  job_id: string | null;
+  worker_mode: 'inline' | 'worker';
+  execution_status: 'started' | 'queued' | 'no_executable_sources';
+  message: string;
+  sources_queued: number;
+  sources_manual: number;
+  sources_missing_config: number;
+  source_limit: number | null;
+  sources_over_budget: number;
+  warnings: string[];
+};
+
+/** `POST /collection-plans/{id}/cancel` (202). `stopping`: the run was
+ *  mid-flight and stops before its next source; the plan reads `running`
+ *  until it has. */
+export interface PlanCancelResult {
+  plan_id: string;
+  job_id: string;
+  status: 'cancelled';
+  previous_status: CollectionJobStatus;
+  stopping: boolean;
+  message: string;
 }
 
 export interface CollectionSourceEntry {
@@ -718,6 +759,9 @@ export const collectionPlansApi = {
   archive: (id: string) => http.post<CollectionPlan>(`/collection-plans/${id}/archive`),
 
   // Execution
+  /** Cancel the plan's live run (queued, running or stalled). 409 when none is
+   *  live or it is already stopping. */
+  cancel: (planId: string) => http.post<PlanCancelResult>(`/collection-plans/${planId}/cancel`),
   executionStatus: (planId: string) =>
     http.get<PlanExecutionStatus>(`/collection-plans/${planId}/execution-status`),
 
@@ -765,7 +809,7 @@ export const collectionPlansApi = {
   fromPir: (data: BodyOf<'/api/collection-plans/from-pir', 'post'>) =>
     http.post<CollectionPlan & { llm_plan_text?: string }>('/collection-plans/from-pir', data),
   execute: (planId: string, maxResultsPerSource?: number) =>
-    http.post<CollectionPlan & { execution_status: string; message: string }>(
+    http.post<PlanExecuteResult>(
       `/collection-plans/${planId}/execute`,
       maxResultsPerSource != null
         ? ({ max_results_per_source: maxResultsPerSource } satisfies BodyOf<'/api/collection-plans/{plan_id}/execute', 'post'>)
