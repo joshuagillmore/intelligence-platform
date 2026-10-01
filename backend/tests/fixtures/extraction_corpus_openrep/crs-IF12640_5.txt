@@ -1,0 +1,29 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IF12640#5) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+PRC Influence and Control
+
+The CPC requires all firms to house a Party committee that is empowered to attend board meetings and be part of decisionmaking. The PRC government is also an indirect shareholder in some firms. For example, it holds a board seat in Douyin Information Services Co., Ltd (the owner of TikTok's core technology) via a 1% shareholding by a firm backed by China's internet regulator. Other PRC tools to influence PRC digital platform firms include
+
+PRC official content guidelines and censorship rules restrict and promote content on PRC digital platforms.
+
+China's anti-espionage, cybersecurity, and data security laws compel firms to support PRC state security authorities.
+
+The core business (e.g., software and technology development) and intellectual property is based in China, owned by a PRC parent or subsidiary, and subject to PRC jurisdiction. Offshore structures can obfuscate such ties.
+
+Key U.S. Government Actions to Restrict Certain PRC Digital Firms
+
+May 2019: Executive Order (E.O.) 13873 declared a national emergency to secure U.S. information and communications technology and services supply chains. The E.O. has been renewed annually since 2019.
+
+January 2020-present: Some federal agencies and state governments banned the TikTok app on government devices.
+
+March 2020: A Presidential Order required Shiji Technology to divest Stayntouch, a U.S. software provider under the Committee on Foreign Investment in the United States (CFIUS) authorities. It did not ban the firm from operating in the U.S. market.
+
+August 2020: A Presidential Order required ByteDance to divest Musical.ly/TikTok under CFIUS authorities. TikTok contested the Order in court. Since February 2021, the case has been in abeyance at the request of the parties.
+
+August 2020: E.O. 13942 and E.O. 13943 (later rescinded) restricted the U.S. operations of TikTok and WeChat. Court injunctions blocked their implementation.
+
+January 2021: E.O. 13971 provided for scrutiny of apps and software developed or controlled by PRC firms.

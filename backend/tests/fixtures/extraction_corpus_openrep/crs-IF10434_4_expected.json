@@ -1,0 +1,118 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IF10434#4",
+    "doc_id": "crs-IF10434"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Russia",
+      "entity_type": "Location",
+      "aliases": [
+        "Moscow"
+      ]
+    },
+    {
+      "name": "Burkina Faso",
+      "entity_type": "Location",
+      "aliases": [
+        "Burkina"
+      ]
+    },
+    {
+      "name": "Traoré",
+      "entity_type": "Person",
+      "aliases": [
+        "Capt. Traoré"
+      ]
+    },
+    {
+      "name": "Mali",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Wagner Group",
+      "entity_type": "Organization",
+      "aliases": [
+        "Wagner"
+      ]
+    },
+    {
+      "name": "Alliance of Sahel States",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "April 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "2023",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Africa Summit",
+      "entity_type": "Event",
+      "aliases": [
+        "Russia's Africa Summit"
+      ]
+    },
+    {
+      "name": "Vladimir Putin",
+      "entity_type": "Person",
+      "aliases": [
+        "Putin"
+      ]
+    },
+    {
+      "name": "Ukraine",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Ouagadougou",
+      "entity_type": "Location"
+    },
+    {
+      "name": "1992",
+      "entity_type": "Date"
+    },
+    {
+      "name": "May 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Africa Initiative",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Nordgold",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Niger",
+      "entity_type": "Location"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Burkina Faso",
+      "target": "Russia",
+      "rel_type": "SUPPLIED_BY"
+    },
+    {
+      "source": "Russia",
+      "target": "Burkina Faso",
+      "rel_type": "DEPLOYED_AT"
+    },
+    {
+      "source": "Russia",
+      "target": "Mali",
+      "rel_type": "DEPLOYED_AT"
+    },
+    {
+      "source": "Africa Initiative",
+      "target": "Burkina Faso",
+      "rel_type": "LOCATED_AT"
+    }
+  ]
+}

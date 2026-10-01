@@ -1,0 +1,82 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IF10275#4",
+    "doc_id": "crs-IF10275"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Donald J. Trump",
+      "entity_type": "Person",
+      "aliases": [
+        "President Donald J. Trump",
+        "Trump"
+      ]
+    },
+    {
+      "name": "Taiwan",
+      "entity_type": "Location"
+    },
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "Beijing",
+      "entity_type": "Location"
+    },
+    {
+      "name": "PRC",
+      "entity_type": "Location",
+      "aliases": [
+        "People's Republic of China",
+        "China"
+      ]
+    },
+    {
+      "name": "Xi Jinping",
+      "entity_type": "Person",
+      "aliases": [
+        "Xi"
+      ]
+    },
+    {
+      "name": "Lai Ching-te",
+      "entity_type": "Person"
+    },
+    {
+      "name": "May 2026",
+      "entity_type": "Date"
+    },
+    {
+      "name": "December 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "June 2026",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Marco Rubio",
+      "entity_type": "Person"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Xi Jinping",
+      "target": "PRC",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "Lai Ching-te",
+      "target": "Taiwan",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

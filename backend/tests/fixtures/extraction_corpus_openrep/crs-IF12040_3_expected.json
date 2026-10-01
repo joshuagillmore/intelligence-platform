@@ -1,0 +1,56 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IF12040#3",
+    "doc_id": "crs-IF12040"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Ukraine",
+      "entity_type": "Location"
+    },
+    {
+      "name": "DOD",
+      "entity_type": "Organization",
+      "aliases": [
+        "Department of Defense"
+      ]
+    },
+    {
+      "name": "NATO",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Iran",
+      "entity_type": "Location"
+    },
+    {
+      "name": "2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "SIG-OAR",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Congress",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Department of Defense Appropriations Act, 2026",
+      "entity_type": "Document",
+      "aliases": [
+        "P.L. 119-75"
+      ]
+    },
+    {
+      "name": "Defense Security Cooperation Agency",
+      "entity_type": "Organization",
+      "aliases": [
+        "DSCA"
+      ]
+    }
+  ],
+  "relationships": []
+}

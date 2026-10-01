@@ -1,0 +1,15 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-R43543#4) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+U.S. Navy Amphibious Ships
+
+The Navy's current amphibious ship force currently consists entirely of larger amphibious ships, including the so-called "big-deck" amphibious assault ships (because they have flight decks spanning the length of the ship), designated LHA and LHD, which look like medium-sized aircraft carriers, and the smaller (but still quite sizeable) amphibious ships, designated LPD or LSD, which are sometimes called "small-deck" amphibious ships (because their flight decks occupy only the aft part of the ship).4 As mentioned earlier, a separate CRS report discusses the Navy's Medium Landing Ship (LSM) program, previously known as the Light Amphibious Warship (LAW) program, which is a program to build a new type of amphibious ship that would be much smaller than the Navy's current LHA/LHD- and LPD/LSD-type amphibious ships.5
+
+10 U.S.C. 8062(b) requires the Navy to include not less than 31 operational amphibious warfare ships, consisting of not less than 10 LHA/LHD-type "big-deck" amphibious assault ships and the remaining ships to be LPD/LSD-type amphibious ships. The requirement for the Navy to include these numbers and types of amphibious ships was added to 10 U.S.C. 8062 by Section 1023 of the FY2023 (NDAA) (H.R. 7776/P.L. 117-263 of December 23, 2022).
+
+The Navy's Battle Force Ship Assessment and Requirement (BFSAR) study, which was provided to the congressional defense committees in June 2023, calls for achieving a future fleet of 381 manned battle force ships, including 31 larger amphibious ships, consisting of 10 LHA- and LHD-type "big-deck" amphibious assault ships and 21 LPD- and older LSD-type amphibious ships. The requirement in 10 U.S.C. 8062 for having 31 larger amphibious ships applies in any case.6
+
+A forthcoming new Navy ship force-structure plan, sometimes called the Golden Fleet plan, is to succeed the 381-ship plan. As of mid-January 2026, the Navy had not yet announced the details of this successor force-structure plan.

@@ -1,0 +1,11 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IF10434#4) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Shifting International Relations
+
+Roughly 100 Russian security personnel have reportedly deployed to Burkina Faso since late 2023 to train the military and provide personal protection for Capt. Traoré. The expansion of Russia's footprint from Mali—where Russian personnel have participated in combat operations—came as Moscow was asserting state control over operations previously spearheaded by the Wagner Group private military company. Russia has also supplied weapons to Burkina Faso. In April 2025, Russia pledged arms and training for a new Alliance of Sahel States regional force.
+
+Diplomatic ties with Russia have tightened. In 2023, Traoré referred to Russia as a "strategic ally" and played a prominent role in Russia's Africa Summit. There, he held talks with Russian President Vladimir Putin and voiced support for Russia's "special military operation" in Ukraine. Russia reopened its embassy in Ouagadougou later that year, having closed it in 1992. Traoré again visited Russia in May 2025 and met with Putin, praising Russia's cooperation and ability to withstand international sanctions. Burkina Faso has also been a focus of Russian "soft-power efforts," including grain shipments and scholarships. The Africa Initiative, a pro-Kremlin media outlet, has an office in the country. In April 2025, the government awarded a new mining license to Russia's Nordgold, which is under U.S. sanctions. Burkina, Mali, and Niger have accused Ukraine of supporting terrorism, a reference to Malian rebel groups who have killed Russian personnel.

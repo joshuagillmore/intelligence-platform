@@ -1,0 +1,75 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-R44972#12",
+    "doc_id": "crs-R44972"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "U.S. Navy",
+      "entity_type": "Organization",
+      "aliases": [
+        "Navy",
+        "the Navy"
+      ]
+    },
+    {
+      "name": "FFG-62",
+      "entity_type": "Ship",
+      "aliases": [
+        "FFG 62 Class",
+        "FFG-62 program",
+        "Constellation-class frigate",
+        "Constellation class",
+        "Constellation"
+      ]
+    },
+    {
+      "name": "FREMM",
+      "entity_type": "Ship",
+      "aliases": [
+        "FREMM Parent design",
+        "FREMM parent design"
+      ]
+    },
+    {
+      "name": "Fincantieri",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Kevin Smith",
+      "entity_type": "Person",
+      "aliases": [
+        "Capt. Kevin Smith",
+        "Smith"
+      ]
+    },
+    {
+      "name": "Sea Air Space exposition",
+      "entity_type": "Event",
+      "aliases": [
+        "Sea Air Space"
+      ]
+    },
+    {
+      "name": "August 2",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Fincantieri Marinette Marine",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Naval Surface Warfare Center Carderock",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "FFG-62",
+      "target": "Fincantieri Marinette Marine",
+      "rel_type": "SUPPLIED_BY"
+    }
+  ]
+}

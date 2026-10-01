@@ -1,0 +1,11 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IF11069#2) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Details
+
+The United States first tabled a white paper concerning this aspect of UAS exports during the 2017 MTCR Plenary meeting. A U.S. proposal submitted during the March 2018 MTCR Technical Experts Meeting would have provided Category II treatment for a certain subset of UAS with a "maximum speed value," as well as associated parts and components, a Department of State official told CRS on December 4, 2018. The official did not specify the proposed speed value. The proposal also included a method for determining the speed of such a UAS, a feature not contained in the current MTCR annex, and a definition of "cruise missile." The proposed changes would not have applied to cruise missiles or affect current MTCR treatment of either complete production facilities or technology for the development and production of complete systems. Then-Assistant Secretary of State Christopher Ford noted during a July 24, 2020, event that the United States has "repeatedly … made technical changes and various other adjustments to our reform proposal in response to issues raised and ideas that were suggested by our MTCR partners." The proposed changes were a part of a broader Donald Trump Administration UAS export policy announced in April 2018 that replaced a similar 2015 Obama Administration measure.
+
+On July 24, 2020, the Trump Administration announced a new UAS export policy similar to the March 2018 proposal described above. The new policy treats "a carefully selected subset of MTCR Category I UAS, which cannot travel faster than 800 kilometers per hour, as Category II" and thereby overcomes the MTCR's "strong presumption of denial" for these systems. A January 12, 2021, final rule from the Department of Commerce's Bureau of Industry and Security (BIS) implements the relevant changes to U.S. dual-use licensing procedures. The Joseph Biden Administration retained the 2020 UAS export policy.

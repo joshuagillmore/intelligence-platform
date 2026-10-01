@@ -460,6 +460,355 @@ def test_place_subtypes_the_model_invents_are_locations():
         assert _normalize_llm_entity_type(raw) == "Location", raw
 
 
+# ── Replies that parse to nothing ─────────────────────────────────────────────
+# openrep-deep: Cohere's reply for the Burkina Faso chunk ended
+# `..."relationships": [], "entities": []}` after the full lists, and json.loads
+# kept the last of each duplicate key — 17 entities scored as none extracted.
+# Its reply for the Navy-lasers chunk ran past the token limit, so nothing
+# parsed and the chunk degraded to NLP.
+
+async def _llm_reply(content: str, text: str = "Russia supplied weapons to Burkina Faso."):
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=content, model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        return await extraction.extract_entities_llm(text, "doc-fix")
+
+
+async def test_a_reply_that_repeats_its_keys_keeps_what_it_extracted():
+    content = (
+        '{"entities": [{"name": "Burkina Faso", "entity_type": "Country"}, {"name": "Russia", "entity_type": '
+        '"Country"}], "relationships": [{"source_entity": "Burkina Faso", "target_entity": "Russia", '
+        '"relationship_type": "SUPPLIED_BY"}], "relationships": [], "entities": []}'
+    )
+    result = await _llm_reply(content)
+    assert result.degraded is False
+    assert {e["name"] for e in result[0]} >= {"Burkina Faso", "Russia"}
+    assert [(r["source_name"], r["rel_type"]) for r in result[1]] == [("Burkina Faso", "SUPPLIED_BY")]
+
+
+async def test_a_reply_cut_off_at_the_token_limit_keeps_its_complete_items():
+    content = (
+        '```json\n{\n  "entities": [\n    {"name": "Northrop Grumman", "entity_type": "Organization"},\n'
+        '    {"name": "Portland", "entity_type": "Ship", "aliases": ["LPD-27"]},\n'
+        '    {"name": "LWSD", "entity_type": "Wea'
+    )
+    result = await _llm_reply(content, "Northrop Grumman built the LWSD installed on Portland (LPD-27).")
+    assert result.degraded is False and result.method == "llm"
+    assert {e["name"] for e in result[0] if e.get("method") == "llm"} == {"Northrop Grumman", "Portland"}
+
+
+def test_llm_output_merges_repeated_list_keys_only_when_asked():
+    from intel_platform.services.llm_output import json_object
+
+    reply = '{"entities": [1, 2], "note": "a", "entities": [], "note": ""}'
+    assert json_object(reply) == {"entities": [], "note": ""}
+    assert json_object(reply, merge_duplicate_lists=True) == {"entities": [1, 2], "note": "a"}
+
+
+def test_llm_output_reads_the_complete_items_of_a_cut_off_array():
+    from intel_platform.services.llm_output import json_array_items
+
+    cut = '{"relationships": [ {"a": "{x}"} , {"b": 2},\n {"c": [1, {"d": 3}]}, {"e": "unterminated'
+    assert json_array_items(cut, "relationships") == [{"a": "{x}"}, {"b": 2}, {"c": [1, {"d": 3}]}]
+    assert json_array_items('{"entities": []}', "entities") == []
+    assert json_array_items("no array here", "entities") == []
+
+
+async def test_a_list_reply_with_no_keys_still_degrades():
+    result = await _llm_reply('[{"name": "Russia", "entity_type": "Country"}]')
+    assert result.degraded is True
+
+
+# ── Relationships analytic prose states without a verb ────────────────────────
+# NLP found 1 of the 73 openrep gold edges. Most are written as a possessive,
+# a title, or an action noun rather than a subject-verb-object clause.
+
+def test_a_possessive_body_belongs_to_its_possessor():
+    rels = _rels("In April 2025, Poland's Internal Security Agency reported that the agency had detained 44 people.")
+    assert ("Internal Security Agency", "BELONGS_TO", "Poland") in rels
+    rels = _rels("Officials from DOJ's National Security Division and the FBI testified.")
+    assert ("National Security Division", "BELONGS_TO", "DOJ") in rels
+
+
+def test_a_title_ties_a_person_to_the_country_or_body_it_names():
+    rels = _rels("There, he held talks with Russian President Vladimir Putin and voiced support for Russia's war.")
+    assert ("Vladimir Putin", "BELONGS_TO", "Russia") in rels
+    rels = _rels(
+        "In November 2025, for example, Kaja Kallas, High Representative of the European Union (EU) for Foreign "
+        "Affairs and Security Policy, stated that Russia is committing state-sponsored terrorism. In an October "
+        "2025 speech, European Commission President Ursula von der Leyen stated that it is hybrid warfare."
+    )
+    assert ("Kaja Kallas", "BELONGS_TO", "European Union") in rels
+    # en_core_web_sm cuts the name at "der"; the relation still binds.
+    assert {r for r in rels if r[0].startswith("Ursula von der") and r[1:] == ("BELONGS_TO", "European Commission")}
+
+
+def test_a_commander_title_is_the_command_relationship_the_right_way_round():
+    rels = _rels(
+        "According to congressional testimony in March 2026 by General Alexus G. Grynkewich, Commander of U.S. "
+        "European Command and NATO Supreme Allied Commander Europe, the Russian activity is robust."
+    )
+    assert ("U.S. European Command", "COMMANDED_BY", "Alexus G. Grynkewich") in rels
+
+
+def test_an_invasion_of_a_country_targets_it():
+    rels = _rels("The Russian Federation (Russia) launched a full-scale invasion of Ukraine in February 2022.")
+    assert ("Russia", "TARGETS", "Ukraine") in rels or ("Russian Federation", "TARGETS", "Ukraine") in rels
+    rels = _rels(
+        "In April and October 2024, Iran used ballistic missiles to directly attack Israel. Subsequent Israeli "
+        "strikes on Iran destroyed Iran's ability to produce ballistic missiles for a year."
+    )
+    assert ("Israel", "TARGETS", "Iran") in rels
+
+
+def test_supplying_points_from_recipient_to_supplier():
+    rels = _rels("Iran has transferred close-range ballistic missiles to Russia, according to U.S. officials.")
+    assert ("Russia", "SUPPLIED_BY", "Iran") in rels
+    assert ("Iran", "SUPPLIED_BY", "Russia") not in rels
+    rels = _rels("Iran has also provided the Houthis with components and technical knowledge to construct missiles.")
+    assert ("Houthis", "SUPPLIED_BY", "Iran") in rels
+
+
+def test_a_backed_group_is_funded_by_its_backer():
+    rels = _rels("Iran-backed Houthi movement has attacked Saudi Arabia-linked vessels and energy targets.")
+    assert ("Houthi", "FUNDED_BY", "Iran") in rels
+    # The subject is the movement the phrase names, not the backer inside it.
+    assert ("Houthi", "TARGETS", "Saudi Arabia") in rels
+    assert ("Iran", "TARGETS", "Saudi Arabia") not in rels
+
+
+def test_a_military_presence_in_a_place_is_deployment_there():
+    rels = _rels("Highly likely that NATO is significantly increasing its military presence in the Arctic.")
+    assert ("NATO", "DEPLOYED_AT", "Arctic") in rels
+
+
+# ── Acronym bodies and named documents ────────────────────────────────────────
+
+def test_a_single_word_acronym_organization_is_kept_and_a_heading_is_not():
+    types = _types("Meanwhile, in October 2024, NORTHCOM conducted the Falcon Peak exercise. BACKGROUND")
+    assert types.get("NORTHCOM") == "Organization"
+    assert "BACKGROUND" not in types
+    types = _types("BOTTOM LINE UP FRONT: Highly likely that NATO is increasing its presence.")
+    assert not [n for n in types if n.isupper() and " " in n]
+
+
+def test_executive_orders_and_acts_are_documents():
+    types = _types(
+        "President Donald J. Trump introduced the initiative in Executive Order (E.O.) 14186, dated January 27, "
+        "2025. E.O. 13871 (May 8, 2019), blocking transactions and trade related to Iran's iron sectors."
+    )
+    assert types.get("Executive Order (E.O.) 14186") == "Document"
+    assert types.get("E.O. 13871") == "Document"
+    assert "14186" not in types
+    types = _types(
+        "Congress granted SLTT law enforcement and correctional agencies authority through the FY2026 NDAA to "
+        "engage in actions. The 2025 Worldwide Threat Assessment stated that Iran has fielded missiles."
+    )
+    assert types.get("FY2026 NDAA") == "Document"
+    assert types.get("Worldwide Threat Assessment") == "Document"
+
+
+# ── Designators, named exercises, and place names spaCy cuts in two ───────────
+
+def test_ship_class_designators_are_ships_and_missile_designators_weapons():
+    types = _types(
+        "The Navy's current amphibious ship force includes the so-called big-deck amphibious assault ships, "
+        "designated LHA and LHD, and the smaller amphibious ships, designated LPD or LSD."
+    )
+    assert {types.get("LHA"), types.get("LHD"), types.get("LPD")} == {"Ship"}
+    types = _types(
+        "DIA stated that missiles fielded by Yemen's Houthis were likely based on Iranian designs, including "
+        "Iran's Qiam-1, Fateh-110, and Shahab-3 missiles."
+    )
+    assert types.get("Qiam-1") == "Weapon"
+
+
+def test_the_models_equipment_typed_ship_class_is_a_ship():
+    from intel_platform.services.extraction import _apply_type_hints
+
+    ents = _apply_type_hints([{"name": "LHD", "entity_type": "Equipment"}, {"name": "Covid-19", "entity_type": ""},
+                              {"name": "Shahed-136", "entity_type": "Drone"}])
+    assert [e["entity_type"] for e in ents] == ["Ship", "", "Drone"]
+
+
+def test_a_name_before_exercise_is_an_event():
+    types = _types("Meanwhile, in October 2024, NORTHCOM conducted the Falcon Peak exercise that sought to evaluate "
+                   "counter-UAS solutions.")
+    assert types.get("Falcon Peak") == "Event"
+
+
+def test_a_known_waterway_is_one_location_not_two_fragments():
+    types = _types(
+        "Iran's disruption of commercial shipping has reduced transit through the Strait of Hormuz, a crucial "
+        "conduit for energy resources and other commodities to reach global markets."
+    )
+    assert types.get("Strait of Hormuz") == "Location"
+    assert "Hormuz" not in types and "Strait of" not in types
+
+
+# ── Types the model invents ───────────────────────────────────────────────────
+
+def test_abstract_types_outside_the_vocabulary_are_not_entities():
+    from intel_platform.services.extraction import _drop_abstract_types
+
+    # From Cohere's openrep replies.
+    ents = [
+        {"name": "uranium enrichment program", "entity_type": "Program"},
+        {"name": "B2", "entity_type": "Indicator"}, {"name": "fissile material", "entity_type": "Material"},
+        {"name": "European security", "entity_type": "Concept"},
+        {"name": "Commercial reporting", "entity_type": "DataSource"},
+        {"name": "Iran", "entity_type": "Location"},
+    ]
+    rels = [{"source_name": "Iran", "target_name": "uranium enrichment program", "rel_type": "USES"}]
+    ents, rels = _drop_abstract_types(ents, rels)
+    assert [e["name"] for e in ents] == ["Iran"]
+    assert rels == []
+
+
+def test_a_ship_class_the_model_calls_equipment_is_a_ship():
+    from intel_platform.services.extraction import _apply_type_hints
+
+    ents = _apply_type_hints([
+        {"name": "Constellation-class frigate", "entity_type": "Equipment"},
+        {"name": "Medium Landing Ship (LSM) program", "entity_type": "Equipment"},
+        {"name": "Cargo", "entity_type": "Equipment"},
+        {"name": "Class Action Group", "entity_type": "Organization"},
+    ])
+    assert [e["entity_type"] for e in ents] == ["Ship", "Ship", "Equipment", "Organization"]
+
+
+# ── The head word decides ─────────────────────────────────────────────────────
+
+def test_a_name_ending_in_a_weapon_noun_is_a_weapon():
+    types = _types(
+        "Finally, Japan is developing the Hypersonic Cruise Missile (HCM) and the Hyper Velocity Gliding "
+        "Projectile (HVGP). Japan is procuring the Tomahawk Weapon System for an estimated $2.9 billion."
+    )
+    assert types.get("Hypersonic Cruise Missile") == "Weapon"
+    assert types.get("Hyper Velocity Gliding Projectile") == "Weapon"
+    assert types.get("Tomahawk Weapon System") == "Weapon"
+
+
+def test_a_company_or_council_named_after_the_gulf_is_an_organization():
+    types = _types(
+        "In September 2025, the Khafji Joint Operations Company, a joint company of Saudi Aramco Gulf Operations "
+        "Company and Kuwait Gulf Oil Company, issued tenders. Gulf Cooperation Council and Yemen. Ships crossed "
+        "the Persian Gulf."
+    )
+    assert types.get("Kuwait Gulf Oil Company") == "Organization"
+    assert types.get("Saudi Aramco Gulf Operations Company") == "Organization"
+    assert types.get("Persian Gulf") == "Location"
+
+
+# ── An acronym defined in brackets is the same entity ─────────────────────────
+
+def test_an_acronym_defined_in_brackets_is_an_alias_not_a_second_entity():
+    text = (
+        "The Department of the Treasury's Office of Foreign Assets Control (OFAC) issued a new set of Frequently "
+        "Asked Questions. On June 27, 2018, OFAC began a wind-down of the importation of Iranian-origin carpets."
+    )
+    entities, rels = extract_entities_nlp(text, "doc-fix")
+    by_name = {e["name"]: e for e in entities}
+    assert "OFAC" not in by_name
+    assert "OFAC" in by_name["Office of Foreign Assets Control"].get("aliases", [])
+    assert ("Office of Foreign Assets Control", "BELONGS_TO", "Department of the Treasury") in {
+        (r["source_name"], r["rel_type"], r["target_name"]) for r in rels
+    }
+
+
+def test_a_bracketed_aside_that_is_not_an_acronym_is_left_alone():
+    entities, _ = extract_entities_nlp("Iran launched a missile at Israel (Tel Aviv) in April 2024.", "doc-fix")
+    names = {e["name"] for e in entities}
+    assert "Tel Aviv" in names and "Israel" in names
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}
+
+
+# ── Hybrid keeps one node for a name the model already gave as an alias ───────
+# openrep: the model returned "U.S. Navy" (alias "Navy"), "Department of
+# Defense" (alias "DOD") and "Executive Order 14347" (alias "E.O. 14347"); NLP
+# found "Navy", "DOD" and "E.O. 14347", and hybrid kept both of each pair.
+
+CRS_IF13264 = (
+    "The Golden Dome for America refers to an integrated homeland air and missile defense system being developed "
+    "by the Department of Defense (DOD), which is \"using a secondary Department of War designation\" under "
+    "Executive Order (E.O.) 14347, dated September 5, 2025. Guetlein reports directly to the Deputy Secretary of "
+    "Defense (who is using \"Deputy Secretary of War\" as a \"secondary title\" under E.O. 14347). The Navy's "
+    "current amphibious ship force consists of larger amphibious ships."
+)
+
+
+def test_an_executive_order_written_two_ways_is_one_document_carrying_both():
+    entities, _ = extract_entities_nlp(CRS_IF13264, "doc-fix")
+    orders = [e for e in entities if "14347" in e["name"]]
+    assert [e["name"] for e in orders] == ["Executive Order (E.O.) 14347"]
+    assert orders[0]["entity_type"] == "Document"
+    assert {"E.O. 14347", "Executive Order 14347"} <= set(orders[0].get("aliases") or [])
+
+
+async def test_hybrid_merges_an_nlp_entity_named_by_one_of_the_models_aliases():
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    reply = {"entities": [
+        {"name": "U.S. Navy", "entity_type": "Organization", "aliases": ["Navy"], "confidence": 0.95},
+        {"name": "Department of Defense", "entity_type": "Organization", "aliases": ["DOD"], "confidence": 0.95},
+        {"name": "Executive Order 14347", "entity_type": "Document", "aliases": ["E.O. 14347"], "confidence": 0.95},
+    ], "relationships": []}
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        ents, _ = await extraction.extract_entities_hybrid(CRS_IF13264, "doc-fix")
+    names = [e["name"] for e in ents]
+    for duplicate in ("Navy", "DOD", "E.O. 14347", "Executive Order (E.O.) 14347"):
+        assert duplicate not in names, names
+    assert {"U.S. Navy", "Department of Defense", "Executive Order 14347"} <= set(names)
+
+
+async def test_hybrid_keeps_the_nlp_entity_a_kept_nlp_edge_names():
+    # openrep crs-IF13264: the model listed Guetlein but not the U.S. Space
+    # Force. Hybrid kept NLP's BELONGS_TO edge and not its endpoint, so the
+    # graph build dropped the edge as naming something never extracted.
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    text = (
+        "Golden Dome's development is managed by DOD's Office of Golden Dome for America, led by Senate-confirmed "
+        "U.S. Space Force General Michael A. Guetlein, who reports directly to the Deputy Secretary of Defense."
+    )
+    reply = {"entities": [
+        {"name": "Michael A. Guetlein", "entity_type": "Person", "confidence": 0.95},
+        {"name": "Office of Golden Dome for America", "entity_type": "Organization", "confidence": 0.95},
+    ], "relationships": []}
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        ents, rels = await extraction.extract_entities_hybrid(text, "doc-fix")
+    names = {e["name"] for e in ents}
+    assert ("Michael A. Guetlein", "BELONGS_TO", "U.S. Space Force") in {
+        (r["source_name"], r["rel_type"], r["target_name"]) for r in rels
+    }
+    assert "U.S. Space Force" in names
+    assert all(r["source_name"] in names and r["target_name"] in names for r in rels)

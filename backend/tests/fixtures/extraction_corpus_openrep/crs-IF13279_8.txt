@@ -1,0 +1,13 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IF13279#8) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Training, Certification, and Implementation
+
+C-UAS Operations Plan and Coordination. Each mitigation operation or detection and warning operation conducted under the July 2026 IFR must be authorized by a C-UAS Operations Plan signed by an Agency Approving Official. This is an event/operation-specific document. However, facilities with ongoing operations, such as correctional facilities and critical infrastructure sites, may receive a standing approved plan for up to 365 days. Each plan must contain specified information on the operation and a risk-based assessment of engaging in the C-UAS activities. Additionally, before conducting any mitigation operation, an SLTT agency must submit an advance notification document through the NCUTC portal, identifying certain details about the operation. Any SLTT agency activating a C-UAS system for mitigation must notify the Federal Aviation Administration (FAA) within five minutes for real-time coordination.
+
+Privacy and Civil Liberties. The July 2026 IFR requires SLTT agencies and personnel to comply with certain privacy and civil liberties protections when exercising the C-UAS authorities. For example, the IFR specifies that no C-UAS authority may be used "solely to seize, monitor, deter, interfere with, or disrupt individuals exercising rights protected by the First Amendment."
+
+C-UAS Reporting. Within 48 hours after taking a mitigation action or confiscating a UAS under the authority of 6 U.S.C. §124n, an agency must report relevant information, including operational effects, statistics, and unintended consequences, through the NCUTC portal. Each SLTT agency engaging in C-UAS actions under the July 2026 IFR must also provide a semi-annual report covering data on all C-UAS operations, not just mitigation actions.

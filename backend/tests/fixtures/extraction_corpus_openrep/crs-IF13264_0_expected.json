@@ -1,0 +1,135 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IF13264#0",
+    "doc_id": "crs-IF13264"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Golden Dome for America",
+      "entity_type": "Technology",
+      "aliases": [
+        "Golden Dome",
+        "Iron Dome for America"
+      ]
+    },
+    {
+      "name": "DOD",
+      "entity_type": "Organization",
+      "aliases": [
+        "Department of Defense",
+        "Department of War",
+        "Pentagon"
+      ]
+    },
+    {
+      "name": "E.O. 14347",
+      "entity_type": "Document",
+      "aliases": [
+        "Executive Order (E.O.) 14347",
+        "Executive Order 14347"
+      ]
+    },
+    {
+      "name": "September 5, 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Donald J. Trump",
+      "entity_type": "Person",
+      "aliases": [
+        "President Donald J. Trump",
+        "President Trump",
+        "Trump"
+      ]
+    },
+    {
+      "name": "E.O. 14186",
+      "entity_type": "Document",
+      "aliases": [
+        "Executive Order (E.O.) 14186",
+        "Executive Order 14186"
+      ]
+    },
+    {
+      "name": "January 27, 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "May 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "Office of Golden Dome for America",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Michael A. Guetlein",
+      "entity_type": "Person",
+      "aliases": [
+        "General Guetlein",
+        "General Michael A. Guetlein"
+      ]
+    },
+    {
+      "name": "U.S. Space Force",
+      "entity_type": "Organization",
+      "aliases": [
+        "Space Force"
+      ]
+    },
+    {
+      "name": "Army Space and Missile Defense Command",
+      "entity_type": "Organization",
+      "aliases": [
+        "ASMDC"
+      ]
+    },
+    {
+      "name": "U.S. Northern Command",
+      "entity_type": "Organization",
+      "aliases": [
+        "NORTHCOM"
+      ]
+    },
+    {
+      "name": "Congress",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "National Defense Authorization Act for Fiscal Year 2026",
+      "entity_type": "Document"
+    },
+    {
+      "name": "Congressional Budget Office",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Office of Golden Dome for America",
+      "target": "DOD",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "Office of Golden Dome for America",
+      "target": "Michael A. Guetlein",
+      "rel_type": "COMMANDED_BY"
+    },
+    {
+      "source": "Michael A. Guetlein",
+      "target": "U.S. Space Force",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

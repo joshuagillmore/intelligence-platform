@@ -1,0 +1,13 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IN12534#0) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+The Russian Federation (Russia) launched a full-scale invasion of Ukraine in February 2022. More than four years later, Russia and Ukraine remain engaged in Europe's largest war since World War II. With estimates of up to 2 million or more killed or wounded, and with Russia controlling about 20% of Ukraine's territory, neither side appears poised to achieve a decisive military victory. In 2026, Ukrainian forces have limited—and in some cases reversed—Russian gains and markedly expanded a campaign of long-range attacks against Russian oil facilities and logistics infrastructure.
+
+The second Trump Administration has engaged in efforts to facilitate an end to the Russia-Ukraine war. Formal negotiations were last held in February 2026; whether negotiations will resume—and, if so, when—is uncertain. Members of Congress may evaluate the prospects for, and potential costs and benefits of, continued U.S. mediation between Russia and Ukraine, including implications for U.S. strategic interests.
+
+Building on discussions in 2025, Russian, Ukrainian, and U.S. officials met for the first time in a trilateral format in Abu Dhabi, United Arab Emirates, in January 2026. Two rounds of U.S.-mediated talks followed, but formal peace talks have not resumed since U.S.-Israeli military operations against Iran began in late February 2026.
+
+In an August 2025 meeting with President Trump in Anchorage, AK, Russian President Vladimir Putin reportedly proposed a ceasefire along the line of contact in two of Ukraine's southern regions, if Ukraine transferred populated areas of its eastern Donetsk region to Russia. This proposal appeared to be included as an element of subsequent talks, but Ukrainian authorities rejected it, maintaining (among other reasons) that the transfer of this heavily fortified "fortress belt" would greatly diminish Ukraine's ability to defend itself from further Russian aggression.

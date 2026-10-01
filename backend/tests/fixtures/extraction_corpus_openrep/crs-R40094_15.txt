@@ -1,0 +1,15 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-R40094#15) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+The Joint Comprehensive Plan of Action
+
+Iran did not fully comply with this agreement, according to the IAEA. Iran permitted agency inspectors from September 20-22, 2021, to "service the identified Agency monitoring and surveillance equipment and to replace storage media, at all necessary locations in Iran," according to a November 17, 2021, report from Grossi, which adds that Iran denied the inspectors access to the Karaj workshop.52 Then-Iranian Ambassador Kazem Gharibabadi asserted in a September 27, 2021, statement that
+
+[d]uring the discussions in Tehran as well as in Vienna, it was clearly indicated that since that Tessa Karaj Complex is still under security and judicial investigations, the equipment related to this Complex are not included for servicing.53
+
+Grossi's November 17, 2021, report contradicts Gharibabadi's claim, explaining that the September agreement "did not in any way exclude certain locations and equipment."54 The IAEA installed replacement cameras in the Karaj workshop before the "end of December 2021," pursuant to a subsequent bilateral agreement with Iran.55 The next month, the IAEA removed the cameras from this workshop and installed cameras in another facility that is performing the work previously conducted at the Karaj workshop.56
+
+The IAEA's ability to monitor Iran's implementation of the government's JCPOA commitments has diminished since February 23, 2021. In response to an Iranian request following a June 8, 2022, IAEA Board of Governors resolution concerning outstanding issues related to Tehran's comprehensive IAEA safeguards agreement, the agency removed "all of its equipment previously installed in Iran for surveillance and monitoring under the JCPOA."57 Mohammad Eslami, Head of the Atomic Energy Organization of Iran (AEOI), stated on July 25, 2022, that Tehran will keep the other cameras "switched off until the nuclear deal is fully restored."58

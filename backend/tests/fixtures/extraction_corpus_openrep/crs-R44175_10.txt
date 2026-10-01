@@ -1,0 +1,23 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-R44175#10) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Current and Recent Navy SSL Development Efforts
+
+The SSL Technology Maturation (SSL-TM) program developed a prototype shipboard laser called the Laser Weapons System Demonstrator (LWSD) "to address known capability gaps against asymmetric threats (UAS [unmanned aerial systems], small boats, and ISR sensors) and will inform future acquisition strategies, system designs, integration architectures, and fielding plans for laser weapon systems."19 Industry teams led by BAE Systems, Northrop Grumman, and Raytheon, among others, competed to develop an LWSD with a beam power of up to 150 kW. On October 22, 2015, DOD announced that it had selected Northrop Grumman as the winner of the SSL-TM competition.20
+
+Figure 2. Laser Weapon System (LaWS) on USS Ponce
+
+Source: Navy photograph dated November 17, 2014, accompanying David Smalley, "Historic Leap: Navy Shipboard Laser Operates in Arabian Gulf," Navy News Service, December 10, 2014.
+
+The Navy announced in January 2018 that it intended to install LWSD on the amphibious ship Portland (LPD-27).21 The system reportedly was installed on the ship in the fall of 2019.22 On May 22, 2020, the Navy announced that Portland had used its LWSD to successfully disable a UAV in an at-sea test that was conducted on May 16, 2020.23
+
+Figure 3. Navy Laser Weapon Development Approach as of May 16, 2024
+
+Source: Navy briefing slide provided by Navy Office of Legislative Affairs to CRS on May 16, 2024. N96 is the Surface Warfare Division of the Office of Chief of Naval Operations. N94 is the Innovation, Technology Missions, and Test and Evaluation Division.
+
+Figure 4. Navy Laser Weapon Development Approach as of August 17, 2022
+
+Source: Navy briefing slide provided by Navy Office of Legislative Affairs to CRS on August 17, 2022. N96 is the Surface Warfare Division of the Office of Chief of Naval Operations. N94 is the Innovation, Technology Missions, and Test and Evaluation Division.

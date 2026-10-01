@@ -1,0 +1,53 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IF11674#4",
+    "doc_id": "crs-IF11674"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "TAOL",
+      "entity_type": "Ship",
+      "aliases": [
+        "TAOL program",
+        "NGLS",
+        "Next-Generation Medium Logistics Ship",
+        "NGLS program"
+      ]
+    },
+    {
+      "name": "Navy",
+      "entity_type": "Organization",
+      "aliases": [
+        "the Navy",
+        "U.S. Navy"
+      ]
+    },
+    {
+      "name": "Combat Logistics Force",
+      "entity_type": "Organization",
+      "aliases": [
+        "CLF"
+      ]
+    },
+    {
+      "name": "Congressional Research Service",
+      "entity_type": "Organization",
+      "aliases": [
+        "CRS"
+      ]
+    },
+    {
+      "name": "Navy Office of Legislative Affairs",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Combat Logistics Force",
+      "target": "Navy",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

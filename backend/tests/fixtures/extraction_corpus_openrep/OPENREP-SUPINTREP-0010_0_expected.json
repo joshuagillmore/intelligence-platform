@@ -1,0 +1,98 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "OPENREP-SUPINTREP-0010#0",
+    "doc_id": "OPENREP-SUPINTREP-0010"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Russia",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Baltic Sea",
+      "entity_type": "Location"
+    },
+    {
+      "name": "NATO",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Baltic region",
+      "entity_type": "Location",
+      "aliases": [
+        "Baltic",
+        "Baltic states",
+        "Baltics"
+      ]
+    },
+    {
+      "name": "Europe",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Ukraine",
+      "entity_type": "Location"
+    },
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "2022",
+      "entity_type": "Date"
+    },
+    {
+      "name": "May 2026",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Anne Keast-Butler",
+      "entity_type": "Person"
+    },
+    {
+      "name": "United Kingdom",
+      "entity_type": "Location"
+    },
+    {
+      "name": "GCHQ",
+      "entity_type": "Organization",
+      "aliases": [
+        "Government Communications Headquarters"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Russia",
+      "target": "Baltic region",
+      "rel_type": "TARGETS"
+    },
+    {
+      "source": "Russia",
+      "target": "Ukraine",
+      "rel_type": "TARGETS"
+    },
+    {
+      "source": "NATO",
+      "target": "Europe",
+      "rel_type": "DEPLOYED_AT"
+    },
+    {
+      "source": "Anne Keast-Butler",
+      "target": "GCHQ",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "GCHQ",
+      "target": "United Kingdom",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

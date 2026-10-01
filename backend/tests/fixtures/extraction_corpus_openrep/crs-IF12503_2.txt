@@ -1,0 +1,13 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IF12503#2) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Historical Context
+
+Initially, in January 1950, U.S. President Harry S. Truman indicated that the United States would not stand in the PRC's way if it sought to take Taiwan. He reversed course after the outbreak of the Korean War stoked fears of further communist expansion in Asia. In June 1950, he ordered the U.S. Navy's Seventh Fleet "to prevent any attack on Formosa [Taiwan]." More U.S. military support followed. In 1954, the United States signed a mutual defense treaty with the ROC. In 1955, the 84th Congress passed the Formosa Resolution (P.L. 84-4), authorizing the President to employ U.S. armed forces to protect Taiwan and Penghu. The authorization remained in place for nearly two decades, until the 93rd Congress repealed it in 1974's P.L. 93-475.
+
+President Richard M. Nixon took office in 1969 and charted a new course for U.S. policy by pursuing rapprochement with the PRC based on common enmity for the Soviet Union. In 1971, Nixon's National Security Advisor Henry Kissinger made two secret visits to Beijing to lay the groundwork for a presidential visit the next year.
+
+In October 1971, UN General Assembly Resolution 2758 (XXVI) recognized the PRC's representatives as "the only legitimate representatives of China to the United Nations," and expelled "the representatives of Chiang Kai-shek," the ROC's then-president. The United States voted against the resolution, but did not rally sufficient opposition to defeat it. PRC representatives replaced those of the ROC in both the General Assembly and the Security Council, as the PRC assumed the rights and obligations of "China" as a UN member state.

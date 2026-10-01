@@ -1,0 +1,50 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IN12661#3",
+    "doc_id": "crs-IN12661"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Congress",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "FY2026 NDAA",
+      "entity_type": "Document"
+    },
+    {
+      "name": "DOJ",
+      "entity_type": "Organization",
+      "aliases": [
+        "Department of Justice"
+      ]
+    },
+    {
+      "name": "DHS",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "National Security Division",
+      "entity_type": "Organization",
+      "aliases": [
+        "DOJ's National Security Division"
+      ]
+    },
+    {
+      "name": "FBI",
+      "entity_type": "Organization",
+      "aliases": [
+        "Federal Bureau of Investigation"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "source": "National Security Division",
+      "target": "DOJ",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

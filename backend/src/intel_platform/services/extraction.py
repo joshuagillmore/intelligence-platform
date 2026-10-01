@@ -540,7 +540,43 @@ _TYPE_HINTS: tuple[tuple[re.Pattern, str, tuple[str, ...]], ...] = (
     # Air platforms and UAV designators, e.g. "MQ-9 Reaper", "F/A-18".
     (re.compile(r'^(MQ|RQ|F/A|F-|SU-|MIG-|KC-|C-|P-8|E-3)\s?-?\d', re.IGNORECASE),
      "Aircraft", ("Custom", "Technology", "Organization", "")),
+    # Ship classes by hull designation: "LHA", "LPD-27", "DDG-51". spaCy and
+    # the model call them organizations and "Equipment".
+    (re.compile(r'^(?:DDG|FFG|LPD|LHA|LHD|LSD|LCS|CG|CVN|SSN|SSBN|SSGN|LSM|LST|AOR|T-AO|TAOL|LCU)(?:[- ]?\d+)?$'),
+     "Ship", ("Custom", "Organization", "Technology", "Person", "Location", "Product", "Equipment",
+              "EquipmentType", "Vehicle", "")),
+    # Missile designators: a name and a number, "Fateh-110", "Qiam-1".
+    (re.compile(r'^(?!Covid|COVID)[A-Z][a-z]{2,10}-\d{1,4}[A-Z]?$'),
+     "Weapon", ("Custom", "Organization", "Person", "Location", "Product", "Technology", "")),
+    # Named operations: "Operation Hard Kill".
+    (re.compile(r'^Operation\s+[A-Z]'), "Event", ("Custom", "Organization", "Location", "Person", "Product", "")),
+    # A ship class named as one: "Constellation-class frigate", "Medium Landing
+    # Ship (LSM) program", which the model types "Equipment".
+    (re.compile(r'(?i).*?\b(?:[\w-]+-class|frigate|destroyer|corvette|cruiser|warship|submarine|'
+                r'landing ship|amphibious ship|oiler)\b'),
+     "Ship", ("Equipment", "EquipmentType", "Technology", "Custom", "Product", "Vehicle", "Organization",
+              "Location", "Person", "")),
 )
+
+# Types outside the vocabulary that name no thing: the model files reporting
+# sources, gradings, substances and abstractions under them ("Commercial
+# reporting [DataSource]", "B2 [Indicator]", "fissile material [Material]",
+# "uranium enrichment program [Program]"). None maps to a graph type.
+_ABSTRACT_TYPES = frozenset({
+    "source", "datasource", "indicator", "material", "concept", "activity", "duration", "program", "programme",
+    "capability", "trend", "issue", "quote", "statement",
+})
+
+
+def _drop_abstract_types(entities: list[dict], relationships: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Drop entities of an abstract invented type, and the edges that point at them."""
+    gone = {e.get("name") for e in entities if (e.get("entity_type") or "").strip().lower() in _ABSTRACT_TYPES}
+    if not gone:
+        return entities, relationships
+    return (
+        [e for e in entities if e.get("name") not in gone],
+        [r for r in relationships if r.get("source_name") not in gone and r.get("target_name") not in gone],
+    )
 
 
 def _apply_type_hints(entities: list[dict]) -> list[dict]:
@@ -568,6 +604,32 @@ def _apply_type_hints(entities: list[dict]) -> list[dict]:
     return entities
 
 
+# Head words that say what a name is, whatever else it contains.
+_WEAPON_HEAD = re.compile(
+    r"\b(?:Missiles?|Weapons? System|Projectiles?|Rockets?|Torpedo(?:es)?|Interceptors?|SRBMs?|MRBMs?|ICBMs?|"
+    r"Glide Vehicle)$"
+)
+_ORG_HEAD = re.compile(r"\b(?:Company|Council|Corporation|Commission|Committee|Authority|Bank|Group|Ltd|Inc)$")
+
+# Single all-caps words that head a section rather than name anything.
+_HEADING_WORDS = frozenset({
+    "BACKGROUND", "SUMMARY", "OUTLOOK", "ASSESSMENT", "JUDGEMENT", "JUDGMENT", "JUDGEMENTS", "JUDGMENTS",
+    "CONCLUSION", "CONCLUSIONS", "INTRODUCTION", "OVERVIEW", "RECOMMENDATIONS", "ANNEX", "APPENDIX",
+    "DISTRIBUTION", "CLASSIFICATION", "SECRET", "CONFIDENTIAL", "RESTRICTED", "UNCLASSIFIED", "NOTE",
+    "COMMENT", "SOURCE", "SOURCES", "CONTEXT", "DISCUSSION", "SCOPE", "METHODOLOGY", "FINDINGS", "NAMES",
+})
+
+# Legal instruments written by number.
+_DOCUMENT_REF = re.compile(
+    r"\b(?:Executive Order(?:\s*\(E\.O\.\))?|E\.O\.)\s+\d{4,5}\b|\b(?:FY\s?\d{4}\s+)?NDAA\b"
+)
+# A name ending in what it is: an act, a resolution, a strategy, a treaty.
+_DOCUMENT_NAME = re.compile(
+    r"\b(?:Act(?: of \d{4})?|Resolution(?: \d+)?|Strategy|Threat Assessment|Plan of Action|Treaty|Accord|"
+    r"Agreement|Doctrine)$"
+)
+_DOCUMENT_OVERRIDABLE = frozenset({"Organization", "Location", "Product", "Person", "Event", "Document", ""})
+
 # spaCy labels whose spans are names, so a lower-case one is a misfire.
 _NAME_LABELS = frozenset({"PERSON", "ORG", "GPE", "LOC", "FAC", "NORP", "PRODUCT", "EVENT"})
 
@@ -577,6 +639,8 @@ _TECHNICAL_ACRONYMS = frozenset({
     "AIS", "VHF", "UHF", "HF", "GNSS", "GPS", "SAR", "NIIRS", "SIGINT", "HUMINT", "IMINT",
     "GEOINT", "OSINT", "ELINT", "COMINT", "MASINT", "ISR", "EW", "UAV", "UAS", "IED",
     "C2", "C4ISR", "SATCOM", "RF",
+    # Cyber and finance terms written in capitals: standards, protocols, tickers.
+    "CVSS", "WHOIS", "IOC", "IOCS", "TTPS", "USDT", "USDC", "BTC", "XMR", "SWIFT",
 })
 
 
@@ -684,8 +748,12 @@ _KNOWN_VENDORS = frozenset({
 })
 
 
+# "the Falcon Peak exercise", "the Red Sands exercise": the noun says it is an event.
+_EVENT_NOUNS = frozenset({"exercise", "operation", "mission", "summit", "drill", "wargame"})
+
+
 def _product_type(ent) -> str:
-    """"Hardware" or "Software" when the noun this name modifies says so, else ""."""
+    """"Hardware", "Software" or "Event" when the noun this name modifies says so, else ""."""
     if ent.text.strip().lower() in _KNOWN_VENDORS:
         return ""
     root = ent.root
@@ -701,6 +769,8 @@ def _product_type(ent) -> str:
         return "Hardware"
     if noun in _SOFTWARE_NOUNS:
         return "Software"
+    if noun in _EVENT_NOUNS and ent.label_ in ("ORG", "GPE", "LOC", "FAC", "PERSON", "EVENT", "PRODUCT"):
+        return "Event"
     return ""
 
 
@@ -1191,6 +1261,32 @@ def _extract_cyber_entities(text: str, doc_id: str, raw_text: str | None = None)
                 "source": doc_id, "method": "regex", "confidence": 0.85,
             })
 
+    # Named legal instruments spaCy reads as dates or misses: "Executive Order
+    # (E.O.) 14186", "E.O. 13871", "the FY2026 NDAA".
+    # An executive order is one document however it is written: the first form
+    # is its name and every way of writing its number is an alias, which is
+    # also what lets hybrid match it to the model's "Executive Order 14347".
+    orders: dict[str, dict] = {}
+    for match in _DOCUMENT_REF.finditer(text):
+        ref = match.group().strip()
+        number = ref.rsplit(None, 1)[-1] if ref[-1].isdigit() else ""
+        if number in orders:
+            entity = orders[number]
+            if ref != entity["name"] and ref not in entity["aliases"]:
+                entity["aliases"].append(ref)
+            continue
+        if ref not in seen:
+            seen.add(ref)
+            entity = {
+                "name": ref, "entity_type": "Document",
+                "source": doc_id, "method": "regex", "confidence": 0.85,
+            }
+            if number:
+                written = [f"Executive Order {number}", f"E.O. {number}"]
+                entity["aliases"] = [form for form in written if form != ref]
+                orders[number] = entity
+            cyber_entities.append(entity)
+
     # Military hardware designations (e.g. "Type 075", "Type 052D") — spaCy
     # misses these entirely, so extract them as EquipmentType directly.
     for match in re.finditer(r'\bType[- ]?\d{2,4}[A-Z]?\b', text):
@@ -1303,12 +1399,45 @@ def _mention_spans(sent_text: str, entities: list[dict]) -> list[tuple[int, int,
     """
     spans = []
     for e in entities:
-        name = e.get("name") or ""
-        if not name:
-            continue
-        for m in _name_pattern(name).finditer(sent_text):
-            spans.append((m.start(), m.end(), e))
+        for name in [e.get("name") or "", *(e.get("aliases") or [])]:
+            if not name:
+                continue
+            for m in _name_pattern(name).finditer(sent_text):
+                spans.append((m.start(), m.end(), e))
     return spans
+
+
+_BRACKETED = r"\s*\(([A-Z][A-Za-z0-9&.\-]{1,11})\)"
+
+
+def _merge_bracketed_acronyms(entities: list[dict], text: str) -> list[dict]:
+    """"Office of Foreign Assets Control (OFAC)": the acronym is an alias, not a second entity.
+
+    Reporting defines an acronym once and then uses it; extracting both made
+    two nodes for one body, and an edge read off a sentence that uses the
+    acronym ("Within DOD, the Army ...") went to the second. Only an
+    all-capitals token, or a shortening of the name ("Russian Federation
+    (Russia)"), counts — "Israel (Tel Aviv)" is not an acronym.
+    """
+    by_name = {e["name"]: e for e in entities}
+    drop: set[str] = set()
+    for e in entities:
+        name = e.get("name") or ""
+        if " " not in name or e.get("entity_type") in _INDICATOR_TYPES:
+            continue
+        for m in re.finditer(re.escape(name) + _BRACKETED, text):
+            acr = m.group(1)
+            letters = re.sub(r"[^A-Za-z]", "", acr)
+            if acr == name or not (letters.isupper() or acr.lower() in name.lower()):
+                continue
+            aliases = list(e.get("aliases") or [])
+            if acr not in aliases:
+                aliases.append(acr)
+            e["aliases"] = aliases
+            other = by_name.get(acr)
+            if other is not None and other is not e and other.get("method") != "regex":
+                drop.add(acr)
+    return [e for e in entities if e["name"] not in drop]
 
 
 def _entity_at(token, sent, spans: list[tuple[int, int, dict]]) -> dict | None:
@@ -1335,6 +1464,13 @@ def _entity_for_token(token, sent, spans: list[tuple[int, int, dict]]) -> dict |
     found = _entity_at(token, sent, spans)
     if found is not None:
         return found
+    # The name compounded with the head noun is what the phrase is about:
+    # "Iran-backed Houthi movement" is the Houthi movement, not its backer.
+    for child in token.children:
+        if child.dep_ == "compound":
+            found = _entity_at(child, sent, spans)
+            if found is not None:
+                return found
     lo = token.left_edge.idx - sent.start_char
     hi = token.right_edge.idx + len(token.right_edge.text) - sent.start_char
     inside = sorted((s for s in spans if lo <= s[0] and s[1] <= hi), key=lambda s: s[0])
@@ -1468,6 +1604,181 @@ def _refine_rel_type(rel_type: str, target: dict) -> str:
     return rel_type
 
 
+# Relations named from the receiving end: "Iran supplied Russia" is Russia
+# SUPPLIED_BY Iran. The verb map pairs these verbs with them, so in the active
+# voice the edge runs from what the verb acts on back to its subject.
+_REVERSED_RELATIONS = frozenset({"SUPPLIED_BY", "FUNDED_BY", "COMMANDED_BY"})
+
+
+def _verb_edges(token, rel_type: str, sent, spans, resolve_anaphor) -> list[tuple[dict, dict]]:
+    """(source, target) entity pairs the mapped verb states, in the relation's direction."""
+    passive_subj = [c for c in token.children if c.dep_ == "nsubjpass"]
+    agent = [c for c in token.children if c.dep_ == "agent"]
+    if passive_subj and agent:
+        # "Hezbollah is funded by Iran", "Ukraine was attacked by Russia".
+        patient = _entity_for_token(passive_subj[0], sent, spans) or resolve_anaphor(passive_subj[0])
+        actors = [e for p in agent[0].children if p.dep_ == "pobj" for e in _phrase_entities(p, sent, spans)]
+        if patient is None:
+            return []
+        return [(patient, a) if rel_type in _REVERSED_RELATIONS else (a, patient) for a in actors]
+
+    subj = _verb_subject(token, sent, spans, resolve_anaphor)
+    if subj is None:
+        return []
+    if rel_type not in _REVERSED_RELATIONS:
+        return [(subj, o) for o in _verb_objects(token, rel_type, sent, spans)]
+    # Active voice, receiving-end relation: the recipient is the indirect
+    # object ("provided the Houthis with components", "to Russia").
+    recipients: list[dict] = []
+    for child in token.children:
+        if child.dep_ == "dative":
+            recipients += _phrase_entities(child, sent, spans)
+        elif child.dep_ == "prep" and child.lower_ == "to":
+            recipients += [e for p in child.children if p.dep_ == "pobj" for e in _phrase_entities(p, sent, spans)]
+    if not recipients:
+        with_prep = any(c.dep_ == "prep" and c.lower_ == "with" for c in token.children)
+        if with_prep or rel_type != "SUPPLIED_BY":
+            # The direct object is the recipient when what was given follows
+            # "with", or for funding and command ("Iran funds Hezbollah").
+            recipients = [e for c in token.children if c.dep_ == "dobj" for e in _phrase_entities(c, sent, spans)]
+    return [(r, subj) for r in recipients]
+
+
+# ── Relations stated without a verb ──────────────────────────────────────────
+# Analytic prose states most of its relations as a possessive ("Poland's
+# Internal Security Agency"), a title ("Russian President Vladimir Putin",
+# "Commander of U.S. European Command") or an action noun ("Russia's invasion
+# of Ukraine", "its military presence in the Arctic").
+
+# Adjective -> the country it names, used only when that country is itself an
+# entity of the text.
+_DEMONYMS = {
+    "russian": "russia", "iranian": "iran", "israeli": "israel", "syrian": "syria", "chinese": "china",
+    "ukrainian": "ukraine", "japanese": "japan", "taiwanese": "taiwan", "turkish": "turkey", "polish": "poland",
+    "french": "france", "german": "germany", "british": "united kingdom", "american": "united states",
+    "u.s.": "united states", "saudi": "saudi arabia", "iraqi": "iraq", "pakistani": "pakistan",
+    "indian": "india", "north korean": "north korea", "south korean": "south korea", "lebanese": "lebanon",
+    "yemeni": "yemen", "egyptian": "egypt", "belarusian": "belarus", "georgian": "georgia",
+    "venezuelan": "venezuela", "cuban": "cuba", "afghan": "afghanistan", "qatari": "qatar",
+}
+_DEMONYM_ALT = "|".join(sorted((re.escape(d) for d in _DEMONYMS), key=len, reverse=True))
+_TITLE = (
+    r"(?:President|Vice President|Prime Minister|Premier|[Ll]eader|Supreme Leader|General|Gen\.|Admiral|"
+    r"Ambassador|(?:Foreign |Defen[cs]e |Oil )?Minister|Secretary(?: of State| of Defense)?|Chancellor|"
+    r"[Cc]ommander|[Dd]irector|[Cc]hief|[Hh]ead|Chairman|High Representative|[Ss]pokes(?:man|person))"
+)
+_TITLE_RUN = rf"(?:(?:[Ff]ormer|[Tt]hen-|now\s+deceased)\s*)?{_TITLE}(?:\s+{_TITLE}){{0,2}}"
+_GAP_TITLE_BEFORE = re.compile(rf"^\s+{_TITLE_RUN}\s+$")
+_GAP_TITLE_AFTER = re.compile(
+    rf"^,\s+(?:the\s+)?{_TITLE_RUN}(?:\s+[A-Z][a-z]+){{0,3}}\s+of\s+(?:the\s+)?"
+    r"(?:[A-Z][\w.]*(?:\s[A-Z][\w.]*)*['’]s\s+)?$"
+)
+_TITLE_OF_BEFORE = re.compile(rf"\b{_TITLE_RUN}\s+of\s+(?:the\s+)?$")
+_DEMONYM_TITLE_BEFORE = re.compile(rf"(?:^|\s)(?:[Tt]hen-|[Ff]ormer\s+)?({_DEMONYM_ALT})\s+{_TITLE_RUN}\s+$", re.I)
+_GAP_POSSESSIVE = re.compile(r"^['’]s(?:\s+[a-z][\w-]*){0,2}\s+$")
+_BACKED = re.compile(r"(?:^|[\s(])([A-Z][\w.]*)-(?:backed|sponsored|funded)\s+$")
+
+_HOLDERS = frozenset({"Organization", "Location", "ThreatActor"})
+_MEMBERS = frozenset({"Organization", "Person", "ThreatActor"})
+
+# Action nouns and the prepositions that name what they are against.
+_ATTACK_NOUNS = {
+    "invasion": {"of"}, "attack": {"on", "against"}, "strike": {"on", "against"}, "airstrike": {"on", "against"},
+    "war": {"against", "on"}, "offensive": {"against"}, "aggression": {"against"}, "operation": {"against"},
+    "campaign": {"against"}, "threat": {"against"}, "warfare": {"against"}, "activity": {"against"},
+}
+
+
+def _country_entity(word: str, entities_by_name: dict[str, dict]) -> dict | None:
+    target = _DEMONYMS.get(word.lower())
+    return entities_by_name.get(target) if target else None
+
+
+def _phrase_relations(sent, spans, entities_by_name, resolve_anaphor) -> list[tuple[dict, str, dict]]:
+    """Possessive, title and action-noun relations in one sentence."""
+    out: list[tuple[dict, str, dict]] = []
+    text = sent.text
+    ordered = sorted(spans, key=lambda s: (s[0], -(s[1] - s[0])))
+    # Keep the longest mention at each position: "U.S. European Command", not "U.S.".
+    mentions = []
+    for s in ordered:
+        if mentions and s[0] < mentions[-1][1]:
+            continue
+        mentions.append(s)
+
+    for i, (a_start, a_end, a) in enumerate(mentions):
+        a_type = a.get("entity_type")
+        for b_start, b_end, b in mentions[i + 1:]:
+            gap = text[a_end:b_start]
+            if len(gap) > 120:
+                break
+            b_type = b.get("entity_type")
+            # "Poland's Internal Security Agency": B belongs to A.
+            if _GAP_POSSESSIVE.match(gap) and a_type in _HOLDERS and b_type in _MEMBERS:
+                out.append((b, "BELONGS_TO", a))
+            # "European Commission President Ursula von der Leyen".
+            elif _GAP_TITLE_BEFORE.match(gap) and a_type in _HOLDERS and b_type == "Person":
+                rel = "COMMANDED_BY" if re.search(r"[Cc]ommander", gap) else "BELONGS_TO"
+                out.append((a, rel, b) if rel == "COMMANDED_BY" else (b, rel, a))
+            # "Kaja Kallas, High Representative of the European Union".
+            elif _GAP_TITLE_AFTER.match(gap) and a_type == "Person" and b_type in _HOLDERS:
+                rel = "COMMANDED_BY" if re.search(r"[Cc]ommander", gap) else "BELONGS_TO"
+                out.append((b, rel, a) if rel == "COMMANDED_BY" else (a, rel, b))
+            # "head of Hezbollah, Hassan Nasrallah".
+            elif re.fullmatch(r",\s+", gap) and a_type in _HOLDERS and b_type == "Person" \
+                    and _TITLE_OF_BEFORE.search(text[max(0, a_start - 60):a_start]):
+                out.append((b, "BELONGS_TO", a))
+
+        # "Russian President Vladimir Putin": the country is an adjective.
+        if a_type == "Person":
+            m = _DEMONYM_TITLE_BEFORE.search(text[max(0, a_start - 80):a_start])
+            country = _country_entity(m.group(1), entities_by_name) if m else None
+            if country is not None:
+                out.append((a, "BELONGS_TO", country))
+        # "Iran-backed Houthi movement".
+        m = _BACKED.search(text[max(0, a_start - 40):a_start])
+        if m:
+            backer = entities_by_name.get(m.group(1).lower())
+            if backer is not None and backer is not a:
+                out.append((a, "FUNDED_BY", backer))
+
+    def actor_for(noun) -> dict | None:
+        for child in noun.children:
+            if child.dep_ == "poss":
+                ent = _entity_at(child, sent, spans)
+                if ent is not None:
+                    return ent
+            if child.dep_ in ("amod", "compound"):
+                ent = _country_entity(child.text, entities_by_name) or _entity_at(child, sent, spans)
+                if ent is not None and ent.get("entity_type") in _HOLDERS:
+                    return ent
+        if noun.dep_ in ("dobj", "attr", "pobj") and noun.head.pos_ in ("VERB", "AUX"):
+            return _verb_subject(noun.head, sent, spans, resolve_anaphor)
+        return None
+
+    for token in sent:
+        lemma = token.lemma_.lower()
+        if token.pos_ != "NOUN" or (lemma not in _ATTACK_NOUNS and lemma != "presence"):
+            continue
+        preps = {"in"} if lemma == "presence" else _ATTACK_NOUNS[lemma]
+        holders = [token]
+        if token.dep_ == "dobj":
+            # The parse often hangs the phrase on the verb: "increasing its
+            # military presence in the Arctic".
+            holders.append(token.head)
+        targets = [e for h in holders for c in h.children if c.dep_ == "prep" and c.lower_ in preps
+                   for p in c.children if p.dep_ == "pobj" for e in _phrase_entities(p, sent, spans)]
+        if not targets:
+            continue
+        actor = actor_for(token)
+        if actor is None:
+            continue
+        rel = "DEPLOYED_AT" if lemma == "presence" else "TARGETS"
+        out.extend((actor, rel, t) for t in targets)
+    return [(s, r, t) for s, r, t in out
+            if s is not t and s["name"] != t["name"] and "Date" not in (s.get("entity_type"), t.get("entity_type"))]
+
+
 def _postprocess_entities(entities: list[dict]) -> list[dict]:
     """Fix common spaCy misclassifications for intelligence documents."""
     # Load from YAML (with fallback to hardcoded module constants)
@@ -1492,6 +1803,9 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         # Foreign Intelligence Service" -> "Russian Foreign Intelligence Service")
         # — inflates false positives and breaks dedup against the canonical name.
         stripped = _strip_determiner(name)
+        # ...and the possessive it sometimes swallows: "Department of the
+        # Treasury's" is the Department of the Treasury.
+        stripped = re.sub(r"['’]s$", "", stripped).strip()
         if stripped and stripped != name:
             name = stripped
             e["name"] = name
@@ -1502,8 +1816,20 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         if name_lower in REPORT_BOILERPLATE or name_lower in DEMONYMS:
             continue
 
-        # Skip all-caps headers (likely document section headings), but keep known acronyms
-        if name.isupper() and len(name) > 3 and name not in known_acro:
+        # Skip all-caps headers (document section headings), but keep acronyms.
+        # A heading is several words ("BOTTOM LINE UP FRONT") or a heading
+        # word; a single all-caps token spaCy calls an organization is an
+        # acronym — NORTHCOM, GCHQ, OFAC were all dropped as headings.
+        # Only a plain letters-only token counts: "U.S.", "P.L.", "FY2026" and
+        # "C-UAS" are abbreviations and labels, not organizations.
+        if name.isupper() and len(name) > 3 and name not in known_acro and (
+                not name.isalpha() or name in _HEADING_WORDS):
+            continue
+        if _DOCUMENT_NAME.search(name) and e.get("entity_type") in _DOCUMENT_OVERRIDABLE:
+            # "Worldwide Threat Assessment", "IRONDOME Act": a named document,
+            # which spaCy reads as an organization or a place.
+            e["entity_type"] = "Document"
+            corrected.append(e)
             continue
 
         # Fix trailing parenthetical fragments
@@ -1530,7 +1856,7 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         # A product typed from the noun it modifies ("Windows tools", "ProSAFE
         # router") keeps that type: the keyword heuristics below read only the
         # name, and the name alone is what misled spaCy in the first place.
-        if e.get("entity_type") in ("Software", "Hardware"):
+        if e.get("entity_type") in ("Software", "Hardware", "Event"):
             corrected.append(e)
             continue
         if name_lower in _KNOWN_VENDORS:
@@ -1544,6 +1870,13 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
             e["entity_type"] = "Location"
         # Force known organizations
         elif name_lower in known_orgs:
+            e["entity_type"] = "Organization"
+        # The head word decides first: "Kuwait Gulf Oil Company" and "Gulf
+        # Cooperation Council" are organizations although they hold "Gulf";
+        # "Hypersonic Cruise Missile" is a weapon.
+        elif _WEAPON_HEAD.search(name):
+            e["entity_type"] = "Weapon"
+        elif any(name.endswith(kw) for kw in org_kws) or _ORG_HEAD.search(name):
             e["entity_type"] = "Organization"
         # Heuristic: location keywords (Airbase, Port, Island, etc.)
         elif any(kw in name for kw in loc_kws):
@@ -1637,6 +1970,22 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             seen_names[ce["name"]] = ce
             entities.append(ce)
 
+    # Known multi-word places, as written. spaCy splits some of them — "the
+    # Strait of" (LOC) and "Hormuz" (PERSON) — so where one is found, any span
+    # overlapping it is not taken from spaCy.
+    gazetteer_spans: list[tuple[int, int]] = []
+    for place in sorted((p for p in (get_known_locations() or KNOWN_LOCATIONS) if " " in p), key=len, reverse=True):
+        for m in re.finditer(r"(?<!\w)" + re.escape(place) + r"(?!\w)", text, re.IGNORECASE):
+            if any(s < m.end() and m.start() < e for s, e in gazetteer_spans):
+                continue
+            gazetteer_spans.append(m.span())
+            name = m.group()
+            if name not in seen_names:
+                ent = {"name": name, "entity_type": "Location", "source": doc_id,
+                       "method": "regex", "confidence": 0.9}
+                seen_names[name] = ent
+                entities.append(ent)
+
     # 2. Count entity mention frequency for confidence scoring
     name_freq: dict[str, int] = {}
     for ent in doc.ents:
@@ -1652,6 +2001,8 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
     noise = get_noise_words() or NOISE_WORDS
     _all_known = known_locs | known_orgs | known_pers
 
+    hull_numbers = {hull for _, hull in _hull_numbers(text)}
+
     # 3. Extract NLP entities with context-aware confidence
     for ent in doc.ents:
         entity_type = SPACY_TO_ENTITY_TYPE.get(ent.label_)
@@ -1663,6 +2014,8 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         if name in noise:
             continue
         if name in seen_names:
+            continue
+        if any(s < ent.end_char and ent.start_char < e for s, e in gazetteer_spans):
             continue
         if entity_type == "Date" and not _is_datable(name):
             continue
@@ -1678,7 +2031,8 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         # Amounts and quantities are not names and are left alone.
         if ent.label_ in _NAME_LABELS and name.islower():
             continue
-        if name in _TECHNICAL_ACRONYMS:
+        if name in _TECHNICAL_ACRONYMS or name in hull_numbers:
+            # A hull number ("A-425") is the vessel's alias, not another entity.
             continue
 
         # Context-aware confidence scoring
@@ -1705,7 +2059,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
     unique: dict[str, dict] = {}
     for e in entities:
         unique.setdefault(e["name"], e)
-    entities = list(unique.values())
+    entities = _merge_bracketed_acronyms(list(unique.values()), text)
 
     # 5. Optional coreference resolution
     from intel_platform.config import settings
@@ -1749,6 +2103,13 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         key=lambda pair: pair[0],
     )
 
+    # Lower-cased name -> entity, for the countries a demonym names and the
+    # backer an "X-backed" names.
+    entities_by_name: dict[str, dict] = {}
+    for e in entities:
+        for n in [e["name"], *(e.get("aliases") or [])]:
+            entities_by_name.setdefault(str(n).lower(), e)
+
     def _resolve_anaphor(tok) -> dict | None:
         if tok.lemma_.lower() not in _ACTOR_ANAPHORS:
             return None
@@ -1781,8 +2142,9 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         # Hallgrim. The co-occurrence fallback below keeps to tagged mentions.
         typed_candidates = list(sent_entities_list)
         for e in entities:
-            if e not in typed_candidates and len(e["name"]) >= _CASELESS_MIN \
-                    and _name_pattern(e["name"]).search(sent_text):
+            if e not in typed_candidates and any(
+                    len(n) >= _CASELESS_MIN and _name_pattern(n).search(sent_text)
+                    for n in [e["name"], *(e.get("aliases") or [])]):
                 typed_candidates.append(e)
         mention_spans = _mention_spans(sent_text, typed_candidates)
 
@@ -1796,15 +2158,17 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             if not rel_type_from_verb:
                 continue
 
-            subj_ent = _verb_subject(token, sent, mention_spans, _resolve_anaphor)
-            if subj_ent is None:
-                continue
-            for obj_ent in _verb_objects(token, rel_type_from_verb, sent, mention_spans):
-                if obj_ent["name"] == subj_ent["name"] or obj_ent.get("entity_type") == "Date":
+            for src_ent, tgt_ent in _verb_edges(token, rel_type_from_verb, sent, mention_spans, _resolve_anaphor):
+                if src_ent["name"] == tgt_ent["name"] or "Date" in (
+                        src_ent.get("entity_type"), tgt_ent.get("entity_type")):
                     # A date is when, not what: it is never a node to point at.
                     continue
-                _add_rel(subj_ent["name"], obj_ent["name"],
-                         _refine_rel_type(rel_type_from_verb, obj_ent), 0.7, sent_text)
+                _add_rel(src_ent["name"], tgt_ent["name"],
+                         _refine_rel_type(rel_type_from_verb, tgt_ent), 0.7, sent_text)
+
+        # ── Stage A2: relations stated as a possessive, a title or an action noun ──
+        for src_ent, rel_type, tgt_ent in _phrase_relations(sent, mention_spans, entities_by_name, _resolve_anaphor):
+            _add_rel(src_ent["name"], tgt_ent["name"], rel_type, 0.7, sent_text)
 
         # ── Stage B: Co-occurrence relationships (fallback) ──
         # Bounded to nearby entities (COOCCURRENCE_WINDOW), not the full
@@ -1937,7 +2301,7 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
     # Resolved inside the failure boundary: the lookup reads the key store, and
     # a failure there escaped as a 500 from /ingest.
     from intel_platform.llm.providers import _get_extraction_provider
-    from intel_platform.services.llm_output import json_object
+    from intel_platform.services.llm_output import json_array_items, json_object
 
     try:
         provider = await _get_extraction_provider()
@@ -1964,7 +2328,19 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
 
     # The first JSON object anywhere in the reply — fenced, prose-led or bold-
     # labelled. `{}` means nothing parsed.
-    data = json_object(result.content or "")
+    content = result.content or ""
+    # A repeated key ("relationships": [], "entities": [] after the full lists)
+    # must not empty the reply; see llm_output.json_object.
+    data = json_object(content, merge_duplicate_lists=True)
+    if "entities" not in data and "relationships" not in data:
+        # A reply that ran past the token limit is not JSON at all, but its
+        # complete items are; reading none of them threw away a long report's
+        # whole extraction.
+        salvaged = {k: json_array_items(content, k) for k in ("entities", "relationships")}
+        if salvaged["entities"] or salvaged["relationships"]:
+            logger.warning("LLM extraction reply for doc %s was cut off; kept %d entities and %d relationships",
+                           doc_id, len(salvaged["entities"]), len(salvaged["relationships"]))
+            data = salvaged
     if not data:
         raise _LLMExtractionFailed("reply contained no JSON object")
     if "entities" not in data and "relationships" not in data:
@@ -2012,6 +2388,7 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
     entities = _drop_model_sourcing(entities, text)
     _refang_model_indicators(entities, relationships)
     entities, relationships = _drop_undatable_dates(entities, relationships)
+    entities, relationships = _drop_abstract_types(entities, relationships)
     _apply_vessel_hints(_apply_type_hints(entities), text)
     _link_event_dates(entities, relationships)
     return entities, relationships, skipped
@@ -2096,6 +2473,13 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
         llm_by_key.setdefault(key, llm_e)
         if not _exact_match_only(llm_e):
             fuzzy_pool.append((key, llm_e))
+    # A name the model gave as an alias is that entity too ("U.S. Navy" /
+    # "Navy", "Department of Defense" / "DOD"); without this NLP's "Navy" was
+    # kept as a second node. Names first, so an alias never displaces a name.
+    for llm_e in llm_entities:
+        for alias in llm_e.get("aliases") or []:
+            if isinstance(alias, str) and alias.strip():
+                llm_by_key.setdefault(_merge_key(alias), llm_e)
     # NLP names already kept. Deliberately *not* part of the fuzzy pool: adding
     # them there is what let each sibling indicator match the one kept before it.
     kept_nlp_keys: set[str] = set()
@@ -2139,6 +2523,7 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
     # supplies the real relationships, so co-occurrence is pure noise.
     seen_rels = {(r["source_name"], r["target_name"], r["rel_type"]) for r in llm_rels}
     merged_rels = list(llm_rels)
+    nlp_by_name = {e.get("name", ""): e for e in nlp_entities}
     for r in nlp_rels:
         if r["rel_type"] == "ASSOCIATED_WITH":
             continue
@@ -2155,6 +2540,15 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
         if key not in seen_rels:
             seen_rels.add(key)
             merged_rels.append(r)
+            # A typed edge read from the sentence is evidence for both ends. An
+            # NLP endpoint below the keep threshold above ("U.S. Space Force",
+            # named once) is kept with it; without it the graph build drops
+            # the edge as naming an entity that was never extracted.
+            for end in (r["source_name"], r["target_name"]):
+                end_key = _merge_key(end)
+                if end_key not in kept_nlp_keys and end_key not in llm_by_key and end in nlp_by_name:
+                    merged_entities.append(nlp_by_name[end])
+                    kept_nlp_keys.add(end_key)
 
     # Re-resolve event_datetime over the merged set — catches cases where the
     # Event came from one method and its OCCURRED_ON Date from the other.

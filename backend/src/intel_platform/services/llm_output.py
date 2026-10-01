@@ -127,7 +127,7 @@ def normalise_line(line: str | None) -> str:
             return s
 
 
-def json_object(content: str, label: str | None = None) -> dict[str, Any]:
+def json_object(content: str, label: str | None = None, *, merge_duplicate_lists: bool = False) -> dict[str, Any]:
     """The first JSON object in a reply, however the model chose to present it.
 
     ``labelled_json`` requires the object on the label's own line, which is the
@@ -137,10 +137,17 @@ def json_object(content: str, label: str | None = None) -> dict[str, Any]:
     module exists to stop, so this scans for a balanced object anywhere in the
     reply — preferring one that follows `label` when given.
 
+    ``merge_duplicate_lists``: a model sometimes repeats a key — Cohere closed
+    one extraction reply with ``"relationships": [], "entities": []}`` after
+    the full lists — and ``json.loads`` keeps the last value, so a complete
+    answer reads as an empty one. With this set, repeated list values are
+    concatenated and an empty repeat never replaces a filled value.
+
     Returns ``{}`` when nothing parses.
     """
     if not content:
         return {}
+    hook = _merge_duplicate_lists if merge_duplicate_lists else None
 
     if label:
         direct = labelled_json(content, label)
@@ -148,14 +155,89 @@ def json_object(content: str, label: str | None = None) -> dict[str, Any]:
             return direct
         marker = re.search(rf"{re.escape(label)}{_EMPHASIS}:", content, re.IGNORECASE)
         if marker:
-            found = _first_balanced_object(content[marker.end():])
+            found = _first_balanced_object(content[marker.end():], hook)
             if found:
                 return found
 
-    return _first_balanced_object(content) or {}
+    return _first_balanced_object(content, hook) or {}
 
 
-def _first_balanced_object(text: str) -> dict[str, Any]:
+def _merge_duplicate_lists(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in out:
+            if isinstance(out[key], list) and isinstance(value, list):
+                out[key] = out[key] + value
+                continue
+            if not value and out[key]:
+                continue
+        out[key] = value
+    return out
+
+
+_ITEM_GAP = re.compile(r"\s*(?:,\s*)?")
+
+
+def json_array_items(content: str, key: str) -> list[dict[str, Any]]:
+    """The complete objects in the ``"key": [ ... ]`` array of a reply, even a cut-off one.
+
+    A reply that runs past the model's token limit stops mid-object, so it is
+    not JSON and ``json_object`` finds nothing — the extraction reply for one
+    long report lost 30-odd complete entities that way. The array's elements
+    are read one balanced object at a time, and the first one that does not
+    close ends the list.
+    """
+    if not content:
+        return []
+    start = re.search(rf'"{re.escape(key)}"\s*:\s*\[', content)
+    if not start:
+        return []
+    items: list[dict[str, Any]] = []
+    pos = start.end()
+    while pos < len(content):
+        nxt = _ITEM_GAP.match(content, pos).end()
+        if nxt >= len(content) or content[nxt] != "{":
+            break  # "]" closes the array; anything else is not an element we can read
+        end = _balanced_object_end(content, nxt)
+        if end is None:
+            break  # cut off inside this element
+        try:
+            parsed = json.loads(content[nxt:end + 1])
+        except json.JSONDecodeError:
+            break
+        if isinstance(parsed, dict):
+            items.append(parsed)
+        pos = end + 1
+    return items
+
+
+def _balanced_object_end(text: str, start: int) -> int | None:
+    """Index of the brace closing the object opened at `start`, or None if it never closes."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return None
+
+
+def _first_balanced_object(text: str, hook=None) -> dict[str, Any]:
     """Scan for the first brace-balanced object that parses, ignoring strings."""
     for start, char in enumerate(text):
         if char != "{":
@@ -181,7 +263,7 @@ def _first_balanced_object(text: str) -> dict[str, Any]:
                 depth -= 1
                 if depth == 0:
                     try:
-                        parsed = json.loads(text[start:end + 1])
+                        parsed = json.loads(text[start:end + 1], object_pairs_hook=hook)
                     except json.JSONDecodeError:
                         break  # this candidate is not JSON; try the next brace
                     return parsed if isinstance(parsed, dict) else {}

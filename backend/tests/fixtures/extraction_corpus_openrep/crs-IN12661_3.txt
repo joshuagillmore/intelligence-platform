@@ -1,0 +1,13 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IN12661#3) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Law Enforcement C-UAS Authorities
+
+Until recently, Congress had not authorized state, local, tribal, or territorial (SLTT) law enforcement to engage in C-UAS activities because of potential violations of certain federal statutes. However, in response to growing concerns about law enforcement's ability and capacity to mitigate potential drone threats, Congress granted SLTT law enforcement and correctional agencies authority through the FY2026 NDAA to engage in actions to mitigate potential UAS threats. This authority is contingent on these entities undergoing DOJ training and certification. DOJ, in consultation with the U.S. Departments of Homeland Security, Defense, and Transportation, is required to develop regulations for this training by June 2026. DOJ is also to maintain a list of authorized C-UAS systems and technologies that may be used by law enforcement and report on SLTT C-UAS use.
+
+Law enforcement entities, including agencies outside of DOJ and DHS at the federal, state, local, tribal, and territorial levels, that have not completed the training and certification required to engage in C-UAS activities—and even those who have—can still reach out to DOJ or DHS to request assistance when the use of C-UAS measures are being considered to assist with their law enforcement missions or to protect an event. However, in congressional testimony, officials from DOJ's National Security Division and Federal Bureau of Investigation (FBI) noted that while the FBI is authorized to conduct C-UAS activities at special events, it only has the capacity to cover a fraction of them.
+
+In additional support to SLTT law enforcement's C-UAS activities, the FY2026 NDAA also expanded the purpose areas of two criminal justice grant programs—the Edward Byrne Memorial Justice Assistance Grant (JAG) Program and the Community Oriented Policing Services (COPS) Program—to allow recipients to use funds to purchase and operate approved C-UAS technology.

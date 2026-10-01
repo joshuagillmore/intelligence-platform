@@ -1,0 +1,41 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "OPENREP-SUPINTREP-0042#0",
+    "doc_id": "OPENREP-SUPINTREP-0042"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Strait of Hormuz",
+      "entity_type": "Location",
+      "aliases": [
+        "the Strait"
+      ]
+    },
+    {
+      "name": "Iran",
+      "entity_type": "Location"
+    },
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "NATO",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "United States",
+      "target": "Iran",
+      "rel_type": "TARGETS"
+    }
+  ]
+}

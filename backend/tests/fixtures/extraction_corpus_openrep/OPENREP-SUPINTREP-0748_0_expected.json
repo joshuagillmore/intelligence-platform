@@ -1,0 +1,34 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "OPENREP-SUPINTREP-0748#0",
+    "doc_id": "OPENREP-SUPINTREP-0748"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "PRC",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Taiwan",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Western Pacific",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Eurasia",
+      "entity_type": "Location"
+    },
+    {
+      "name": "South China Sea",
+      "entity_type": "Location",
+      "aliases": [
+        "SCS"
+      ]
+    }
+  ],
+  "relationships": []
+}

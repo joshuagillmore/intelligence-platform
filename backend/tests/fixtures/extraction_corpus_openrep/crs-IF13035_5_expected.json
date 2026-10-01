@@ -1,0 +1,182 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IF13035#5",
+    "doc_id": "crs-IF13035"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Iran",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Middle East",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Syria",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Bashar Al Asad",
+      "entity_type": "Person"
+    },
+    {
+      "name": "Fateh-110",
+      "entity_type": "Weapon",
+      "aliases": [
+        "Fateh-110 SRBMs"
+      ]
+    },
+    {
+      "name": "Lebanon",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Hezbollah",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Hassan Nasrallah",
+      "entity_type": "Person"
+    },
+    {
+      "name": "2015",
+      "entity_type": "Date"
+    },
+    {
+      "name": "2006",
+      "entity_type": "Date"
+    },
+    {
+      "name": "DIA",
+      "entity_type": "Organization",
+      "aliases": [
+        "Defense Intelligence Agency"
+      ]
+    },
+    {
+      "name": "Yemen",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Houthis",
+      "entity_type": "Organization",
+      "aliases": [
+        "Houthi"
+      ]
+    },
+    {
+      "name": "Qiam-1",
+      "entity_type": "Weapon"
+    },
+    {
+      "name": "Shahab-3",
+      "entity_type": "Weapon"
+    },
+    {
+      "name": "Russia",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Islamic State",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "September 2017",
+      "entity_type": "Date"
+    },
+    {
+      "name": "October 2018",
+      "entity_type": "Date"
+    },
+    {
+      "name": "September 2019",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Iraq",
+      "entity_type": "Location"
+    },
+    {
+      "name": "January 2020",
+      "entity_type": "Date"
+    },
+    {
+      "name": "October 2024",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Israel",
+      "entity_type": "Location"
+    },
+    {
+      "name": "United Kingdom",
+      "entity_type": "Location"
+    },
+    {
+      "name": "June 13",
+      "entity_type": "Date"
+    },
+    {
+      "name": "June 16",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Benjamin Netanyahu",
+      "entity_type": "Person"
+    },
+    {
+      "name": "Israel Defense Forces",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Russia",
+      "target": "Iran",
+      "rel_type": "SUPPLIED_BY"
+    },
+    {
+      "source": "Houthis",
+      "target": "Yemen",
+      "rel_type": "LOCATED_AT"
+    },
+    {
+      "source": "Hezbollah",
+      "target": "Lebanon",
+      "rel_type": "LOCATED_AT"
+    },
+    {
+      "source": "Hassan Nasrallah",
+      "target": "Hezbollah",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "Iran",
+      "target": "Islamic State",
+      "rel_type": "TARGETS"
+    },
+    {
+      "source": "Iran",
+      "target": "Israel",
+      "rel_type": "TARGETS"
+    },
+    {
+      "source": "Israel",
+      "target": "Iran",
+      "rel_type": "TARGETS"
+    },
+    {
+      "source": "Benjamin Netanyahu",
+      "target": "Israel",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "Bashar Al Asad",
+      "target": "Syria",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

@@ -125,6 +125,10 @@ verb_mappings:
   # COMMUNICATES_WITH
   communicate: COMMUNICATES_WITH
   contact: COMMUNICATES_WITH
+  # COMMANDED_BY, FUNDED_BY and SUPPLIED_BY are named from the receiving end,
+  # so these verbs are the exception to subject -[TYPE]-> object: extraction
+  # turns them round ("Iran supplied Russia" -> Russia SUPPLIED_BY Iran; the
+  # recipient is the "to"-object or the object given "with" something).
   # COMMANDED_BY
   command: COMMANDED_BY
   lead: COMMANDED_BY
@@ -138,6 +142,8 @@ verb_mappings:
   provide: SUPPLIED_BY
   deliver: SUPPLIED_BY
   ship: SUPPLIED_BY
+  transfer: SUPPLIED_BY
+  sell: SUPPLIED_BY
   # DEPLOYED_AT
   # `deploy` is under USES: "X deployed Y" names what X used, not where it went.
   station: DEPLOYED_AT

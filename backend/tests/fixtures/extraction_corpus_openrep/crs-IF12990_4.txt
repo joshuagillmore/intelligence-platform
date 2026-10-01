@@ -1,0 +1,25 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IF12990#4) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Section 232 (2018, 2025-2026)
+
+Authority: Section 232 of the Trade Expansion Act of 1962 (19 U.S.C. §1862, as amended). National security effects of imports. Some countries and firms investing in the United States have negotiated lower rates.
+
+Steel and Aluminum: In 2018, President Trump imposed tariffs on most steel (25%) and aluminum (10%) imports to address PRC practices distorting global markets. China retaliated by raising tariffs on aluminum waste/scrap (49%) and pork, fruit, and nuts (20%). In March 2025, President Trump raised aluminum tariffs to 25%, expanded the scope of products, and ended country exemptions. In June 2025, he raised steel and aluminum tariffs to 50%. China is the 2nd-largest U.S. aluminum supplier.
+
+Cars, Light Trucks, and Parts: In March 2025, President Trump imposed a 25% tariff with some offsets. China is the 3rd-largest U.S. supplier of auto parts.
+
+Copper: In July 2025, President Trump imposed a 50% tariff on semifinished copper. China is the 9th-largest U.S. source of copper/copper items.
+
+Heavy Trucks and Parts: In November 2025, President Trump imposed a 25% tariff (and a 10% tariff on buses). China is a top U.S. source of industrial trailers and buses.
+
+Lumber and Products: In October 2025, President Trump imposed tariffs on softwood lumber (10%), upholstered furniture (30%), and cabinets (50%). China is the 10th-, 2nd-, and 4th-largest U.S. source of these items, respectively.
+
+Semiconductors: In January 2026, President Trump imposed a 25% tariff on advanced chips (most imports are exempt). China makes about 30% of the world's mature-node semiconductors.
+
+Critical Minerals: In January 2026, President Trump directed negotiations with other countries in lieu of tariffs. China controls a large share of global processing.
+
+Pharmaceuticals and Active Pharmaceutical Ingredients (API): In April 2026, President Trump imposed a 100% ad valorem duty on patented pharmaceuticals and API. About 80% of global drug production relies on API from China.
