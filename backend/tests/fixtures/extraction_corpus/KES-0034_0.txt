@@ -1,0 +1,17 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0034#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Collection against the Meran Strait during the reporting period establishes that naval radio traffic volume rose sharply in the strait, with content not recoverable.
+
+2. Entities identified in this reporting: 3rd Naval Auxiliary Group.
+
+3. The transmission was made in the clear on a working frequency, which is consistent with routine administrative traffic rather than deliberate deception.
+
+4. Traffic volume rose to approximately 20 transmissions per hour against a normal baseline of 5, without corresponding change in content.
+
+5. Identities are inferred from berth assignment and callsign association rather than stated, and an alternative attribution cannot be excluded.

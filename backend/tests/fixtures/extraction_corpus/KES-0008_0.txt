@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0008#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Imagery of Torvik collected during the period shows that hallgrim (A-425) arrives Torvik from Nyhavn, berths quay 5.
+
+2. Entities identified in this reporting: Hallgrim (A-425), 3rd Naval Auxiliary Group.
+
+3. 3 objects were resolved in the target area, assessed by dimension only; no markings, hull numbers or unit insignia were resolvable at this collection geometry.
+
+4. Comparison against imagery of 3 days earlier shows 3 additional objects present and no objects removed.
+
+5. Objects under cover were not characterised and the count should be treated as a lower bound.
+
+6. IMAGERY ANALYST COMMENT: Graded A1; credibility reflects independent corroboration by another discipline rather than the source's own consistency.

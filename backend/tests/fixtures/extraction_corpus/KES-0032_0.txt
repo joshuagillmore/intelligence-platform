@@ -1,0 +1,17 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0032#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Open reporting monitored during the period indicates that commercial shipping schedules show three cancelled port calls at Torvik for the period 15-18 August.
+
+2. Entities identified in this reporting: Torvik Harbour Authority, Aldenkirk.
+
+3. Schedule data show 4 affected sailings, all within the period 0201Z to 0132Z.
+
+4. The publication does not identify its own sourcing and gives no dateline beyond 1001Z.
+
+5. Open reporting establishes that the event was publicly visible. It establishes nothing about military significance.

@@ -1,0 +1,25 @@
+{
+  "source": {"collection": "e2e-2026-09-30", "chunk_id": "volt_typhoon_3", "doc_id": "text_input"},
+  "review": "reviewed against the text; a relationship is gold only where its sentence names or refers back to both ends",
+  "entities": [
+    {"name": "NSA", "entity_type": "Organization", "aliases": ["The NSA"]},
+    {"name": "Volt Typhoon", "entity_type": "ThreatActor"},
+    {"name": "Guam", "entity_type": "Location"},
+    {"name": "United States", "entity_type": "Location", "aliases": ["the United States"]},
+    {"name": "Asia", "entity_type": "Location"},
+    {"name": "Microsoft", "entity_type": "Organization"},
+    {"name": "Naval Base Guam", "entity_type": "Location"},
+    {"name": "Windows", "entity_type": "Software"},
+    {"name": "Kaohsiung", "entity_type": "Location"},
+    {"name": "Taiwan", "entity_type": "Location"},
+    {"name": "Manila", "entity_type": "Location"},
+    {"name": "Netgear ProSAFE", "entity_type": "Hardware"},
+    {"name": "45.83.12.7", "entity_type": "IPAddress"}
+  ],
+  "relationships": [
+    {"source": "Volt Typhoon", "target": "Guam", "rel_type": "TARGETS"},
+    {"source": "Volt Typhoon", "target": "Naval Base Guam", "rel_type": "TARGETS"},
+    {"source": "Volt Typhoon", "target": "Windows", "rel_type": "USES"},
+    {"source": "Kaohsiung", "target": "Taiwan", "rel_type": "LOCATED_AT"}
+  ]
+}

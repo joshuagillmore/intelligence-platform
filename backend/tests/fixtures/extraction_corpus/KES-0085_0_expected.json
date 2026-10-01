@@ -1,0 +1,19 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0085#0",
+    "doc_id": "KES-0085"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "entities": [
+    {
+      "name": "Nyhavn",
+      "entity_type": "Location"
+    },
+    {
+      "name": "2nd Naval Auxiliary Group",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": []
+}

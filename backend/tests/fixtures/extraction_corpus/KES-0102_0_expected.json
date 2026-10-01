@@ -1,0 +1,26 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0102#0",
+    "doc_id": "KES-0102"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "entities": [
+    {
+      "name": "Ostrand Peninsula",
+      "entity_type": "Location",
+      "aliases": [
+        "the Ostrand Peninsula"
+      ]
+    },
+    {
+      "name": "Stellar Vane",
+      "entity_type": "Ship"
+    },
+    {
+      "name": "Mirenda",
+      "entity_type": "Ship"
+    }
+  ],
+  "relationships": []
+}

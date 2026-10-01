@@ -1,0 +1,15 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0173#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Partner service reporting passed by liaison indicates that torvald (A-430) of 2nd Naval Auxiliary Group loads at Nyhavn.
+
+2. Entities identified in this reporting: Torvald (A-430), 2nd Naval Auxiliary Group.
+
+3. Partner has not released the underlying reporting and has not graded its own source.
+
+4. DESK COMMENT: The activity described is routine and is reported for completeness. It should not be read as related to the current tasking without further reporting establishing a connection. Graded B1; credibility reflects independent corroboration by another discipline rather than the source's own consistency.

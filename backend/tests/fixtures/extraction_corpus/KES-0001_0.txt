@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0001#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Source, who has direct and regular access in Torvik, reported that ostravik (A-411) and Kalvar (A-417) berth at quay 4.
+
+2. Entities identified in this reporting: Ostravik (A-411), Kalvar (A-417), 3rd Naval Auxiliary Group.
+
+3. Source noted that instructions were passed verbally rather than through the usual written schedule, which source considered unusual.
+
+4. Source reported that normal working arrangements were suspended for the duration and that access to the area was controlled by personnel source did not recognise.
+
+5. Source assessed approximately 20 personnel involved, drawn from military rather than civilian establishment, which source described as without precedent in 6 months of access.
+
+6. Source was not able to establish the destination of the activity, nor whether it was directed or routine.

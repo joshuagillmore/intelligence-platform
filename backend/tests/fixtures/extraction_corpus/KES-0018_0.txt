@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0018#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Publicly available shipping and schedule data indicate that routine quarterly maintenance period for Ostravik concludes.
+
+2. Entities identified in this reporting: Ostravik (A-411).
+
+3. The account is consistent with commercial reporting of the same period and contains no detail not already publicly available.
+
+4. The publication does not identify its own sourcing and gives no dateline beyond 1306Z.
+
+5. Schedule data show 20 affected sailings, all within the period 2004Z to 2212Z.
+
+6. The account has not been corroborated by any other discipline.

@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0073#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Collection against the Meran Strait during the reporting period establishes that two merchant masters independently report position jumps on the southern approach.
+
+2. Entities identified in this reporting: Mirenda, Aldenkirk.
+
+3. Traffic volume rose to approximately 8 transmissions per hour against a normal baseline of 2, without corresponding change in content.
+
+4. A gap in collection between 2231Z and 0928Z cannot be excluded, and activity during that window would not have been recovered.
+
+5. Callsigns associated with the activity were used 3 times in the period, against a baseline of fewer than 3 in comparable periods.
+
+6. Identities are inferred from berth assignment and callsign association rather than stated, and an alternative attribution cannot be excluded.

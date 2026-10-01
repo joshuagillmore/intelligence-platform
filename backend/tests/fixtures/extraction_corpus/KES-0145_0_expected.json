@@ -1,0 +1,32 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0145#0",
+    "doc_id": "KES-0145"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "notes": "'Valdorian' is a demonym, not an entity.",
+  "entities": [
+    {
+      "name": "Ostravik",
+      "entity_type": "Ship",
+      "aliases": [
+        "Ostravik (A-411)",
+        "A-411"
+      ]
+    },
+    {
+      "name": "Kalvar",
+      "entity_type": "Ship",
+      "aliases": [
+        "Kalvar (A-417)",
+        "A-417"
+      ]
+    },
+    {
+      "name": "3rd Naval Auxiliary Group",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": []
+}

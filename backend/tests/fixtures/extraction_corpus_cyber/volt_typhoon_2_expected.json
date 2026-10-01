@@ -1,0 +1,28 @@
+{
+  "source": {"collection": "e2e-2026-09-30", "chunk_id": "volt_typhoon_2", "doc_id": "text_input"},
+  "review": "reviewed against the text; a relationship is gold only where its sentence names or refers back to both ends",
+  "entities": [
+    {"name": "CISA", "entity_type": "Organization"},
+    {"name": "AA23-144a", "entity_type": "Document", "aliases": ["CISA Advisory AA23-144a"]},
+    {"name": "People's Republic of China", "entity_type": "Location", "aliases": ["The People's Republic of China", "China", "PRC"]},
+    {"name": "Volt Typhoon", "entity_type": "ThreatActor"},
+    {"name": "Guam", "entity_type": "Location"},
+    {"name": "United States", "entity_type": "Location", "aliases": ["the United States"]},
+    {"name": "netsh", "entity_type": "Software"},
+    {"name": "ntdsutil", "entity_type": "Software"},
+    {"name": "wmic", "entity_type": "Software"},
+    {"name": "Fortinet FortiGuard", "entity_type": "Hardware", "aliases": ["FortiGuard"]},
+    {"name": "CVE-2023-27997", "entity_type": "Vulnerability"},
+    {"name": "ASUS", "entity_type": "Organization"},
+    {"name": "Cisco", "entity_type": "Organization"},
+    {"name": "Netgear", "entity_type": "Organization"}
+  ],
+  "relationships": [
+    {"source": "Volt Typhoon", "target": "People's Republic of China", "rel_type": "ATTRIBUTED_TO"},
+    {"source": "Volt Typhoon", "target": "Guam", "rel_type": "TARGETS"},
+    {"source": "Volt Typhoon", "target": "United States", "rel_type": "TARGETS"},
+    {"source": "Volt Typhoon", "target": "netsh", "rel_type": "USES"},
+    {"source": "Volt Typhoon", "target": "ntdsutil", "rel_type": "USES"},
+    {"source": "Volt Typhoon", "target": "wmic", "rel_type": "USES"}
+  ]
+}

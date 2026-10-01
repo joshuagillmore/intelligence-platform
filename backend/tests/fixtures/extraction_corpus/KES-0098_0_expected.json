@@ -1,0 +1,15 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0098#0",
+    "doc_id": "KES-0098"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "entities": [
+    {
+      "name": "Mirenda",
+      "entity_type": "Ship"
+    }
+  ],
+  "relationships": []
+}

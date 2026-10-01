@@ -1,0 +1,23 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0017#0",
+    "doc_id": "KES-0017"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "entities": [
+    {
+      "name": "Torvik",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Ostravik",
+      "entity_type": "Ship",
+      "aliases": [
+        "Ostravik (A-411)",
+        "A-411"
+      ]
+    }
+  ],
+  "relationships": []
+}

@@ -1,0 +1,23 @@
+{
+  "source": {"collection": "e2e-2026-09-30", "chunk_id": "volt_typhoon_1", "doc_id": "text_input"},
+  "review": "reviewed against the text; a relationship is gold only where its sentence names or refers back to both ends",
+  "entities": [
+    {"name": "Volt Typhoon", "entity_type": "ThreatActor"},
+    {"name": "China", "entity_type": "Location"},
+    {"name": "Guam", "entity_type": "Location"},
+    {"name": "Microsoft", "entity_type": "Organization"},
+    {"name": "Fortinet", "entity_type": "Organization"},
+    {"name": "CVE-2023-27997", "entity_type": "Vulnerability"},
+    {"name": "185.220.101.42", "entity_type": "IPAddress"},
+    {"name": "evil-c2.com", "entity_type": "Domain", "aliases": ["evil-c2[.]com"]},
+    {"name": "CISA", "entity_type": "Organization"},
+    {"name": "NSA", "entity_type": "Organization", "aliases": ["the NSA"]},
+    {"name": "24 May 2023", "entity_type": "Date"},
+    {"name": "2023", "entity_type": "Date"}
+  ],
+  "relationships": [
+    {"source": "Volt Typhoon", "target": "China", "rel_type": "ATTRIBUTED_TO"},
+    {"source": "Volt Typhoon", "target": "Guam", "rel_type": "TARGETS"},
+    {"source": "Volt Typhoon", "target": "CVE-2023-27997", "rel_type": "EXPLOITS"}
+  ]
+}

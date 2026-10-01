@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0063#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Synthetic aperture imagery of the Ostrand Peninsula shows that fishing vessel Ekhaven AIS gap of 9 hours; subsequently attributed to transponder failure.
+
+2. Entities identified in this reporting: Ekhaven.
+
+3. Ground disturbance consistent with recent heavy vehicle movement is visible across approximately 30 per cent of the apron.
+
+4. Comparison against imagery of 7 days earlier shows 5 additional objects present and no objects removed.
+
+5. The observed dispersal pattern is consistent with, but not diagnostic of, preparation for movement.
+
+6. A single collection cannot distinguish preparation for movement from preparation for maintenance.
