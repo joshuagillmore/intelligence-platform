@@ -24,6 +24,14 @@ DOC_3 = (
 )
 
 
+DOC_1 = (
+    "Volt Typhoon, a state-sponsored threat actor attributed to China, targeted Guam telecommunications providers "
+    "in 2023. Microsoft reported the group used living-off-the-land techniques and the Fortinet vulnerability "
+    "CVE-2023-27997. Command and control traffic was routed through 185.220.101.42 and the domain evil-c2[.]com. "
+    "CISA and the NSA published a joint advisory on 24 May 2023."
+)
+
+
 def _types(text: str) -> dict[str, str]:
     entities, _ = extract_entities_nlp(text, "doc-fix")
     return {e["name"]: e["entity_type"] for e in entities}
@@ -67,3 +75,18 @@ def test_a_system_binary_the_model_typed_as_a_technique_is_software():
         {"name": "T1059.001", "entity_type": "TTP"},
     ])
     assert [e["entity_type"] for e in ents] == ["Software", "Software", "TTP"]
+
+
+# ── Threat actors under the current naming schemes ────────────────────────────
+
+def test_volt_typhoon_is_a_threat_actor_not_an_organization():
+    assert _types(DOC_1)["Volt Typhoon"] == "ThreatActor"
+
+
+def test_weather_and_cluster_names_are_threat_actors_but_weather_is_not():
+    from intel_platform.services.extraction import _THREAT_ACTOR_RE
+
+    for name in ("Volt Typhoon", "Midnight Blizzard", "Mint Sandstorm", "Storm-0558", "UNC2452", "FIN7", "APT29"):
+        assert _THREAT_ACTOR_RE.match(name), name
+    for name in ("Super Typhoon", "Tropical Storm", "Eurofighter Typhoon", "Typhoon", "Storm"):
+        assert not _THREAT_ACTOR_RE.match(name), name

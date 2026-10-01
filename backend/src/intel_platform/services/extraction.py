@@ -1042,12 +1042,17 @@ DEMONYMS = {
     "arab", "african", "asian", "western", "eastern", "afghan", "chechen",
 }
 
-# Threat-actor naming: APT-NN and CrowdStrike-style "<Adjective> <Animal>"
-# adversary handles (Cozy Bear, Wicked Panda). Capitalization required to avoid
-# firing on a lone common noun.
+# Threat-actor naming: APT-NN, Mandiant clusters (UNC2452, FIN7), CrowdStrike-
+# style "<Adjective> <Animal>" handles (Cozy Bear, Wicked Panda) and Microsoft's
+# weather families (Volt Typhoon, Midnight Blizzard, Storm-0558). The live run
+# stored Volt Typhoon as an Organization for want of the last. Capitalization is
+# required, and "Super"/"Tropical"/"Eurofighter" excluded, so a storm report
+# stays a storm and the aircraft an aircraft.
 _THREAT_ACTOR_RE = re.compile(
-    r"^(?:APT[- ]?\d+|[A-Z][A-Za-z]+ "
-    r"(?:Panda|Bear|Kitten|Spider|Chollima|Jackal|Buffalo|Tiger|Crane|Lynx|Leopard|Ocelot|Dragon|Hawk))$"
+    r"^(?:APT[- ]?\d+|UNC\d{3,4}|FIN\d{1,2}|Storm-\d{4}"
+    r"|(?!Super |Tropical |Eurofighter )[A-Z][A-Za-z]+ "
+    r"(?:Panda|Bear|Kitten|Spider|Chollima|Jackal|Buffalo|Tiger|Crane|Lynx|Leopard|Ocelot|Dragon|Hawk"
+    r"|Typhoon|Blizzard|Sandstorm|Sleet|Tempest|Tsunami|Hail|Cyclone))$"
 )
 # Military hardware designations: "Type 052", "Type 075D" -> EquipmentType.
 _MIL_EQUIP_RE = re.compile(r"^Type[- ]?\d{2,4}[A-Z]?$", re.IGNORECASE)
