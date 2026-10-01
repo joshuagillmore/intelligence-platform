@@ -493,6 +493,13 @@ _LLM_TYPE_CANON = {
     "island": "Location", "airbase": "Location", "embassy": "Location",
     "province": "Location", "district": "Location", "territory": "Location",
     "border": "Location", "reef": "Location",
+    # Place subtypes the model invents ("Kirvo airfield" came back "Airfield"),
+    # none of them a graph type, so each landed as Custom.
+    "airfield": "Location", "airport": "Location", "harbour": "Location", "harbor": "Location",
+    "naval base": "Location", "navalbase": "Location", "militarybase": "Location", "military base": "Location",
+    "anchorage": "Location", "strait": "Location", "sea": "Location", "bay": "Location", "gulf": "Location",
+    "peninsula": "Location", "coast": "Location", "coastline": "Location", "waterway": "Location",
+    "river": "Location", "town": "Location", "village": "Location", "state": "Location",
     # Person umbrella
     "analyst": "Person", "operative": "Person", "diplomat": "Person",
     "commander": "Person", "politician": "Person", "scientist": "Person",

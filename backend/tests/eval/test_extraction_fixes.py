@@ -440,6 +440,15 @@ async def test_a_defanged_indicator_from_the_model_leaves_extraction_refanged():
     assert [(r["source_name"], r["target_name"]) for r in rels] == [("Volt Typhoon", "evil-c2.com")]
 
 
+def test_place_subtypes_the_model_invents_are_locations():
+    from intel_platform.services.extraction import _normalize_llm_entity_type
+
+    # "Kirvo airfield" came back typed "Airfield": no such graph type, so it
+    # would land as Custom.
+    for raw in ("Airfield", "airport", "Harbour", "Naval Base", "Strait", "Peninsula", "Coast"):
+        assert _normalize_llm_entity_type(raw) == "Location", raw
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}
