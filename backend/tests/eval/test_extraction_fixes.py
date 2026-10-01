@@ -732,3 +732,50 @@ def test_a_bracketed_aside_that_is_not_an_acronym_is_left_alone():
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}
+
+
+# ── Hybrid keeps one node for a name the model already gave as an alias ───────
+# openrep: the model returned "U.S. Navy" (alias "Navy"), "Department of
+# Defense" (alias "DOD") and "Executive Order 14347" (alias "E.O. 14347"); NLP
+# found "Navy", "DOD" and "E.O. 14347", and hybrid kept both of each pair.
+
+CRS_IF13264 = (
+    "The Golden Dome for America refers to an integrated homeland air and missile defense system being developed "
+    "by the Department of Defense (DOD), which is \"using a secondary Department of War designation\" under "
+    "Executive Order (E.O.) 14347, dated September 5, 2025. Guetlein reports directly to the Deputy Secretary of "
+    "Defense (who is using \"Deputy Secretary of War\" as a \"secondary title\" under E.O. 14347). The Navy's "
+    "current amphibious ship force consists of larger amphibious ships."
+)
+
+
+def test_an_executive_order_written_two_ways_is_one_document_carrying_both():
+    entities, _ = extract_entities_nlp(CRS_IF13264, "doc-fix")
+    orders = [e for e in entities if "14347" in e["name"]]
+    assert [e["name"] for e in orders] == ["Executive Order (E.O.) 14347"]
+    assert orders[0]["entity_type"] == "Document"
+    assert {"E.O. 14347", "Executive Order 14347"} <= set(orders[0].get("aliases") or [])
+
+
+async def test_hybrid_merges_an_nlp_entity_named_by_one_of_the_models_aliases():
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    reply = {"entities": [
+        {"name": "U.S. Navy", "entity_type": "Organization", "aliases": ["Navy"], "confidence": 0.95},
+        {"name": "Department of Defense", "entity_type": "Organization", "aliases": ["DOD"], "confidence": 0.95},
+        {"name": "Executive Order 14347", "entity_type": "Document", "aliases": ["E.O. 14347"], "confidence": 0.95},
+    ], "relationships": []}
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        ents, _ = await extraction.extract_entities_hybrid(CRS_IF13264, "doc-fix")
+    names = [e["name"] for e in ents]
+    for duplicate in ("Navy", "DOD", "E.O. 14347", "Executive Order (E.O.) 14347"):
+        assert duplicate not in names, names
+    assert {"U.S. Navy", "Department of Defense", "Executive Order 14347"} <= set(names)

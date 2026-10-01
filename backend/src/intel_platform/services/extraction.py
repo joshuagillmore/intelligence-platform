@@ -1263,14 +1263,29 @@ def _extract_cyber_entities(text: str, doc_id: str, raw_text: str | None = None)
 
     # Named legal instruments spaCy reads as dates or misses: "Executive Order
     # (E.O.) 14186", "E.O. 13871", "the FY2026 NDAA".
+    # An executive order is one document however it is written: the first form
+    # is its name and every way of writing its number is an alias, which is
+    # also what lets hybrid match it to the model's "Executive Order 14347".
+    orders: dict[str, dict] = {}
     for match in _DOCUMENT_REF.finditer(text):
         ref = match.group().strip()
+        number = ref.rsplit(None, 1)[-1] if ref[-1].isdigit() else ""
+        if number in orders:
+            entity = orders[number]
+            if ref != entity["name"] and ref not in entity["aliases"]:
+                entity["aliases"].append(ref)
+            continue
         if ref not in seen:
             seen.add(ref)
-            cyber_entities.append({
+            entity = {
                 "name": ref, "entity_type": "Document",
                 "source": doc_id, "method": "regex", "confidence": 0.85,
-            })
+            }
+            if number:
+                written = [f"Executive Order {number}", f"E.O. {number}"]
+                entity["aliases"] = [form for form in written if form != ref]
+                orders[number] = entity
+            cyber_entities.append(entity)
 
     # Military hardware designations (e.g. "Type 075", "Type 052D") — spaCy
     # misses these entirely, so extract them as EquipmentType directly.
@@ -2458,6 +2473,13 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
         llm_by_key.setdefault(key, llm_e)
         if not _exact_match_only(llm_e):
             fuzzy_pool.append((key, llm_e))
+    # A name the model gave as an alias is that entity too ("U.S. Navy" /
+    # "Navy", "Department of Defense" / "DOD"); without this NLP's "Navy" was
+    # kept as a second node. Names first, so an alias never displaces a name.
+    for llm_e in llm_entities:
+        for alias in llm_e.get("aliases") or []:
+            if isinstance(alias, str) and alias.strip():
+                llm_by_key.setdefault(_merge_key(alias), llm_e)
     # NLP names already kept. Deliberately *not* part of the fuzzy pool: adding
     # them there is what let each sibling indicator match the one kept before it.
     kept_nlp_keys: set[str] = set()
