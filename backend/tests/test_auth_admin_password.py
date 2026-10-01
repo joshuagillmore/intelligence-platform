@@ -18,9 +18,10 @@ from fastapi.testclient import TestClient
 
 from intel_platform.api import auth as auth_module
 from intel_platform.api.app import app
+from tests.ids import tp
 
 client = TestClient(app)
-PREFIX = "test-a2-"
+PREFIX = tp("a2-")
 
 
 def _settings(**overrides):

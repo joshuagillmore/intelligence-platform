@@ -19,8 +19,12 @@ from intel_platform.graph.schema import ensure_entity_label, initialize_schema
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import Organization, Person
 from intel_platform.models.relationships import Relationship
+from tests.ids import tp
 
-PROJECT = "test-entity-label"
+PROJECT = tp("entity-label")
+
+# Shared Neo4j state (drops the entity_uid constraint; database-wide ensure_entity_label counts): see tests/neo4j_lock.py.
+pytestmark = pytest.mark.neo4j_global
 
 
 def _labels(driver, node_id: str) -> set[str]:
@@ -49,7 +53,7 @@ class TestStartupIsNeverBlocked:
         """initialize_schema runs unguarded in the app lifespan. If :Entity
         duplicates already exist the constraint cannot be created; the app
         must boot anyway and say why lookups are slower."""
-        dup = "test-entity-label-bootdup"
+        dup = tp("entity-label-bootdup")
         with schema.session() as s:
             s.run("DROP CONSTRAINT entity_uid IF EXISTS").consume()
         try:
@@ -93,41 +97,41 @@ class TestEnsureEntityLabel:
             )
 
     def test_a_node_written_before_the_label_existed_gets_it(self, schema):
-        self._raw(schema, "Person", "test-entity-label-legacy", entity_type="Person")
-        assert "Entity" not in _labels(schema, "test-entity-label-legacy")
+        self._raw(schema, "Person", tp("entity-label-legacy"), entity_type="Person")
+        assert "Entity" not in _labels(schema, tp("entity-label-legacy"))
         assert ensure_entity_label(schema) >= 1
-        assert "Entity" in _labels(schema, "test-entity-label-legacy")
+        assert "Entity" in _labels(schema, tp("entity-label-legacy"))
 
     def test_it_is_idempotent(self, schema):
-        self._raw(schema, "Person", "test-entity-label-once", entity_type="Person")
+        self._raw(schema, "Person", tp("entity-label-once"), entity_type="Person")
         ensure_entity_label(schema)
         assert ensure_entity_label(schema) == 0
 
     def test_initialize_schema_runs_it(self, schema):
-        self._raw(schema, "Domain", "test-entity-label-boot", entity_type="Domain")
+        self._raw(schema, "Domain", tp("entity-label-boot"), entity_type="Domain")
         initialize_schema(schema)
-        assert "Entity" in _labels(schema, "test-entity-label-boot")
+        assert "Entity" in _labels(schema, tp("entity-label-boot"))
 
     def test_nodes_that_are_not_entities_are_left_alone(self, schema):
         """Metadata nodes have an id but no entity_type; they are not looked up
         through the store and must not share the entity id space."""
-        self._raw(schema, "SomeMeta", "test-entity-label-meta")
+        self._raw(schema, "SomeMeta", tp("entity-label-meta"))
         ensure_entity_label(schema)
-        assert "Entity" not in _labels(schema, "test-entity-label-meta")
+        assert "Entity" not in _labels(schema, tp("entity-label-meta"))
 
     def test_a_duplicate_id_is_skipped_and_logged_not_fatal(self, schema, caplog):
         """Startup must not fail on legacy data. Two nodes sharing an id cannot
         both take a label whose id is unique: one does, the other is reported."""
-        self._raw(schema, "Person", "test-entity-label-dup", entity_type="Person")
-        self._raw(schema, "Organization", "test-entity-label-dup", entity_type="Organization")
+        self._raw(schema, "Person", tp("entity-label-dup"), entity_type="Person")
+        self._raw(schema, "Organization", tp("entity-label-dup"), entity_type="Organization")
         with caplog.at_level(logging.WARNING, logger="intel_platform.graph.schema"):
             ensure_entity_label(schema)
         with schema.session() as s:
             labelled = s.run(
-                "MATCH (n:Entity {id: 'test-entity-label-dup'}) RETURN count(n) AS c"
+                "MATCH (n:Entity {id: $id}) RETURN count(n) AS c", id=tp("entity-label-dup")
             ).single()["c"]
         assert labelled == 1
-        assert "test-entity-label-dup" in " ".join(r.getMessage() for r in caplog.records)
+        assert tp("entity-label-dup") in " ".join(r.getMessage() for r in caplog.records)
 
 
 class _Recording:
@@ -221,8 +225,8 @@ class TestUnlabelledNodesStayReachable:
 
     def test_get_update_and_delete_fall_back(self, graph_store, neo4j_driver):
         with neo4j_driver.session() as s:
-            s.run("CREATE (:Project {id: 'test-entity-label-raw', project_id: 'test-entity-label-raw', name: 'Raw'})")
-        assert graph_store.get_entity("test-entity-label-raw")["name"] == "Raw"
-        assert graph_store.update_entity("test-entity-label-raw", {"name": "Renamed"})["name"] == "Renamed"
-        graph_store.delete_entity("test-entity-label-raw")
-        assert graph_store.get_entity("test-entity-label-raw") is None
+            s.run("CREATE (:Project {id: $id, project_id: $id, name: 'Raw'})", id=tp("entity-label-raw"))
+        assert graph_store.get_entity(tp("entity-label-raw"))["name"] == "Raw"
+        assert graph_store.update_entity(tp("entity-label-raw"), {"name": "Renamed"})["name"] == "Renamed"
+        graph_store.delete_entity(tp("entity-label-raw"))
+        assert graph_store.get_entity(tp("entity-label-raw")) is None

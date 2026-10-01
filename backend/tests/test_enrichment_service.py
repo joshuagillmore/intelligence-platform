@@ -19,6 +19,7 @@ from intel_platform.enrichment.base import (
     register_provider,
 )
 from intel_platform.enrichment.service import EnrichmentService
+from tests.ids import tp
 
 
 @pytest.fixture(autouse=True)
@@ -116,7 +117,7 @@ class _BoomProvider(EnrichmentProvider):
 async def test_enrich_merges_properties_onto_node():
     register_provider(_PropProvider)
     store = _store_with_entity(
-        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": tp("p")}
     )
     svc = EnrichmentService(store, write_related=MagicMock(), cache=_cache_miss())
     out = await svc.enrich_entity("e1")
@@ -132,7 +133,7 @@ async def test_enrich_isolates_failing_provider():
     register_provider(_PropProvider)
     register_provider(_BoomProvider)
     store = _store_with_entity(
-        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": tp("p")}
     )
     svc = EnrichmentService(store, write_related=MagicMock(), cache=_cache_miss())
     out = await svc.enrich_entity("e1")
@@ -153,7 +154,7 @@ async def test_enrich_cache_hit_applies_without_lookup():
 
     register_provider(_SpyProvider)
     store = _store_with_entity(
-        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": tp("p")}
     )
     cache = MagicMock()
     cache.get = AsyncMock(return_value={
@@ -190,7 +191,7 @@ async def test_auto_enrich_runs_only_auto_providers():
 
     register_provider(_AutoD)
     register_provider(_ManualD)
-    entity = {"id": "e1", "name": "evil.com", "entity_type": "Domain", "project_id": "test-p"}
+    entity = {"id": "e1", "name": "evil.com", "entity_type": "Domain", "project_id": tp("p")}
     svc = EnrichmentService(_store_with_entity(entity), write_related=MagicMock(), cache=_cache_miss())
     out = await svc.auto_enrich(entity)
     assert "autod" in out["providers"]
@@ -208,7 +209,7 @@ async def test_related_entity_invokes_writer():
             ])
 
     register_provider(_RelProvider)
-    entity = {"id": "e1", "name": "evil.com", "entity_type": "Domain", "project_id": "test-p"}
+    entity = {"id": "e1", "name": "evil.com", "entity_type": "Domain", "project_id": tp("p")}
     writer = MagicMock()
     svc = EnrichmentService(_store_with_entity(entity), write_related=writer, cache=_cache_miss())
     await svc.enrich_entity("e1")
@@ -228,7 +229,7 @@ def test_default_writer_creates_node_and_edge():
     svc._default_write_related(
         {"id": "e1"},
         [RelatedEntity(name="1.2.3.4", entity_type="IPAddress", rel_type="RESOLVES_TO")],
-        "test-p",
+        tp("p"),
     )
     store.create_entity.assert_called_once()
     store.create_relationship.assert_called_once()
@@ -249,7 +250,7 @@ def test_default_writer_dedupes_by_exact_name():
     svc._default_write_related(
         {"id": "e1"},
         [RelatedEntity(name="Russia", entity_type="Location", rel_type="BELONGS_TO")],
-        "test-p",
+        tp("p"),
     )
     store.create_entity.assert_not_called()
     rel = store.create_relationship.call_args[0][0]
@@ -261,7 +262,7 @@ async def test_store_write_failure_is_isolated():
     # out of enrich_entity — the provider is marked error, the call returns.
     register_provider(_PropProvider)
     store = _store_with_entity(
-        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": tp("p")}
     )
     store.update_entity = MagicMock(side_effect=RuntimeError("neo4j down"))
     svc = EnrichmentService(store, write_related=MagicMock(), cache=_cache_miss())
@@ -281,7 +282,7 @@ async def test_enrich_only_filters_to_named_providers():
 
     register_provider(_Other)
     store = _store_with_entity(
-        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": tp("p")}
     )
     svc = EnrichmentService(store, write_related=MagicMock(), cache=_cache_miss())
     out = await svc.enrich_entity("e1", only={"propprov"})
@@ -292,7 +293,7 @@ async def test_enrich_only_filters_to_named_providers():
 async def test_enrich_bypass_cache_skips_cache_get():
     register_provider(_PropProvider)
     store = _store_with_entity(
-        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": tp("p")}
     )
     cache = MagicMock()
     cache.get = AsyncMock(return_value={"properties": {"asn": "AS-CACHED"}})
@@ -316,7 +317,7 @@ async def test_investigate_bounded_by_overall_budget(monkeypatch):
     register_provider(_SlowProvider)
     monkeypatch.setattr(EnrichmentService, "OVERALL_BUDGET_S", 0.05)
     store = _store_with_entity(
-        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": tp("p")}
     )
     svc = EnrichmentService(store, write_related=MagicMock(), cache=_cache_miss())
     out = await svc.enrich_entity("e1")
@@ -336,7 +337,7 @@ async def test_apply_strips_protected_identity_keys():
 
     register_provider(_EvilProvider)
     store = _store_with_entity(
-        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": tp("p")}
     )
     svc = EnrichmentService(store, write_related=MagicMock(), cache=_cache_miss())
     await svc.enrich_entity("e1")
@@ -363,7 +364,7 @@ async def test_rate_limit_is_shared_across_service_instances():
             return EnrichmentResult(properties={"x": 1})
 
     register_provider(_QuotaProvider)
-    entity = {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+    entity = {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": tp("p")}
 
     first = EnrichmentService(_store_with_entity(entity), write_related=MagicMock(), cache=_cache_miss())
     await first.enrich_entity("e1")  # spends the only token
@@ -409,7 +410,7 @@ async def test_named_vulnerability_uses_its_cve_id_property(monkeypatch):
     # cached for a day.
     entity = {
         "id": "v1", "name": "Log4Shell", "entity_type": "Vulnerability",
-        "project_id": "test-p", "cve_id": "CVE-2021-44228",
+        "project_id": tp("p"), "cve_id": "CVE-2021-44228",
     }
     svc, store, cache, _ = _kev_service(
         monkeypatch, entity, [{"cveID": "CVE-2021-44228", "dateAdded": "2021-12-10"}],
@@ -424,7 +425,7 @@ async def test_named_vulnerability_uses_its_cve_id_property(monkeypatch):
 
 
 async def test_vulnerability_without_a_cve_id_asserts_nothing(monkeypatch):
-    entity = {"id": "v1", "name": "Log4Shell", "entity_type": "Vulnerability", "project_id": "test-p"}
+    entity = {"id": "v1", "name": "Log4Shell", "entity_type": "Vulnerability", "project_id": tp("p")}
     svc, store, cache, client = _kev_service(
         monkeypatch, entity, [{"cveID": "CVE-2021-44228", "dateAdded": "2021-12-10"}],
     )
@@ -494,7 +495,7 @@ async def test_graph_store_calls_run_off_the_event_loop():
 
     register_provider(_RelProvider)
     store = _ThreadRecordingStore(
-        {"id": "e1", "name": "evil.com", "entity_type": "Domain", "project_id": "test-p"}
+        {"id": "e1", "name": "evil.com", "entity_type": "Domain", "project_id": tp("p")}
     )
     out = await EnrichmentService(store, cache=_cache_miss()).enrich_entity("e1")
 
@@ -508,7 +509,7 @@ async def test_graph_store_calls_run_off_the_event_loop():
 async def test_cache_hit_apply_runs_off_the_event_loop():
     register_provider(_PropProvider)
     store = _ThreadRecordingStore(
-        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": tp("p")}
     )
     cache = MagicMock()
     cache.get = AsyncMock(return_value={"properties": {"asn": "AS1"}, "related": []})
@@ -537,9 +538,9 @@ def test_default_writer_passes_project_id_on_the_relationship(monkeypatch):
     EnrichmentService(store, cache=_cache_miss())._default_write_related(
         {"id": "e1"},
         [RelatedEntity(name="1.2.3.4", entity_type="IPAddress", rel_type="RESOLVES_TO")],
-        "test-p",
+        tp("p"),
     )
-    assert captured and captured[0]["project_id"] == "test-p"
+    assert captured and captured[0]["project_id"] == tp("p")
 
 
 async def test_geoip_over_tor_is_reported_skipped_and_writes_nothing(monkeypatch):
@@ -551,7 +552,7 @@ async def test_geoip_over_tor_is_reported_skipped_and_writes_nothing(monkeypatch
     monkeypatch.setattr(geoip, "ProxiedClient", lambda *a, **k: client)
     register_provider(geoip.GeoIPProvider)
     store = _store_with_entity(
-        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": "test-p"}
+        {"id": "e1", "name": "8.8.8.8", "entity_type": "IPAddress", "project_id": tp("p")}
     )
     cache = _cache_miss()
     out = await EnrichmentService(store, write_related=MagicMock(), cache=cache).enrich_entity(
@@ -604,7 +605,7 @@ def _vuln_services(monkeypatch, *, in_kev: bool, nvd_severity: str):
     register_provider(kev.KEVProvider)
     register_provider(nvd.NVDProvider)
     store = _NodeStore({
-        "id": "v1", "name": "CVE-2021-44228", "entity_type": "Vulnerability", "project_id": "test-p",
+        "id": "v1", "name": "CVE-2021-44228", "entity_type": "Vulnerability", "project_id": tp("p"),
     })
     return EnrichmentService(store, write_related=MagicMock(), cache=_cache_miss()), store
 
@@ -634,7 +635,7 @@ async def test_severity_follows_cvss_when_not_known_exploited(monkeypatch):
 async def test_malformed_cve_id_property_is_not_used(monkeypatch):
     entity = {
         "id": "v1", "name": "Log4Shell", "entity_type": "Vulnerability",
-        "project_id": "test-p", "cve_id": "N/A",
+        "project_id": tp("p"), "cve_id": "N/A",
     }
     svc, store, _, _ = _kev_service(monkeypatch, entity, [])
     out = await svc.enrich_entity("v1", only={"kev"})

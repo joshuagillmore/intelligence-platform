@@ -15,8 +15,9 @@ from __future__ import annotations
 import logging
 
 from intel_platform.services.graph_builder import build_graph_from_extractions
+from tests.ids import tp
 
-PROJECT = "test-attr-validation"
+PROJECT = tp("attr-validation")
 
 ORG = {"name": "Northern Fleet", "entity_type": "Organization"}
 GERASIMOV = {"name": "Valery Gerasimov", "entity_type": "Person", "attributes": {"roles": "General"}}
@@ -76,7 +77,7 @@ def test_an_attribute_cannot_move_an_entity_to_another_project(graph_store):
     """`project_id`, `id`, `name` and `entity_type` are the build's to set, not
     the model's: an attribute named after one overwrote it."""
     ent = {"name": "Valery Gerasimov", "entity_type": "Person",
-           "attributes": {"project_id": "test-attr-elsewhere", "entity_type": "Organization"}}
+           "attributes": {"project_id": tp("attr-elsewhere"), "entity_type": "Organization"}}
     result = build_graph_from_extractions(graph_store, [ent], [], project_id=PROJECT)
     node = _node(graph_store, "Valery Gerasimov")
     assert node["project_id"] == PROJECT

@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -40,7 +41,7 @@ class TestDeleteIsScopedToReports:
         from intel_platform.models.entities import Organization
         from intel_platform.services.reports import ReportService
 
-        pid = f"test-reports-{uuid.uuid4().hex[:8]}"
+        pid = tp(f"reports-{uuid.uuid4().hex[:8]}")
         report_id = ReportService(graph_store).save_report(
             project_id=pid, title="INTSUM", content="c", report_type="INTSUM",
         )["report_id"]
@@ -65,7 +66,7 @@ class TestDeleteIsScopedToReports:
 
     def test_another_projects_report_is_not_deleted(self, graph_store):
         _pid, report_id, _org = self._seed(graph_store)
-        assert self._delete(graph_store, report_id, project_id="test-someone-else").status_code == 404
+        assert self._delete(graph_store, report_id, project_id=tp("someone-else")).status_code == 404
         assert graph_store.get_entity(report_id) is not None
 
     def test_a_report_in_its_project_is_deleted(self, graph_store):
@@ -99,7 +100,7 @@ class TestGetIsScopedToReports:
 
     def test_another_projects_report_is_404(self, graph_store):
         _pid, report_id, _org = TestDeleteIsScopedToReports._seed(graph_store)
-        assert self._get(graph_store, report_id, project_id="test-someone-else").status_code == 404
+        assert self._get(graph_store, report_id, project_id=tp("someone-else")).status_code == 404
 
     def test_a_report_in_its_project_is_returned(self, graph_store):
         pid, report_id, _org = TestDeleteIsScopedToReports._seed(graph_store)

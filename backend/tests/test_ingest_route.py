@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from intel_platform.api.app import app
 from intel_platform.api.routes import ingest as ingest_route
 from intel_platform.config import get_settings, settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -39,7 +40,7 @@ def test_ingest_text():
 # bounded like collection; blocking work runs off the event loop.
 # ---------------------------------------------------------------------------
 
-PID = "test-a10-ingest"
+PID = tp("a10-ingest")
 
 
 def _documents(graph_store) -> list[dict]:

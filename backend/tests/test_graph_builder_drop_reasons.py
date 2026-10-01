@@ -18,6 +18,7 @@ import pytest
 
 from intel_platform.config import settings
 from intel_platform.services.graph_builder import build_graph_from_extractions
+from tests.ids import tp
 
 ENTITIES = [
     {"name": "Orion Holdings", "entity_type": "Organization"},
@@ -42,7 +43,7 @@ def _rel(rel_type: str, confidence: float, target: str = "Marek Ilyas") -> dict:
 
 def _build(relationships: list[dict]) -> tuple[list, dict]:
     written, store = _store()
-    return written, build_graph_from_extractions(store, ENTITIES, relationships, project_id="test-drop-reasons")
+    return written, build_graph_from_extractions(store, ENTITIES, relationships, project_id=tp("drop-reasons"))
 
 
 @pytest.fixture(autouse=True)

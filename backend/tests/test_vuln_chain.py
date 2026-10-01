@@ -12,8 +12,12 @@ from intel_platform.graph.schema import initialize_schema
 from intel_platform.models.entities import Vulnerability
 from intel_platform.services.attack import graph_ops
 from intel_platform.services.attack import vuln_chain
+from tests.ids import tp
 
-PROJECT_ID = "test-vuln-chain"
+PROJECT_ID = tp("vuln-chain")
+
+# Shared Neo4j state (global Cwe/AttackTechnique nodes and the VulnChainMeta node): see tests/neo4j_lock.py.
+pytestmark = pytest.mark.neo4j_global
 
 # Synthetic CAPEC — namespaced (capec-3), covering: a pattern with multiple
 # related CWEs + an ATT&CK top-level technique; a pattern with a SUB-technique

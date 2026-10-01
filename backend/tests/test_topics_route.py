@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -24,7 +25,7 @@ async def test_topic_context_returns_documents(graph_store):
     from intel_platform.models.entities import Document
     from intel_platform.services.topics import TopicTreeService
 
-    project_id = "test-topic-ctx"
+    project_id = tp("topic-ctx")
 
     # Create test documents
     doc1 = Document(name="cyber_report.pdf", content="cyber attack malware phishing credential theft", project_id=project_id)

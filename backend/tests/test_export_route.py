@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -47,7 +48,7 @@ class _ExportStore:
 def _exported(names) -> list[list[str]]:
     app.dependency_overrides[get_graph_store] = lambda: _ExportStore(names)
     try:
-        body = client.get("/api/export/entities", params={"project_id": "test-a14"}, headers=headers).json()
+        body = client.get("/api/export/entities", params={"project_id": tp("a14")}, headers=headers).json()
     finally:
         app.dependency_overrides.pop(get_graph_store, None)
     return list(csv.reader(io.StringIO(body["csv"])))

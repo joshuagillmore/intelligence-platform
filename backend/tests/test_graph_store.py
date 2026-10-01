@@ -1,9 +1,10 @@
 from intel_platform.models.entities import Person, Organization, ThreatActor
 from intel_platform.models.relationships import Relationship
+from tests.ids import tp
 
 
 def test_create_and_get_entity(graph_store):
-    person = Person(name="John Doe", project_id="test-proj-1", roles=["analyst"])
+    person = Person(name="John Doe", project_id=tp("proj-1"), roles=["analyst"])
     graph_store.create_entity(person)
     result = graph_store.get_entity(person.id)
     assert result is not None
@@ -12,27 +13,27 @@ def test_create_and_get_entity(graph_store):
 
 
 def test_search_entities(graph_store):
-    p1 = Person(name="Alice Smith", project_id="test-proj-2")
-    p2 = Organization(name="Acme Corp", project_id="test-proj-2")
+    p1 = Person(name="Alice Smith", project_id=tp("proj-2"))
+    p2 = Organization(name="Acme Corp", project_id=tp("proj-2"))
     graph_store.create_entity(p1)
     graph_store.create_entity(p2)
-    results = graph_store.search_entities(project_id="test-proj-2", query="Alice")
+    results = graph_store.search_entities(project_id=tp("proj-2"), query="Alice")
     assert len(results) >= 1
     assert any(r["name"] == "Alice Smith" for r in results)
 
 
 def test_search_entities_by_type(graph_store):
-    p = Person(name="Bob Jones", project_id="test-proj-3")
-    o = Organization(name="Evil Corp", project_id="test-proj-3")
+    p = Person(name="Bob Jones", project_id=tp("proj-3"))
+    o = Organization(name="Evil Corp", project_id=tp("proj-3"))
     graph_store.create_entity(p)
     graph_store.create_entity(o)
-    results = graph_store.search_entities(project_id="test-proj-3", entity_type="Person")
+    results = graph_store.search_entities(project_id=tp("proj-3"), entity_type="Person")
     assert all(r["entity_type"] == "Person" for r in results)
 
 
 def test_create_and_get_relationship(graph_store):
-    p = Person(name="Jane Doe", project_id="test-proj-4")
-    o = Organization(name="Target Org", project_id="test-proj-4")
+    p = Person(name="Jane Doe", project_id=tp("proj-4"))
+    o = Organization(name="Target Org", project_id=tp("proj-4"))
     graph_store.create_entity(p)
     graph_store.create_entity(o)
     rel = Relationship(
@@ -46,8 +47,8 @@ def test_create_and_get_relationship(graph_store):
 
 
 def test_get_subgraph(graph_store):
-    a = ThreatActor(name="APT-99", project_id="test-proj-5")
-    b = Organization(name="Victim Org", project_id="test-proj-5")
+    a = ThreatActor(name="APT-99", project_id=tp("proj-5"))
+    b = Organization(name="Victim Org", project_id=tp("proj-5"))
     graph_store.create_entity(a)
     graph_store.create_entity(b)
     rel = Relationship(
@@ -61,14 +62,14 @@ def test_get_subgraph(graph_store):
 
 
 def test_get_full_graph(graph_store):
-    p = Person(name="Graph Test", project_id="test-proj-6")
+    p = Person(name="Graph Test", project_id=tp("proj-6"))
     graph_store.create_entity(p)
-    graph = graph_store.get_full_graph(project_id="test-proj-6")
+    graph = graph_store.get_full_graph(project_id=tp("proj-6"))
     assert graph["node_count"] >= 1
 
 
 def test_delete_entity(graph_store):
-    p = Person(name="To Delete", project_id="test-proj-7")
+    p = Person(name="To Delete", project_id=tp("proj-7"))
     graph_store.create_entity(p)
     graph_store.delete_entity(p.id)
     result = graph_store.get_entity(p.id)
@@ -99,7 +100,7 @@ def test_bookkeeping_nodes_are_not_entities(graph_store):
     from intel_platform.models.entities import Organization
     from intel_platform.services.topics import TopicTreeService
 
-    pid = "test-proj-bookkeeping"
+    pid = tp("proj-bookkeeping")
     org = Organization(name="Volt Typhoon", project_id=pid)
     graph_store.create_entity(org)
     with graph_store._driver.session() as session:

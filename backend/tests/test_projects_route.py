@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -50,7 +51,7 @@ class TestProjectListCounts:
         every project counting itself as one of its own entities. Creating a
         bare node here would leave that guard untested.
         """
-        pid = f"test-counts-{name}"
+        pid = tp(f"counts-{name}")
         with graph_store._driver.session() as session:
             session.run(
                 "CREATE (p:Project {id: $id, project_id: $id, name: $name, "

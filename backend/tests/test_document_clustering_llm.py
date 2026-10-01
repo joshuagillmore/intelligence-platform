@@ -7,6 +7,7 @@ from intel_platform.services.document_clustering import (
     build_tfidf,
     refine_labels_with_llm,
 )
+from tests.ids import tp
 
 
 def _topics_provider(provider):
@@ -90,17 +91,17 @@ def test_build_tfidf_multiple_docs():
 # ---------------------------------------------------------------------------
 
 def test_cluster_documents_empty():
-    tree, doc_map, kw_map = cluster_documents([], "test-project")
+    tree, doc_map, kw_map = cluster_documents([], tp("project"))
     assert tree is None
 
 
 def test_cluster_documents_single():
     docs = [("doc1", "Iran nuclear sanctions enforcement program")]
-    tree, doc_map, kw_map = cluster_documents(docs, "test-project")
+    tree, doc_map, kw_map = cluster_documents(docs, tp("project"))
     assert tree is not None
     assert tree["entity_type"] == "topic"
     assert tree["count"] == 1
-    assert "test-project" in doc_map
+    assert tp("project") in doc_map
 
 
 def test_cluster_documents_multiple():
@@ -110,7 +111,7 @@ def test_cluster_documents_multiple():
         ("doc3", "Iran sanctions enforcement nuclear proliferation concerns diplomatic"),
         ("doc4", "Russia Ukraine conflict military operations eastern front combat"),
     ]
-    tree, doc_map, kw_map = cluster_documents(docs, "test-project")
+    tree, doc_map, kw_map = cluster_documents(docs, tp("project"))
     assert tree is not None
     assert tree["count"] == 4
     assert tree["entity_type"] == "topic"
@@ -124,8 +125,8 @@ def test_cluster_documents_deterministic():
         ("doc2", "Russia military operations Ukraine border"),
         ("doc3", "Iran sanctions enforcement nuclear proliferation"),
     ]
-    tree1, _, _ = cluster_documents(docs, "test-project")
-    tree2, _, _ = cluster_documents(docs, "test-project")
+    tree1, _, _ = cluster_documents(docs, tp("project"))
+    tree2, _, _ = cluster_documents(docs, tp("project"))
     assert tree1["name"] == tree2["name"]
     assert tree1["count"] == tree2["count"]
 
@@ -135,10 +136,10 @@ def test_cluster_documents_doc_map_populated():
         ("doc1", "Iran nuclear program sanctions enforcement"),
         ("doc2", "Russia military operations Ukraine border"),
     ]
-    tree, doc_map, kw_map = cluster_documents(docs, "test-proj")
-    assert "test-proj" in doc_map
+    tree, doc_map, kw_map = cluster_documents(docs, tp("proj"))
+    assert tp("proj") in doc_map
     all_mapped_ids = set()
-    for ids in doc_map["test-proj"].values():
+    for ids in doc_map[tp("proj")].values():
         all_mapped_ids.update(ids)
     assert "doc1" in all_mapped_ids
     assert "doc2" in all_mapped_ids
@@ -156,7 +157,7 @@ def test_cluster_documents_produces_multiple_topics():
         ("doc4", "China expands naval operations in the South China Sea. Beijing asserts territorial claims."),
         ("doc5", "Iran sanctions enforcement involves financial institutions. Treasury department designates new entities."),
     ]
-    tree, doc_map, kw_map = cluster_documents(docs, "test-multi-topic")
+    tree, doc_map, kw_map = cluster_documents(docs, tp("multi-topic"))
     assert tree is not None
     assert tree["count"] == 5
     # Must have children — a single root with no children means degenerate clustering

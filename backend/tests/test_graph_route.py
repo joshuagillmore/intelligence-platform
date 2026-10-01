@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -82,51 +83,51 @@ class TestDisplayGraphDoesNotPoisonAnalytics:
         """`/graph?limit=1` cached a one-node graph under the project key that
         centrality, communities and statistics read for 300 s."""
         fake_store(_FakeStore([_node(1), _node(2), _node(3)], []))
-        resp = client.get("/api/graph", params={"project_id": "test-a4", "limit": 1}, headers=headers)
+        resp = client.get("/api/graph", params={"project_id": tp("a4"), "limit": 1}, headers=headers)
         assert resp.status_code == 200
-        assert "test-a4" not in graph_cache._graphs
+        assert tp("a4") not in graph_cache._graphs
 
     def test_an_existing_analytics_graph_is_not_used_for_the_display(self, fake_store):
         import networkx as nx
 
         stale = nx.DiGraph()
         stale.add_node("ghost")
-        graph_cache.get_or_build_graph("test-a4", lambda: stale)
+        graph_cache.get_or_build_graph(tp("a4"), lambda: stale)
         fake_store(_FakeStore([_node(1), _node(2)], [
             {"source_id": "n1", "target_id": "n2", "rel_type": "USES", "confidence": 0.9},
         ]))
-        data = client.get("/api/graph", params={"project_id": "test-a4"}, headers=headers).json()
+        data = client.get("/api/graph", params={"project_id": tp("a4")}, headers=headers).json()
         degrees = {n["id"]: n["degree"] for n in data["nodes"]}
         assert degrees == {"n1": 1, "n2": 1}
 
     def test_truncated_is_passed_through(self, fake_store):
         fake_store(_FakeStore([_node(1)], [], truncated=True))
-        data = client.get("/api/graph", params={"project_id": "test-a4"}, headers=headers).json()
+        data = client.get("/api/graph", params={"project_id": tp("a4")}, headers=headers).json()
         assert data["truncated"] is True
 
     def test_untruncated_is_passed_through(self, fake_store):
         fake_store(_FakeStore([_node(1)], [], truncated=False))
-        data = client.get("/api/graph", params={"project_id": "test-a4"}, headers=headers).json()
+        data = client.get("/api/graph", params={"project_id": tp("a4")}, headers=headers).json()
         assert data["truncated"] is False
 
     def test_total_nodes_is_the_projects_true_node_count(self, fake_store):
         fake_store(_FakeStore([_node(1), _node(2)], [], total=5486))
-        data = client.get("/api/graph", params={"project_id": "test-a4"}, headers=headers).json()
+        data = client.get("/api/graph", params={"project_id": tp("a4")}, headers=headers).json()
         assert data["total_nodes"] == 5486
         assert data["node_count"] == 2
 
     def test_truncated_follows_the_true_count_when_the_store_does_not_say(self, fake_store):
         fake_store(_FakeStore([_node(1), _node(2)], [], total=3))
-        data = client.get("/api/graph", params={"project_id": "test-a4"}, headers=headers).json()
+        data = client.get("/api/graph", params={"project_id": tp("a4")}, headers=headers).json()
         assert data["truncated"] is True
         fake_store(_FakeStore([_node(1), _node(2)], [], total=2))
-        data = client.get("/api/graph", params={"project_id": "test-a4"}, headers=headers).json()
+        data = client.get("/api/graph", params={"project_id": tp("a4")}, headers=headers).json()
         assert data["truncated"] is False
 
     @pytest.mark.parametrize("limit", [0, -1, 10001])
     def test_out_of_range_limits_are_rejected(self, fake_store, limit):
         store = fake_store(_FakeStore([_node(1)], []))
-        resp = client.get("/api/graph", params={"project_id": "test-a4", "limit": limit}, headers=headers)
+        resp = client.get("/api/graph", params={"project_id": tp("a4"), "limit": limit}, headers=headers)
         assert resp.status_code == 422
         assert store.calls == []
 
@@ -146,7 +147,7 @@ class TestEdgePayload:
 
     def _edges(self, fake_store, edge):
         fake_store(_FakeStore([_node(1), _node(2)], [edge]))
-        return client.get("/api/graph", params={"project_id": "test-a4"}, headers=headers).json()["edges"]
+        return client.get("/api/graph", params={"project_id": tp("a4")}, headers=headers).json()["edges"]
 
     def test_edges_carry_evidence_method_provenance_and_polarity(self, fake_store):
         (edge,) = self._edges(fake_store, self.EDGE)

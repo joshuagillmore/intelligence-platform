@@ -27,6 +27,7 @@ from sqlalchemy.exc import IntegrityError
 from intel_platform.collection import job_runner
 from intel_platform.db import jobs
 from tests.pg import make_plan, pg_factory_fixture  # noqa: F401  (the pg_factory fixture)
+from tests.ids import tp
 
 NOW = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
 
@@ -131,7 +132,7 @@ async def _row(factory, job_id):
 
 async def _insert(factory, plan_id, **kw):
     async with factory() as db:
-        job_id = await jobs.insert_job(db, plan_id=plan_id, project_id="test-wpw-jobs",
+        job_id = await jobs.insert_job(db, plan_id=plan_id, project_id=tp("wpw-jobs"),
                                        kind=kw.pop("kind", jobs.KIND_AGENTIC), **kw)
         await db.commit()
         return job_id
@@ -206,7 +207,7 @@ class TestJobRows:
     async def test_legacy_rows_are_never_claimed(self, pg_factory):
         legacy_key = uuid.uuid4()
         async with pg_factory() as db:
-            await jobs.insert_job(db, plan_id=legacy_key, project_id="test-wpw-jobs", kind=jobs.KIND_LEGACY)
+            await jobs.insert_job(db, plan_id=legacy_key, project_id=tp("wpw-jobs"), kind=jobs.KIND_LEGACY)
             await db.commit()
             assert await jobs.claim_next(db, "w") is None
 

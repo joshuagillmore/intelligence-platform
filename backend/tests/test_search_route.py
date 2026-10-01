@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from intel_platform.api.app import app
 from intel_platform.api.deps import get_graph_store
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -57,7 +58,7 @@ def store():
 
 
 def _search(**params):
-    return client.get("/api/search", params={"project_id": "test-c11", "q": "kolvane", **params}, headers=headers)
+    return client.get("/api/search", params={"project_id": tp("c11"), "q": "kolvane", **params}, headers=headers)
 
 
 def test_total_is_the_true_count_and_truncation_is_reported(store):

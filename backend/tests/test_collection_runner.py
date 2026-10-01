@@ -7,6 +7,7 @@ from intel_platform.collection.proxy import ProxyConfig
 from intel_platform.collection.runner import CollectionRunner
 from intel_platform.config import settings
 from tests.pg import PROJECT, pg_factory_fixture  # noqa: F401  (the pg_factory fixture)
+from tests.ids import tp
 
 
 @pytest.fixture(autouse=True)
@@ -136,8 +137,8 @@ PAGE ={"url": "https://news.example.org/a", "title": "A", "content": "Iran faces
 def _collection(graph_store, status="PENDING"):
     cid = f"coll-{uuid.uuid4()}"
     with graph_store._driver.session() as s:
-        s.run("CREATE (c:Collection {id: $id, project_id: 'test-legacy-runner', status: $status})",
-              id=cid, status=status)
+        s.run("CREATE (c:Collection {id: $id, project_id: $pid, status: $status})",
+              id=cid, pid=tp("legacy-runner"), status=status)
     return cid
 
 
@@ -155,7 +156,7 @@ class TestLegacyRunnerStatus:
         cid = _collection(graph_store)
         with patch("intel_platform.collection.runner.web_search", return_value=[{"url": PAGE["url"]}]), \
              patch("intel_platform.collection.runner.crawl_urls", new=AsyncMock(side_effect=RuntimeError("no chromium"))):
-            result = await CollectionRunner(graph_store).execute(cid, "test-legacy-runner", _items(2))
+            result = await CollectionRunner(graph_store).execute(cid, tp("legacy-runner"), _items(2))
 
         assert result["status"] == "FAILURE"
         assert _status(graph_store, cid) == "FAILURE"
@@ -166,7 +167,7 @@ class TestLegacyRunnerStatus:
         with patch("intel_platform.collection.runner.web_search", return_value=[{"url": PAGE["url"]}]), \
              patch("intel_platform.collection.runner.crawl_urls", new=crawl), \
              patch("intel_platform.collection.runner.extract_entities_nlp", return_value=([], [])):
-            result = await CollectionRunner(graph_store).execute(cid, "test-legacy-runner", _items(2))
+            result = await CollectionRunner(graph_store).execute(cid, tp("legacy-runner"), _items(2))
 
         assert result["status"] == "PARTIAL"
         assert _status(graph_store, cid) == "PARTIAL"
@@ -176,7 +177,7 @@ class TestLegacyRunnerStatus:
         with patch("intel_platform.collection.runner.web_search", return_value=[{"url": PAGE["url"]}]), \
              patch("intel_platform.collection.runner.crawl_urls", new=AsyncMock(return_value=[PAGE])), \
              patch("intel_platform.collection.runner.extract_entities_nlp", return_value=([], [])):
-            result = await CollectionRunner(graph_store).execute(cid, "test-legacy-runner", _items(1))
+            result = await CollectionRunner(graph_store).execute(cid, tp("legacy-runner"), _items(1))
 
         assert result["status"] == "SUCCESS"
         assert _status(graph_store, cid) == "SUCCESS"
@@ -199,7 +200,7 @@ class TestLegacyRunnerStatus:
         with patch("intel_platform.collection.runner.web_search", side_effect=search), \
              patch("intel_platform.collection.runner.crawl_urls", new=crawl_then_cancel), \
              patch("intel_platform.collection.runner.extract_entities_nlp", return_value=([], [])):
-            result = await CollectionRunner(graph_store).execute(cid, "test-legacy-runner", _items(3))
+            result = await CollectionRunner(graph_store).execute(cid, tp("legacy-runner"), _items(3))
 
         assert searched == ["item 0"], "items after the cancel still ran"
         assert result["status"] == "REVOKED"
@@ -215,7 +216,7 @@ class TestLegacyRunnerStatus:
                    side_effect=lambda *a, **kw: searched.append(1) or [{"url": PAGE["url"]}]), \
              patch("intel_platform.collection.runner.crawl_urls", new=AsyncMock(return_value=[PAGE])), \
              patch("intel_platform.collection.runner.extract_entities_nlp", return_value=([], [])):
-            result = await CollectionRunner(graph_store).execute(cid, "test-legacy-runner", _items(1))
+            result = await CollectionRunner(graph_store).execute(cid, tp("legacy-runner"), _items(1))
 
         assert searched == []
         assert result["status"] == "REVOKED"
@@ -245,7 +246,7 @@ class TestLegacyRunnerStatus:
         with patch("intel_platform.collection.runner.web_search", side_effect=search), \
              patch("intel_platform.collection.runner.crawl_urls", new=AsyncMock(return_value=[PAGE])), \
              patch("intel_platform.collection.runner.extract_entities_nlp", side_effect=nlp):
-            await CollectionRunner(graph_store).execute(cid, "test-legacy-runner", _items(1))
+            await CollectionRunner(graph_store).execute(cid, tp("legacy-runner"), _items(1))
 
         main = threading.main_thread()
         assert threads["search"] is not main, "web_search sleeps on rate limits"
@@ -267,7 +268,7 @@ class TestLegacyRunnerStatus:
         with patch("intel_platform.collection.runner.web_search", return_value=[{"url": PAGE["url"]}]), \
              patch("intel_platform.collection.runner.crawl_urls", new=AsyncMock(return_value=[long_page])), \
              patch("intel_platform.collection.runner.extract_entities_nlp", return_value=([], [])):
-            await CollectionRunner(graph_store).execute(cid, "test-legacy-runner", _items(1))
+            await CollectionRunner(graph_store).execute(cid, tp("legacy-runner"), _items(1))
 
         assert len(stored[0].content) <= 100
 

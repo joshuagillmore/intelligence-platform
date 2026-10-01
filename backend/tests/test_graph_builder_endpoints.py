@@ -7,8 +7,9 @@ while every edge naming `**Yi Peng 3**` was dropped as "never extracted".
 from __future__ import annotations
 
 from intel_platform.services.graph_builder import build_graph_from_extractions
+from tests.ids import tp
 
-PROJECT = "test-builder-endpoints"
+PROJECT = tp("builder-endpoints")
 
 YI_PENG = {"name": "**Yi Peng 3**", "entity_type": "Ship"}
 BALTIC = {"name": "Baltic Sea", "entity_type": "Location"}

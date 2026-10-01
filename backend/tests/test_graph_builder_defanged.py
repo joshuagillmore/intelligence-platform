@@ -16,6 +16,7 @@ import pytest
 from intel_platform.services.graph_builder import (
     _host_of, _is_malformed_host, _is_web_chrome, build_graph_from_extractions,
 )
+from tests.ids import tp
 
 DEFANGED = ["evil-c2[.]com", "hxxp://evil[.]com/x", "https://cdn[.]example[.]org/a.js"]
 
@@ -47,7 +48,7 @@ def test_a_build_with_a_defanged_domain_completes():
         create_relationship=lambda rel: {},
     )
     result = build_graph_from_extractions(
-        store, [{"name": "evil-c2[.]com", "entity_type": "Domain"}], [], project_id="test-defanged",
+        store, [{"name": "evil-c2[.]com", "entity_type": "Domain"}], [], project_id=tp("defanged"),
     )
     assert result["entities_created"] == 1
     assert [e.name for e in created] == ["evil-c2[.]com"]

@@ -2,6 +2,8 @@ import os
 import pytest
 from neo4j import GraphDatabase
 
+from tests.ids import TEST_RUN
+
 # Connection targets stay `setdefault` — CI and docker-compose legitimately
 # point the suite at a different Neo4j, and overriding those would break them.
 os.environ.setdefault("NEO4J_URI", "bolt://localhost:7687")
@@ -68,7 +70,9 @@ def neo4j_driver():
     )
     yield driver
     with driver.session() as session:
-        session.run("MATCH (n) WHERE n.project_id STARTS WITH 'test-' DETACH DELETE n")
+        # Only this run's prefix (tests/ids.py): a second suite on the same Neo4j
+        # keeps its fixtures.
+        session.run("MATCH (n) WHERE n.project_id STARTS WITH $prefix DETACH DELETE n", prefix=TEST_RUN)
     driver.close()
 
 
@@ -77,3 +81,23 @@ def graph_store(neo4j_driver):
     from intel_platform.graph.store import GraphStore
     store = GraphStore(neo4j_driver)
     return store
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "neo4j_global: the module writes Neo4j state no project id scopes (reference catalogues, "
+        "schema constraints, database-wide backfills); concurrent suites take turns through it",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _neo4j_global_state(request):
+    """Serialise `neo4j_global` tests across suites sharing this Neo4j (tests/neo4j_lock.py)."""
+    if request.node.get_closest_marker("neo4j_global") is None:
+        yield
+        return
+    from tests.neo4j_lock import neo4j_global_lock
+
+    with neo4j_global_lock(os.environ["NEO4J_URI"]):
+        yield

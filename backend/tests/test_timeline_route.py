@@ -10,6 +10,7 @@ from intel_platform.api.app import app
 from intel_platform.api.deps import get_graph_store
 from intel_platform.api.routes import timeline as timeline_routes
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -116,7 +117,7 @@ def test_histogram_shape():
 def dated_project(graph_store):
     from intel_platform.models.entities import Event, Organization, ThreatActor
 
-    pid = f"test-timeline-{uuid.uuid4().hex[:8]}"
+    pid = tp(f"timeline-{uuid.uuid4().hex[:8]}")
     utc = timezone.utc
     graph_store.create_entity(Event(name="Aardvark incident", project_id=pid,
                                     event_datetime=datetime(2020, 5, 1, tzinfo=utc)))

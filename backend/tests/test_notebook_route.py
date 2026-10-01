@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -29,7 +30,7 @@ import pytest  # noqa: E402
 
 from intel_platform.models.entities import Person, Report  # noqa: E402
 
-PID = "test-a18-notebook"
+PID = tp("a18-notebook")
 
 
 def _note(**overrides):

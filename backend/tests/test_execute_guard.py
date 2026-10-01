@@ -26,6 +26,7 @@ from intel_platform.api.routes import collection_plans as cp
 from intel_platform.collection import job_runner
 from intel_platform.db import jobs
 from tests.pg import make_plan, pg_factory_fixture  # noqa: F401  (the pg_factory fixture)
+from tests.ids import tp
 
 
 def ev(event: str, ago_seconds: int = 0):
@@ -44,7 +45,7 @@ def queue_only(monkeypatch):
 
 async def _job_in(factory, pid, status, *, heartbeat_ago=0):
     async with factory() as db:
-        job_id = await jobs.insert_job(db, plan_id=pid, project_id="test-wpw-jobs", kind=jobs.KIND_AGENTIC,
+        job_id = await jobs.insert_job(db, plan_id=pid, project_id=tp("wpw-jobs"), kind=jobs.KIND_AGENTIC,
                                        claimed_by="worker:t:1")
         await db.execute(text(
             "UPDATE collection_jobs SET status = :st, heartbeat_at = now() - make_interval(secs => :ago), "

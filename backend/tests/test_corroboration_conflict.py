@@ -9,11 +9,12 @@ import pytest
 
 from intel_platform.models.entities import Organization
 from intel_platform.models.relationships import Relationship
+from tests.ids import tp
 
 
 @pytest.fixture
 def pair(graph_store):
-    pid = f"test-conflict-{uuid.uuid4().hex[:8]}"
+    pid = tp(f"conflict-{uuid.uuid4().hex[:8]}")
     a = Organization(name="Actor A", project_id=pid)
     b = Organization(name="Vessel B", project_id=pid)
     graph_store.create_entity(a)

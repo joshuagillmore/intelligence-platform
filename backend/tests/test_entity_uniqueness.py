@@ -24,8 +24,12 @@ from intel_platform.models.entities import (
 )
 from intel_platform.models.relationships import Relationship
 from intel_platform.services.graph_builder import build_graph_from_extractions
+from tests.ids import tp
 
-PROJECT = "test-entity-uniqueness"
+PROJECT = tp("entity-uniqueness")
+
+# Shared Neo4j state (drops the entity name key; database-wide ensure_normalized_names counts): see tests/neo4j_lock.py.
+pytestmark = pytest.mark.neo4j_global
 
 
 @pytest.fixture

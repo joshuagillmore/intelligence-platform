@@ -23,10 +23,11 @@ from sqlalchemy.pool import NullPool
 
 from intel_platform.db import jobs as _jobs  # noqa: F401  (registers collection_jobs on Base.metadata)
 from intel_platform.db.models import Base, CollectionPlan
+from tests.ids import tp
 
-# Every plan a test here creates uses this project id prefix, so teardown can
-# remove exactly what the tests made.
-PROJECT = "test-wpw-jobs"
+# Every plan a test here creates uses this project id prefix (per run), so teardown
+# can remove exactly what this run made.
+PROJECT = tp("wpw-jobs")
 
 
 def postgres_url() -> str:
