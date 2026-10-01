@@ -306,10 +306,23 @@ async def generate_report(
 
 
 @router.get("/reports/{report_id}")
-def get_report(report_id: str, store: GraphStore = Depends(get_graph_store)):
+def get_report(
+    report_id: str,
+    project_id: str | None = None,
+    store: GraphStore = Depends(get_graph_store),
+):
+    """A saved report. Only a Report node, and only in `project_id` when given.
+
+    It used to return whatever node carried the id — an entity, a Document,
+    another project's report. Scoped as DELETE is; `project_id` stays optional
+    so existing clients keep working, and a client that passes it can no longer
+    be handed another project's report.
+    """
     svc = ReportService(store)
     report = svc.get_report(report_id)
-    if not report:
+    if not report or report.get("entity_type") != "Report":
+        raise HTTPException(status_code=404, detail="Report not found")
+    if project_id is not None and report.get("project_id") != project_id:
         raise HTTPException(status_code=404, detail="Report not found")
     return report
 

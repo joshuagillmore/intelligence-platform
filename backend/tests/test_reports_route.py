@@ -76,3 +76,38 @@ class TestDeleteIsScopedToReports:
 
     def test_an_unknown_id_is_404_not_deleted(self, graph_store):
         assert self._delete(graph_store, "no-such-report").status_code == 404
+
+
+class TestGetIsScopedToReports:
+    """Low -> R: `GET /reports/{id}` returned any node by id — an entity, a
+    Document, another project's report. Scoped like DELETE: only a Report, and
+    only in `project_id` when given."""
+
+    @staticmethod
+    def _get(graph_store, node_id, **params):
+        from intel_platform.api.deps import get_graph_store
+
+        app.dependency_overrides[get_graph_store] = lambda: graph_store
+        try:
+            return client.get(f"/api/reports/{node_id}", params=params, headers=headers)
+        finally:
+            app.dependency_overrides.pop(get_graph_store, None)
+
+    def test_a_non_report_node_is_404(self, graph_store):
+        _pid, _report_id, org_id = TestDeleteIsScopedToReports._seed(graph_store)
+        assert self._get(graph_store, org_id).status_code == 404
+
+    def test_another_projects_report_is_404(self, graph_store):
+        _pid, report_id, _org = TestDeleteIsScopedToReports._seed(graph_store)
+        assert self._get(graph_store, report_id, project_id="test-someone-else").status_code == 404
+
+    def test_a_report_in_its_project_is_returned(self, graph_store):
+        pid, report_id, _org = TestDeleteIsScopedToReports._seed(graph_store)
+        resp = self._get(graph_store, report_id, project_id=pid)
+        assert resp.status_code == 200
+        assert resp.json()["id"] == report_id
+        assert resp.json()["entity_type"] == "Report"
+
+    def test_without_a_project_a_report_is_still_returned(self, graph_store):
+        _pid, report_id, _org = TestDeleteIsScopedToReports._seed(graph_store)
+        assert self._get(graph_store, report_id).status_code == 200
