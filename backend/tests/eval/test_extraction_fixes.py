@@ -412,6 +412,34 @@ def test_the_prompt_examples_are_not_taken_from_the_eval_corpus():
     assert not leaked, leaked
 
 
+async def test_a_defanged_indicator_from_the_model_leaves_extraction_refanged():
+    """Cohere returned "evil-c2[.]com" as written; graph_builder's host check
+    raises on the bracket, and the whole build failed."""
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    reply = {
+        "entities": [{"name": "Volt Typhoon", "entity_type": "ThreatActor", "confidence": 0.9},
+                     {"name": "evil-c2[.]com", "entity_type": "Domain", "confidence": 0.9}],
+        "relationships": [{"source_entity": "Volt Typhoon", "target_entity": "evil-c2[.]com",
+                           "relationship_type": "COMMUNICATES_WITH", "confidence": 0.8}],
+    }
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        ents, rels = await extraction.extract_entities_llm(DOC_1, "doc-fix")
+    domain = next(e for e in ents if e["entity_type"] == "Domain")
+    assert domain["name"] == "evil-c2.com"
+    assert "evil-c2[.]com" in domain["aliases"]
+    assert [(r["source_name"], r["target_name"]) for r in rels] == [("Volt Typhoon", "evil-c2.com")]
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}

@@ -964,6 +964,36 @@ def _drop_model_sourcing(entities: list[dict], raw_text: str) -> list[dict]:
     return kept
 
 
+_INDICATOR_TYPES = frozenset({"Domain", "URL", "IPAddress", "EmailAddress"})
+
+
+def _refang_model_indicators(entities: list[dict], relationships: list[dict]) -> None:
+    """Store a model-returned indicator under its canonical, refanged value.
+
+    The model returns "evil-c2[.]com" as the text wrote it. The regex pass
+    stores "evil-c2.com", so the two never merged; and graph_builder's host
+    check raised on the bracket, failing the whole build. The written form is
+    kept as an alias and the relationships are renamed with it.
+    """
+    renamed: dict[str, str] = {}
+    for e in entities:
+        if e.get("entity_type") not in _INDICATOR_TYPES:
+            continue
+        name = e.get("name") or ""
+        canonical = refang(name).strip()
+        if canonical and canonical != name:
+            renamed[name] = canonical
+            e["name"] = canonical
+            aliases = list(e.get("aliases") or [])
+            if name not in aliases:
+                aliases.append(name)
+            e["aliases"] = aliases
+    if renamed:
+        for r in relationships:
+            r["source_name"] = renamed.get(r.get("source_name"), r.get("source_name"))
+            r["target_name"] = renamed.get(r.get("target_name"), r.get("target_name"))
+
+
 def _extract_cyber_entities(text: str, doc_id: str, raw_text: str | None = None) -> list[dict]:
     """Extract cyber-specific entities using regex patterns.
 
@@ -1945,6 +1975,7 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
     # The same provenance rule the regex pass applies (G-8): a citation link
     # is not an indicator because the model, rather than a regex, read it.
     entities = _drop_model_sourcing(entities, text)
+    _refang_model_indicators(entities, relationships)
     entities, relationships = _drop_undatable_dates(entities, relationships)
     _apply_vessel_hints(_apply_type_hints(entities), text)
     _link_event_dates(entities, relationships)
