@@ -16,6 +16,7 @@ import json
 from neo4j import GraphDatabase
 
 from intel_platform.config import settings
+from intel_platform.graph.schema import ENTITY_LABEL
 
 PROJECT_ID = "demo-sentinel"
 PROJECT_NAME = "SENTINEL Demo"
@@ -107,7 +108,11 @@ def seed(driver) -> dict:
                 "first_seen": "2026-01-15", "created_at": "2026-01-15T00:00:00Z",
                 **extra,
             }
-            session.run(f"CREATE (n:{label} $props)", props=props)
+            # The shared :Entity label is what the store's project scans match
+            # on (bookkeeping nodes such as Watchlist never carry it). Without
+            # it, seeded entities are invisible to every view until the next
+            # app start backfills the label — which CI never does.
+            session.run(f"CREATE (n:{label}:{ENTITY_LABEL} $props)", props=props)
         for src, rtype, tgt in _RELS:
             session.run(
                 "MATCH (a {id: $src}), (b {id: $tgt}) "
