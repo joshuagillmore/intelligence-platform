@@ -399,16 +399,12 @@ class TopicTreeService:
         }
         for doc in documents:
             doc_id = doc.get("id", "")
-            rels = self._store.get_relationships(doc_id)
-            related = []
-            for rel in rels:
-                target = self._store.get_entity(rel.get("neighbor_id") or rel.get("target_id", ""))
-                if target and target.get("entity_type") != "Document":
-                    related.append({
-                        "id": target.get("id", ""),
-                        "name": target.get("name", ""),
-                        "entity_type": target.get("entity_type", ""),
-                    })
+            # Document -> entity provenance is the MENTIONS edge, which the
+            # relationship reads deliberately hide (it is not an analytic link).
+            related = [
+                {"id": e.get("id", ""), "name": e.get("name", ""), "entity_type": e.get("entity_type", "")}
+                for e in self._store.entities_mentioned_in(doc_id, doc.get("project_id", ""))
+            ]
             branch["children"].append({
                 "name": doc.get("name", "Unknown"),
                 "id": doc_id,
@@ -803,21 +799,19 @@ class TopicTreeService:
                             "name": doc.get("name") or "",
                             "content": full_content[:3000],
                         })
-                    # Find entities extracted from this document
-                    rels = self._store.get_relationships(doc_id)
-                    for rel in rels:
-                        target = self._store.get_entity(rel.get("neighbor_id") or rel.get("target_id", ""))
-                        if target and target.get("entity_type") != "Document":
-                            eid = target.get("id", "")
-                            if eid not in seen_entity_ids:
-                                seen_entity_ids.add(eid)
-                                connected_entities.append({
-                                    "id": eid,
-                                    "name": target.get("name"),
-                                    "entity_type": target.get("entity_type"),
-                                    "rel_type": rel.get("rel_type", "ASSOCIATED_WITH"),
-                                    "confidence": rel.get("confidence"),
-                                })
+                    # Entities extracted from this document: the MENTIONS edge
+                    # is the provenance record (hidden from relationship reads).
+                    for mentioned in self._store.entities_mentioned_in(doc_id, project_id):
+                        eid = mentioned.get("id", "")
+                        if eid and eid not in seen_entity_ids:
+                            seen_entity_ids.add(eid)
+                            connected_entities.append({
+                                "id": eid,
+                                "name": mentioned.get("name"),
+                                "entity_type": mentioned.get("entity_type"),
+                                "rel_type": "MENTIONED_IN",
+                                "confidence": None,
+                            })
 
             # Sort documents by relevance score (most keyword matches first)
             documents.sort(key=lambda d: d.get("relevance_score", 0), reverse=True)
@@ -841,6 +835,24 @@ class TopicTreeService:
 
         documents = []
         connected = []
+        # The documents that mention this entity come from the MENTIONS edges,
+        # which relationship reads hide; the analytic links below do not
+        # include them.
+        mentioning, _total = self._store.documents_mentioning(
+            entity_id, entity.get("project_id", ""), limit=20,
+        )
+        for doc_row in mentioning:
+            doc_id = doc_row.get("id", "")
+            if not doc_id or doc_id in seen_doc_ids:
+                continue
+            seen_doc_ids.add(doc_id)
+            full = self._store.get_entity(doc_id) or {}
+            documents.append({
+                "id": doc_id,
+                "name": doc_row.get("name") or full.get("name"),
+                "reliability_rating": full.get("reliability_rating", ""),
+                "content_preview": (full.get("content", "") or "")[:500],
+            })
         for rel in relationships:
             target_id = rel.get("neighbor_id") or rel.get("target_id", "")
             target = self._store.get_entity(target_id)

@@ -532,6 +532,50 @@
         "title": "EnrichmentConfigRequest",
         "type": "object"
       },
+      "EntityDocumentsResponse": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/MentioningDocument"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "documents",
+          "count",
+          "total"
+        ],
+        "title": "EntityDocumentsResponse",
+        "type": "object"
+      },
+      "EvidencePassage": {
+        "properties": {
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "offset"
+        ],
+        "title": "EvidencePassage",
+        "type": "object"
+      },
       "ExecuteRequest": {
         "properties": {
           "max_results_per_source": {
@@ -957,6 +1001,47 @@
           "password"
         ],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "MentioningDocument": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mention_count": {
+            "title": "Mention Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "passages": {
+            "items": {
+              "$ref": "#/components/schemas/EvidencePassage"
+            },
+            "title": "Passages",
+            "type": "array"
+          },
+          "source_doc_id": {
+            "title": "Source Doc Id",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "url",
+          "source_doc_id",
+          "mention_count",
+          "passages"
+        ],
+        "title": "MentioningDocument",
         "type": "object"
       },
       "MergeEntitiesRequest": {
@@ -5683,7 +5768,7 @@
     },
     "/api/entities/merge": {
       "post": {
-        "description": "Merge entities into the primary, moving every edge as it was.\n\nEach edge keeps its direction, type and properties (evidence, provenance,\npolarity). An entity is deleted only once every one of its edges has been\nrecreated on the primary; otherwise it is kept, and the response says so —\ndeleting it anyway is how edges used to disappear behind a success message.",
+        "description": "Merge entities into the primary, moving every edge as it was.\n\nEach edge keeps its direction, type and properties (evidence, provenance,\npolarity), and the documents that mention a merged entity move to the\nprimary. An entity is deleted only once every one of its edges has been\nrecreated on the primary; otherwise it is kept, and the response says so —\ndeleting it anyway is how edges used to disappear behind a success message.",
         "operationId": "merge_entities_api_entities_merge_post",
         "requestBody": {
           "content": {
@@ -5823,6 +5908,77 @@
         "summary": "Create Assessment",
         "tags": [
           "assess"
+        ]
+      }
+    },
+    "/api/entities/{entity_id}/documents": {
+      "get": {
+        "description": "The documents that mention an entity, with evidence passages: its evidence chain.\n\nOne call, from the entity's MENTIONS edges, in its own project; the\nnetwork page used to request evidence document by document. Most-\nmentioning documents first. Each carries up to PASSAGES_PER_DOCUMENT\npassages around the entity's name — matched exactly first, then ignoring\ncase, since reporting does not keep an extractor's capitalisation.\n`count` is this page, `total` every document that mentions the entity.",
+        "operationId": "get_entity_documents_api_entities__entity_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entity_id",
+            "required": true,
+            "schema": {
+              "title": "Entity Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntityDocumentsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Entity Documents",
+        "tags": [
+          "entities"
         ]
       }
     },
