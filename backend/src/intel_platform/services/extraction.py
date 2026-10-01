@@ -1071,16 +1071,40 @@ def _strip_determiner(name: str) -> str:
     return _LEADING_DETERMINER.sub("", name).strip()
 
 
+# Below this length a name is matched with its case: "US" must not match "us".
+_CASELESS_MIN = 4
+
+
+def _name_pattern(name: str) -> re.Pattern:
+    flags = re.IGNORECASE if len(name) >= _CASELESS_MIN else 0
+    return re.compile(r"(?<!\w)" + re.escape(name) + r"(?!\w)", flags)
+
+
 def _mention_spans(sent_text: str, entities: list[dict]) -> list[tuple[int, int, dict]]:
-    """Where each entity is mentioned in the sentence, as (start, end, entity)."""
+    """Where each entity is mentioned in the sentence, as (start, end, entity).
+
+    Case-insensitive for names of four characters or more: reporting writes a
+    name in lower case mid-sentence ("shows that hallgrim (A-425) arrives
+    Torvik") and the entity extracted from its capitalised mention elsewhere is
+    still the one meant.
+    """
     spans = []
     for e in entities:
         name = e.get("name") or ""
         if not name:
             continue
-        for m in re.finditer(r"(?<!\w)" + re.escape(name) + r"(?!\w)", sent_text):
+        for m in _name_pattern(name).finditer(sent_text):
             spans.append((m.start(), m.end(), e))
     return spans
+
+
+def _entity_at(token, sent, spans: list[tuple[int, int, dict]]) -> dict | None:
+    """The entity whose mention contains this token, or None."""
+    offset = token.idx - sent.start_char
+    containing = [s for s in spans if s[0] <= offset < s[1]]
+    if containing:
+        return max(containing, key=lambda s: s[1] - s[0])[2]
+    return None
 
 
 def _entity_for_token(token, sent, spans: list[tuple[int, int, dict]]) -> dict | None:
@@ -1090,17 +1114,145 @@ def _entity_for_token(token, sent, spans: list[tuple[int, int, dict]]) -> dict |
     Intelligence Service"), or head a phrase containing one ("Hackers from
     APT29", "by APT29"). Substring tests are not enough: ``"it" in "Citrix"``
     bound a pronoun subject to Citrix.
+
+    When the phrase holds several, a named threat actor is the one meant: in
+    "The People's Republic of China state-sponsored cyber actor known as Volt
+    Typhoon", the actor is Volt Typhoon, not the country it is attributed to.
     """
-    offset = token.idx - sent.start_char
-    containing = [s for s in spans if s[0] <= offset < s[1]]
-    if containing:
-        return max(containing, key=lambda s: s[1] - s[0])[2]
+    found = _entity_at(token, sent, spans)
+    if found is not None:
+        return found
     lo = token.left_edge.idx - sent.start_char
     hi = token.right_edge.idx + len(token.right_edge.text) - sent.start_char
-    inside = [s for s in spans if lo <= s[0] and s[1] <= hi]
-    if inside:
-        return min(inside, key=lambda s: s[0])[2]
+    inside = sorted((s for s in spans if lo <= s[0] and s[1] <= hi), key=lambda s: s[0])
+    if not inside:
+        return None
+    actors = [s for s in inside if s[2].get("entity_type") == "ThreatActor"]
+    return (actors or inside)[0][2]
+
+
+# Nouns a report uses to refer back to the actor it is about: "Microsoft
+# reported the group used ... CVE-2023-27997". Resolved only to a ThreatActor
+# named earlier in the same text, and only with a definite determiner.
+_ACTOR_ANAPHORS = frozenset({"group", "actor", "attacker", "adversary", "operator", "intruder"})
+
+# For a verb with no direct object, the prepositions that carry its relation:
+# "attributed to China", "relies on netsh", "berth at quay 4". Any other
+# preposition ("targeted ... in 2023") is circumstance, not the object.
+_REL_PREPOSITIONS = {
+    "ATTRIBUTED_TO": frozenset({"to"}),
+    "BELONGS_TO": frozenset({"to"}),
+    "LOCATED_AT": frozenset({"at", "in", "near"}),
+    "DEPLOYED_AT": frozenset({"at", "in", "to"}),
+    "COMMUNICATES_WITH": frozenset({"with"}),
+    "USES": frozenset({"on"}),
+    "TARGETS": frozenset({"against", "on"}),
+}
+
+
+def _phrase_entities(token, sent, spans: list[tuple[int, int, dict]]) -> list[dict]:
+    """The entities a noun phrase names, in the order the parse gives them.
+
+    For the head and each conjunct: the entity it is part of, else an
+    appositive ("the Fortinet vulnerability CVE-2023-27997" names the CVE, not
+    the vendor), else a modifier ("built-in Windows tools"). Only when none of
+    those names anything does the whole phrase count, and then a list inside it
+    ("techniques including netsh, ntdsutil and wmic") yields every member.
+    """
+    found: list[dict] = []
+    for head in (token, *token.conjuncts):
+        ent = _entity_at(head, sent, spans)
+        for deps in (("appos",), ("compound", "amod", "nmod")):
+            if ent is not None:
+                break
+            for child in head.children:
+                if child.dep_ in deps:
+                    ent = _entity_at(child, sent, spans)
+                    if ent is not None:
+                        break
+        if ent is not None and ent not in found:
+            found.append(ent)
+    if found:
+        return found
+    first = _entity_for_token(token, sent, spans)
+    if first is None:
+        return []
+    found.append(first)
+    for t in token.subtree:
+        if _entity_at(t, sent, spans) is first:
+            for conj in t.conjuncts:
+                other = _entity_at(conj, sent, spans)
+                if other is not None and other not in found:
+                    found.append(other)
+            break
+    return found
+
+
+def _verb_subject(token, sent, spans, resolve_anaphor, depth: int = 0) -> dict | None:
+    """The entity acting as this verb's subject, or None.
+
+    Beyond an explicit subject: a participle modifying a noun takes that noun
+    ("Volt Typhoon, a ... actor attributed to China"), and a coordinated or
+    adverbial verb shares its head verb's subject ("The group avoided malware,
+    instead abusing built-in Windows tools").
+    """
+    subject_children = [c for c in token.children if c.dep_ in ("nsubj", "nsubjpass", "agent")]
+    for child in subject_children:
+        ent = _entity_for_token(child, sent, spans)
+        if ent is not None:
+            return ent
+    if subject_children:
+        return resolve_anaphor(subject_children[0])
+    if token.dep_ in ("acl", "relcl"):
+        head = token.head
+        ent = _entity_at(head, sent, spans)
+        if ent is None and head.dep_ == "appos":
+            ent = _entity_at(head.head, sent, spans)
+        return ent
+    if depth < 3 and token.dep_ in ("conj", "advcl", "xcomp") and token.head.pos_ in ("VERB", "AUX"):
+        return _verb_subject(token.head, sent, spans, resolve_anaphor, depth + 1)
     return None
+
+
+# When the direct object names nothing, where it was can still be the target:
+# "has compromised critical infrastructure networks in Guam".
+_PLACE_PREPOSITIONS = frozenset({"in", "at"})
+_PLACE_RELATIONS = frozenset({"TARGETS", "LOCATED_AT", "DEPLOYED_AT"})
+
+
+def _verb_objects(token, rel_type: str, sent, spans) -> list[dict]:
+    """The entities this verb's relation points at."""
+    direct = [c for c in token.children if c.dep_ in ("dobj", "pobj", "attr")]
+    found: list[dict] = []
+    for child in direct:
+        for ent in _phrase_entities(child, sent, spans):
+            if ent not in found:
+                found.append(ent)
+    if found:
+        return found
+    if direct:
+        # "linked the campaign to ...": the object is the campaign, and the
+        # preposition says what it was linked to, not what the subject did.
+        if rel_type not in _PLACE_RELATIONS:
+            return []
+        preps = _PLACE_PREPOSITIONS
+    else:
+        preps = _REL_PREPOSITIONS.get(rel_type, frozenset())
+    for prep in token.children:
+        if prep.dep_ == "prep" and prep.lower_ in preps:
+            for pobj in prep.children:
+                if pobj.dep_ == "pobj":
+                    for ent in _phrase_entities(pobj, sent, spans):
+                        if ent not in found:
+                            found.append(ent)
+    return found
+
+
+def _refine_rel_type(rel_type: str, target: dict) -> str:
+    """Using a vulnerability is exploiting it ("used ... CVE-2023-27997")."""
+    if rel_type == "USES" and target.get("entity_type") == "Vulnerability":
+        return "EXPLOITS"
+    return rel_type
 
 
 def _postprocess_entities(entities: list[dict]) -> list[dict]:
@@ -1353,6 +1505,23 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
                 "evidence": _clean_evidence(evidence, src_name, tgt_name),
             })
 
+    # Where each threat actor is named, so "the group" can be read as the last
+    # one named before it. Nothing is resolved when no actor has been named.
+    actor_mentions = sorted(
+        ((m.start(), e)
+         for e in entities if e.get("entity_type") == "ThreatActor"
+         for m in _name_pattern(e["name"]).finditer(text)),
+        key=lambda pair: pair[0],
+    )
+
+    def _resolve_anaphor(tok) -> dict | None:
+        if tok.lemma_.lower() not in _ACTOR_ANAPHORS:
+            return None
+        if not any(c.dep_ == "det" and c.lower_ in ("the", "this", "that") for c in tok.children):
+            return None
+        earlier = [e for start, e in actor_mentions if start < tok.idx]
+        return earlier[-1] if earlier else None
+
     for sent in doc.sents:
         sent_text = sent.text
         sent_entities_list = []
@@ -1371,10 +1540,19 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             if e.get("method") == "regex" and e["name"] in sent_text and e not in sent_entities_list:
                 sent_entities_list.append(e)
 
-        mention_spans = _mention_spans(sent_text, sent_entities_list)
+        # The typed stage also sees entities spaCy did not tag in this sentence
+        # but which were extracted elsewhere in the text: its NER is not
+        # consistent across sentences, and a lower-cased "hallgrim" is still
+        # Hallgrim. The co-occurrence fallback below keeps to tagged mentions.
+        typed_candidates = list(sent_entities_list)
+        for e in entities:
+            if e not in typed_candidates and len(e["name"]) >= _CASELESS_MIN \
+                    and _name_pattern(e["name"]).search(sent_text):
+                typed_candidates.append(e)
+        mention_spans = _mention_spans(sent_text, typed_candidates)
 
         # ── Stage A: Dependency-parse relationship extraction ──
-        # Find the root verb and its subject/object via dependency labels
+        # A mapped verb, its subject and each entity it points at.
         for token in sent:
             if token.pos_ != "VERB":
                 continue
@@ -1383,18 +1561,15 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             if not rel_type_from_verb:
                 continue
 
-            # Find subject and object spans
-            subj_ent = None
-            obj_ent = None
-            for child in token.children:
-                if child.dep_ in ("nsubj", "nsubjpass", "agent") and not subj_ent:
-                    # Which entity this token refers to, by position, not substring
-                    subj_ent = _entity_for_token(child, sent, mention_spans)
-                elif child.dep_ in ("dobj", "pobj", "attr") and not obj_ent:
-                    obj_ent = _entity_for_token(child, sent, mention_spans)
-
-            if subj_ent and obj_ent and subj_ent["name"] != obj_ent["name"]:
-                _add_rel(subj_ent["name"], obj_ent["name"], rel_type_from_verb, 0.7, sent_text)
+            subj_ent = _verb_subject(token, sent, mention_spans, _resolve_anaphor)
+            if subj_ent is None:
+                continue
+            for obj_ent in _verb_objects(token, rel_type_from_verb, sent, mention_spans):
+                if obj_ent["name"] == subj_ent["name"] or obj_ent.get("entity_type") == "Date":
+                    # A date is when, not what: it is never a node to point at.
+                    continue
+                _add_rel(subj_ent["name"], obj_ent["name"],
+                         _refine_rel_type(rel_type_from_verb, obj_ent), 0.7, sent_text)
 
         # ── Stage B: Co-occurrence relationships (fallback) ──
         # Bounded to nearby entities (COOCCURRENCE_WINDOW), not the full
@@ -1417,7 +1592,14 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
                     _, parent_category = normalize_entity_type(other.get("entity_type", ""))
                     if parent_category == "Event":
                         _add_rel(other["name"], date_ent["name"], "OCCURRED_ON", 0.7, sent_text)
-                        continue
+                    # Otherwise no edge at all. Dates are not graph nodes, so a
+                    # generic edge to one is dropped at build and counted as a
+                    # loss: five of the six edges the live run built from one
+                    # document went that way. The date still dates its event
+                    # through OCCURRED_ON above.
+                    continue
+                if e1_is_date and e2_is_date:
+                    continue
                 # ASSOCIATED_WITH is noise — only emit within the window, and never
                 # on top of a pair a typed/pattern relation already links.
                 if (j - i) <= COOCCURRENCE_WINDOW and frozenset((e1["name"], e2["name"])) not in linked_pairs:
