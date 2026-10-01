@@ -1,6 +1,6 @@
 # Corpus extraction eval — `nlp`
 
-Generated 2026-10-01T02:51:16+00:00 at `a5954597`; spaCy `en_core_web_sm`.
+Generated 2026-10-01T03:20:03+00:00 at `ef68988d`; spaCy `en_core_web_sm`.
 
 No document degraded: every score below is the requested mode's own.
 

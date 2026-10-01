@@ -81,17 +81,26 @@ Scores: entities match on name or alias (exact first, then Jaro-Winkler and
 substring); "typed F1" counts a match only when the type matches too; a
 relationship matches when both endpoints match and the type is equal.
 
-## Results (committed, `a5954597`, live Cohere `command-a-plus-05-2026`)
+## Results (committed; live Cohere `command-a-plus-05-2026`)
 
 | Mode | Entity P / R / F1 | Typed F1 | Type acc | Rel P / R / F1 | Cyber gold edges | Build: created / dropped |
 |---|---|---|---|---|---|---|
 | nlp | 0.924 / 0.917 / 0.920 | 0.738 | 0.802 | 0.115 / 0.435 / 0.182 | 8 / 13 | 10 / 0 |
 | llm | 0.807 / 0.985 / 0.887 | 0.819 | 0.923 | 0.136 / 0.652 / 0.226 | 11 / 13 | 104 / 4 |
-| hybrid | 0.774 / 0.985 / 0.867 | 0.820 | 0.946 | 0.136 / 0.652 / 0.226 | 10 / 13 | 101 / 7 |
+| hybrid | 0.760 / 0.985 / 0.858 | 0.805 | 0.939 | 0.149 / 0.739 / 0.248 | 11 / 13 | 110 / 2 |
 
-No document degraded and no build raised in any of the three. The `llm` run's
-replies are the ones recorded in `llm_replies.json`; the `hybrid` run asked
-the model separately (`--no-cache`), so its model half is a different sample.
+No document degraded and no build raised in any of the three. `nlp` and
+`hybrid` were run at `ef68988d`; `llm` at `a5954597`, and its recorded
+replies replayed at `ef68988d` give identical numbers (the two later commits
+touch neither path those replies exercise). The `llm` run's replies are the
+ones in `llm_replies.json`; the `hybrid` run asked the model separately
+(`--no-cache`), so its model half is a different sample — which is why its
+relationship recall differs from `llm`'s.
+
+The repo-root key is a Cohere trial key (20 calls a minute). A first final
+`hybrid` run at concurrency 4 degraded four documents to NLP on 429s, which
+the report flagged at the top; the runner now waits out a rate limit before
+retrying, and the committed run used `--concurrency 2 --retries 3`.
 
 ## Before and after, one fix at a time
 
@@ -146,7 +155,7 @@ final row is a third). A step marked *unchanged* did not touch that mode.
 | 7. non-names | 0.382 | 0.985 | 0.551 | 0.496 | 0.900 | 0.052 | 0.565 | 0.096 | 10/13 | 42% | 235 | 9 | 0 |
 | 8. prompt (live replies) | 0.838 | 0.977 | 0.902 | 0.846 | 0.938 | 0.151 | 0.652 | 0.246 | 9/13 | 23% | 92 | 4 | 3 |
 | 9. place subtypes | 0.838 | 0.977 | 0.902 | 0.860 | 0.954 | 0.151 | 0.652 | 0.246 | 9/13 | 23% | 92 | 4 | 3 |
-| **final, live** | 0.774 | 0.985 | 0.867 | 0.820 | 0.946 | 0.136 | 0.652 | 0.226 | 10/13 | 23% | 101 | 7 | 1 |
+| **final, live** | 0.760 | 0.985 | 0.858 | 0.805 | 0.939 | 0.149 | 0.739 | 0.248 | 11/13 | 28% | 110 | 2 | 0 |
 
 Hybrid's NLP half did gain typed edges at step 3, but the model already had
 each of them, so the merged set did not change.
@@ -172,8 +181,8 @@ each of them, so the merged set did not change.
    LOCATED_AT. *Known defects 3 and 4.*
 4. **Relationship vocabulary** — model synonyms keep their type (BERTHS_AT →
    LOCATED_AT, TARGETED → TARGETS, MEMBER_OF → BELONGS_TO); a type with no
-   meaning in the vocabulary ("REPORTED", "DOES_NOT_ESTABLISH") is no longer
-   stored as `ASSOCIATED_WITH` but dropped and counted in the log.
+   meaning in the vocabulary is no longer stored as `ASSOCIATED_WITH` but
+   dropped and counted in the log. *Narrowed in step 10.*
 5. **Vessels** — "Name (A-411)" and "bulk carrier Mirenda" / "patrol vessels
    Brenna and Sarn" make a `Ship` in every mode; "Ship (hull) of Unit" is
    BELONGS_TO; hybrid merges the hull-number entity with the model's by alias
@@ -191,6 +200,21 @@ each of them, so the merged set did not change.
    checks), or the eval would be scoring the prompt.
 9. **Place subtypes** — "Airfield", "Harbour", "Naval Base", … map to
    `Location` instead of landing as Custom.
+10. **Only reporting statements are dropped** — the full unit suite caught
+    step 4 dropping "A PARTNERS_WITH B" ("A and B signed a partnership
+    agreement"), a real relationship the vocabulary has no word for. Now only
+    types that state something about the reporting (REPORTED, OBSERVED,
+    IDENTIFIED, DOES_NOT_ESTABLISH, BASED_ON, …; 41 of the 43 off-vocabulary
+    edges in the baseline replies) are dropped, and any other unlisted type
+    stays `ASSOCIATED_WITH`. On the final prompt's replies this changes
+    nothing; on the baseline prompt's replies, with every other fix applied,
+    it costs a little:
+
+    | Replies | Rel P | Rel F1 | AW share | Built |
+    |---|---|---|---|---|
+    | baseline prompt, step 4 rule (all fixes but the prompt) | 0.053 | 0.096 | 42% | 234 |
+    | baseline prompt, step 10 rule | 0.050 | 0.092 | 44% | 245 |
+    | final prompt, either rule (llm) | 0.136 | 0.226 | 42% | 104 |
 
 Not a metric row: a model-returned indicator is stored refanged
 ("evil-c2[.]com" → "evil-c2.com"). Two live runs died in the graph build on

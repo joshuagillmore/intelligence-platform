@@ -347,7 +347,10 @@ async def _extract(mode: str, text: str, doc_id: str, retries: int):
     attempt = 0
     while result.degraded and attempt < retries:
         attempt += 1
-        await asyncio.sleep(2 * attempt)
+        # A rate limit is per minute (a Cohere trial key allows 20 calls), so
+        # a retry a few seconds later meets the same limit; wait it out.
+        rate_limited = "TooManyRequests" in result.reason or "429" in result.reason
+        await asyncio.sleep((30 if rate_limited else 2) * attempt)
         result = await fn(text, doc_id)
     return result
 

@@ -1,7 +1,7 @@
 {
   "mode": "nlp",
-  "generated_at": "2026-10-01T02:51:16+00:00",
-  "git_commit": "a5954597",
+  "generated_at": "2026-10-01T03:20:03+00:00",
+  "git_commit": "ef68988d",
   "spacy_model": "en_core_web_sm",
   "degraded_documents": [],
   "overall": {
@@ -452,7 +452,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 1.16,
+      "seconds": 1.15,
       "score": {
         "entities": {
           "tp": 4,
@@ -1160,7 +1160,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.04,
       "score": {
         "entities": {
           "tp": 1,
@@ -1406,7 +1406,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.04,
       "score": {
         "entities": {
           "tp": 2,
@@ -1909,7 +1909,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.04,
       "score": {
         "entities": {
           "tp": 1,
@@ -1958,7 +1958,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 1,
@@ -2126,7 +2126,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.02,
       "score": {
         "entities": {
           "tp": 1,
@@ -3171,7 +3171,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.02,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 13,
