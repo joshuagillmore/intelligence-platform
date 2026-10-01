@@ -41,6 +41,10 @@ RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin app \
 # lock a build failure instead of a silent re-resolve.
 COPY backend/pyproject.toml backend/uv.lock ./
 COPY backend/src/ src/
+# Alembic migrations: init_db runs `alembic upgrade head` at boot, reading
+# alembic.ini and the versions from /app, the layout `uv run` expects.
+COPY backend/alembic/ alembic/
+COPY backend/alembic.ini alembic.ini
 RUN uv sync --no-dev --locked
 # Must follow `uv sync`, and nothing may sync again after it: the model is
 # installed by URL and is deliberately not in uv.lock, so a later `uv sync`
@@ -83,8 +87,9 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
     CMD curl -fsS -o /dev/null http://127.0.0.1:8000/health || exit 1
 
-# start.sh runs the Next.js server (internal 127.0.0.1:3000) and uvicorn
+# start.sh runs the Next.js server (internal 127.0.0.1:3000), uvicorn
 # (0.0.0.0:8000, the port Railway exposes; it proxies page requests to Next)
-# and exits non-zero as soon as either one dies, so the platform restarts the
-# container instead of serving half an app.
+# and the collection worker (python -m intel_platform.worker), and exits
+# non-zero as soon as any of them dies, so the platform restarts the container
+# instead of serving part of an app.
 ENTRYPOINT ["/app/start.sh"]

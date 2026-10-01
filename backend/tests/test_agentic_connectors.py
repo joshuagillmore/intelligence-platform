@@ -350,16 +350,10 @@ class TestPlanExecutorHelpers:
         assert "_source_url" not in text
         assert "name: Test" in text
 
-    def test_execution_status_tracking(self):
-        from intel_platform.services.plan_executor import _running_executions, get_execution_status
-        # Initially empty
-        assert get_execution_status("nonexistent") is None
+    def test_no_execution_state_is_kept_in_memory(self):
+        """Run state lives in collection_jobs (see test_collection_jobs.py);
+        the module-level tracker it replaced could not be seen by a worker."""
+        from intel_platform.services import plan_executor
 
-        # Simulate setting status
-        _running_executions["test-plan"] = {"status": "running", "progress": 0.5}
-        status = get_execution_status("test-plan")
-        assert status["status"] == "running"
-        assert status["progress"] == 0.5
-
-        # Clean up
-        del _running_executions["test-plan"]
+        assert not hasattr(plan_executor, "_running_executions")
+        assert not hasattr(plan_executor, "get_execution_status")

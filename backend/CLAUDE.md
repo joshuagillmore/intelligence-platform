@@ -184,26 +184,60 @@ analyst sets by hand, and reading liveness off it is what made **Activate** lock
 a plan out of execution: execution itself sets `ACTIVE`, so the old guard
 (`DRAFT`/`PAUSED` only) stranded every activated plan and every plan whose run
 died. Use `collection_plans.current_run_state()`, which both the execute guard
-and `/execution-status` go through so they cannot disagree. It reports
-`idle | running | stalled | completed | failed`, and only `running` blocks a new
-run (409); `ARCHIVED` is refused separately.
+and `/execution-status` go through so they cannot disagree.
 
-It answers by looking, in this order:
+**Every run is a row in `collection_jobs`** (`db/jobs.py`), and the plan's
+latest row is the only evidence — nothing is answered from memory, so a second
+API process, a worker, or a process started after a restart all see the same
+state. The rules (`collection/job_runner.run_state`):
 
-1. `_inflight_runs` — agentic runs are `asyncio` tasks in the API process, so
-   the task itself is the evidence. `register_run()` also holds the strong
-   reference `asyncio.create_task` does not: a garbage-collected task cancels a
-   live collection.
-2. `plan_executor`'s in-memory tracker, for the synchronous path.
-3. The `CollectionActivity` trail. Activity older than `_PROCESS_STARTED_AT`
-   belongs to a run a restart killed, so it reports `stalled` immediately rather
-   than waiting out `_STALL_AFTER_SECONDS`.
+| Latest job | State | Blocks `/execute`? |
+|---|---|---|
+| none | `idle` | no |
+| `queued`/`running` (or `cancelled` but still stopping), heartbeat within `collection_stall_seconds` (default 120) | `running` | **yes (409)** |
+| the same, heartbeat older than the window | `stalled` | no — the run is presumed dead |
+| `succeeded` / `failed` / `cancelled` (finished) | `completed` / `failed` / `cancelled` | no |
 
-`stalled` deliberately does **not** block: past that point the previous attempt
-is presumed dead, and refusing forever is the trap the flag-based guard set.
-Progress counts come from `current_run_events()` — the trail holds every run a
-plan has ever had, and summing all of them reported the last run's results on a
-fresh one.
+`ARCHIVED` is refused separately (400). A queued job with no worker to take it
+also goes `stalled` after the window, so a deployment without a worker is not
+locked out forever.
+
+- **Who runs it.** `settings.collection_worker_mode`: `inline` (code default)
+  inserts the job already `running` and runs it as an asyncio task in the API
+  process; `worker` (what `start.sh` and compose set) only inserts it `queued`,
+  and `python -m intel_platform.worker` claims it with `FOR UPDATE SKIP
+  LOCKED`. Either way `job_runner.run_job` stamps `worker_id`, heartbeats every
+  10 s from a background task, and writes the terminal status and a sanitised
+  `error` (an exception *type*, never its text — analysts see it).
+- **One live job per plan**, enforced twice: `/execute` holds the plan row
+  `FOR UPDATE` across check-and-insert, and a partial unique index on
+  `collection_jobs (plan_id) WHERE status IN ('queued','running')` refuses a
+  second one. `/execute` returns **202** with `job_id`.
+- **A stalled job is closed, not ignored.** Accepting a run over a stalled one
+  marks the old row `failed` ("Stalled: no heartbeat for N s"). If its worker
+  was only slow, its next heartbeat finds the job no longer its own and cancels
+  the run, so two runs never collect for one plan.
+- **Cancel** is `POST /collection-plans/{id}/cancel`: the live job becomes
+  `cancelled`; `plan_should_stop` returns True for it, so the loop stops before
+  its next source and the run is summarised as cancelled (the plan is not set
+  `COMPLETED`). Until it has stopped the state stays `running`. A queued or
+  stalled job is finished at once.
+- All job timestamps, and staleness, use the **database clock** (`now()`), so a
+  worker whose clock disagrees with the API's cannot make a live run look dead.
+- **Degraded outcomes travel on the row.** `services.telemetry` counts per
+  process, so a worker's counts never reach the API's `/health`; the run's own
+  counts go in `collection_jobs.degraded` (`{subsystem: {reason: n}}`, refreshed
+  with each heartbeat) and `/execution-status` returns them.
+- **The worker starts like the API**: it imports `api.routes.admin_config`
+  (which registers the persisted-settings hook) and runs `init_db()`, then
+  re-reads persisted settings before each job, so an admin's provider or
+  persona change reaches it without a restart.
+- The legacy `/collections` runner writes rows too (kind `legacy`, best
+  effort); the worker never claims those.
+
+Progress counts still come from the activity trail via `current_run_events()`
+— the trail holds every run a plan has ever had, and summing all of them
+reported the last run's results on a fresh one.
 
 ## LLM providers
 
