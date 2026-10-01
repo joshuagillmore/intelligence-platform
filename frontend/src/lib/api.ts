@@ -1,6 +1,7 @@
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
 import { createSummaryStreamParser, type SummaryStreamEvent } from './sse';
 import type { AttackMapResult } from './attackMapping';
+import type { BodyOf, ClientPath, Model, QueryOf, ResponseOf } from './apiTypes';
 
 // Use relative URL so it works on both localhost and Railway (same-origin)
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
@@ -88,29 +89,41 @@ export function isHttpStatus(error: unknown, status: number): boolean {
   return axios.isAxiosError(error) && error.response?.status === status;
 }
 
-export interface Project {
-  id: string;
-  name: string;
-  description: string;
-  classification_level: string;
-  priority: string;
-  status: string;
-  entity_count: number;
-  relationship_count: number;
-  document_count: number;
-  collection_count?: number;
-  created_at?: string;
-  updated_at?: string;
-}
+/**
+ * The body of a route that declares no response schema (no `response_model`
+ * on the FastAPI route, so the generated type is `unknown`). As loose as
+ * axios' own default, which is what every caller was written against; a
+ * route that declares one is typed with `ResponseOf` instead.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Undeclared = any;
+
+/**
+ * The axios instance with each URL checked against the generated route list
+ * (`ClientPath`): calling a route the backend does not serve for that method
+ * is a compile error. Same instance, same interceptors, same runtime.
+ */
+const http = {
+  get: <T = Undeclared>(url: ClientPath<'get'>, config?: AxiosRequestConfig) => api.get<T>(url, config),
+  post: <T = Undeclared>(url: ClientPath<'post'>, data?: unknown, config?: AxiosRequestConfig) =>
+    api.post<T>(url, data, config),
+  put: <T = Undeclared>(url: ClientPath<'put'>, data?: unknown, config?: AxiosRequestConfig) =>
+    api.put<T>(url, data, config),
+  delete: <T = Undeclared>(url: ClientPath<'delete'>, config?: AxiosRequestConfig) => api.delete<T>(url, config),
+};
+
+export type Project = Model<'ProjectResponse'>;
 
 export const projectsApi = {
-  list: () => api.get<Project[]>('/projects'),
-  create: (data: { name: string; description?: string; classification_level?: string; priority?: string }) =>
-    api.post<Project>('/projects', data),
-  get: (id: string) => api.get<Project>(`/projects/${id}`),
-  delete: (id: string) => api.delete(`/projects/${id}`),
-  batchDelete: (projectIds: string[]) => api.post('/projects/batch-delete', { project_ids: projectIds }),
-  activity: (id: string, limit?: number) => api.get(`/projects/${id}/activity`, { params: { limit } }),
+  /** Same shape as one `ProjectResponse` per project; the list route declares
+   *  no schema of its own. */
+  list: () => http.get<Project[]>('/projects'),
+  create: (data: BodyOf<'/api/projects', 'post'>) =>
+    http.post<ResponseOf<'/api/projects', 'post'>>('/projects', data),
+  get: (id: string) => http.get<ResponseOf<'/api/projects/{project_id}', 'get'>>(`/projects/${id}`),
+  delete: (id: string) => http.delete(`/projects/${id}`),
+  batchDelete: (projectIds: string[]) => http.post('/projects/batch-delete', { project_ids: projectIds } satisfies BodyOf<'/api/projects/batch-delete', 'post'>),
+  activity: (id: string, limit?: number) => http.get(`/projects/${id}/activity`, { params: { limit } satisfies QueryOf<'/api/projects/{project_id}/activity', 'get'> }),
 };
 
 /** How many rows matched in full, from `X-Total-Count`.
@@ -130,33 +143,33 @@ export const entitiesApi = {
    *  the `X-Total-Count` response header (see `totalFrom`) rather than assuming
    *  the array is complete. */
   search: (projectId: string, query?: string, entityType?: string, limit?: number) =>
-    api.get('/entities', { params: { project_id: projectId, query, entity_type: entityType, limit } }),
-  get: (id: string) => api.get(`/entities/${id}`),
-  subgraph: (id: string, hops?: number) => api.get(`/subgraph/${id}`, { params: { hops } }),
-  shortestPath: (id1: string, id2: string) => api.get(`/paths/${id1}/${id2}`),
+    http.get('/entities', { params: { project_id: projectId, query, entity_type: entityType, limit } satisfies QueryOf<'/api/entities', 'get'> }),
+  get: (id: string) => http.get(`/entities/${id}`),
+  subgraph: (id: string, hops?: number) => http.get(`/subgraph/${id}`, { params: { hops } satisfies QueryOf<'/api/subgraph/{entity_id}', 'get'> }),
+  shortestPath: (id1: string, id2: string) => http.get(`/paths/${id1}/${id2}`),
 };
 
 // Local context (Overpass) + AOI spatial query around/within a geotarget.
 export const geoApiExtra = {
   nearby: (entityId: string, radius?: number) =>
-    api.get(`/geo/nearby/${encodeURIComponent(entityId)}`, { params: { radius } }),
+    http.get(`/geo/nearby/${encodeURIComponent(entityId)}`, { params: { radius } satisfies QueryOf<'/api/geo/nearby/{entity_id}', 'get'> }),
   within: (projectId: string, bbox: { minLat: number; minLng: number; maxLat: number; maxLng: number }) =>
-    api.get('/geo/within', {
+    http.get('/geo/within', {
       params: {
         project_id: projectId,
         min_lat: bbox.minLat, min_lng: bbox.minLng, max_lat: bbox.maxLat, max_lng: bbox.maxLng,
-      },
+      } satisfies QueryOf<'/api/geo/within', 'get'>,
     }),
 };
 
 // Cyber-observable enrichment (WHOIS/DNS/GeoIP/certs/KEV/CVSS) — the Investigate
 // action. Egress routes through the collection proxy (VPN/Tor), never the LLM path.
 export const enrichmentApi = {
-  investigate: (entityId: string) => api.post(`/enrichment/entities/${entityId}`),
-  getCached: (entityId: string) => api.get(`/enrichment/entities/${entityId}`),
+  investigate: (entityId: string) => http.post(`/enrichment/entities/${entityId}`),
+  getCached: (entityId: string) => http.get(`/enrichment/entities/${entityId}`),
   refresh: (entityId: string, provider: string) =>
-    api.post(`/enrichment/entities/${entityId}/refresh`, null, { params: { provider } }),
-  providers: () => api.get('/enrichment/providers'),
+    http.post(`/enrichment/entities/${entityId}/refresh`, null, { params: { provider } satisfies QueryOf<'/api/enrichment/entities/{entity_id}/refresh', 'post'> }),
+  providers: () => http.get('/enrichment/providers'),
 };
 
 // MITRE ATT&CK® integration — data-driven matrix, technique detail, coverage
@@ -321,78 +334,82 @@ export interface AttackReport {
 }
 
 export const attackApi = {
-  status: () => api.get<AttackStatus>('/attack/status'),
+  status: () => http.get<AttackStatus>('/attack/status'),
   // Admin action — downloads ~53MB of ATT&CK STIX server-side; can take 30-60s.
-  ingest: () => api.post<{ ingested: true; version: string; counts: AttackCounts }>('/attack/ingest'),
+  ingest: () => http.post<{ ingested: true; version: string; counts: AttackCounts }>('/attack/ingest'),
   // Re-map the project's TTP entities onto ATT&CK techniques.
   resolve: (projectId: string) =>
-    api.post<{ mapped: number }>('/attack/resolve', null, { params: { project_id: projectId } }),
+    http.post<{ mapped: number }>('/attack/resolve', null, { params: { project_id: projectId } satisfies QueryOf<'/api/attack/resolve', 'post'> }),
   // (Admin) Embed all ATT&CK techniques into pgvector for RAG mapping. One-time,
   // idempotent, and slow (~30-90s for 697 techniques).
   // `embedded: 0` comes with a machine `reason` and a human `detail` saying why
   // (no techniques ingested, no provider, rate-limited) — never read a bare 0
   // as success.
-  embed: () => api.post<{ embedded: number; reason?: string; detail?: string }>('/attack/embed'),
+  embed: () => http.post<{ embedded: number; reason?: string; detail?: string }>('/attack/embed'),
   // RAG+LLM map the project's TTP entities that lack an explicit T-code. Slow for
   // many TTPs. Returns mapped/skipped counts with a reason per skip
   // (`skip_reasons`); `remap` also re-checks earlier AI mappings and reports how
   // many it removed (`stale_removed`). 503 "LLM provider unavailable" when no
   // model can run. See `lib/attackMapping` for the wording.
   map: (projectId: string, remap = false) =>
-    api.post<AttackMapResult>('/attack/map', null, {
-      params: { project_id: projectId, ...(remap ? { remap: true } : {}) },
+    http.post<AttackMapResult>('/attack/map', null, {
+      params: { project_id: projectId, ...(remap ? { remap: true } : {}) } satisfies QueryOf<'/api/attack/map', 'post'>,
     }),
   // Candidate ATT&CK Groups ranked by technique overlap with the project.
   attribution: (projectId: string) =>
-    api.get<AttackAttribution>('/attack/attribution', { params: { project_id: projectId } }),
+    http.get<AttackAttribution>('/attack/attribution', { params: { project_id: projectId } satisfies QueryOf<'/api/attack/attribution', 'get'> }),
   matrix: (projectId: string) =>
-    api.get<AttackMatrixData>('/attack/matrix', { params: { project_id: projectId } }),
+    http.get<AttackMatrixData>('/attack/matrix', { params: { project_id: projectId } satisfies QueryOf<'/api/attack/matrix', 'get'> }),
   technique: (techniqueId: string, projectId: string) =>
-    api.get<AttackTechniqueDetail>(`/attack/technique/${techniqueId}`, {
-      params: { project_id: projectId },
+    http.get<AttackTechniqueDetail>(`/attack/technique/${techniqueId}`, {
+      params: { project_id: projectId } satisfies QueryOf<'/api/attack/technique/{tid}', 'get'>,
     }),
   // Downloadable Navigator layer JSON. Fetched via axios so the auth header is
   // sent (Bearer token in localStorage, not a cookie a plain <a> could carry),
   // then turned into a blob download — matching the other exports in the app.
   navigatorLayer: (projectId: string) =>
-    api.get('/attack/navigator-layer', { params: { project_id: projectId } }),
+    http.get('/attack/navigator-layer', { params: { project_id: projectId } satisfies QueryOf<'/api/attack/navigator-layer', 'get'> }),
   // (Phase 3b) D3FEND defensive countermeasures for a technique — a lazy, live
   // MITRE D3FEND lookup, so `countermeasures` may be [] on an outage.
   d3fend: (techniqueId: string) =>
-    api.get<AttackD3fendResponse>(`/attack/technique/${techniqueId}/d3fend`),
+    http.get<AttackD3fendResponse>(`/attack/technique/${techniqueId}/d3fend`),
   // (Phase 3c) Aggregated ATT&CK report for a project: observed techniques by
   // tactic, candidate attribution, key mitigations, CVE-enabled techniques, an
   // optional narrative, and a rendered markdown document.
   report: (projectId: string) =>
-    api.get<AttackReport>('/attack/report', { params: { project_id: projectId } }),
+    http.get<AttackReport>('/attack/report', { params: { project_id: projectId } satisfies QueryOf<'/api/attack/report', 'get'> }),
 };
 
 export const graphApi = {
-  full: (projectId: string) => api.get('/graph', { params: { project_id: projectId } }),
-  communities: (projectId: string) => api.get('/communities', { params: { project_id: projectId } }),
-  centrality: (projectId: string) => api.get('/graph/centrality', { params: { project_id: projectId } }),
-  statistics: (projectId: string) => api.get('/graph/statistics', { params: { project_id: projectId } }),
+  full: (projectId: string) => http.get('/graph', { params: { project_id: projectId } satisfies QueryOf<'/api/graph', 'get'> }),
+  communities: (projectId: string) => http.get('/communities', { params: { project_id: projectId } satisfies QueryOf<'/api/communities', 'get'> }),
+  centrality: (projectId: string) => http.get('/graph/centrality', { params: { project_id: projectId } satisfies QueryOf<'/api/graph/centrality', 'get'> }),
+  statistics: (projectId: string) => http.get('/graph/statistics', { params: { project_id: projectId } satisfies QueryOf<'/api/graph/statistics', 'get'> }),
   structuralHoles: (projectId: string, topN?: number) =>
-    api.get('/graph/structural-holes', { params: { project_id: projectId, top_n: topN } }),
+    http.get('/graph/structural-holes', { params: { project_id: projectId, top_n: topN } satisfies QueryOf<'/api/graph/structural-holes', 'get'> }),
   egoNetwork: (entityId: string, projectId: string, hops?: number) =>
-    api.get(`/graph/ego-network/${entityId}`, { params: { project_id: projectId, hops } }),
+    http.get(`/graph/ego-network/${entityId}`, { params: { project_id: projectId, hops } satisfies QueryOf<'/api/graph/ego-network/{entity_id}', 'get'> }),
   influence: (projectId: string, seedIds: string[], steps?: number, threshold?: number) =>
-    api.post('/graph/influence', { project_id: projectId, seed_ids: seedIds, steps, threshold }),
+    http.post('/graph/influence', {
+      project_id: projectId, seed_ids: seedIds, steps, threshold,
+    } satisfies BodyOf<'/api/graph/influence', 'post'>),
 };
 
 export const queryApi = {
   rag: (projectId: string, query: string) =>
-    api.post('/query', { project_id: projectId, query }),
+    http.post('/query', { project_id: projectId, query } satisfies BodyOf<'/api/query', 'post'>),
 };
 
 export const llmApi = {
-  skills: () => api.get('/llm/skills'),
+  skills: () => http.get<ResponseOf<'/api/llm/skills', 'get'>>('/llm/skills'),
   query: (
     messages: Array<{role: string; content: string}>,
     skillName?: string,
     overrides?: { system_prompt?: string; temperature?: number; max_tokens?: number },
   ) =>
-    api.post('/llm/query', { messages, skill_name: skillName, ...(overrides || {}) }),
+    http.post('/llm/query', {
+      messages, skill_name: skillName, ...(overrides || {}),
+    } satisfies BodyOf<'/api/llm/query', 'post'>),
 };
 
 export const ingestApi = {
@@ -401,7 +418,7 @@ export const ingestApi = {
     formData.append('project_id', projectId);
     formData.append('content', content);
     if (reliabilityRating) formData.append('reliability_rating', reliabilityRating);
-    return api.post('/ingest', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return http.post('/ingest', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
   file: (projectId: string, file: File, reliabilityRating?: string, extractionMode?: string) => {
     const formData = new FormData();
@@ -409,7 +426,7 @@ export const ingestApi = {
     formData.append('file', file);
     if (reliabilityRating) formData.append('reliability_rating', reliabilityRating);
     if (extractionMode) formData.append('extraction_mode', extractionMode);
-    return api.post('/ingest', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return http.post('/ingest', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
   batch: (projectId: string, files: File[], reliabilityRating?: string, extractionMode?: string) => {
     const formData = new FormData();
@@ -417,51 +434,32 @@ export const ingestApi = {
     files.forEach(f => formData.append('files', f));
     if (reliabilityRating) formData.append('reliability_rating', reliabilityRating);
     if (extractionMode) formData.append('extraction_mode', extractionMode);
-    return api.post('/ingest/batch', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return http.post('/ingest/batch', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
 };
 
 export const collectionsApi = {
-  create: (data: { project_id: string; pir: string; refined_pir?: string; refinement?: string; plan?: object[] }) =>
-    api.post('/collections', data),
-  list: (projectId?: string) => api.get('/collections', { params: projectId ? { project_id: projectId } : {} }),
-  get: (id: string) => api.get(`/collections/${id}`),
-  update: (id: string, data: { refined_pir?: string; refinement?: string; plan?: object[]; status?: string }) =>
-    api.put(`/collections/${id}`, data),
-  status: (id: string) => api.get(`/collections/${id}/status`),
-  cancel: (id: string) => api.post(`/collections/${id}/cancel`),
-  parsePlan: (planText: string) => api.post('/collections/parse-plan', { plan_text: planText }),
-  count: (projectId: string) => api.get(`/collections/count/${projectId}`),
+  create: (data: BodyOf<'/api/collections', 'post'>) =>
+    http.post('/collections', data),
+  list: (projectId?: string) => http.get('/collections', { params: projectId ? { project_id: projectId } : {} }),
+  get: (id: string) => http.get(`/collections/${id}`),
+  update: (id: string, data: BodyOf<'/api/collections/{task_id}', 'put'>) =>
+    http.put(`/collections/${id}`, data),
+  status: (id: string) => http.get(`/collections/${id}/status`),
+  cancel: (id: string) => http.post(`/collections/${id}/cancel`),
+  parsePlan: (planText: string) => http.post('/collections/parse-plan', { plan_text: planText } satisfies BodyOf<'/api/collections/parse-plan', 'post'>),
+  count: (projectId: string) => http.get(`/collections/count/${projectId}`),
 };
 
 // PIRs — Priority Intelligence Requirements, the requirements spine a project's
 // collection hangs off. Every plan raised against one carries its pir_id back.
 export type PirStatus = 'OPEN' | 'PARTIAL' | 'SATISFIED' | 'ARCHIVED';
 
-export interface PirPlanLink {
-  id: string;
-  name: string;
-  status: string;
-  source_count: number;
-  records_acquired: number;
-  created_at: string;
-}
+export type PirPlanLink = Model<'PirPlanLink'>;
 
-export interface Pir {
-  id: string;
-  project_id: string;
-  title: string;
-  text: string;
-  refined_text: string;
-  eeis: string[];
-  priority: string;
-  status: PirStatus;
-  created_by: string;
-  created_at: string;
-  updated_at: string;
-  plan_count: number;
-  plans: PirPlanLink[];
-}
+/** `PirResponse` with `status` narrowed: the schema says `str`, the route
+ *  only ever stores one of `PirStatus`. */
+export type Pir = Omit<Model<'PirResponse'>, 'status'> & { status: PirStatus };
 
 export type RequirementStatus = 'pending' | 'satisfied' | 'unmet';
 
@@ -486,21 +484,17 @@ export interface PirRequirements {
 
 export const pirsApi = {
   list: (projectId: string, status?: PirStatus) =>
-    api.get<Pir[]>('/pirs', { params: { project_id: projectId, status } }),
-  get: (id: string) => api.get<Pir>(`/pirs/${id}`),
-  create: (data: {
-    project_id: string; text: string; title?: string; refined_text?: string;
-    eeis?: string[]; priority?: string; status?: PirStatus; created_by?: string;
-  }) => api.post<Pir>('/pirs', data),
-  update: (id: string, data: {
-    title?: string; text?: string; refined_text?: string;
-    eeis?: string[]; priority?: string; status?: PirStatus;
-  }) => api.put<Pir>(`/pirs/${id}`, data),
-  delete: (id: string) => api.delete(`/pirs/${id}`),
+    http.get<Pir[]>('/pirs', { params: { project_id: projectId, status } satisfies QueryOf<'/api/pirs', 'get'> }),
+  get: (id: string) => http.get<Pir>(`/pirs/${id}`),
+  create: (data: Omit<BodyOf<'/api/pirs', 'post'>, 'status'> & { status?: PirStatus }) =>
+    http.post<Pir>('/pirs', data),
+  update: (id: string, data: Omit<BodyOf<'/api/pirs/{pir_id}', 'put'>, 'status'> & { status?: PirStatus }) =>
+    http.put<Pir>(`/pirs/${id}`, data),
+  delete: (id: string) => http.delete(`/pirs/${id}`),
   // Per-element collection state. "unmet" means tried and given up on; it is
   // deliberately distinct from "pending", which is still open.
   requirements: (id: string) =>
-    api.get<PirRequirements>(`/pirs/${id}/requirements`),
+    http.get<PirRequirements>(`/pirs/${id}/requirements`),
 };
 
 // Collection Plans — new managed pipeline
@@ -609,34 +603,34 @@ export interface DataCatalogEntry {
 
 export const collectionPlansApi = {
   // Plans
-  create: (data: { project_id: string; name: string; description?: string; requirement?: string; pir?: string; pir_id?: string; routing_rules?: object; created_by?: string }) =>
-    api.post<CollectionPlan>('/collection-plans', data),
+  create: (data: BodyOf<'/api/collection-plans', 'post'>) =>
+    http.post<CollectionPlan>('/collection-plans', data),
   list: (projectId?: string, status?: string) =>
-    api.get<CollectionPlan[]>('/collection-plans', { params: { project_id: projectId, status } }),
-  get: (id: string) => api.get<CollectionPlan>(`/collection-plans/${id}`),
-  update: (id: string, data: Partial<CollectionPlan>) =>
-    api.put<CollectionPlan>(`/collection-plans/${id}`, data),
-  delete: (id: string) => api.delete(`/collection-plans/${id}`),
+    http.get<CollectionPlan[]>('/collection-plans', { params: { project_id: projectId, status } satisfies QueryOf<'/api/collection-plans', 'get'> }),
+  get: (id: string) => http.get<CollectionPlan>(`/collection-plans/${id}`),
+  update: (id: string, data: BodyOf<'/api/collection-plans/{plan_id}', 'put'>) =>
+    http.put<CollectionPlan>(`/collection-plans/${id}`, data),
+  delete: (id: string) => http.delete(`/collection-plans/${id}`),
 
   // Status transitions
-  activate: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/activate`),
-  pause: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/pause`),
-  complete: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/complete`),
-  archive: (id: string) => api.post<CollectionPlan>(`/collection-plans/${id}/archive`),
+  activate: (id: string) => http.post<CollectionPlan>(`/collection-plans/${id}/activate`),
+  pause: (id: string) => http.post<CollectionPlan>(`/collection-plans/${id}/pause`),
+  complete: (id: string) => http.post<CollectionPlan>(`/collection-plans/${id}/complete`),
+  archive: (id: string) => http.post<CollectionPlan>(`/collection-plans/${id}/archive`),
 
   // Execution
   executionStatus: (planId: string) =>
-    api.get<PlanExecutionStatus>(`/collection-plans/${planId}/execution-status`),
+    http.get<PlanExecutionStatus>(`/collection-plans/${planId}/execution-status`),
 
   // Sources
-  addSource: (planId: string, data: { name: string; source_type: string; config?: object; schedule_cron?: string; enabled?: boolean }) =>
-    api.post<CollectionSourceEntry>(`/collection-plans/${planId}/sources`, data),
+  addSource: (planId: string, data: BodyOf<'/api/collection-plans/{plan_id}/sources', 'post'>) =>
+    http.post<CollectionSourceEntry>(`/collection-plans/${planId}/sources`, data),
   listSources: (planId: string) =>
-    api.get<CollectionSourceEntry[]>(`/collection-plans/${planId}/sources`),
-  updateSource: (planId: string, sourceId: string, data: Partial<CollectionSourceEntry>) =>
-    api.put<CollectionSourceEntry>(`/collection-plans/${planId}/sources/${sourceId}`, data),
+    http.get<CollectionSourceEntry[]>(`/collection-plans/${planId}/sources`),
+  updateSource: (planId: string, sourceId: string, data: BodyOf<'/api/collection-plans/{plan_id}/sources/{source_id}', 'put'>) =>
+    http.put<CollectionSourceEntry>(`/collection-plans/${planId}/sources/${sourceId}`, data),
   deleteSource: (planId: string, sourceId: string) =>
-    api.delete(`/collection-plans/${planId}/sources/${sourceId}`),
+    http.delete(`/collection-plans/${planId}/sources/${sourceId}`),
 
   // File upload through pipeline
   uploadFile: (planId: string, sourceId: string, file: File, extractionMode?: string, reliabilityRating?: string) => {
@@ -644,55 +638,59 @@ export const collectionPlansApi = {
     formData.append('file', file);
     if (extractionMode) formData.append('extraction_mode', extractionMode);
     if (reliabilityRating) formData.append('reliability_rating', reliabilityRating);
-    return api.post(`/collection-plans/${planId}/sources/${sourceId}/upload`, formData, {
+    return http.post(`/collection-plans/${planId}/sources/${sourceId}/upload`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
 
   // Acquisition log
   acquisitions: (planId: string, limit?: number) =>
-    api.get<AcquisitionLogEntry[]>(`/collection-plans/${planId}/acquisitions`, { params: { limit } }),
+    http.get<AcquisitionLogEntry[]>(`/collection-plans/${planId}/acquisitions`, { params: { limit } satisfies QueryOf<'/api/collection-plans/{plan_id}/acquisitions', 'get'> }),
   sourceAcquisitions: (planId: string, sourceId: string, limit?: number) =>
-    api.get<AcquisitionLogEntry[]>(`/collection-plans/${planId}/sources/${sourceId}/acquisitions`, { params: { limit } }),
+    http.get<AcquisitionLogEntry[]>(`/collection-plans/${planId}/sources/${sourceId}/acquisitions`, { params: { limit } satisfies QueryOf<'/api/collection-plans/{plan_id}/sources/{source_id}/acquisitions', 'get'> }),
 
   // Data catalog
   catalog: (planId: string) =>
-    api.get<DataCatalogEntry[]>(`/collection-plans/${planId}/catalog`),
+    http.get<DataCatalogEntry[]>(`/collection-plans/${planId}/catalog`),
   catalogEntry: (catalogId: string) =>
-    api.get<DataCatalogEntry>(`/data-catalog/${catalogId}`),
+    http.get<DataCatalogEntry>(`/data-catalog/${catalogId}`),
   catalogPreview: (catalogId: string, offset?: number, limit?: number) =>
-    api.get(`/data-catalog/${catalogId}/preview`, { params: { offset, limit } }),
+    http.get(`/data-catalog/${catalogId}/preview`, { params: { offset, limit } satisfies QueryOf<'/api/data-catalog/{catalog_id}/preview', 'get'> }),
 
   // Activity log
   activity: (planId: string, since?: string) =>
-    api.get<CollectionActivityEntry[]>(`/collection-plans/${planId}/activity`, { params: { since } }),
+    http.get<CollectionActivityEntry[]>(`/collection-plans/${planId}/activity`, { params: { since } satisfies QueryOf<'/api/collection-plans/{plan_id}/activity', 'get'> }),
 
   // PIR-driven plan creation (unified flow). Pass pir_id to run against an
   // existing requirement; omit it and the backend persists/reuses one from `pir`.
-  fromPir: (data: { project_id: string; pir: string; pir_id?: string; extraction_mode?: string; created_by?: string }) =>
-    api.post<CollectionPlan & { llm_plan_text?: string }>('/collection-plans/from-pir', data),
+  fromPir: (data: BodyOf<'/api/collection-plans/from-pir', 'post'>) =>
+    http.post<CollectionPlan & { llm_plan_text?: string }>('/collection-plans/from-pir', data),
   execute: (planId: string, maxResultsPerSource?: number) =>
-    api.post<CollectionPlan & { execution_status: string; message: string }>(
+    http.post<CollectionPlan & { execution_status: string; message: string }>(
       `/collection-plans/${planId}/execute`,
-      maxResultsPerSource != null ? { max_results_per_source: maxResultsPerSource } : undefined,
+      maxResultsPerSource != null
+        ? ({ max_results_per_source: maxResultsPerSource } satisfies BodyOf<'/api/collection-plans/{plan_id}/execute', 'post'>)
+        : undefined,
     ),
 
   // Dashboard
-  dashboard: (projectId: string) => api.get('/collection-dashboard', { params: { project_id: projectId } }),
+  dashboard: (projectId: string) => http.get('/collection-dashboard', { params: { project_id: projectId } satisfies QueryOf<'/api/collection-dashboard', 'get'> }),
 
   // Connector types
-  connectorTypes: () => api.get('/connector-types'),
+  connectorTypes: () => http.get('/connector-types'),
 };
 
 export const assessApi = {
   assess: (entityId: string, projectId: string, judgment: string, probability: number) =>
-    api.post(`/entities/${entityId}/assess`, { entity_id: entityId, project_id: projectId, judgment, probability }),
-  create: (entityId: string, data: { entity_id: string; project_id: string; judgment: string; probability: number; analyst?: string; methodology?: string }) =>
-    api.post(`/entities/${entityId}/assess`, data),
-  multi: (data: { entity_ids: string[]; project_id: string; judgment?: string; probability?: number }) =>
-    api.post('/assess/multi', data),
-  generate: (entityId: string, data: { entity_id: string; project_id: string; judgment?: string; probability?: number }) =>
-    api.post('/assess/generate', { ...data, entity_id: entityId }),
+    http.post(`/entities/${entityId}/assess`, {
+      entity_id: entityId, project_id: projectId, judgment, probability,
+    } satisfies BodyOf<'/api/entities/{entity_id}/assess', 'post'>),
+  create: (entityId: string, data: BodyOf<'/api/entities/{entity_id}/assess', 'post'>) =>
+    http.post(`/entities/${entityId}/assess`, data),
+  multi: (data: BodyOf<'/api/assess/multi', 'post'>) =>
+    http.post('/assess/multi', data),
+  generate: (entityId: string, data: BodyOf<'/api/assess/generate', 'post'>) =>
+    http.post('/assess/generate', { ...data, entity_id: entityId } satisfies BodyOf<'/api/assess/generate', 'post'>),
 };
 
 // ── Structured analytic techniques (/api/analysis/*) ──────────────────────
@@ -772,32 +770,18 @@ export interface GapAnalysisResult {
 }
 
 export const analysisApi = {
-  sourceEvaluation: (data: {
-    project_id: string;
-    document_ids?: string[];
-    limit?: number;
-    apply_ratings?: boolean;
-  }) => api.post<SourceEvaluationResult>('/analysis/source-evaluation', data),
-  hypotheses: (data: {
-    project_id: string;
-    question: string;
-    entity_ids?: string[];
-    max_hops?: number;
-    use_vector?: boolean;
-    save_assessment?: boolean;
-  }) => api.post<HypothesesResult>('/analysis/hypotheses', data),
-  gaps: (data: {
-    project_id: string;
-    entity_ids?: string[];
-    focus?: string;
-    max_hops?: number;
-  }) => api.post<GapAnalysisResult>('/analysis/gaps', data),
+  sourceEvaluation: (data: BodyOf<'/api/analysis/source-evaluation', 'post'>) =>
+    http.post<SourceEvaluationResult>('/analysis/source-evaluation', data),
+  hypotheses: (data: BodyOf<'/api/analysis/hypotheses', 'post'>) =>
+    http.post<HypothesesResult>('/analysis/hypotheses', data),
+  gaps: (data: BodyOf<'/api/analysis/gaps', 'post'>) =>
+    http.post<GapAnalysisResult>('/analysis/gaps', data),
 };
 
 export const topicsApi = {
   tree: (projectId: string, method?: string, granularity?: string) =>
-    api.get('/topics', { params: { project_id: projectId, method, granularity } }),
-  context: (entityId: string, projectId: string) => api.get(`/topics/${entityId}`, { params: { project_id: projectId } }),
+    http.get('/topics', { params: { project_id: projectId, method, granularity } satisfies QueryOf<'/api/topics', 'get'> }),
+  context: (entityId: string, projectId: string) => http.get(`/topics/${entityId}`, { params: { project_id: projectId } satisfies QueryOf<'/api/topics/{entity_id}', 'get'> }),
   summarizeUrl: (entityId: string) => `${API_BASE}/api/topics/${entityId}/summarize`,
   /** Stream an LLM summary of a topic node (server-sent events; see `lib/sse`).
    *  `onText` receives the text so far as events arrive. Resolves with the full
@@ -806,7 +790,7 @@ export const topicsApi = {
    *  failure can never be mistaken for (or cached as) a summary. */
   streamSummary: async (
     entityId: string,
-    body: { project_id: string; level?: string },
+    body: BodyOf<'/api/topics/{entity_id}/summarize', 'post'>,
     onText?: (textSoFar: string) => void,
   ): Promise<string> => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -856,105 +840,99 @@ export const topicsApi = {
   },
 
   // Node editing
-  updateNode: (nodeId: string, data: { project_id: string; name?: string; description?: string; parent_id?: string }) =>
-    api.put(`/topics/${nodeId}`, data),
-  addChild: (nodeId: string, data: { project_id: string; name: string; description?: string }) =>
-    api.post(`/topics/${nodeId}/children`, data),
+  updateNode: (nodeId: string, data: BodyOf<'/api/topics/{node_id}', 'put'>) =>
+    http.put(`/topics/${nodeId}`, data),
+  addChild: (nodeId: string, data: BodyOf<'/api/topics/{node_id}/children', 'post'>) =>
+    http.post(`/topics/${nodeId}/children`, data),
   deleteNode: (nodeId: string, projectId: string) =>
-    api.delete(`/topics/${nodeId}`, { params: { project_id: projectId } }),
+    http.delete(`/topics/${nodeId}`, { params: { project_id: projectId } satisfies QueryOf<'/api/topics/{node_id}', 'delete'> }),
 
   // Export
   exportMindmap: (projectId: string, format: string = 'json') =>
-    api.get('/export/mindmap', { params: { project_id: projectId, format } }),
+    http.get('/export/mindmap', { params: { project_id: projectId, format } satisfies QueryOf<'/api/export/mindmap', 'get'> }),
 };
 
 export const reportsApi = {
-  save: (data: { project_id: string; title: string; content: string; report_type: string; entity_ids?: string[] }) =>
-    api.post('/reports', data),
+  save: (data: BodyOf<'/api/reports', 'post'>) =>
+    http.post('/reports', data),
   // Grounded generation: retrieves real graph + document evidence for the selected
   // entities via the Graph-RAG pipeline before drafting, instead of a bare LLM call.
   // `requirement` (PIR text) or `pir_id` makes the requirement the subject of the
   // product; without one it is only "tell me about these entities". Answers 503
   // "LLM provider unavailable" when no model could draft it.
-  generate: (data: {
-    project_id: string;
-    report_type: string;
-    skill_name: string;
-    entity_ids: string[];
-    requirement?: string;
-    pir_id?: string;
-    include_evidence?: boolean;
-    probability_assessments?: boolean;
-  }) => api.post('/reports/generate', data),
-  list: (projectId: string) => api.get('/reports', { params: { project_id: projectId } }),
-  get: (id: string) => api.get(`/reports/${id}`),
-  delete: (id: string) => api.delete(`/reports/${id}`),
+  generate: (data: BodyOf<'/api/reports/generate', 'post'>) => http.post('/reports/generate', data),
+  list: (projectId: string) => http.get('/reports', { params: { project_id: projectId } satisfies QueryOf<'/api/reports', 'get'> }),
+  get: (id: string) => http.get(`/reports/${id}`),
+  delete: (id: string) => http.delete(`/reports/${id}`),
 };
 
 export const timelineApi = {
-  get: (projectId: string) => api.get('/timeline', { params: { project_id: projectId } }),
+  get: (projectId: string) => http.get('/timeline', { params: { project_id: projectId } satisfies QueryOf<'/api/timeline', 'get'> }),
   /** Event-date distribution for the network view's brush filter. */
   histogram: (projectId: string, bucket: 'day' | 'month' | 'year' = 'month') =>
-    api.get('/timeline/histogram', { params: { project_id: projectId, bucket } }),
+    http.get('/timeline/histogram', { params: { project_id: projectId, bucket } satisfies QueryOf<'/api/timeline/histogram', 'get'> }),
 };
 
+/** The note kinds the notebook route accepts (anything else is a 422). */
+export type NoteType = NonNullable<BodyOf<'/api/notebook', 'post'>['note_type']>;
+
 export const notebookApi = {
-  create: (data: { project_id: string; title: string; content: string; entity_ids?: string[]; note_type?: string }) =>
-    api.post('/notebook', data),
-  list: (projectId: string) => api.get('/notebook', { params: { project_id: projectId } }),
-  get: (id: string) => api.get(`/notebook/${id}`),
-  delete: (id: string) => api.delete(`/notebook/${id}`),
+  create: (data: BodyOf<'/api/notebook', 'post'>) =>
+    http.post('/notebook', data),
+  list: (projectId: string) => http.get('/notebook', { params: { project_id: projectId } satisfies QueryOf<'/api/notebook', 'get'> }),
+  get: (id: string) => http.get(`/notebook/${id}`),
+  delete: (id: string) => http.delete(`/notebook/${id}`),
 };
 
 export const geoApi = {
-  locations: (projectId: string) => api.get('/geo/locations', { params: { project_id: projectId } }),
+  locations: (projectId: string) => http.get('/geo/locations', { params: { project_id: projectId } satisfies QueryOf<'/api/geo/locations', 'get'> }),
   entityTimeline: (entityId: string, projectId: string) =>
-    api.get('/geo/entity-timeline', { params: { entity_id: entityId, project_id: projectId } }),
+    http.get('/geo/entity-timeline', { params: { entity_id: entityId, project_id: projectId } satisfies QueryOf<'/api/geo/entity-timeline', 'get'> }),
 };
 
 export const searchApi = {
   search: (projectId: string, query: string) =>
-    api.get('/search', { params: { project_id: projectId, q: query } }),
+    http.get('/search', { params: { project_id: projectId, q: query } satisfies QueryOf<'/api/search', 'get'> }),
   /**
    * Meaning-based retrieval over document chunks (pgvector). Returns passages
    * with a similarity score rather than name matches, so it finds material
    * that never uses the query's words.
    */
   semantic: (projectId: string, query: string) =>
-    api.post('/search/semantic', { project_id: projectId, query }),
+    http.post('/search/semantic', { project_id: projectId, query } satisfies BodyOf<'/api/search/semantic', 'post'>),
 };
 
 export const exportApi = {
-  graph: (projectId: string) => api.get('/export/graph', { params: { project_id: projectId } }),
-  entities: (projectId: string) => api.get('/export/entities', { params: { project_id: projectId } }),
-  report: (reportId: string) => api.get(`/export/report/${reportId}`),
-  stix: (projectId: string) => api.get('/export/stix', { params: { project_id: projectId } }),
+  graph: (projectId: string) => http.get('/export/graph', { params: { project_id: projectId } satisfies QueryOf<'/api/export/graph', 'get'> }),
+  entities: (projectId: string) => http.get('/export/entities', { params: { project_id: projectId } satisfies QueryOf<'/api/export/entities', 'get'> }),
+  report: (reportId: string) => http.get(`/export/report/${reportId}`),
+  stix: (projectId: string) => http.get('/export/stix', { params: { project_id: projectId } satisfies QueryOf<'/api/export/stix', 'get'> }),
 };
 
 export const adminApi = {
-  config: () => api.get('/admin/config'),
-  getProxy: () => api.get('/admin/proxy'),
-  updateProxy: (data: { mode: 'direct' | 'vpn' | 'tor'; proxy_url?: string; tor_port?: number }) =>
-    api.put('/admin/proxy', data),
+  config: () => http.get('/admin/config'),
+  getProxy: () => http.get('/admin/proxy'),
+  updateProxy: (data: BodyOf<'/api/admin/proxy', 'put'> & { mode: 'direct' | 'vpn' | 'tor' }) =>
+    http.put('/admin/proxy', data),
   // Collection egress VPN (gluetun sidecar, docker compose --profile vpn)
-  getVpnStatus: () => api.get('/admin/vpn/status'),
-  setVpnStatus: (action: 'start' | 'stop') => api.put('/admin/vpn/status', { action }),
-  listModels: () => api.get('/admin/llm/models'),
+  getVpnStatus: () => http.get('/admin/vpn/status'),
+  setVpnStatus: (action: 'start' | 'stop') => http.put('/admin/vpn/status', { action } satisfies BodyOf<'/api/admin/vpn/status', 'put'>),
+  listModels: () => http.get('/admin/llm/models'),
   selectModel: (provider: string, model: string) =>
-    api.put('/admin/llm/select', { provider, model }),
+    http.put('/admin/llm/select', { provider, model } satisfies BodyOf<'/api/admin/llm/select', 'put'>),
   // API Key management
-  listApiKeys: () => api.get('/admin/api-keys'),
+  listApiKeys: () => http.get('/admin/api-keys'),
   addApiKey: (provider: string, label: string, apiKey: string) =>
-    api.post('/admin/api-keys', { provider, label, api_key: apiKey }),
+    http.post('/admin/api-keys', { provider, label, api_key: apiKey } satisfies BodyOf<'/api/admin/api-keys', 'post'>),
   activateApiKey: (keyId: string, provider: string) =>
-    api.put('/admin/api-keys/activate', { key_id: keyId, provider }),
+    http.put('/admin/api-keys/activate', { key_id: keyId, provider } satisfies BodyOf<'/api/admin/api-keys/activate', 'put'>),
   deleteApiKey: (keyId: string) =>
-    api.delete(`/admin/api-keys/${keyId}`),
+    http.delete(`/admin/api-keys/${keyId}`),
   // Cyber enrichment: auto-enrich toggle + provider inventory
-  getEnrichmentConfig: () => api.get('/admin/enrichment'),
+  getEnrichmentConfig: () => http.get('/admin/enrichment'),
   setEnrichmentConfig: (autoEnabled: boolean) =>
-    api.put('/admin/enrichment', { auto_enabled: autoEnabled }),
-  listEnrichmentProviders: () => api.get('/enrichment/providers'),
+    http.put('/admin/enrichment', { auto_enabled: autoEnabled } satisfies BodyOf<'/api/admin/enrichment', 'put'>),
+  listEnrichmentProviders: () => http.get('/enrichment/providers'),
 };
 
 export interface WatchedEntity {
@@ -989,43 +967,45 @@ export function readWatchlist(data: unknown): WatchedEntity[] {
 
 export const watchlistApi = {
   add: (projectId: string, entityId: string) =>
-    api.post('/watchlist/add', { project_id: projectId, entity_id: entityId }),
+    http.post('/watchlist/add', { project_id: projectId, entity_id: entityId } satisfies BodyOf<'/api/watchlist/add', 'post'>),
   remove: (projectId: string, entityId: string) =>
-    api.post('/watchlist/remove', { project_id: projectId, entity_id: entityId }),
+    http.post('/watchlist/remove', { project_id: projectId, entity_id: entityId } satisfies BodyOf<'/api/watchlist/remove', 'post'>),
   /** The body is a `WatchlistResponse`; read it with `readWatchlist`. Left
    *  untyped so existing callers that index it loosely still compile. */
-  list: (projectId: string) => api.get('/watchlist', { params: { project_id: projectId } }),
+  list: (projectId: string) => http.get('/watchlist', { params: { project_id: projectId } satisfies QueryOf<'/api/watchlist', 'get'> }),
 };
 
 export const entityMgmtApi = {
   merge: (primaryId: string, mergeIds: string[], projectId: string) =>
-    api.post('/entities/merge', { primary_id: primaryId, merge_ids: mergeIds, project_id: projectId }),
+    http.post('/entities/merge', {
+      primary_id: primaryId, merge_ids: mergeIds, project_id: projectId,
+    } satisfies BodyOf<'/api/entities/merge', 'post'>),
   updateType: (entityId: string, entityType: string) =>
-    api.put(`/entities/${entityId}/type`, { entity_type: entityType }),
+    http.put(`/entities/${entityId}/type`, { entity_type: entityType } satisfies BodyOf<'/api/entities/{entity_id}/type', 'put'>),
 };
 
 export const personasApi = {
-  list: () => api.get('/personas'),
-  create: (data: { id: string; name: string; description: string; skills: string[]; temperature?: number }) =>
-    api.post('/personas', data),
-  activate: (id: string) => api.post(`/personas/${id}/activate`),
-  delete: (id: string) => api.delete(`/personas/${id}`),
-  active: () => api.get('/personas/active'),
+  list: () => http.get('/personas'),
+  create: (data: BodyOf<'/api/personas', 'post'>) =>
+    http.post('/personas', data),
+  activate: (id: string) => http.post(`/personas/${id}/activate`),
+  delete: (id: string) => http.delete(`/personas/${id}`),
+  active: () => http.get('/personas/active'),
 };
 
 export const snapshotsApi = {
-  create: (data: { project_id: string; name: string; entity_ids: string[]; description?: string }) =>
-    api.post('/snapshots', data),
-  list: (projectId: string) => api.get('/snapshots', { params: { project_id: projectId } }),
-  get: (id: string) => api.get(`/snapshots/${id}`),
-  delete: (id: string) => api.delete(`/snapshots/${id}`),
+  create: (data: BodyOf<'/api/snapshots', 'post'>) =>
+    http.post('/snapshots', data),
+  list: (projectId: string) => http.get('/snapshots', { params: { project_id: projectId } satisfies QueryOf<'/api/snapshots', 'get'> }),
+  get: (id: string) => http.get(`/snapshots/${id}`),
+  delete: (id: string) => http.delete(`/snapshots/${id}`),
 };
 
 export const documentsApi = {
-  list: (projectId: string) => api.get('/documents', { params: { project_id: projectId } }),
-  get: (docId: string) => api.get(`/documents/${docId}`),
+  list: (projectId: string) => http.get('/documents', { params: { project_id: projectId } satisfies QueryOf<'/api/documents', 'get'> }),
+  get: (docId: string) => http.get(`/documents/${docId}`),
   evidence: (docId: string, entityName: string) =>
-    api.get(`/documents/${docId}/evidence`, { params: { entity_name: entityName } }),
+    http.get(`/documents/${docId}/evidence`, { params: { entity_name: entityName } satisfies QueryOf<'/api/documents/{doc_id}/evidence', 'get'> }),
 };
 
 export const healthApi = {
@@ -1038,7 +1018,7 @@ export const healthApi = {
     }
     // Polled every 30 s by the sidebar and status bar. Without its own timeout
     // a hung backend left the check pending (and the dot green) for minutes.
-    return axios.get(`${API_BASE}/health`, { headers, timeout: 5000 });
+    return axios.get<ResponseOf<'/health', 'get'>>(`${API_BASE}/health`, { headers, timeout: 5000 });
   },
 };
 

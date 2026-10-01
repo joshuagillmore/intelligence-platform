@@ -29,7 +29,7 @@ import AssistantCitations from './AssistantCitations';
 import { useAssistant, type AssistantTab } from '@/lib/AssistantContext';
 import { useProject } from '@/lib/ProjectContext';
 import { useNotifications } from './NotificationProvider';
-import { notebookApi, reportsApi } from '@/lib/api';
+import { notebookApi, reportsApi, type NoteType } from '@/lib/api';
 
 interface NotebookEntry {
   id: string;
@@ -38,7 +38,7 @@ interface NotebookEntry {
   note_type?: string;
 }
 
-const NOTE_TYPES = ['observation', 'hypothesis', 'question', 'conclusion'];
+const NOTE_TYPES: NoteType[] = ['observation', 'hypothesis', 'question', 'conclusion'];
 
 /** Shared focus treatment so every control in the panel is keyboard-visible. */
 const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue focus-visible:ring-offset-1 focus-visible:ring-offset-navy-800';
@@ -194,7 +194,7 @@ function NotebookTab() {
   const [formOpen, setFormOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [noteType, setNoteType] = useState(NOTE_TYPES[0]);
+  const [noteType, setNoteType] = useState<NoteType>(NOTE_TYPES[0]);
   // Bumped on every project switch so a slow in-flight list response cannot
   // overwrite a newer project's notes when it finally lands.
   const loadSeq = useRef(0);
@@ -291,7 +291,7 @@ function NotebookTab() {
             <select
               id="assistant-note-type"
               value={noteType}
-              onChange={e => setNoteType(e.target.value)}
+              onChange={e => setNoteType(e.target.value as NoteType)}
               className={`rounded bg-navy-900 border border-navy-600 px-2 py-1 text-xs text-gray-200 ${FOCUS}`}
             >
               {NOTE_TYPES.map(t => (

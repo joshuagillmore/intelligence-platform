@@ -14,6 +14,7 @@ npm run dev      # http://localhost:3000 (expects backend on :8000)
 npm run lint     # eslint (next lint) — part of "done"
 npm run build    # production build — part of "done"
 npm run start    # serve the production build
+npm run gen:api  # regenerate src/lib/api.generated.ts from ../backend/openapi.json
 ```
 
 Tests: **`npm run test`** (Vitest + RTL component/logic tests in `tests/unit/`) and
@@ -27,7 +28,7 @@ assertions, in `tests/e2e/`; needs the stack up + `backend/scripts/seed_demo.py`
 |------|------|
 | `app/` | App Router pages — one folder per view: `page.tsx` (dashboard), `collections`, `collection-plans`, `data-sources`, `network` (graph), `geo`, `timeline`, `search`, `watchlist`, `analysis` (structured analytic techniques), `products`, `cyber`, `llm-hub`, `admin`, `login`, plus the dynamic routes `documents/[id]` and `project/[id]`. `layout.tsx` is the shell. |
 | `components/` | Shared UI: `GraphVisualization`, `GeoMap`, `TopicMindMap`, `TemporalSlider`/`TemporalHistogram`, `Sidebar`, `StatusBar`, `MobileHeader`/`MobileBottomNav`, `NotificationProvider`, `KeyboardShortcuts`, `HighlightedExcerpt`, `MindMapControls`, `LoadingSpinner`, `Markdown`, `SelectProjectPrompt`. Feature panels: `AssistantPanel`/`AssistantCitations`, `AttackMatrix`/`AttackAttribution`, `EnrichmentPanel`, `EvidenceChain`, `PirPanel`, `PrintableProduct`. |
-| `lib/` | `api.ts` (axios client → backend), `ProjectContext.tsx` and `AssistantContext.tsx` (the two React contexts), `assistantGrounding.ts`, `branding.ts` (app name/version), `entityStyles.ts` (entity-color SSOT), `graphLayout.ts`, `projectOrder.ts` (dashboard ordering), `reportExport.ts`, `format.ts`, `errorMessages.ts`. |
+| `lib/` | `api.ts` (axios client → backend), `api.generated.ts` + `apiTypes.ts` (the backend contract, generated; see below), `ProjectContext.tsx` and `AssistantContext.tsx` (the two React contexts), `assistantGrounding.ts`, `branding.ts` (app name/version), `entityStyles.ts` (entity-color SSOT), `graphLayout.ts`, `projectOrder.ts` (dashboard ordering), `reportExport.ts`, `format.ts`, `errorMessages.ts`. |
 
 ## Stack conventions
 
@@ -44,6 +45,16 @@ assertions, in `tests/e2e/`; needs the stack up + `backend/scripts/seed_demo.py`
   own local undo/redo, so leave that as-is.
 - **API:** all backend calls go through `lib/api.ts` (axios). Don't hardcode base
   URLs or an API key in components (a hardcoded fallback key was a past finding).
+- **Generated types:** `lib/api.generated.ts` is generated from
+  `backend/openapi.json` (`backend/scripts/export_openapi.py` writes it) by
+  `npm run gen:api`; never edit it by hand. `lib/apiTypes.ts` derives
+  `ClientPath`, `BodyOf`, `QueryOf`, `ResponseOf` and `Model` from it, and
+  `api.ts` uses them so every URL, request body and query string, and every
+  response the backend declares, is checked against the schema. Most routes
+  declare no response model yet; those keep a hand-written interface (or the
+  loose `Undeclared`) until the backend adds one. After a backend route change,
+  re-export the schema, run `npm run gen:api` and commit both;
+  `tests/unit/apiGenerated.test.ts` fails until you do.
 - **Visualization:** graph = d3 (`GraphVisualization`, `graphLayout.ts`); maps =
   raw **leaflet** via dynamic import (`GeoMap`; no react-leaflet). Keep heavy viz
   in client components.
