@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from intel_platform.api.routes import pirs
+from intel_platform.services.pir_judge import evidence as pirs
 
 
 class TestDatedLines:

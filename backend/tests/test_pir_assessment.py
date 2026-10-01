@@ -7,12 +7,9 @@ model output, which is exactly where it breaks silently.
 """
 from __future__ import annotations
 
-from intel_platform.api.routes.pirs import (
-    _merge_retry,
-    _sanitize_context,
-    extract_eeis,
-    parse_verdicts,
-)
+from intel_platform.services.pir_judge.eeis import extract_eeis
+from intel_platform.services.pir_judge.evidence import _sanitize_context
+from intel_platform.services.pir_judge.verdicts import _merge_retry, parse_verdicts
 
 
 class TestExtractEeis:

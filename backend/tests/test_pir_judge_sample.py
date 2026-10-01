@@ -13,7 +13,7 @@ import uuid
 
 import pytest
 
-from intel_platform.api.routes.pirs import _ranked_entities
+from intel_platform.services.pir_judge.evidence import _ranked_entities
 from intel_platform.models.entities import URL, Document, Organization, Person, ThreatActor
 from intel_platform.models.relationships import Relationship
 from tests.ids import tp

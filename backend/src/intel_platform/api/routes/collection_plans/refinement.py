@@ -16,6 +16,7 @@ from intel_platform.db.engine import get_db
 from intel_platform.db.models import CollectionPlan, CollectionSource, PlanStatus
 from intel_platform.services.collection_planner import parse_plan_sources
 from intel_platform.services.llm_output import normalise_line
+from intel_platform.services.pir_judge import extract_eeis
 
 logger = logging.getLogger(__name__)
 
@@ -320,8 +321,7 @@ async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends
         # The refinement is asked to decompose the requirement into EEIs, and
         # capturing them is what makes satisfaction measurable later
         # (`/pirs/{id}/assess`) and what the collection loop re-tasks against.
-        from intel_platform.api.routes.pirs import extract_eeis
-
+        #
         # Search the whole refinement, not just the analysis half: a model that
         # puts the EEI list above the split point would otherwise have it
         # discarded, and the requirement would look undecomposed.
