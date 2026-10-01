@@ -310,6 +310,9 @@ class TestCancel:
             assert await plan_should_stop(db, pid) is True
         # Still stopping: a new run now would collect alongside it.
         assert await _state(pg_factory, pid) == "running"
+        with pytest.raises(HTTPException) as again:
+            await _cancel(pg_factory, pid)
+        assert again.value.status_code == 409 and "already stopping" in again.value.detail
         status = await _status(pg_factory, pid)
         assert status["status"] == "running" and status["job_status"] == "cancelled"
         assert status["last_event"] == "run_cancelled"

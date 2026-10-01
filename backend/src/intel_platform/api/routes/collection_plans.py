@@ -1033,7 +1033,11 @@ async def cancel_plan_run(plan_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "Collection plan not found")
     state, job, _now = await _run_state_and_job(db, pid)
     if job is None or job.status not in jobs.LIVE_STATUSES:
+        # Decided before the rollback, which expires `job`.
+        stopping_already = job is not None and job.status == jobs.CANCELLED and state == "running"
         await db.rollback()
+        if stopping_already:
+            raise HTTPException(409, "The collection run is already stopping")
         raise HTTPException(409, "No collection run is in flight for this plan")
 
     # Read before the update: an ORM-enabled UPDATE also refreshes `job`.
