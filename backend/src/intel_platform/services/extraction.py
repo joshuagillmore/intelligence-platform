@@ -568,6 +568,25 @@ def _apply_type_hints(entities: list[dict]) -> list[dict]:
     return entities
 
 
+# Single all-caps words that head a section rather than name anything.
+_HEADING_WORDS = frozenset({
+    "BACKGROUND", "SUMMARY", "OUTLOOK", "ASSESSMENT", "JUDGEMENT", "JUDGMENT", "JUDGEMENTS", "JUDGMENTS",
+    "CONCLUSION", "CONCLUSIONS", "INTRODUCTION", "OVERVIEW", "RECOMMENDATIONS", "ANNEX", "APPENDIX",
+    "DISTRIBUTION", "CLASSIFICATION", "SECRET", "CONFIDENTIAL", "RESTRICTED", "UNCLASSIFIED", "NOTE",
+    "COMMENT", "SOURCE", "SOURCES", "CONTEXT", "DISCUSSION", "SCOPE", "METHODOLOGY", "FINDINGS", "NAMES",
+})
+
+# Legal instruments written by number.
+_DOCUMENT_REF = re.compile(
+    r"\b(?:Executive Order(?:\s*\(E\.O\.\))?|E\.O\.)\s+\d{4,5}\b|\b(?:FY\s?\d{4}\s+)?NDAA\b"
+)
+# A name ending in what it is: an act, a resolution, a strategy, a treaty.
+_DOCUMENT_NAME = re.compile(
+    r"\b(?:Act(?: of \d{4})?|Resolution(?: \d+)?|Strategy|Threat Assessment|Plan of Action|Treaty|Accord|"
+    r"Agreement|Doctrine)$"
+)
+_DOCUMENT_OVERRIDABLE = frozenset({"Organization", "Location", "Product", "Person", "Event", "Document", ""})
+
 # spaCy labels whose spans are names, so a lower-case one is a misfire.
 _NAME_LABELS = frozenset({"PERSON", "ORG", "GPE", "LOC", "FAC", "NORP", "PRODUCT", "EVENT"})
 
@@ -577,6 +596,8 @@ _TECHNICAL_ACRONYMS = frozenset({
     "AIS", "VHF", "UHF", "HF", "GNSS", "GPS", "SAR", "NIIRS", "SIGINT", "HUMINT", "IMINT",
     "GEOINT", "OSINT", "ELINT", "COMINT", "MASINT", "ISR", "EW", "UAV", "UAS", "IED",
     "C2", "C4ISR", "SATCOM", "RF",
+    # Cyber and finance terms written in capitals: standards, protocols, tickers.
+    "CVSS", "WHOIS", "IOC", "IOCS", "TTPS", "USDT", "USDC", "BTC", "XMR", "SWIFT",
 })
 
 
@@ -1191,6 +1212,17 @@ def _extract_cyber_entities(text: str, doc_id: str, raw_text: str | None = None)
                 "source": doc_id, "method": "regex", "confidence": 0.85,
             })
 
+    # Named legal instruments spaCy reads as dates or misses: "Executive Order
+    # (E.O.) 14186", "E.O. 13871", "the FY2026 NDAA".
+    for match in _DOCUMENT_REF.finditer(text):
+        ref = match.group().strip()
+        if ref not in seen:
+            seen.add(ref)
+            cyber_entities.append({
+                "name": ref, "entity_type": "Document",
+                "source": doc_id, "method": "regex", "confidence": 0.85,
+            })
+
     # Military hardware designations (e.g. "Type 075", "Type 052D") — spaCy
     # misses these entirely, so extract them as EquipmentType directly.
     for match in re.finditer(r'\bType[- ]?\d{2,4}[A-Z]?\b', text):
@@ -1684,8 +1716,20 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
         if name_lower in REPORT_BOILERPLATE or name_lower in DEMONYMS:
             continue
 
-        # Skip all-caps headers (likely document section headings), but keep known acronyms
-        if name.isupper() and len(name) > 3 and name not in known_acro:
+        # Skip all-caps headers (document section headings), but keep acronyms.
+        # A heading is several words ("BOTTOM LINE UP FRONT") or a heading
+        # word; a single all-caps token spaCy calls an organization is an
+        # acronym — NORTHCOM, GCHQ, OFAC were all dropped as headings.
+        # Only a plain letters-only token counts: "U.S.", "P.L.", "FY2026" and
+        # "C-UAS" are abbreviations and labels, not organizations.
+        if name.isupper() and len(name) > 3 and name not in known_acro and (
+                not name.isalpha() or name in _HEADING_WORDS):
+            continue
+        if _DOCUMENT_NAME.search(name) and e.get("entity_type") in _DOCUMENT_OVERRIDABLE:
+            # "Worldwide Threat Assessment", "IRONDOME Act": a named document,
+            # which spaCy reads as an organization or a place.
+            e["entity_type"] = "Document"
+            corrected.append(e)
             continue
 
         # Fix trailing parenthetical fragments
@@ -1834,6 +1878,8 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
     noise = get_noise_words() or NOISE_WORDS
     _all_known = known_locs | known_orgs | known_pers
 
+    hull_numbers = {hull for _, hull in _hull_numbers(text)}
+
     # 3. Extract NLP entities with context-aware confidence
     for ent in doc.ents:
         entity_type = SPACY_TO_ENTITY_TYPE.get(ent.label_)
@@ -1860,7 +1906,8 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         # Amounts and quantities are not names and are left alone.
         if ent.label_ in _NAME_LABELS and name.islower():
             continue
-        if name in _TECHNICAL_ACRONYMS:
+        if name in _TECHNICAL_ACRONYMS or name in hull_numbers:
+            # A hull number ("A-425") is the vessel's alias, not another entity.
             continue
 
         # Context-aware confidence scoring

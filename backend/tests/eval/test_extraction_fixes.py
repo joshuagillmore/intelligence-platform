@@ -589,6 +589,32 @@ def test_a_military_presence_in_a_place_is_deployment_there():
     assert ("NATO", "DEPLOYED_AT", "Arctic") in rels
 
 
+# ── Acronym bodies and named documents ────────────────────────────────────────
+
+def test_a_single_word_acronym_organization_is_kept_and_a_heading_is_not():
+    types = _types("Meanwhile, in October 2024, NORTHCOM conducted the Falcon Peak exercise. BACKGROUND")
+    assert types.get("NORTHCOM") == "Organization"
+    assert "BACKGROUND" not in types
+    types = _types("BOTTOM LINE UP FRONT: Highly likely that NATO is increasing its presence.")
+    assert not [n for n in types if n.isupper() and " " in n]
+
+
+def test_executive_orders_and_acts_are_documents():
+    types = _types(
+        "President Donald J. Trump introduced the initiative in Executive Order (E.O.) 14186, dated January 27, "
+        "2025. E.O. 13871 (May 8, 2019), blocking transactions and trade related to Iran's iron sectors."
+    )
+    assert types.get("Executive Order (E.O.) 14186") == "Document"
+    assert types.get("E.O. 13871") == "Document"
+    assert "14186" not in types
+    types = _types(
+        "Congress granted SLTT law enforcement and correctional agencies authority through the FY2026 NDAA to "
+        "engage in actions. The 2025 Worldwide Threat Assessment stated that Iran has fielded missiles."
+    )
+    assert types.get("FY2026 NDAA") == "Document"
+    assert types.get("Worldwide Threat Assessment") == "Document"
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}
