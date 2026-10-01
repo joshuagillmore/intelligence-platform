@@ -173,7 +173,13 @@ def _host_of(name: str) -> str:
         return ""
     if "//" not in raw:
         raw = "//" + raw
-    host = urlsplit(raw).netloc or ""
+    try:
+        host = urlsplit(raw).netloc or ""
+    except ValueError:
+        # urlsplit reads any bracket in the authority as an IPv6 literal and
+        # refuses the string, so a defanged "evil-c2[.]com" raised out of the
+        # build and failed the whole ingest. Take the authority by hand.
+        host = re.split(r"[/?#]", raw.split("//", 1)[1], maxsplit=1)[0]
     host = host.split("@")[-1].split(":")[0]
     return host[4:] if host.startswith("www.") else host
 
