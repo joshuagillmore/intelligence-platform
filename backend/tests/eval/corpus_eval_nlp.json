@@ -1,36 +1,36 @@
 {
   "mode": "nlp",
-  "generated_at": "2026-10-01T01:45:07+00:00",
-  "git_commit": "be263d08",
+  "generated_at": "2026-10-01T02:51:16+00:00",
+  "git_commit": "a5954597",
   "spacy_model": "en_core_web_sm",
   "degraded_documents": [],
   "overall": {
     "documents": 43,
     "entity": {
-      "precision": 0.7152,
-      "recall": 0.8939,
-      "f1": 0.7946,
-      "tp": 118,
-      "predicted": 165,
+      "precision": 0.9237,
+      "recall": 0.9167,
+      "f1": 0.9202,
+      "tp": 121,
+      "predicted": 131,
       "expected": 132
     },
     "entity_typed": {
-      "precision": 0.3758,
-      "recall": 0.4697,
-      "f1": 0.4175,
-      "tp": 62,
-      "predicted": 165,
+      "precision": 0.7405,
+      "recall": 0.7348,
+      "f1": 0.7376,
+      "tp": 97,
+      "predicted": 131,
       "expected": 132
     },
-    "type_accuracy": 0.5254,
-    "category_accuracy": 0.5254,
+    "type_accuracy": 0.8017,
+    "category_accuracy": 0.8017,
     "per_type": {
       "Date": {
-        "precision": 0.12,
-        "recall": 1.0,
-        "f1": 0.2143,
-        "tp": 3,
-        "predicted": 25,
+        "precision": 1.0,
+        "recall": 0.6667,
+        "f1": 0.8,
+        "tp": 2,
+        "predicted": 2,
         "expected": 3
       },
       "Document": {
@@ -58,11 +58,11 @@
         "expected": 0
       },
       "Hardware": {
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "tp": 0,
-        "predicted": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 2,
+        "predicted": 2,
         "expected": 2
       },
       "IPAddress": {
@@ -74,19 +74,19 @@
         "expected": 2
       },
       "Location": {
-        "precision": 0.7667,
+        "precision": 0.9583,
         "recall": 0.697,
-        "f1": 0.7302,
+        "f1": 0.807,
         "tp": 23,
-        "predicted": 30,
+        "predicted": 24,
         "expected": 33
       },
       "Organization": {
-        "precision": 0.4189,
-        "recall": 0.7561,
-        "f1": 0.5391,
-        "tp": 31,
-        "predicted": 74,
+        "precision": 0.7111,
+        "recall": 0.7805,
+        "f1": 0.7442,
+        "tp": 32,
+        "predicted": 45,
         "expected": 41
       },
       "Person": {
@@ -94,7 +94,7 @@
         "recall": 0.0,
         "f1": 0.0,
         "tp": 0,
-        "predicted": 27,
+        "predicted": 16,
         "expected": 0
       },
       "Quantity": {
@@ -106,27 +106,27 @@
         "expected": 0
       },
       "Ship": {
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "tp": 0,
-        "predicted": 0,
+        "precision": 1.0,
+        "recall": 0.65,
+        "f1": 0.7879,
+        "tp": 26,
+        "predicted": 26,
         "expected": 40
       },
       "Software": {
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "tp": 0,
-        "predicted": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 4,
+        "predicted": 4,
         "expected": 4
       },
       "ThreatActor": {
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "tp": 0,
-        "predicted": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 3,
+        "predicted": 3,
         "expected": 3
       },
       "Vulnerability": {
@@ -139,53 +139,53 @@
       }
     },
     "type_confusion": {
-      "Ship -> Person": 21,
-      "Ship -> Organization": 16,
+      "Ship -> Person": 13,
       "Location -> Organization": 9,
-      "ThreatActor -> Organization": 3,
-      "Ship -> Location": 2,
-      "Hardware -> Organization": 2,
-      "Location -> Person": 1,
-      "Organization -> Location": 1,
-      "Software -> Location": 1
+      "Ship -> Location": 1,
+      "Location -> Person": 1
     },
     "relationship": {
-      "precision": 0.0116,
-      "recall": 0.0435,
-      "f1": 0.0183,
-      "tp": 1,
-      "predicted": 86,
+      "precision": 0.1149,
+      "recall": 0.4348,
+      "f1": 0.1818,
+      "tp": 10,
+      "predicted": 87,
       "expected": 23
     },
-    "relationship_pairs_found": 13,
+    "relationship_pairs_found": 19,
     "relationship_types_predicted": {
-      "ASSOCIATED_WITH": 85,
-      "TARGETS": 1
+      "ASSOCIATED_WITH": 77,
+      "USES": 4,
+      "TARGETS": 2,
+      "LOCATED_AT": 1,
+      "BELONGS_TO": 1,
+      "ATTRIBUTED_TO": 1,
+      "EXPLOITS": 1
     },
-    "associated_with_share": 0.9884,
+    "associated_with_share": 0.8851,
     "relationship_recall_by_type": {
       "ATTRIBUTED_TO": {
-        "tp": 0,
+        "tp": 1,
         "expected": 2
       },
       "BELONGS_TO": {
-        "tp": 0,
+        "tp": 1,
         "expected": 1
       },
       "EXPLOITS": {
-        "tp": 0,
+        "tp": 1,
         "expected": 1
       },
       "LOCATED_AT": {
-        "tp": 0,
+        "tp": 1,
         "expected": 10
       },
       "TARGETS": {
-        "tp": 1,
+        "tp": 2,
         "expected": 5
       },
       "USES": {
-        "tp": 0,
+        "tp": 4,
         "expected": 4
       }
     }
@@ -194,30 +194,30 @@
     "corpus": {
       "documents": 40,
       "entity": {
-        "precision": 0.6515,
+        "precision": 0.8958,
         "recall": 0.9247,
-        "f1": 0.7644,
+        "f1": 0.9101,
         "tp": 86,
-        "predicted": 132,
+        "predicted": 96,
         "expected": 93
       },
       "entity_typed": {
-        "precision": 0.2803,
-        "recall": 0.3978,
-        "f1": 0.3289,
-        "tp": 37,
-        "predicted": 132,
+        "precision": 0.6458,
+        "recall": 0.6667,
+        "f1": 0.6561,
+        "tp": 62,
+        "predicted": 96,
         "expected": 93
       },
-      "type_accuracy": 0.4302,
-      "category_accuracy": 0.4302,
+      "type_accuracy": 0.7209,
+      "category_accuracy": 0.7209,
       "per_type": {
         "Date": {
-          "precision": 0.0455,
-          "recall": 1.0,
-          "f1": 0.087,
-          "tp": 1,
-          "predicted": 22,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "tp": 0,
+          "predicted": 0,
           "expected": 1
         },
         "Financial": {
@@ -229,19 +229,19 @@
           "expected": 0
         },
         "Location": {
-          "precision": 0.6875,
+          "precision": 0.9167,
           "recall": 0.5238,
-          "f1": 0.5946,
+          "f1": 0.6667,
           "tp": 11,
-          "predicted": 16,
+          "predicted": 12,
           "expected": 21
         },
         "Organization": {
-          "precision": 0.3968,
+          "precision": 0.6579,
           "recall": 0.8065,
-          "f1": 0.5319,
+          "f1": 0.7246,
           "tp": 25,
-          "predicted": 63,
+          "predicted": 38,
           "expected": 31
         },
         "Person": {
@@ -249,7 +249,7 @@
           "recall": 0.0,
           "f1": 0.0,
           "tp": 0,
-          "predicted": 27,
+          "predicted": 16,
           "expected": 0
         },
         "Quantity": {
@@ -261,41 +261,42 @@
           "expected": 0
         },
         "Ship": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1": 0.0,
-          "tp": 0,
-          "predicted": 0,
+          "precision": 1.0,
+          "recall": 0.65,
+          "f1": 0.7879,
+          "tp": 26,
+          "predicted": 26,
           "expected": 40
         }
       },
       "type_confusion": {
-        "Ship -> Person": 21,
-        "Ship -> Organization": 16,
+        "Ship -> Person": 13,
         "Location -> Organization": 9,
-        "Ship -> Location": 2,
+        "Ship -> Location": 1,
         "Location -> Person": 1
       },
       "relationship": {
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0,
-        "tp": 0,
-        "predicted": 53,
+        "precision": 0.0392,
+        "recall": 0.2,
+        "f1": 0.0656,
+        "tp": 2,
+        "predicted": 51,
         "expected": 10
       },
-      "relationship_pairs_found": 4,
+      "relationship_pairs_found": 6,
       "relationship_types_predicted": {
-        "ASSOCIATED_WITH": 53
+        "ASSOCIATED_WITH": 49,
+        "LOCATED_AT": 1,
+        "BELONGS_TO": 1
       },
-      "associated_with_share": 1.0,
+      "associated_with_share": 0.9608,
       "relationship_recall_by_type": {
         "BELONGS_TO": {
-          "tp": 0,
+          "tp": 1,
           "expected": 1
         },
         "LOCATED_AT": {
-          "tp": 0,
+          "tp": 1,
           "expected": 9
         }
       }
@@ -303,30 +304,30 @@
     "cyber": {
       "documents": 3,
       "entity": {
-        "precision": 0.9697,
-        "recall": 0.8205,
-        "f1": 0.8889,
-        "tp": 32,
-        "predicted": 33,
+        "precision": 1.0,
+        "recall": 0.8974,
+        "f1": 0.9459,
+        "tp": 35,
+        "predicted": 35,
         "expected": 39
       },
       "entity_typed": {
-        "precision": 0.7576,
-        "recall": 0.641,
-        "f1": 0.6944,
-        "tp": 25,
-        "predicted": 33,
+        "precision": 1.0,
+        "recall": 0.8974,
+        "f1": 0.9459,
+        "tp": 35,
+        "predicted": 35,
         "expected": 39
       },
-      "type_accuracy": 0.7812,
-      "category_accuracy": 0.7812,
+      "type_accuracy": 1.0,
+      "category_accuracy": 1.0,
       "per_type": {
         "Date": {
-          "precision": 0.6667,
+          "precision": 1.0,
           "recall": 1.0,
-          "f1": 0.8,
+          "f1": 1.0,
           "tp": 2,
-          "predicted": 3,
+          "predicted": 2,
           "expected": 2
         },
         "Document": {
@@ -346,11 +347,11 @@
           "expected": 1
         },
         "Hardware": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1": 0.0,
-          "tp": 0,
-          "predicted": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tp": 2,
+          "predicted": 2,
           "expected": 2
         },
         "IPAddress": {
@@ -362,35 +363,35 @@
           "expected": 2
         },
         "Location": {
-          "precision": 0.8571,
+          "precision": 1.0,
           "recall": 1.0,
-          "f1": 0.9231,
+          "f1": 1.0,
           "tp": 12,
-          "predicted": 14,
+          "predicted": 12,
           "expected": 12
         },
         "Organization": {
-          "precision": 0.5455,
-          "recall": 0.6,
-          "f1": 0.5714,
-          "tp": 6,
-          "predicted": 11,
+          "precision": 1.0,
+          "recall": 0.7,
+          "f1": 0.8235,
+          "tp": 7,
+          "predicted": 7,
           "expected": 10
         },
         "Software": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1": 0.0,
-          "tp": 0,
-          "predicted": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tp": 4,
+          "predicted": 4,
           "expected": 4
         },
         "ThreatActor": {
-          "precision": 0.0,
-          "recall": 0.0,
-          "f1": 0.0,
-          "tp": 0,
-          "predicted": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tp": 3,
+          "predicted": 3,
           "expected": 3
         },
         "Vulnerability": {
@@ -402,33 +403,31 @@
           "expected": 2
         }
       },
-      "type_confusion": {
-        "ThreatActor -> Organization": 3,
-        "Hardware -> Organization": 2,
-        "Organization -> Location": 1,
-        "Software -> Location": 1
-      },
+      "type_confusion": {},
       "relationship": {
-        "precision": 0.0303,
-        "recall": 0.0769,
-        "f1": 0.0435,
-        "tp": 1,
-        "predicted": 33,
+        "precision": 0.2222,
+        "recall": 0.6154,
+        "f1": 0.3265,
+        "tp": 8,
+        "predicted": 36,
         "expected": 13
       },
-      "relationship_pairs_found": 9,
+      "relationship_pairs_found": 13,
       "relationship_types_predicted": {
-        "ASSOCIATED_WITH": 32,
-        "TARGETS": 1
+        "ASSOCIATED_WITH": 28,
+        "USES": 4,
+        "TARGETS": 2,
+        "ATTRIBUTED_TO": 1,
+        "EXPLOITS": 1
       },
-      "associated_with_share": 0.9697,
+      "associated_with_share": 0.7778,
       "relationship_recall_by_type": {
         "ATTRIBUTED_TO": {
-          "tp": 0,
+          "tp": 1,
           "expected": 2
         },
         "EXPLOITS": {
-          "tp": 0,
+          "tp": 1,
           "expected": 1
         },
         "LOCATED_AT": {
@@ -436,11 +435,11 @@
           "expected": 1
         },
         "TARGETS": {
-          "tp": 1,
+          "tp": 2,
           "expected": 5
         },
         "USES": {
-          "tp": 0,
+          "tp": 4,
           "expected": 4
         }
       }
@@ -453,49 +452,43 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 1.59,
+      "seconds": 1.16,
       "score": {
         "entities": {
           "tp": 4,
-          "pred": 6,
+          "pred": 4,
           "exp": 4,
-          "typed_tp": 1,
-          "category_tp": 1
+          "typed_tp": 3,
+          "category_tp": 3
         },
         "per_type": {
+          "Ship": {
+            "tp": 2,
+            "pred": 2,
+            "exp": 2
+          },
           "Organization": {
             "tp": 1,
-            "pred": 4,
+            "pred": 2,
             "exp": 1
           },
           "Location": {
             "tp": 0,
-            "pred": 1,
-            "exp": 1
-          },
-          "Date": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Ship": {
-            "tp": 0,
             "pred": 0,
-            "exp": 2
+            "exp": 1
           }
         },
         "confusion": {
-          "Location -> Organization": 1,
-          "Ship -> Organization": 2
+          "Location -> Organization": 1
         },
         "relationships": {
           "tp": 0,
-          "pred": 2,
+          "pred": 4,
           "exp": 2,
           "pair_found": 1
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 2
+          "ASSOCIATED_WITH": 4
         },
         "rel_gold_by_type": {
           "LOCATED_AT": {
@@ -503,14 +496,9 @@
             "exp": 2
           }
         },
-        "false_positives": [
-          "6 months [Date]",
-          "quay 4 [Location]"
-        ],
+        "false_positives": [],
         "false_negatives": [],
         "mistyped": [
-          "Kalvar: Ship -> Organization",
-          "Ostravik: Ship -> Organization",
           "Torvik: Location -> Organization"
         ],
         "relationships_missed": [
@@ -518,16 +506,18 @@
           "Ostravik -LOCATED_AT-> Torvik"
         ],
         "relationships_predicted": [
+          "3rd Naval Auxiliary Group -ASSOCIATED_WITH-> Kalvar",
           "Ostravik -ASSOCIATED_WITH-> 3rd Naval Auxiliary Group",
-          "Torvik -ASSOCIATED_WITH-> quay 4"
+          "Ostravik -ASSOCIATED_WITH-> Kalvar",
+          "Torvik -ASSOCIATED_WITH-> Kalvar"
         ]
       },
       "build": {
-        "entities_created": 5,
+        "entities_created": 4,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 1,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
@@ -540,49 +530,43 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.05,
       "score": {
         "entities": {
           "tp": 4,
-          "pred": 6,
+          "pred": 4,
           "exp": 4,
-          "typed_tp": 1,
-          "category_tp": 1
+          "typed_tp": 3,
+          "category_tp": 3
         },
         "per_type": {
+          "Ship": {
+            "tp": 2,
+            "pred": 2,
+            "exp": 2
+          },
           "Organization": {
             "tp": 1,
-            "pred": 4,
+            "pred": 2,
             "exp": 1
           },
           "Location": {
             "tp": 0,
-            "pred": 1,
-            "exp": 1
-          },
-          "Date": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Ship": {
-            "tp": 0,
             "pred": 0,
-            "exp": 2
+            "exp": 1
           }
         },
         "confusion": {
-          "Location -> Organization": 1,
-          "Ship -> Organization": 2
+          "Location -> Organization": 1
         },
         "relationships": {
           "tp": 0,
-          "pred": 2,
+          "pred": 4,
           "exp": 2,
           "pair_found": 1
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 2
+          "ASSOCIATED_WITH": 4
         },
         "rel_gold_by_type": {
           "LOCATED_AT": {
@@ -590,14 +574,9 @@
             "exp": 2
           }
         },
-        "false_positives": [
-          "between 1624Z and 0028Z [Date]",
-          "quay 4 [Location]"
-        ],
+        "false_positives": [],
         "false_negatives": [],
         "mistyped": [
-          "Kalvar: Ship -> Organization",
-          "Ostravik: Ship -> Organization",
           "Torvik: Location -> Organization"
         ],
         "relationships_missed": [
@@ -605,16 +584,18 @@
           "Ostravik -LOCATED_AT-> Torvik"
         ],
         "relationships_predicted": [
+          "3rd Naval Auxiliary Group -ASSOCIATED_WITH-> Kalvar",
           "Ostravik -ASSOCIATED_WITH-> 3rd Naval Auxiliary Group",
-          "Torvik -ASSOCIATED_WITH-> quay 4"
+          "Ostravik -ASSOCIATED_WITH-> Kalvar",
+          "Torvik -ASSOCIATED_WITH-> Kalvar"
         ]
       },
       "build": {
-        "entities_created": 5,
+        "entities_created": 4,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 1,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
@@ -627,49 +608,43 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 4,
-          "pred": 6,
+          "pred": 4,
           "exp": 4,
-          "typed_tp": 1,
-          "category_tp": 1
+          "typed_tp": 3,
+          "category_tp": 3
         },
         "per_type": {
+          "Ship": {
+            "tp": 2,
+            "pred": 2,
+            "exp": 2
+          },
           "Organization": {
             "tp": 1,
-            "pred": 4,
+            "pred": 2,
             "exp": 1
           },
           "Location": {
             "tp": 0,
-            "pred": 1,
-            "exp": 1
-          },
-          "Date": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Ship": {
-            "tp": 0,
             "pred": 0,
-            "exp": 2
+            "exp": 1
           }
         },
         "confusion": {
-          "Location -> Organization": 1,
-          "Ship -> Organization": 2
+          "Location -> Organization": 1
         },
         "relationships": {
           "tp": 0,
-          "pred": 2,
+          "pred": 4,
           "exp": 2,
           "pair_found": 1
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 2
+          "ASSOCIATED_WITH": 4
         },
         "rel_gold_by_type": {
           "LOCATED_AT": {
@@ -677,14 +652,9 @@
             "exp": 2
           }
         },
-        "false_positives": [
-          "3 days earlier [Date]",
-          "quay 4 [Location]"
-        ],
+        "false_positives": [],
         "false_negatives": [],
         "mistyped": [
-          "Kalvar: Ship -> Organization",
-          "Ostravik: Ship -> Organization",
           "Torvik: Location -> Organization"
         ],
         "relationships_missed": [
@@ -692,16 +662,18 @@
           "Ostravik -LOCATED_AT-> Torvik"
         ],
         "relationships_predicted": [
+          "3rd Naval Auxiliary Group -ASSOCIATED_WITH-> Kalvar",
           "Ostravik -ASSOCIATED_WITH-> 3rd Naval Auxiliary Group",
-          "Torvik -ASSOCIATED_WITH-> quay 4"
+          "Ostravik -ASSOCIATED_WITH-> Kalvar",
+          "Torvik -ASSOCIATED_WITH-> Kalvar"
         ]
       },
       "build": {
-        "entities_created": 5,
+        "entities_created": 4,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 1,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
@@ -714,7 +686,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 2,
@@ -767,86 +739,76 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.04,
       "score": {
         "entities": {
-          "tp": 3,
+          "tp": 4,
           "pred": 5,
           "exp": 4,
-          "typed_tp": 1,
-          "category_tp": 1
+          "typed_tp": 2,
+          "category_tp": 2
         },
         "per_type": {
+          "Ship": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
+          },
           "Organization": {
             "tp": 1,
             "pred": 4,
             "exp": 1
           },
-          "Date": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
           "Location": {
             "tp": 0,
             "pred": 0,
             "exp": 2
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
           }
         },
         "confusion": {
           "Location -> Organization": 2
         },
         "relationships": {
-          "tp": 0,
-          "pred": 2,
+          "tp": 1,
+          "pred": 3,
           "exp": 1,
-          "pair_found": 0
+          "pair_found": 1
         },
         "rel_types_predicted": {
+          "LOCATED_AT": 1,
           "ASSOCIATED_WITH": 2
         },
         "rel_gold_by_type": {
           "LOCATED_AT": {
-            "tp": 0,
+            "tp": 1,
             "exp": 1
           }
         },
         "false_positives": [
-          "3 days earlier [Date]",
           "Comparison [Organization]"
         ],
-        "false_negatives": [
-          "Hallgrim [Ship]"
-        ],
+        "false_negatives": [],
         "mistyped": [
           "Nyhavn: Location -> Organization",
           "Torvik: Location -> Organization"
         ],
-        "relationships_missed": [
-          "Hallgrim -LOCATED_AT-> Torvik"
-        ],
+        "relationships_missed": [],
         "relationships_predicted": [
-          "Comparison -ASSOCIATED_WITH-> 3 days earlier",
+          "3rd Naval Auxiliary Group -ASSOCIATED_WITH-> Hallgrim",
+          "Hallgrim -LOCATED_AT-> Torvik",
           "Torvik -ASSOCIATED_WITH-> Nyhavn"
         ]
       },
       "build": {
-        "entities_created": 4,
+        "entities_created": 5,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 1,
-        "relationships_created": 0,
+        "dates_orphaned": 0,
+        "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 1,
-        "relationships_dropped_by_type": {
-          "ASSOCIATED_WITH": 1
-        }
+        "relationships_dropped": 0,
+        "relationships_dropped_by_type": {}
       }
     },
     {
@@ -855,70 +817,55 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.04,
       "score": {
         "entities": {
           "tp": 5,
-          "pred": 6,
+          "pred": 5,
           "exp": 5,
-          "typed_tp": 1,
-          "category_tp": 1
+          "typed_tp": 4,
+          "category_tp": 4
         },
         "per_type": {
+          "Ship": {
+            "tp": 3,
+            "pred": 3,
+            "exp": 3
+          },
           "Organization": {
             "tp": 1,
-            "pred": 4,
+            "pred": 2,
             "exp": 1
-          },
-          "Person": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Date": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
           },
           "Location": {
             "tp": 0,
             "pred": 0,
             "exp": 1
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 3
           }
         },
         "confusion": {
-          "Location -> Organization": 1,
-          "Ship -> Organization": 2,
-          "Ship -> Person": 1
+          "Location -> Organization": 1
         },
         "relationships": {
           "tp": 0,
-          "pred": 3,
+          "pred": 5,
           "exp": 0,
           "pair_found": 0
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 3
+          "ASSOCIATED_WITH": 5
         },
         "rel_gold_by_type": {},
-        "false_positives": [
-          "6 months [Date]"
-        ],
+        "false_positives": [],
         "false_negatives": [],
         "mistyped": [
-          "Hallgrim: Ship -> Person",
-          "Kalvar: Ship -> Organization",
-          "Ostravik: Ship -> Organization",
           "Torvik: Location -> Organization"
         ],
         "relationships_missed": [],
         "relationships_predicted": [
+          "3rd Naval Auxiliary Group -ASSOCIATED_WITH-> Kalvar",
           "Hallgrim -ASSOCIATED_WITH-> 3rd Naval Auxiliary Group",
+          "Hallgrim -ASSOCIATED_WITH-> Kalvar",
           "Ostravik -ASSOCIATED_WITH-> 3rd Naval Auxiliary Group",
           "Ostravik -ASSOCIATED_WITH-> Hallgrim"
         ]
@@ -928,7 +875,7 @@
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 1,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
@@ -941,70 +888,54 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.04,
       "score": {
         "entities": {
           "tp": 4,
-          "pred": 7,
+          "pred": 6,
           "exp": 4,
-          "typed_tp": 1,
-          "category_tp": 1
+          "typed_tp": 4,
+          "category_tp": 4
         },
         "per_type": {
-          "Date": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
+          "Ship": {
+            "tp": 3,
+            "pred": 3,
+            "exp": 3
           },
           "Organization": {
             "tp": 1,
-            "pred": 4,
+            "pred": 2,
             "exp": 1
-          },
-          "Person": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
           },
           "Financial": {
             "tp": 0,
             "pred": 1,
             "exp": 0
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 3
           }
         },
-        "confusion": {
-          "Ship -> Organization": 2,
-          "Ship -> Person": 1
-        },
+        "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 3,
+          "pred": 5,
           "exp": 0,
           "pair_found": 0
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 3
+          "ASSOCIATED_WITH": 5
         },
         "rel_gold_by_type": {},
         "false_positives": [
           "E03 [Organization]",
-          "approximately 20 per cent [Financial]",
-          "preceding week [Date]"
+          "approximately 20 per cent [Financial]"
         ],
         "false_negatives": [],
-        "mistyped": [
-          "Hallgrim: Ship -> Person",
-          "Kalvar: Ship -> Organization",
-          "Ostravik: Ship -> Organization"
-        ],
+        "mistyped": [],
         "relationships_missed": [],
         "relationships_predicted": [
+          "3rd Naval Auxiliary Group -ASSOCIATED_WITH-> Kalvar",
           "Hallgrim -ASSOCIATED_WITH-> 3rd Naval Auxiliary Group",
+          "Hallgrim -ASSOCIATED_WITH-> Kalvar",
           "Ostravik -ASSOCIATED_WITH-> 3rd Naval Auxiliary Group",
           "Ostravik -ASSOCIATED_WITH-> Hallgrim"
         ]
@@ -1014,7 +945,7 @@
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 1,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
@@ -1027,25 +958,20 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 2,
-          "pred": 6,
+          "pred": 4,
           "exp": 2,
-          "typed_tp": 1,
-          "category_tp": 1
+          "typed_tp": 2,
+          "category_tp": 2
         },
         "per_type": {
-          "Date": {
-            "tp": 0,
-            "pred": 2,
-            "exp": 0
-          },
-          "Person": {
-            "tp": 0,
+          "Ship": {
+            "tp": 1,
             "pred": 1,
-            "exp": 0
+            "exp": 1
           },
           "Organization": {
             "tp": 1,
@@ -1056,41 +982,28 @@
             "tp": 0,
             "pred": 1,
             "exp": 0
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
           }
         },
-        "confusion": {
-          "Ship -> Person": 1
-        },
+        "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 3,
+          "pred": 1,
           "exp": 0,
           "pair_found": 0
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 3
+          "ASSOCIATED_WITH": 1
         },
         "rel_gold_by_type": {},
         "false_positives": [
-          "14 days earlier [Date]",
           "Comparison [Organization]",
-          "approximately 10 per cent [Financial]",
-          "preceding week [Date]"
+          "approximately 10 per cent [Financial]"
         ],
         "false_negatives": [],
-        "mistyped": [
-          "Sedne: Ship -> Person"
-        ],
+        "mistyped": [],
         "relationships_missed": [],
         "relationships_predicted": [
-          "Comparison -ASSOCIATED_WITH-> 14 days earlier",
-          "Sedne -ASSOCIATED_WITH-> 3rd Naval Auxiliary Group",
-          "preceding week -ASSOCIATED_WITH-> Sedne"
+          "Sedne -ASSOCIATED_WITH-> 3rd Naval Auxiliary Group"
         ]
       },
       "build": {
@@ -1098,13 +1011,11 @@
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 2,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 2,
-        "relationships_dropped_by_type": {
-          "ASSOCIATED_WITH": 2
-        }
+        "relationships_dropped": 0,
+        "relationships_dropped_by_type": {}
       }
     },
     {
@@ -1113,36 +1024,33 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.04,
       "score": {
         "entities": {
           "tp": 3,
           "pred": 4,
           "exp": 3,
-          "typed_tp": 1,
-          "category_tp": 1
+          "typed_tp": 3,
+          "category_tp": 3
         },
         "per_type": {
+          "Ship": {
+            "tp": 2,
+            "pred": 2,
+            "exp": 2
+          },
           "Person": {
             "tp": 0,
-            "pred": 2,
+            "pred": 1,
             "exp": 0
           },
           "Organization": {
             "tp": 1,
-            "pred": 2,
+            "pred": 1,
             "exp": 1
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 2
           }
         },
-        "confusion": {
-          "Ship -> Person": 1,
-          "Ship -> Organization": 1
-        },
+        "confusion": {},
         "relationships": {
           "tp": 0,
           "pred": 5,
@@ -1157,10 +1065,7 @@
           "Liaison [Person]"
         ],
         "false_negatives": [],
-        "mistyped": [
-          "Brenna: Ship -> Person",
-          "Sarn: Ship -> Organization"
-        ],
+        "mistyped": [],
         "relationships_missed": [],
         "relationships_predicted": [
           "Brenna -ASSOCIATED_WITH-> 3rd Naval Auxiliary Group",
@@ -1188,159 +1093,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
-      "score": {
-        "entities": {
-          "tp": 2,
-          "pred": 3,
-          "exp": 2,
-          "typed_tp": 0,
-          "category_tp": 0
-        },
-        "per_type": {
-          "Organization": {
-            "tp": 0,
-            "pred": 2,
-            "exp": 0
-          },
-          "Date": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Location": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
-          }
-        },
-        "confusion": {
-          "Location -> Organization": 1,
-          "Ship -> Organization": 1
-        },
-        "relationships": {
-          "tp": 0,
-          "pred": 3,
-          "exp": 0,
-          "pair_found": 0
-        },
-        "rel_types_predicted": {
-          "ASSOCIATED_WITH": 3
-        },
-        "rel_gold_by_type": {},
-        "false_positives": [
-          "quarterly [Date]"
-        ],
-        "false_negatives": [],
-        "mistyped": [
-          "Ostravik: Ship -> Organization",
-          "Torvik: Location -> Organization"
-        ],
-        "relationships_missed": [],
-        "relationships_predicted": [
-          "Torvik -ASSOCIATED_WITH-> Ostravik",
-          "Torvik -ASSOCIATED_WITH-> quarterly",
-          "quarterly -ASSOCIATED_WITH-> Ostravik"
-        ]
-      },
-      "build": {
-        "entities_created": 2,
-        "entities_merged": 0,
-        "entities_filtered": 0,
-        "dates_absorbed": 0,
-        "dates_orphaned": 1,
-        "relationships_created": 0,
-        "relationships_retired": 0,
-        "relationships_dropped": 2,
-        "relationships_dropped_by_type": {
-          "ASSOCIATED_WITH": 2
-        }
-      }
-    },
-    {
-      "set": "corpus",
-      "name": "KES-0018_0",
-      "method": "nlp",
-      "degraded": false,
-      "reason": "",
-      "seconds": 0.05,
-      "score": {
-        "entities": {
-          "tp": 1,
-          "pred": 3,
-          "exp": 1,
-          "typed_tp": 0,
-          "category_tp": 0
-        },
-        "per_type": {
-          "Date": {
-            "tp": 0,
-            "pred": 2,
-            "exp": 0
-          },
-          "Organization": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
-          }
-        },
-        "confusion": {
-          "Ship -> Organization": 1
-        },
-        "relationships": {
-          "tp": 0,
-          "pred": 1,
-          "exp": 0,
-          "pair_found": 0
-        },
-        "rel_types_predicted": {
-          "ASSOCIATED_WITH": 1
-        },
-        "rel_gold_by_type": {},
-        "false_positives": [
-          "period 2004Z [Date]",
-          "quarterly [Date]"
-        ],
-        "false_negatives": [],
-        "mistyped": [
-          "Ostravik: Ship -> Organization"
-        ],
-        "relationships_missed": [],
-        "relationships_predicted": [
-          "quarterly -ASSOCIATED_WITH-> Ostravik"
-        ]
-      },
-      "build": {
-        "entities_created": 1,
-        "entities_merged": 0,
-        "entities_filtered": 0,
-        "dates_absorbed": 0,
-        "dates_orphaned": 2,
-        "relationships_created": 0,
-        "relationships_retired": 0,
-        "relationships_dropped": 1,
-        "relationships_dropped_by_type": {
-          "ASSOCIATED_WITH": 1
-        }
-      }
-    },
-    {
-      "set": "corpus",
-      "name": "KES-0019_0",
-      "method": "nlp",
-      "degraded": false,
-      "reason": "",
-      "seconds": 0.07,
+      "seconds": 0.04,
       "score": {
         "entities": {
           "tp": 2,
@@ -1350,24 +1103,24 @@
           "category_tp": 1
         },
         "per_type": {
-          "Person": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Organization": {
+          "Ship": {
             "tp": 1,
             "pred": 1,
             "exp": 1
           },
-          "Ship": {
+          "Organization": {
+            "tp": 0,
+            "pred": 1,
+            "exp": 0
+          },
+          "Location": {
             "tp": 0,
             "pred": 0,
             "exp": 1
           }
         },
         "confusion": {
-          "Ship -> Person": 1
+          "Location -> Organization": 1
         },
         "relationships": {
           "tp": 0,
@@ -1382,8 +1135,115 @@
         "false_positives": [],
         "false_negatives": [],
         "mistyped": [
-          "Mirenda: Ship -> Person"
+          "Torvik: Location -> Organization"
         ],
+        "relationships_missed": [],
+        "relationships_predicted": [
+          "Torvik -ASSOCIATED_WITH-> Ostravik"
+        ]
+      },
+      "build": {
+        "entities_created": 2,
+        "entities_merged": 0,
+        "entities_filtered": 0,
+        "dates_absorbed": 0,
+        "dates_orphaned": 0,
+        "relationships_created": 0,
+        "relationships_retired": 0,
+        "relationships_dropped": 0,
+        "relationships_dropped_by_type": {}
+      }
+    },
+    {
+      "set": "corpus",
+      "name": "KES-0018_0",
+      "method": "nlp",
+      "degraded": false,
+      "reason": "",
+      "seconds": 0.03,
+      "score": {
+        "entities": {
+          "tp": 1,
+          "pred": 1,
+          "exp": 1,
+          "typed_tp": 1,
+          "category_tp": 1
+        },
+        "per_type": {
+          "Ship": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
+          }
+        },
+        "confusion": {},
+        "relationships": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0,
+          "pair_found": 0
+        },
+        "rel_types_predicted": {},
+        "rel_gold_by_type": {},
+        "false_positives": [],
+        "false_negatives": [],
+        "mistyped": [],
+        "relationships_missed": [],
+        "relationships_predicted": []
+      },
+      "build": {
+        "entities_created": 1,
+        "entities_merged": 0,
+        "entities_filtered": 0,
+        "dates_absorbed": 0,
+        "dates_orphaned": 0,
+        "relationships_created": 0,
+        "relationships_retired": 0,
+        "relationships_dropped": 0,
+        "relationships_dropped_by_type": {}
+      }
+    },
+    {
+      "set": "corpus",
+      "name": "KES-0019_0",
+      "method": "nlp",
+      "degraded": false,
+      "reason": "",
+      "seconds": 0.04,
+      "score": {
+        "entities": {
+          "tp": 2,
+          "pred": 2,
+          "exp": 2,
+          "typed_tp": 2,
+          "category_tp": 2
+        },
+        "per_type": {
+          "Ship": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
+          },
+          "Organization": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
+          }
+        },
+        "confusion": {},
+        "relationships": {
+          "tp": 0,
+          "pred": 1,
+          "exp": 0,
+          "pair_found": 0
+        },
+        "rel_types_predicted": {
+          "ASSOCIATED_WITH": 1
+        },
+        "rel_gold_by_type": {},
+        "false_positives": [],
+        "false_negatives": [],
+        "mistyped": [],
         "relationships_missed": [],
         "relationships_predicted": [
           "Mirenda -ASSOCIATED_WITH-> Torvik Harbour Authority"
@@ -1407,35 +1267,28 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.04,
       "score": {
         "entities": {
           "tp": 2,
           "pred": 2,
           "exp": 2,
-          "typed_tp": 1,
-          "category_tp": 1
+          "typed_tp": 2,
+          "category_tp": 2
         },
         "per_type": {
-          "Person": {
-            "tp": 0,
+          "Ship": {
+            "tp": 1,
             "pred": 1,
-            "exp": 0
+            "exp": 1
           },
           "Organization": {
             "tp": 1,
             "pred": 1,
             "exp": 1
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
           }
         },
-        "confusion": {
-          "Ship -> Person": 1
-        },
+        "confusion": {},
         "relationships": {
           "tp": 0,
           "pred": 1,
@@ -1448,9 +1301,7 @@
         "rel_gold_by_type": {},
         "false_positives": [],
         "false_negatives": [],
-        "mistyped": [
-          "Mirenda: Ship -> Person"
-        ],
+        "mistyped": [],
         "relationships_missed": [],
         "relationships_predicted": [
           "Mirenda -ASSOCIATED_WITH-> Torvik Harbour Authority"
@@ -1474,14 +1325,14 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
       "score": {
         "entities": {
-          "tp": 4,
-          "pred": 4,
+          "tp": 3,
+          "pred": 3,
           "exp": 4,
-          "typed_tp": 2,
-          "category_tp": 2
+          "typed_tp": 1,
+          "category_tp": 1
         },
         "per_type": {
           "Organization": {
@@ -1494,12 +1345,12 @@
             "pred": 1,
             "exp": 0
           },
-          "Date": {
-            "tp": 1,
-            "pred": 1,
+          "Location": {
+            "tp": 0,
+            "pred": 0,
             "exp": 1
           },
-          "Location": {
+          "Date": {
             "tp": 0,
             "pred": 0,
             "exp": 1
@@ -1525,7 +1376,9 @@
         },
         "rel_gold_by_type": {},
         "false_positives": [],
-        "false_negatives": [],
+        "false_negatives": [
+          "15-18 August [Date]"
+        ],
         "mistyped": [
           "Aldenkirk: Ship -> Person",
           "Torvik: Location -> Organization"
@@ -1540,7 +1393,7 @@
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 1,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
@@ -1553,7 +1406,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 2,
@@ -1607,11 +1460,11 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 2,
-          "pred": 3,
+          "pred": 2,
           "exp": 2,
           "typed_tp": 0,
           "category_tp": 0
@@ -1620,11 +1473,6 @@
           "Person": {
             "tp": 0,
             "pred": 2,
-            "exp": 0
-          },
-          "Date": {
-            "tp": 0,
-            "pred": 1,
             "exp": 0
           },
           "Ship": {
@@ -1646,9 +1494,7 @@
           "ASSOCIATED_WITH": 1
         },
         "rel_gold_by_type": {},
-        "false_positives": [
-          "period 1417Z to 0902Z. [Date]"
-        ],
+        "false_positives": [],
         "false_negatives": [],
         "mistyped": [
           "Mirenda: Ship -> Person",
@@ -1664,7 +1510,7 @@
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 1,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
@@ -1677,7 +1523,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 2,
@@ -1737,11 +1583,11 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 2,
-          "pred": 4,
+          "pred": 2,
           "exp": 2,
           "typed_tp": 1,
           "category_tp": 1
@@ -1749,15 +1595,10 @@
         "per_type": {
           "Organization": {
             "tp": 1,
-            "pred": 2,
+            "pred": 1,
             "exp": 1
           },
           "Location": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Date": {
             "tp": 0,
             "pred": 1,
             "exp": 0
@@ -1781,10 +1622,7 @@
           "ASSOCIATED_WITH": 1
         },
         "rel_gold_by_type": {},
-        "false_positives": [
-          "Ravenskan [Organization]",
-          "between 1910Z and 1223Z [Date]"
-        ],
+        "false_positives": [],
         "false_negatives": [],
         "mistyped": [
           "Lysgard: Ship -> Location"
@@ -1795,11 +1633,11 @@
         ]
       },
       "build": {
-        "entities_created": 3,
+        "entities_created": 2,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 1,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
@@ -1812,11 +1650,11 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 1,
-          "pred": 2,
+          "pred": 1,
           "exp": 1,
           "typed_tp": 1,
           "category_tp": 1
@@ -1824,7 +1662,7 @@
         "per_type": {
           "Organization": {
             "tp": 1,
-            "pred": 2,
+            "pred": 1,
             "exp": 1
           }
         },
@@ -1837,16 +1675,14 @@
         },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
-        "false_positives": [
-          "VHF [Organization]"
-        ],
+        "false_positives": [],
         "false_negatives": [],
         "mistyped": [],
         "relationships_missed": [],
         "relationships_predicted": []
       },
       "build": {
-        "entities_created": 2,
+        "entities_created": 1,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
@@ -1863,61 +1699,48 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 2,
-          "pred": 3,
+          "pred": 2,
           "exp": 2,
-          "typed_tp": 1,
-          "category_tp": 1
+          "typed_tp": 2,
+          "category_tp": 2
         },
         "per_type": {
-          "Location": {
+          "Ship": {
             "tp": 1,
-            "pred": 2,
+            "pred": 1,
             "exp": 1
           },
-          "Organization": {
-            "tp": 0,
+          "Location": {
+            "tp": 1,
             "pred": 1,
-            "exp": 0
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
             "exp": 1
           }
         },
-        "confusion": {
-          "Ship -> Location": 1
-        },
+        "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 3,
+          "pred": 1,
           "exp": 0,
           "pair_found": 0
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 3
+          "ASSOCIATED_WITH": 1
         },
         "rel_gold_by_type": {},
-        "false_positives": [
-          "AIS [Organization]"
-        ],
+        "false_positives": [],
         "false_negatives": [],
-        "mistyped": [
-          "Stellar Vane: Ship -> Location"
-        ],
+        "mistyped": [],
         "relationships_missed": [],
         "relationships_predicted": [
-          "AIS -ASSOCIATED_WITH-> Ostrand",
-          "Stellar Vane -ASSOCIATED_WITH-> AIS",
           "Stellar Vane -ASSOCIATED_WITH-> Ostrand"
         ]
       },
       "build": {
-        "entities_created": 3,
+        "entities_created": 2,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
@@ -1934,7 +1757,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 2,
@@ -1999,11 +1822,11 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 2,
-          "pred": 5,
+          "pred": 4,
           "exp": 2,
           "typed_tp": 1,
           "category_tp": 1
@@ -2029,11 +1852,6 @@
             "pred": 1,
             "exp": 0
           },
-          "Date": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
           "Ship": {
             "tp": 0,
             "pred": 0,
@@ -2045,12 +1863,12 @@
         },
         "relationships": {
           "tp": 0,
-          "pred": 2,
+          "pred": 1,
           "exp": 1,
           "pair_found": 1
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 2
+          "ASSOCIATED_WITH": 1
         },
         "rel_gold_by_type": {
           "LOCATED_AT": {
@@ -2059,7 +1877,6 @@
           }
         },
         "false_positives": [
-          "7 days earlier [Date]",
           "Comparison [Organization]",
           "approximately 30 per cent [Financial]"
         ],
@@ -2071,7 +1888,6 @@
           "Ekhaven -LOCATED_AT-> Ostrand Peninsula"
         ],
         "relationships_predicted": [
-          "Comparison -ASSOCIATED_WITH-> 7 days earlier",
           "Ostrand Peninsula -ASSOCIATED_WITH-> Ekhaven AIS"
         ]
       },
@@ -2080,13 +1896,11 @@
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 1,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 1,
-        "relationships_dropped_by_type": {
-          "ASSOCIATED_WITH": 1
-        }
+        "relationships_dropped": 0,
+        "relationships_dropped_by_type": {}
       }
     },
     {
@@ -2095,7 +1909,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.05,
       "score": {
         "entities": {
           "tp": 1,
@@ -2193,7 +2007,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.04,
       "score": {
         "entities": {
           "tp": 3,
@@ -2261,11 +2075,11 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 1,
-          "pred": 2,
+          "pred": 1,
           "exp": 2,
           "typed_tp": 1,
           "category_tp": 1
@@ -2275,11 +2089,6 @@
             "tp": 1,
             "pred": 1,
             "exp": 2
-          },
-          "Date": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
           }
         },
         "confusion": {},
@@ -2291,9 +2100,7 @@
         },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
-        "false_positives": [
-          "between 0403Z and 1712Z [Date]"
-        ],
+        "false_positives": [],
         "false_negatives": [
           "19th Signals Regiment [Organization]"
         ],
@@ -2306,7 +2113,7 @@
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 1,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
@@ -2320,199 +2127,6 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.03,
-      "score": {
-        "entities": {
-          "tp": 1,
-          "pred": 2,
-          "exp": 1,
-          "typed_tp": 0,
-          "category_tp": 0
-        },
-        "per_type": {
-          "Person": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Date": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
-          }
-        },
-        "confusion": {
-          "Ship -> Person": 1
-        },
-        "relationships": {
-          "tp": 0,
-          "pred": 0,
-          "exp": 0,
-          "pair_found": 0
-        },
-        "rel_types_predicted": {},
-        "rel_gold_by_type": {},
-        "false_positives": [
-          "period 1836Z to [Date]"
-        ],
-        "false_negatives": [],
-        "mistyped": [
-          "Aldenkirk: Ship -> Person"
-        ],
-        "relationships_missed": [],
-        "relationships_predicted": []
-      },
-      "build": {
-        "entities_created": 1,
-        "entities_merged": 0,
-        "entities_filtered": 0,
-        "dates_absorbed": 0,
-        "dates_orphaned": 1,
-        "relationships_created": 0,
-        "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
-      }
-    },
-    {
-      "set": "corpus",
-      "name": "KES-0085_0",
-      "method": "nlp",
-      "degraded": false,
-      "reason": "",
-      "seconds": 0.04,
-      "score": {
-        "entities": {
-          "tp": 2,
-          "pred": 3,
-          "exp": 2,
-          "typed_tp": 1,
-          "category_tp": 1
-        },
-        "per_type": {
-          "Organization": {
-            "tp": 1,
-            "pred": 2,
-            "exp": 1
-          },
-          "Date": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Location": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
-          }
-        },
-        "confusion": {
-          "Location -> Organization": 1
-        },
-        "relationships": {
-          "tp": 0,
-          "pred": 0,
-          "exp": 0,
-          "pair_found": 0
-        },
-        "rel_types_predicted": {},
-        "rel_gold_by_type": {},
-        "false_positives": [
-          "14 months [Date]"
-        ],
-        "false_negatives": [],
-        "mistyped": [
-          "Nyhavn: Location -> Organization"
-        ],
-        "relationships_missed": [],
-        "relationships_predicted": []
-      },
-      "build": {
-        "entities_created": 2,
-        "entities_merged": 0,
-        "entities_filtered": 0,
-        "dates_absorbed": 0,
-        "dates_orphaned": 1,
-        "relationships_created": 0,
-        "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
-      }
-    },
-    {
-      "set": "corpus",
-      "name": "KES-0094_0",
-      "method": "nlp",
-      "degraded": false,
-      "reason": "",
-      "seconds": 0.03,
-      "score": {
-        "entities": {
-          "tp": 0,
-          "pred": 2,
-          "exp": 1,
-          "typed_tp": 0,
-          "category_tp": 0
-        },
-        "per_type": {
-          "Organization": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 1
-          },
-          "Person": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          }
-        },
-        "confusion": {},
-        "relationships": {
-          "tp": 0,
-          "pred": 1,
-          "exp": 0,
-          "pair_found": 0
-        },
-        "rel_types_predicted": {
-          "ASSOCIATED_WITH": 1
-        },
-        "rel_gold_by_type": {},
-        "false_positives": [
-          "Valdorian [Organization]",
-          "liaison [Person]"
-        ],
-        "false_negatives": [
-          "7th Composite Aviation Detachment [Organization]"
-        ],
-        "mistyped": [],
-        "relationships_missed": [],
-        "relationships_predicted": [
-          "Valdorian -ASSOCIATED_WITH-> liaison"
-        ]
-      },
-      "build": {
-        "entities_created": 2,
-        "entities_merged": 0,
-        "entities_filtered": 0,
-        "dates_absorbed": 0,
-        "dates_orphaned": 0,
-        "relationships_created": 0,
-        "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
-      }
-    },
-    {
-      "set": "corpus",
-      "name": "KES-0098_0",
-      "method": "nlp",
-      "degraded": false,
-      "reason": "",
-      "seconds": 0.04,
       "score": {
         "entities": {
           "tp": 1,
@@ -2547,8 +2161,166 @@
         "false_positives": [],
         "false_negatives": [],
         "mistyped": [
-          "Mirenda: Ship -> Person"
+          "Aldenkirk: Ship -> Person"
         ],
+        "relationships_missed": [],
+        "relationships_predicted": []
+      },
+      "build": {
+        "entities_created": 1,
+        "entities_merged": 0,
+        "entities_filtered": 0,
+        "dates_absorbed": 0,
+        "dates_orphaned": 0,
+        "relationships_created": 0,
+        "relationships_retired": 0,
+        "relationships_dropped": 0,
+        "relationships_dropped_by_type": {}
+      }
+    },
+    {
+      "set": "corpus",
+      "name": "KES-0085_0",
+      "method": "nlp",
+      "degraded": false,
+      "reason": "",
+      "seconds": 0.04,
+      "score": {
+        "entities": {
+          "tp": 2,
+          "pred": 2,
+          "exp": 2,
+          "typed_tp": 1,
+          "category_tp": 1
+        },
+        "per_type": {
+          "Organization": {
+            "tp": 1,
+            "pred": 2,
+            "exp": 1
+          },
+          "Location": {
+            "tp": 0,
+            "pred": 0,
+            "exp": 1
+          }
+        },
+        "confusion": {
+          "Location -> Organization": 1
+        },
+        "relationships": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0,
+          "pair_found": 0
+        },
+        "rel_types_predicted": {},
+        "rel_gold_by_type": {},
+        "false_positives": [],
+        "false_negatives": [],
+        "mistyped": [
+          "Nyhavn: Location -> Organization"
+        ],
+        "relationships_missed": [],
+        "relationships_predicted": []
+      },
+      "build": {
+        "entities_created": 2,
+        "entities_merged": 0,
+        "entities_filtered": 0,
+        "dates_absorbed": 0,
+        "dates_orphaned": 0,
+        "relationships_created": 0,
+        "relationships_retired": 0,
+        "relationships_dropped": 0,
+        "relationships_dropped_by_type": {}
+      }
+    },
+    {
+      "set": "corpus",
+      "name": "KES-0094_0",
+      "method": "nlp",
+      "degraded": false,
+      "reason": "",
+      "seconds": 0.03,
+      "score": {
+        "entities": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 1,
+          "typed_tp": 0,
+          "category_tp": 0
+        },
+        "per_type": {
+          "Organization": {
+            "tp": 0,
+            "pred": 0,
+            "exp": 1
+          }
+        },
+        "confusion": {},
+        "relationships": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0,
+          "pair_found": 0
+        },
+        "rel_types_predicted": {},
+        "rel_gold_by_type": {},
+        "false_positives": [],
+        "false_negatives": [
+          "7th Composite Aviation Detachment [Organization]"
+        ],
+        "mistyped": [],
+        "relationships_missed": [],
+        "relationships_predicted": []
+      },
+      "build": {
+        "entities_created": 0,
+        "entities_merged": 0,
+        "entities_filtered": 0,
+        "dates_absorbed": 0,
+        "dates_orphaned": 0,
+        "relationships_created": 0,
+        "relationships_retired": 0,
+        "relationships_dropped": 0,
+        "relationships_dropped_by_type": {}
+      }
+    },
+    {
+      "set": "corpus",
+      "name": "KES-0098_0",
+      "method": "nlp",
+      "degraded": false,
+      "reason": "",
+      "seconds": 0.04,
+      "score": {
+        "entities": {
+          "tp": 1,
+          "pred": 1,
+          "exp": 1,
+          "typed_tp": 1,
+          "category_tp": 1
+        },
+        "per_type": {
+          "Ship": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
+          }
+        },
+        "confusion": {},
+        "relationships": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0,
+          "pair_found": 0
+        },
+        "rel_types_predicted": {},
+        "rel_gold_by_type": {},
+        "false_positives": [],
+        "false_negatives": [],
+        "mistyped": [],
         "relationships_missed": [],
         "relationships_predicted": []
       },
@@ -2574,76 +2346,51 @@
       "score": {
         "entities": {
           "tp": 2,
-          "pred": 5,
+          "pred": 3,
           "exp": 2,
-          "typed_tp": 1,
-          "category_tp": 1
+          "typed_tp": 2,
+          "category_tp": 2
         },
         "per_type": {
+          "Ship": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
+          },
           "Location": {
             "tp": 1,
             "pred": 1,
             "exp": 1
           },
-          "Organization": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Person": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
           "Quantity": {
             "tp": 0,
             "pred": 1,
             "exp": 0
-          },
-          "Date": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
           }
         },
-        "confusion": {
-          "Ship -> Person": 1
-        },
+        "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 1,
+          "pred": 0,
           "exp": 0,
           "pair_found": 0
         },
-        "rel_types_predicted": {
-          "ASSOCIATED_WITH": 1
-        },
+        "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [
-          "AIS [Organization]",
-          "between 2021Z and 1920Z [Date]",
           "some 600 metres [Quantity]"
         ],
         "false_negatives": [],
-        "mistyped": [
-          "Sarn: Ship -> Person"
-        ],
+        "mistyped": [],
         "relationships_missed": [],
-        "relationships_predicted": [
-          "Ostrand Peninsula -ASSOCIATED_WITH-> AIS"
-        ]
+        "relationships_predicted": []
       },
       "build": {
-        "entities_created": 4,
+        "entities_created": 3,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 1,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
@@ -2660,7 +2407,7 @@
       "score": {
         "entities": {
           "tp": 3,
-          "pred": 4,
+          "pred": 3,
           "exp": 3,
           "typed_tp": 1,
           "category_tp": 1
@@ -2670,11 +2417,6 @@
             "tp": 1,
             "pred": 1,
             "exp": 1
-          },
-          "Organization": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
           },
           "Person": {
             "tp": 0,
@@ -2692,17 +2434,15 @@
         },
         "relationships": {
           "tp": 0,
-          "pred": 2,
+          "pred": 1,
           "exp": 0,
           "pair_found": 0
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 2
+          "ASSOCIATED_WITH": 1
         },
         "rel_gold_by_type": {},
-        "false_positives": [
-          "AIS [Organization]"
-        ],
+        "false_positives": [],
         "false_negatives": [],
         "mistyped": [
           "Mirenda: Ship -> Person",
@@ -2710,12 +2450,11 @@
         ],
         "relationships_missed": [],
         "relationships_predicted": [
-          "Ostrand Peninsula -ASSOCIATED_WITH-> AIS",
           "Stellar Vane -ASSOCIATED_WITH-> Mirenda"
         ]
       },
       "build": {
-        "entities_created": 4,
+        "entities_created": 3,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
@@ -2732,24 +2471,19 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.02,
       "score": {
         "entities": {
           "tp": 2,
-          "pred": 4,
+          "pred": 2,
           "exp": 2,
           "typed_tp": 0,
           "category_tp": 0
         },
         "per_type": {
-          "Organization": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
           "Person": {
             "tp": 0,
-            "pred": 3,
+            "pred": 2,
             "exp": 0
           },
           "Ship": {
@@ -2763,18 +2497,15 @@
         },
         "relationships": {
           "tp": 0,
-          "pred": 2,
+          "pred": 1,
           "exp": 0,
           "pair_found": 0
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 2
+          "ASSOCIATED_WITH": 1
         },
         "rel_gold_by_type": {},
-        "false_positives": [
-          "Valdorian [Organization]",
-          "liaison [Person]"
-        ],
+        "false_positives": [],
         "false_negatives": [],
         "mistyped": [
           "Mirenda: Ship -> Person",
@@ -2782,13 +2513,12 @@
         ],
         "relationships_missed": [],
         "relationships_predicted": [
-          "Mirenda -ASSOCIATED_WITH-> Stellar Vane",
-          "Valdorian -ASSOCIATED_WITH-> liaison"
+          "Mirenda -ASSOCIATED_WITH-> Stellar Vane"
         ]
       },
       "build": {
-        "entities_created": 3,
-        "entities_merged": 1,
+        "entities_created": 2,
+        "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 0,
@@ -2804,11 +2534,11 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 2,
-          "pred": 4,
+          "pred": 2,
           "exp": 3,
           "typed_tp": 2,
           "category_tp": 2
@@ -2823,11 +2553,6 @@
             "tp": 1,
             "pred": 1,
             "exp": 2
-          },
-          "Date": {
-            "tp": 0,
-            "pred": 2,
-            "exp": 0
           }
         },
         "confusion": {},
@@ -2839,10 +2564,7 @@
         },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
-        "false_positives": [
-          "14 months [Date]",
-          "between 0328Z and 0852Z [Date]"
-        ],
+        "false_positives": [],
         "false_negatives": [
           "19th Signals Regiment [Organization]"
         ],
@@ -2855,7 +2577,7 @@
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 2,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
@@ -2924,83 +2646,58 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 3,
-          "pred": 7,
+          "pred": 3,
           "exp": 3,
-          "typed_tp": 1,
-          "category_tp": 1
+          "typed_tp": 3,
+          "category_tp": 3
         },
         "per_type": {
+          "Ship": {
+            "tp": 2,
+            "pred": 2,
+            "exp": 2
+          },
           "Organization": {
             "tp": 1,
-            "pred": 5,
+            "pred": 1,
             "exp": 1
-          },
-          "Person": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Date": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 2
           }
         },
-        "confusion": {
-          "Ship -> Organization": 2
-        },
+        "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 6,
+          "pred": 3,
           "exp": 0,
           "pair_found": 0
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 6
+          "ASSOCIATED_WITH": 3
         },
         "rel_gold_by_type": {},
-        "false_positives": [
-          "Kalvar [Organization]",
-          "Valdorian [Organization]",
-          "liaison [Person]",
-          "same day [Date]"
-        ],
+        "false_positives": [],
         "false_negatives": [],
-        "mistyped": [
-          "Kalvar: Ship -> Organization",
-          "Ostravik: Ship -> Organization"
-        ],
+        "mistyped": [],
         "relationships_missed": [],
         "relationships_predicted": [
-          "Kalvar -ASSOCIATED_WITH-> same day",
+          "3rd Naval Auxiliary Group -ASSOCIATED_WITH-> Kalvar",
           "Ostravik -ASSOCIATED_WITH-> 3rd Naval Auxiliary Group",
-          "Valdorian -ASSOCIATED_WITH-> Kalvar",
-          "Valdorian -ASSOCIATED_WITH-> liaison",
-          "liaison -ASSOCIATED_WITH-> Kalvar",
-          "liaison -ASSOCIATED_WITH-> same day"
+          "Ostravik -ASSOCIATED_WITH-> Kalvar"
         ]
       },
       "build": {
-        "entities_created": 5,
-        "entities_merged": 1,
+        "entities_created": 3,
+        "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 1,
+        "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 2,
-        "relationships_dropped_by_type": {
-          "ASSOCIATED_WITH": 2
-        }
+        "relationships_dropped": 0,
+        "relationships_dropped_by_type": {}
       }
     },
     {
@@ -3009,7 +2706,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 1,
@@ -3058,7 +2755,7 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 1,
@@ -3114,19 +2811,24 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
       "score": {
         "entities": {
           "tp": 3,
           "pred": 3,
           "exp": 3,
-          "typed_tp": 1,
-          "category_tp": 1
+          "typed_tp": 2,
+          "category_tp": 2
         },
         "per_type": {
+          "Ship": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
+          },
           "Organization": {
             "tp": 1,
-            "pred": 2,
+            "pred": 1,
             "exp": 1
           },
           "Person": {
@@ -3138,29 +2840,24 @@
             "tp": 0,
             "pred": 0,
             "exp": 1
-          },
-          "Ship": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
           }
         },
         "confusion": {
-          "Location -> Person": 1,
-          "Ship -> Organization": 1
+          "Location -> Person": 1
         },
         "relationships": {
-          "tp": 0,
-          "pred": 1,
+          "tp": 1,
+          "pred": 3,
           "exp": 2,
-          "pair_found": 0
+          "pair_found": 1
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 1
+          "ASSOCIATED_WITH": 2,
+          "BELONGS_TO": 1
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
-            "tp": 0,
+            "tp": 1,
             "exp": 1
           },
           "LOCATED_AT": {
@@ -3171,15 +2868,15 @@
         "false_positives": [],
         "false_negatives": [],
         "mistyped": [
-          "Nyhavn: Location -> Person",
-          "Torvald: Ship -> Organization"
+          "Nyhavn: Location -> Person"
         ],
         "relationships_missed": [
-          "Torvald -BELONGS_TO-> 2nd Naval Auxiliary Group",
           "Torvald -LOCATED_AT-> Nyhavn"
         ],
         "relationships_predicted": [
-          "2nd Naval Auxiliary Group -ASSOCIATED_WITH-> Nyhavn"
+          "2nd Naval Auxiliary Group -ASSOCIATED_WITH-> Nyhavn",
+          "2nd Naval Auxiliary Group -ASSOCIATED_WITH-> Torvald",
+          "Torvald -BELONGS_TO-> 2nd Naval Auxiliary Group"
         ]
       },
       "build": {
@@ -3188,7 +2885,7 @@
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 0,
-        "relationships_created": 0,
+        "relationships_created": 1,
         "relationships_retired": 0,
         "relationships_dropped": 0,
         "relationships_dropped_by_type": {}
@@ -3249,14 +2946,14 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.02,
       "score": {
         "entities": {
           "tp": 11,
-          "pred": 12,
+          "pred": 11,
           "exp": 12,
-          "typed_tp": 10,
-          "category_tp": 10
+          "typed_tp": 11,
+          "category_tp": 11
         },
         "per_type": {
           "IPAddress": {
@@ -3276,41 +2973,41 @@
           },
           "Date": {
             "tp": 2,
-            "pred": 3,
+            "pred": 2,
             "exp": 2
           },
-          "Organization": {
-            "tp": 3,
-            "pred": 4,
-            "exp": 4
+          "ThreatActor": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
           },
           "Location": {
             "tp": 2,
             "pred": 2,
             "exp": 2
           },
-          "ThreatActor": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
+          "Organization": {
+            "tp": 3,
+            "pred": 3,
+            "exp": 4
           }
         },
-        "confusion": {
-          "ThreatActor -> Organization": 1
-        },
+        "confusion": {},
         "relationships": {
-          "tp": 1,
-          "pred": 12,
+          "tp": 3,
+          "pred": 8,
           "exp": 3,
-          "pair_found": 2
+          "pair_found": 3
         },
         "rel_types_predicted": {
+          "ATTRIBUTED_TO": 1,
           "TARGETS": 1,
-          "ASSOCIATED_WITH": 11
+          "ASSOCIATED_WITH": 5,
+          "EXPLOITS": 1
         },
         "rel_gold_by_type": {
           "ATTRIBUTED_TO": {
-            "tp": 0,
+            "tp": 1,
             "exp": 1
           },
           "TARGETS": {
@@ -3318,35 +3015,24 @@
             "exp": 1
           },
           "EXPLOITS": {
-            "tp": 0,
+            "tp": 1,
             "exp": 1
           }
         },
-        "false_positives": [
-          "May 2023 [Date]"
-        ],
+        "false_positives": [],
         "false_negatives": [
           "CISA [Organization]"
         ],
-        "mistyped": [
-          "Volt Typhoon: ThreatActor -> Organization"
-        ],
-        "relationships_missed": [
-          "Volt Typhoon -ATTRIBUTED_TO-> China",
-          "Volt Typhoon -EXPLOITS-> CVE-2023-27997"
-        ],
+        "mistyped": [],
+        "relationships_missed": [],
         "relationships_predicted": [
           "185.220.101.42 -ASSOCIATED_WITH-> evil-c2.com",
-          "24 May 2023 -ASSOCIATED_WITH-> May 2023",
-          "China -ASSOCIATED_WITH-> 2023",
           "China -ASSOCIATED_WITH-> Guam",
           "Fortinet -ASSOCIATED_WITH-> CVE-2023-27997",
-          "Guam -ASSOCIATED_WITH-> 2023",
           "Microsoft -ASSOCIATED_WITH-> CVE-2023-27997",
           "Microsoft -ASSOCIATED_WITH-> Fortinet",
-          "NSA -ASSOCIATED_WITH-> 24 May 2023",
-          "NSA -ASSOCIATED_WITH-> May 2023",
-          "Volt Typhoon -ASSOCIATED_WITH-> China",
+          "Volt Typhoon -ATTRIBUTED_TO-> China",
+          "Volt Typhoon -EXPLOITS-> CVE-2023-27997",
           "Volt Typhoon -TARGETS-> Guam"
         ]
       },
@@ -3355,13 +3041,11 @@
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
-        "dates_orphaned": 3,
-        "relationships_created": 1,
+        "dates_orphaned": 2,
+        "relationships_created": 3,
         "relationships_retired": 0,
-        "relationships_dropped": 5,
-        "relationships_dropped_by_type": {
-          "ASSOCIATED_WITH": 5
-        }
+        "relationships_dropped": 0,
+        "relationships_dropped_by_type": {}
       }
     },
     {
@@ -3373,11 +3057,11 @@
       "seconds": 0.03,
       "score": {
         "entities": {
-          "tp": 8,
-          "pred": 8,
+          "tp": 11,
+          "pred": 11,
           "exp": 14,
-          "typed_tp": 5,
-          "category_tp": 5
+          "typed_tp": 11,
+          "category_tp": 11
         },
         "per_type": {
           "Vulnerability": {
@@ -3385,50 +3069,48 @@
             "pred": 1,
             "exp": 1
           },
-          "Location": {
+          "Software": {
             "tp": 3,
-            "pred": 4,
+            "pred": 3,
             "exp": 3
           },
-          "Organization": {
-            "tp": 1,
+          "Location": {
+            "tp": 3,
             "pred": 3,
+            "exp": 3
+          },
+          "ThreatActor": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
+          },
+          "Hardware": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
+          },
+          "Organization": {
+            "tp": 2,
+            "pred": 2,
             "exp": 4
           },
           "Document": {
             "tp": 0,
             "pred": 0,
             "exp": 1
-          },
-          "ThreatActor": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
-          },
-          "Software": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 3
-          },
-          "Hardware": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
           }
         },
-        "confusion": {
-          "ThreatActor -> Organization": 1,
-          "Hardware -> Organization": 1,
-          "Organization -> Location": 1
-        },
+        "confusion": {},
         "relationships": {
-          "tp": 0,
-          "pred": 7,
+          "tp": 4,
+          "pred": 13,
           "exp": 6,
-          "pair_found": 4
+          "pair_found": 6
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 7
+          "TARGETS": 1,
+          "ASSOCIATED_WITH": 9,
+          "USES": 3
         },
         "rel_gold_by_type": {
           "ATTRIBUTED_TO": {
@@ -3436,11 +3118,11 @@
             "exp": 1
           },
           "TARGETS": {
-            "tp": 0,
+            "tp": 1,
             "exp": 2
           },
           "USES": {
-            "tp": 0,
+            "tp": 3,
             "exp": 3
           }
         },
@@ -3448,23 +3130,12 @@
         "false_negatives": [
           "AA23-144a [Document]",
           "ASUS [Organization]",
-          "CISA [Organization]",
-          "netsh [Software]",
-          "ntdsutil [Software]",
-          "wmic [Software]"
+          "CISA [Organization]"
         ],
-        "mistyped": [
-          "Cisco: Organization -> Location",
-          "Fortinet FortiGuard: Hardware -> Organization",
-          "Volt Typhoon: ThreatActor -> Organization"
-        ],
+        "mistyped": [],
         "relationships_missed": [
           "Volt Typhoon -ATTRIBUTED_TO-> People's Republic of China",
-          "Volt Typhoon -TARGETS-> Guam",
-          "Volt Typhoon -TARGETS-> United States",
-          "Volt Typhoon -USES-> netsh",
-          "Volt Typhoon -USES-> ntdsutil",
-          "Volt Typhoon -USES-> wmic"
+          "Volt Typhoon -TARGETS-> United States"
         ],
         "relationships_predicted": [
           "Cisco -ASSOCIATED_WITH-> Netgear",
@@ -3472,17 +3143,23 @@
           "Guam -ASSOCIATED_WITH-> United States",
           "People's Republic of China -ASSOCIATED_WITH-> Guam",
           "People's Republic of China -ASSOCIATED_WITH-> Volt Typhoon",
-          "Volt Typhoon -ASSOCIATED_WITH-> Guam",
-          "Volt Typhoon -ASSOCIATED_WITH-> United States"
+          "Volt Typhoon -ASSOCIATED_WITH-> United States",
+          "Volt Typhoon -TARGETS-> Guam",
+          "Volt Typhoon -USES-> netsh",
+          "Volt Typhoon -USES-> ntdsutil",
+          "Volt Typhoon -USES-> wmic",
+          "netsh -ASSOCIATED_WITH-> ntdsutil",
+          "netsh -ASSOCIATED_WITH-> wmic",
+          "ntdsutil -ASSOCIATED_WITH-> wmic"
         ]
       },
       "build": {
-        "entities_created": 8,
+        "entities_created": 11,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 0,
-        "relationships_created": 0,
+        "relationships_created": 4,
         "relationships_retired": 0,
         "relationships_dropped": 0,
         "relationships_dropped_by_type": {}
@@ -3494,14 +3171,14 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.03,
+      "seconds": 0.02,
       "score": {
         "entities": {
           "tp": 13,
           "pred": 13,
           "exp": 13,
-          "typed_tp": 10,
-          "category_tp": 10
+          "typed_tp": 13,
+          "category_tp": 13
         },
         "per_type": {
           "IPAddress": {
@@ -3511,43 +3188,40 @@
           },
           "Organization": {
             "tp": 2,
-            "pred": 4,
+            "pred": 2,
             "exp": 2
+          },
+          "ThreatActor": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
           },
           "Location": {
             "tp": 7,
-            "pred": 8,
+            "pred": 7,
             "exp": 7
           },
-          "ThreatActor": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
-          },
           "Software": {
-            "tp": 0,
-            "pred": 0,
+            "tp": 1,
+            "pred": 1,
             "exp": 1
           },
           "Hardware": {
-            "tp": 0,
-            "pred": 0,
+            "tp": 1,
+            "pred": 1,
             "exp": 1
           }
         },
-        "confusion": {
-          "ThreatActor -> Organization": 1,
-          "Software -> Location": 1,
-          "Hardware -> Organization": 1
-        },
+        "confusion": {},
         "relationships": {
-          "tp": 0,
-          "pred": 14,
+          "tp": 1,
+          "pred": 15,
           "exp": 4,
-          "pair_found": 3
+          "pair_found": 4
         },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 14
+          "ASSOCIATED_WITH": 14,
+          "USES": 1
         },
         "rel_gold_by_type": {
           "TARGETS": {
@@ -3555,7 +3229,7 @@
             "exp": 2
           },
           "USES": {
-            "tp": 0,
+            "tp": 1,
             "exp": 1
           },
           "LOCATED_AT": {
@@ -3565,16 +3239,11 @@
         },
         "false_positives": [],
         "false_negatives": [],
-        "mistyped": [
-          "Netgear ProSAFE: Hardware -> Organization",
-          "Volt Typhoon: ThreatActor -> Organization",
-          "Windows: Software -> Location"
-        ],
+        "mistyped": [],
         "relationships_missed": [
           "Kaohsiung -LOCATED_AT-> Taiwan",
           "Volt Typhoon -TARGETS-> Guam",
-          "Volt Typhoon -TARGETS-> Naval Base Guam",
-          "Volt Typhoon -USES-> Windows"
+          "Volt Typhoon -TARGETS-> Naval Base Guam"
         ],
         "relationships_predicted": [
           "Guam -ASSOCIATED_WITH-> Asia",
@@ -3589,6 +3258,7 @@
           "United States -ASSOCIATED_WITH-> Asia",
           "Volt Typhoon -ASSOCIATED_WITH-> Guam",
           "Volt Typhoon -ASSOCIATED_WITH-> United States",
+          "Volt Typhoon -USES-> Windows",
           "Windows -ASSOCIATED_WITH-> Kaohsiung",
           "Windows -ASSOCIATED_WITH-> Taiwan"
         ]
@@ -3599,7 +3269,7 @@
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 0,
-        "relationships_created": 0,
+        "relationships_created": 1,
         "relationships_retired": 0,
         "relationships_dropped": 0,
         "relationships_dropped_by_type": {}
@@ -3608,15 +3278,14 @@
   ],
   "build": {
     "dates_absorbed": 0,
-    "dates_orphaned": 25,
-    "entities_created": 137,
+    "dates_orphaned": 2,
+    "entities_created": 128,
     "entities_filtered": 0,
-    "entities_merged": 3,
-    "relationships_created": 1,
-    "relationships_dropped": 14,
+    "entities_merged": 1,
+    "relationships_created": 10,
+    "relationships_dropped": 0,
     "relationships_retired": 0,
-    "relationships_dropped_by_type": {
-      "ASSOCIATED_WITH": 14
-    }
+    "relationships_dropped_by_type": {},
+    "errors": []
   }
 }

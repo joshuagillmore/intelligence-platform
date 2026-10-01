@@ -22,6 +22,11 @@ default suite.
 Usage (from backend/):
     uv run python tests/eval/run_corpus_eval.py --mode nlp
     uv run python tests/eval/run_corpus_eval.py --mode hybrid --build-neo4j bolt://localhost:7691
+    uv run python tests/eval/run_corpus_eval.py --mode llm --refresh-cache   # ask live, record the replies
+
+Model replies are replayed from ``llm_replies.json`` when the request is
+unchanged (see ``ReplyCache``); ``--no-cache`` asks live and records nothing.
+See ``tests/eval/README.md`` for the corpus, the gold conventions and results.
 
 ``--build-neo4j`` additionally runs each document's extraction through
 ``graph_builder.build_graph_from_extractions`` in a throwaway project and
@@ -376,9 +381,11 @@ class ReplyCache:
     change. A changed prompt is a different key, so it is always asked live.
     """
 
-    def __init__(self, path: Path | None, model: str):
+    def __init__(self, path: Path | None, model: str, refresh: bool = False):
         self.path = path
         self.model = model
+        # Ask live even when a reply is recorded, and record the new one.
+        self.refresh = refresh
         self.data: dict[str, dict] = {}
         if path and path.is_file():
             self.data = json.loads(path.read_text(encoding="utf-8"))
@@ -411,7 +418,7 @@ class CachingProvider:
         from intel_platform.llm.base import LLMResponse
 
         k = self._cache.key(system, messages)
-        hit = self._cache.data.get(k)
+        hit = None if self._cache.refresh else self._cache.data.get(k)
         if hit is not None:
             self._cache.hits += 1
             return LLMResponse(content=hit["content"], model=hit.get("model", self._model),
@@ -425,7 +432,7 @@ class CachingProvider:
 
 
 async def run(mode: str, sets: list[str], concurrency: int, retries: int, limit: int | None,
-              build_uri: str | None, cache_path: Path | None = None) -> dict:
+              build_uri: str | None, cache_path: Path | None = None, refresh: bool = False) -> dict:
     from intel_platform.config import settings
 
     provider_info: dict = {}
@@ -447,7 +454,7 @@ async def run(mode: str, sets: list[str], concurrency: int, retries: int, limit:
         provider_info = {"provider": type(provider).__name__, "model": model}
         # Selection happened above, in providers.py; from here extraction gets
         # the same provider back, behind the reply cache.
-        cache = ReplyCache(cache_path, f"{type(provider).__name__}/{model}")
+        cache = ReplyCache(cache_path, f"{type(provider).__name__}/{model}", refresh=refresh)
         wrapped = CachingProvider(provider, cache)
 
         async def _selected() -> CachingProvider:
@@ -657,7 +664,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="also run the graph build against this Neo4j (throwaway projects)")
     ap.add_argument("--llm-cache", type=Path, default=Path(__file__).resolve().parent / "llm_replies.json",
                     help="model replies to replay, and where new ones are recorded")
-    ap.add_argument("--no-cache", action="store_true", help="ask the model for every document")
+    ap.add_argument("--no-cache", action="store_true", help="ask the model for every document; record nothing")
+    ap.add_argument("--refresh-cache", action="store_true",
+                    help="ask the model for every document and record its replies over any recorded ones")
     args = ap.parse_args(argv)
 
     if args.mode != "nlp":
@@ -666,7 +675,7 @@ def main(argv: list[str] | None = None) -> int:
     _prepare_imports(args.build_neo4j)
     report = asyncio.run(run(
         args.mode, args.sets, args.concurrency, args.retries, args.limit, args.build_neo4j,
-        cache_path=None if args.no_cache else args.llm_cache,
+        cache_path=None if args.no_cache else args.llm_cache, refresh=args.refresh_cache,
     ))
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
