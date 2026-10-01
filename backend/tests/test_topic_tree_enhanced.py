@@ -182,6 +182,8 @@ def test_get_topic_context_regular_entity():
         "entity_type": "ThreatActor",
     }
     store.get_relationships.return_value = []
+    # Documents now come from the MENTIONS edges, read separately.
+    store.documents_mentioning.return_value = ([], 0)
 
     context = svc.get_topic_context("entity-123", "test-proj")
     assert context["entity"]["name"] == "APT29"
