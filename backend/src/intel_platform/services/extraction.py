@@ -554,7 +554,8 @@ _TYPE_HINTS: tuple[tuple[re.Pattern, str, tuple[str, ...]], ...] = (
     # Ship (LSM) program", which the model types "Equipment".
     (re.compile(r'(?i).*?\b(?:[\w-]+-class|frigate|destroyer|corvette|cruiser|warship|submarine|'
                 r'landing ship|amphibious ship|oiler)\b'),
-     "Ship", ("Equipment", "EquipmentType", "Technology", "Custom", "Product", "Vehicle", "")),
+     "Ship", ("Equipment", "EquipmentType", "Technology", "Custom", "Product", "Vehicle", "Organization",
+              "Location", "Person", "")),
 )
 
 # Types outside the vocabulary that name no thing: the model files reporting
@@ -602,6 +603,13 @@ def _apply_type_hints(entities: list[dict]) -> list[dict]:
                 break
     return entities
 
+
+# Head words that say what a name is, whatever else it contains.
+_WEAPON_HEAD = re.compile(
+    r"\b(?:Missiles?|Weapons? System|Projectiles?|Rockets?|Torpedo(?:es)?|Interceptors?|SRBMs?|MRBMs?|ICBMs?|"
+    r"Glide Vehicle)$"
+)
+_ORG_HEAD = re.compile(r"\b(?:Company|Council|Corporation|Commission|Committee|Authority|Bank|Group|Ltd|Inc)$")
 
 # Single all-caps words that head a section rather than name anything.
 _HEADING_WORDS = frozenset({
@@ -1811,6 +1819,13 @@ def _postprocess_entities(entities: list[dict]) -> list[dict]:
             e["entity_type"] = "Location"
         # Force known organizations
         elif name_lower in known_orgs:
+            e["entity_type"] = "Organization"
+        # The head word decides first: "Kuwait Gulf Oil Company" and "Gulf
+        # Cooperation Council" are organizations although they hold "Gulf";
+        # "Hypersonic Cruise Missile" is a weapon.
+        elif _WEAPON_HEAD.search(name):
+            e["entity_type"] = "Weapon"
+        elif any(name.endswith(kw) for kw in org_kws) or _ORG_HEAD.search(name):
             e["entity_type"] = "Organization"
         # Heuristic: location keywords (Airbase, Port, Island, etc.)
         elif any(kw in name for kw in loc_kws):

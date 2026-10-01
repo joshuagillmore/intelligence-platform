@@ -684,6 +684,29 @@ def test_a_ship_class_the_model_calls_equipment_is_a_ship():
     assert [e["entity_type"] for e in ents] == ["Ship", "Ship", "Equipment", "Organization"]
 
 
+# ── The head word decides ─────────────────────────────────────────────────────
+
+def test_a_name_ending_in_a_weapon_noun_is_a_weapon():
+    types = _types(
+        "Finally, Japan is developing the Hypersonic Cruise Missile (HCM) and the Hyper Velocity Gliding "
+        "Projectile (HVGP). Japan is procuring the Tomahawk Weapon System for an estimated $2.9 billion."
+    )
+    assert types.get("Hypersonic Cruise Missile") == "Weapon"
+    assert types.get("Hyper Velocity Gliding Projectile") == "Weapon"
+    assert types.get("Tomahawk Weapon System") == "Weapon"
+
+
+def test_a_company_or_council_named_after_the_gulf_is_an_organization():
+    types = _types(
+        "In September 2025, the Khafji Joint Operations Company, a joint company of Saudi Aramco Gulf Operations "
+        "Company and Kuwait Gulf Oil Company, issued tenders. Gulf Cooperation Council and Yemen. Ships crossed "
+        "the Persian Gulf."
+    )
+    assert types.get("Kuwait Gulf Oil Company") == "Organization"
+    assert types.get("Saudi Aramco Gulf Operations Company") == "Organization"
+    assert types.get("Persian Gulf") == "Location"
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}
