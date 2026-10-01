@@ -17,7 +17,8 @@
       "name": "PRC",
       "entity_type": "Location",
       "aliases": [
-        "China"
+        "China",
+        "PRC government"
       ]
     },
     {
@@ -35,7 +36,8 @@
       "name": "E.O. 13873",
       "entity_type": "Document",
       "aliases": [
-        "Executive Order (E.O.) 13873"
+        "Executive Order (E.O.) 13873",
+        "Executive Order 13873"
       ]
     },
     {
@@ -79,11 +81,19 @@
     },
     {
       "name": "E.O. 13942",
-      "entity_type": "Document"
+      "entity_type": "Document",
+      "aliases": [
+        "Executive Order (E.O.) 13942",
+        "Executive Order 13942"
+      ]
     },
     {
       "name": "E.O. 13943",
-      "entity_type": "Document"
+      "entity_type": "Document",
+      "aliases": [
+        "Executive Order (E.O.) 13943",
+        "Executive Order 13943"
+      ]
     },
     {
       "name": "WeChat",
@@ -95,7 +105,11 @@
     },
     {
       "name": "E.O. 13971",
-      "entity_type": "Document"
+      "entity_type": "Document",
+      "aliases": [
+        "Executive Order (E.O.) 13971",
+        "Executive Order 13971"
+      ]
     }
   ],
   "relationships": [

@@ -27,7 +27,8 @@
       "name": "E.O. 14186",
       "entity_type": "Document",
       "aliases": [
-        "Executive Order (E.O.) 14186"
+        "Executive Order (E.O.) 14186",
+        "Executive Order 14186"
       ]
     },
     {
@@ -57,7 +58,11 @@
     },
     {
       "name": "E.O. 14347",
-      "entity_type": "Document"
+      "entity_type": "Document",
+      "aliases": [
+        "Executive Order (E.O.) 14347",
+        "Executive Order 14347"
+      ]
     },
     {
       "name": "September 5, 2025",

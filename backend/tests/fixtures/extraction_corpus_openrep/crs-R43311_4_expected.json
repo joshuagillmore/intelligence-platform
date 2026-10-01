@@ -82,7 +82,11 @@
     },
     {
       "name": "E.O. 13871",
-      "entity_type": "Document"
+      "entity_type": "Document",
+      "aliases": [
+        "Executive Order (E.O.) 13871",
+        "Executive Order 13871"
+      ]
     },
     {
       "name": "May 8, 2019",
