@@ -70,6 +70,15 @@ class TestEmptyDatabase:
         await engine_module.init_db()
         assert await _version(pg_engine) == _head()
 
+    async def test_two_processes_booting_at_once_both_succeed(self, pg_engine):  # noqa: F811
+        """The API and the worker can boot together on an empty database: the
+        advisory lock makes the second wait, then find nothing to do."""
+        import asyncio
+
+        await asyncio.gather(engine_module.init_db(), engine_module.init_db())
+        assert await _version(pg_engine) == _head()
+        await _check(pg_engine)
+
     async def test_vector_columns_take_the_configured_width(self, pg_engine):  # noqa: F811
         from intel_platform.config import get_settings
 
