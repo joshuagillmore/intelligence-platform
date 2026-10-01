@@ -96,6 +96,17 @@ def test_seed_entity_reads_hull_numbers_and_units():
     ]
 
 
+def test_two_different_names_of_equal_length_do_not_match():
+    from tests.eval.extraction_eval import _entity_matches
+
+    # min() and max() of two equal-length names are the same name, so the old
+    # substring rule found "quay 4" inside "quay 4" and matched it to Torvik.
+    assert not _entity_matches("Quay 4", "Torvik")
+    assert not _entity_matches("Sarn", "Mira")
+    assert _entity_matches("Putin", "Vladimir Putin")
+    assert _entity_matches("Torvik", "torvik")
+
+
 def test_scorer_pairs_exact_names_before_fuzzy_ones():
     import sys
 
