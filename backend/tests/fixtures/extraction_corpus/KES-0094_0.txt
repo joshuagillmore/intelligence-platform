@@ -1,0 +1,17 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0094#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Valdorian naval liaison passed that liaison partner reporting corroborates the airframe type from an independent collection.
+
+2. Entities identified in this reporting: 7th Composite Aviation Detachment.
+
+3. Partner assesses the reporting as consistent with their own collection but has not stated whether it derives from an independent source.
+
+4. Partner requested that this reporting not be further disseminated without reference back.
+
+5. Without the underlying reporting this cannot be independently evaluated.

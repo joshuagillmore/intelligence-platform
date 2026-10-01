@@ -1,0 +1,22 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0162#0",
+    "doc_id": "KES-0162"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "entities": [
+    {
+      "name": "Kirvo airfield",
+      "entity_type": "Location",
+      "aliases": [
+        "Kirvo"
+      ]
+    },
+    {
+      "name": "7th Composite Aviation Detachment",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": []
+}

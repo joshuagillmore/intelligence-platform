@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0017#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Imagery of Torvik collected during the period shows that routine quarterly maintenance period for Ostravik concludes.
+
+2. Entities identified in this reporting: Ostravik (A-411).
+
+3. Collection was at 0805Z with a NIIRS rating of 5. Cloud cover over approximately 10 per cent of the area prevented full coverage.
+
+4. The observed dispersal pattern is consistent with, but not diagnostic of, preparation for movement.
+
+5. 20 objects were resolved in the target area, assessed by dimension only; no markings, hull numbers or unit insignia were resolvable at this collection geometry.
+
+6. Objects under cover were not characterised and the count should be treated as a lower bound.

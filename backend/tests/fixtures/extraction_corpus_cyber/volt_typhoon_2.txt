@@ -1,0 +1,5 @@
+TEST FIXTURE — analyst-written prose summarising public reporting, ingested in
+the 2026-09-30 end-to-end run as pasted text. Used to evaluate extraction; the
+indicators are illustrative.
+--- BEGIN FIXTURE ---
+CISA Advisory AA23-144a: The People's Republic of China state-sponsored cyber actor known as Volt Typhoon has compromised critical infrastructure networks in Guam and elsewhere in the United States. The actor relies on living-off-the-land techniques including netsh, ntdsutil and wmic. Fortinet FortiGuard devices exposed to CVE-2023-27997 were an initial access vector. Traffic was proxied through compromised small-office routers made by ASUS, Cisco and Netgear.

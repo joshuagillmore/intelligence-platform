@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0085#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Source reported on own initiative that voice communications jamming is reported at Nyhavn, a different phenomenon with similar vocabulary.
+
+2. Entities identified in this reporting: 2nd Naval Auxiliary Group.
+
+3. Source assessed approximately 20 personnel involved, drawn from military rather than civilian establishment, which source described as without precedent in 14 months of access.
+
+4. Source noted that instructions were passed verbally rather than through the usual written schedule, which source considered unusual.
+
+5. Source was not tasked against this activity and could not answer follow-up questions before reporting.
+
+6. FIELD COMMENT: The activity described is routine and is reported for completeness. It should not be read as related to the current tasking without further reporting establishing a connection.

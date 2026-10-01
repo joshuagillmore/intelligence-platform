@@ -1,0 +1,17 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0106#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Valdorian naval liaison passed that liaison reporting identifies a beneficial owner common to two of the vessels involved.
+
+2. Entities identified in this reporting: Mirenda, Stellar Vane.
+
+3. Partner requested that this reporting not be further disseminated without reference back.
+
+4. Partner has not released the underlying reporting and has not graded its own source.
+
+5. Without the underlying reporting this cannot be independently evaluated.

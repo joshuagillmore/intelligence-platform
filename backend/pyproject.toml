@@ -61,6 +61,10 @@ packages = ["src/intel_platform"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "eval: corpus extraction eval; real (billed) model calls. Excluded by default; run with -m eval",
+]
+addopts = '-m "not eval"'
 
 [tool.ruff]
 target-version = "py311"

@@ -1,0 +1,31 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0015#0",
+    "doc_id": "KES-0015"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "entities": [
+    {
+      "name": "Brenna",
+      "entity_type": "Ship",
+      "aliases": [
+        "Brenna (P-118)",
+        "P-118"
+      ]
+    },
+    {
+      "name": "Sarn",
+      "entity_type": "Ship",
+      "aliases": [
+        "Sarn (P-121)",
+        "P-121"
+      ]
+    },
+    {
+      "name": "3rd Naval Auxiliary Group",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": []
+}

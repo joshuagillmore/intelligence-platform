@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0019#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Source reported on own initiative that commercial bulk carrier Mirenda loads aggregate at quay 1.
+
+2. Entities identified in this reporting: Mirenda, Torvik Harbour Authority.
+
+3. Source reported that normal working arrangements were suspended for the duration and that access to the area was controlled by personnel source did not recognise.
+
+4. Source placed the activity between 0335Z and 0742Z, and was able to observe for approximately 120 minutes before withdrawing.
+
+5. Source was not able to establish the destination of the activity, nor whether it was directed or routine.
+
+6. FIELD COMMENT: The activity described is routine and is reported for completeness. It should not be read as related to the current tasking without further reporting establishing a connection.

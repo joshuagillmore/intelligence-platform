@@ -1,0 +1,22 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0034#0",
+    "doc_id": "KES-0034"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "entities": [
+    {
+      "name": "Meran Strait",
+      "entity_type": "Location",
+      "aliases": [
+        "the Meran Strait"
+      ]
+    },
+    {
+      "name": "3rd Naval Auxiliary Group",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": []
+}

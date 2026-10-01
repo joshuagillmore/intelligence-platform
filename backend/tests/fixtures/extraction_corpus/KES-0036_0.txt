@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0036#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Commercial and press reporting states that merchant traffic reports GNSS position jumps of 3-8nm in the central strait.
+
+2. Entities identified in this reporting: Mirenda, Stellar Vane.
+
+3. The publication does not identify its own sourcing and gives no dateline beyond 1603Z.
+
+4. Schedule data show 5 affected sailings, all within the period 1417Z to 0902Z.
+
+5. The same account appears in 8 outlets within 90 hours, with wording sufficiently similar to suggest a single origin.
+
+6. The account has not been corroborated by any other discipline.

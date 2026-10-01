@@ -42,10 +42,12 @@ def _entity_matches(
     if jellyfish.jaro_winkler_similarity(p, e) >= threshold:
         return True
 
-    # Substring match (handles "Putin" matching "Vladimir Putin")
-    shorter = min(p, e, key=len)
-    longer = max(p, e, key=len)
-    if len(shorter) >= 4 and shorter in longer:
+    # Substring match (handles "Putin" matching "Vladimir Putin"). Strictly
+    # shorter: min() and max() return the same argument when the lengths tie,
+    # so "quay 4" was found "in" itself and matched "torvik" — any two names
+    # of equal length (four or more characters) counted as one entity.
+    shorter, longer = sorted((p, e), key=len)
+    if len(shorter) >= 4 and len(shorter) < len(longer) and shorter in longer:
         return True
 
     return False

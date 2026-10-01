@@ -1,0 +1,17 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0162#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. This assessment addresses Kirvo airfield for the current reporting period. It is assessed that crewed transport aircraft conduct a routine resupply rotation from the same airfield.
+
+2. Entities identified in this reporting: 7th Composite Aviation Detachment.
+
+3. This assessment draws on 4 reports across 4 disciplines collected between 0940Z and 2026Z.
+
+4. DRAFTING COMMENT: The activity described is routine and is reported for completeness. It should not be read as related to the current tasking without further reporting establishing a connection.
+
+5. JUDGEMENT: Reporting is insufficient to support a judgement. Collection has been requested against the gaps identified; this assessment will be revised when it is received.

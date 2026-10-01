@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0045#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Partner service reporting passed by liaison indicates that valdorian ferry operator reports VHF interference in harbour approaches.
+
+2. Entities identified in this reporting: Torvik Harbour Authority.
+
+3. Partner has not released the underlying reporting and has not graded its own source.
+
+4. Partner requested that this reporting not be further disseminated without reference back.
+
+5. Without the underlying reporting this cannot be independently evaluated.
+
+6. DESK COMMENT: The activity described is routine and is reported for completeness. It should not be read as related to the current tasking without further reporting establishing a connection.

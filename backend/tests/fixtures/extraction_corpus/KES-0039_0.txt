@@ -1,0 +1,17 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0039#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Communications passed in the clear establish that interference ceases for 36 hours, coinciding with a Ravenskan hydrographic survey transit.
+
+2. Entities identified in this reporting: RVK Hydrographic Service, Lysgard.
+
+3. A gap in collection between 1910Z and 1223Z cannot be excluded, and activity during that window would not have been recovered.
+
+4. Callsigns associated with the activity were used 14 times in the period, against a baseline of fewer than 2 in comparable periods.
+
+5. The reporting establishes that the activity occurred but not why it was ordered.

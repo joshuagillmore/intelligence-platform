@@ -1,0 +1,5 @@
+TEST FIXTURE — analyst-written prose summarising public reporting, ingested in
+the 2026-09-30 end-to-end run as pasted text. Used to evaluate extraction; the
+indicators are illustrative.
+--- BEGIN FIXTURE ---
+Volt Typhoon, a state-sponsored threat actor attributed to China, targeted Guam telecommunications providers in 2023. Microsoft reported the group used living-off-the-land techniques and the Fortinet vulnerability CVE-2023-27997. Command and control traffic was routed through 185.220.101.42 and the domain evil-c2[.]com. CISA and the NSA published a joint advisory on 24 May 2023.

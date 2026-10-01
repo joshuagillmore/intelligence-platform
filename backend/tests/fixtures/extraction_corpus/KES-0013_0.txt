@@ -1,0 +1,17 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0013#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Comparative analysis against imagery of the preceding week shows that fleet replenishment vessel Sedne takes on fuel at the naval jetty.
+
+2. Entities identified in this reporting: Sedne (A-402), 3rd Naval Auxiliary Group.
+
+3. Ground disturbance consistent with recent heavy vehicle movement is visible across approximately 10 per cent of the apron.
+
+4. Comparison against imagery of 14 days earlier shows 22 additional objects present and no objects removed.
+
+5. A single collection cannot distinguish preparation for movement from preparation for maintenance.

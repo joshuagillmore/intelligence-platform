@@ -1,0 +1,5 @@
+TEST FIXTURE — analyst-written prose summarising public reporting, ingested in
+the 2026-09-30 end-to-end run as pasted text. Used to evaluate extraction; the
+indicators are illustrative.
+--- BEGIN FIXTURE ---
+The NSA assessed that Volt Typhoon pre-positioned on Guam networks to disrupt communications between the United States and Asia in a crisis. Analysts at Microsoft linked the campaign to earlier intrusions against Naval Base Guam. The group avoided malware, instead abusing built-in Windows tools, and used hop points in Kaohsiung, Taiwan and Manila. A Netgear ProSAFE router at 45.83.12.7 served as an exit node.

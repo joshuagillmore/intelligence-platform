@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0011#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Comparative analysis against imagery of the preceding week shows that loading continued for a second night, at quays 4 and 5 simultaneously.
+
+2. Entities identified in this reporting: Ostravik (A-411), Kalvar (A-417), Hallgrim (A-425), 3rd Naval Auxiliary Group.
+
+3. Collection was at 1742Z with a NIIRS rating of 6. Cloud cover over approximately 40 per cent of the area prevented full coverage.
+
+4. Ground disturbance consistent with recent heavy vehicle movement is visible across approximately 20 per cent of the apron.
+
+5. A single collection cannot distinguish preparation for movement from preparation for maintenance.
+
+6. IMAGERY ANALYST COMMENT: This reporting is consistent with earlier reporting under E03, collected by a different discipline, and strengthens it.

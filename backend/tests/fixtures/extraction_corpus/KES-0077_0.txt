@@ -1,0 +1,17 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0077#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Source reported on own initiative that a source with access to harbour control reports interference is scheduled rather than continuous.
+
+2. Entities identified in this reporting: Torvik Harbour Authority, 19th Signals Regiment.
+
+3. Source noted that instructions were passed verbally rather than through the usual written schedule, which source considered unusual.
+
+4. Source placed the activity between 0403Z and 1712Z, and was able to observe for approximately 20 minutes before withdrawing.
+
+5. Source was not able to establish the destination of the activity, nor whether it was directed or routine.

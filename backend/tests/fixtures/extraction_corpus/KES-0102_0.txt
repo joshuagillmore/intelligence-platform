@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0102#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Collection against the Ostrand Peninsula during the reporting period establishes that two AIS identities broadcast from the same position within four minutes.
+
+2. Entities identified in this reporting: Stellar Vane, Mirenda.
+
+3. The activity was passed at 1036Z and repeated at 1514Z. No further traffic on the subject was recovered before collection ended at 0910Z.
+
+4. Traffic volume rose to approximately 5 transmissions per hour against a normal baseline of 5, without corresponding change in content.
+
+5. The reporting establishes that the activity occurred but not why it was ordered.
+
+6. ANALYST COMMENT: Graded A1; credibility reflects independent corroboration by another discipline rather than the source's own consistency.

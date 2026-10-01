@@ -1,0 +1,19 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0019#0",
+    "doc_id": "KES-0019"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "entities": [
+    {
+      "name": "Mirenda",
+      "entity_type": "Ship"
+    },
+    {
+      "name": "Torvik Harbour Authority",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": []
+}
