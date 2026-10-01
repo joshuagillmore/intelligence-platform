@@ -19,7 +19,7 @@ import pytest
 from fastapi import HTTPException
 from starlette.datastructures import UploadFile
 
-from intel_platform.api.routes import collection_plans as cp
+from intel_platform.api.routes.collection_plans import uploads as cp
 
 
 class _CountingIO(io.BytesIO):

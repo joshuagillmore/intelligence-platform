@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -47,7 +48,7 @@ def test_out_of_range_hops_are_rejected(hops, graph_only_pipeline):
     deep one enumerated every path through the ATT&CK hubs with no LIMIT."""
     resp = client.post(
         "/api/query",
-        json={"project_id": "test-a8", "query": "q", "max_hops": hops, "use_vector": False},
+        json={"project_id": tp("a8"), "query": "q", "max_hops": hops, "use_vector": False},
         headers=headers,
     )
     assert resp.status_code == 422
@@ -58,7 +59,7 @@ def test_out_of_range_hops_are_rejected(hops, graph_only_pipeline):
 def test_hops_at_the_bounds_are_accepted(hops, graph_only_pipeline):
     resp = client.post(
         "/api/query",
-        json={"project_id": "test-a8", "query": "q", "max_hops": hops, "use_vector": False},
+        json={"project_id": tp("a8"), "query": "q", "max_hops": hops, "use_vector": False},
         headers=headers,
     )
     assert resp.status_code == 200
@@ -118,7 +119,7 @@ def hybrid(monkeypatch):
 
 def _ask(use_vector=True):
     resp = client.post(
-        "/api/query", json={"project_id": "test-c6", "query": "Who targeted Kolvane?", "use_vector": use_vector},
+        "/api/query", json={"project_id": tp("c6"), "query": "Who targeted Kolvane?", "use_vector": use_vector},
         headers=headers,
     )
     assert resp.status_code == 200

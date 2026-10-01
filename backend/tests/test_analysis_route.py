@@ -14,11 +14,12 @@ from intel_platform.config import settings
 from intel_platform.llm.base import LLMProvider, LLMResponse
 from intel_platform.models.entities import Document, Organization, Person
 from intel_platform.models.relationships import Relationship
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
 
-PROJECT = "test-analysis-project"
+PROJECT = tp("analysis-project")
 
 
 class FakeLLMProvider(LLMProvider):
@@ -126,7 +127,7 @@ def test_gaps_are_grounded_in_measured_coverage(seeded_project, monkeypatch):
 
 def test_gaps_on_empty_project(no_provider):
     resp = client.post(
-        "/api/analysis/gaps", json={"project_id": "test-analysis-empty"}, headers=headers,
+        "/api/analysis/gaps", json={"project_id": tp("analysis-empty")}, headers=headers,
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -197,7 +198,7 @@ def test_source_evaluation_without_provider_returns_measured_signals(seeded_proj
 def test_source_evaluation_with_no_documents(no_provider):
     resp = client.post(
         "/api/analysis/source-evaluation",
-        json={"project_id": "test-analysis-empty"},
+        json={"project_id": tp("analysis-empty")},
         headers=headers,
     )
     assert resp.status_code == 200

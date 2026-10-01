@@ -1,0 +1,41 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "OPENREP-SUPINTREP-0004#0",
+    "doc_id": "OPENREP-SUPINTREP-0004"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "NATO",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Arctic",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Russia",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Arctic MDTF",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Pacific Fleet",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Belarus",
+      "entity_type": "Location"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "NATO",
+      "target": "Arctic",
+      "rel_type": "DEPLOYED_AT"
+    }
+  ]
+}

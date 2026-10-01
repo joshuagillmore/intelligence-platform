@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0020#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Commercial and press reporting states that commercial bulk carrier Mirenda loads aggregate at quay 1.
+
+2. Entities identified in this reporting: Mirenda, Torvik Harbour Authority.
+
+3. Schedule data show 3 affected sailings, all within the period 2220Z to 0500Z.
+
+4. The same account appears in 20 outlets within 20 hours, with wording sufficiently similar to suggest a single origin.
+
+5. Open reporting establishes that the event was publicly visible. It establishes nothing about military significance.
+
+6. ANALYST COMMENT: The activity described is routine and is reported for completeness. It should not be read as related to the current tasking without further reporting establishing a connection.

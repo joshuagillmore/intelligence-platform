@@ -1,0 +1,27 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0073#0",
+    "doc_id": "KES-0073"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "notes": "Aldenkirk typed Ship: 'two merchant masters' report, with Mirenda.",
+  "entities": [
+    {
+      "name": "Meran Strait",
+      "entity_type": "Location",
+      "aliases": [
+        "the Meran Strait"
+      ]
+    },
+    {
+      "name": "Mirenda",
+      "entity_type": "Ship"
+    },
+    {
+      "name": "Aldenkirk",
+      "entity_type": "Ship"
+    }
+  ],
+  "relationships": []
+}

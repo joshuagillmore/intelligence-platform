@@ -8,6 +8,7 @@ from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.assessment import AssessmentService
 from intel_platform.services.llm_output import labelled_probability_parsed
+from intel_platform.services.telemetry import record_degraded
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,7 @@ async def generate_assessment(req: GenerateAssessmentRequest, store: GraphStore 
     if not provider:
         # A 200 carrying an error string was rendered and saved as though it
         # were an assessment. Failure is a status, not content.
+        record_degraded("llm", "assessment_no_provider")
         raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE)
 
     # Load threat assessment skill
@@ -135,14 +137,16 @@ CONFIDENCE_LABEL: [Almost No Chance | Very Unlikely | Unlikely | Roughly Even Ch
             temperature=0.3,
             max_tokens=4096,
         )
-    except Exception:
+    except Exception as exc:
         logger.exception("Failed to generate assessment for entity %s", req.entity_id)
+        record_degraded("llm", "assessment_call_failed", detail=type(exc).__name__)
         # SECURITY: don't leak internal error details to client
         raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE)
     if not (result.content or "").strip():
         # An empty reply is a failure wearing a success shape; saving it would
         # store an assessment with no judgement in it.
         logger.warning("Empty assessment reply for entity %s", req.entity_id)
+        record_degraded("llm", "assessment_empty_reply")
         raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE)
 
     # `parsed` is False when the reply carried no readable probability and the

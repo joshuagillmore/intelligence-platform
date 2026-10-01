@@ -20,9 +20,10 @@ from intel_platform.graph import store as store_module
 from intel_platform.models.entities import TTP, Document, Organization, Person
 from intel_platform.models.relationships import Relationship
 from intel_platform.services.graph_rag import GraphRAGPipeline
+from tests.ids import tp
 
-P1 = "test-scope-p1"
-P2 = "test-scope-p2"
+P1 = tp("scope-p1")
+P2 = tp("scope-p2")
 
 
 def _link(store, a, b, rel_type="ASSOCIATED_WITH"):

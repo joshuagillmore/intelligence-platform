@@ -1,0 +1,28 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0032#0",
+    "doc_id": "KES-0032"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "notes": "Aldenkirk is typed Ship from its co-reporting with merchant traffic elsewhere in the set; this text alone does not say what it is.",
+  "entities": [
+    {
+      "name": "Torvik",
+      "entity_type": "Location"
+    },
+    {
+      "name": "15-18 August",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Torvik Harbour Authority",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Aldenkirk",
+      "entity_type": "Ship"
+    }
+  ],
+  "relationships": []
+}

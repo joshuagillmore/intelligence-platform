@@ -29,15 +29,6 @@ from intel_platform.graph.store import GraphStore
 
 logger = logging.getLogger(__name__)
 
-# Module-level execution tracking for status polling
-_running_executions: dict[str, dict] = {}
-
-
-def get_execution_status(plan_id: str) -> dict | None:
-    """Get the current execution status for a plan."""
-    return _running_executions.get(plan_id)
-
-
 # A run that ended in failure. Not in `PlanStatus` (db/models.py) yet; the
 # column is a plain String(20), so the value stores as-is.
 PLAN_FAILED = "FAILED"
@@ -60,15 +51,22 @@ async def _read_plan_status(db: AsyncSession, plan_id) -> str | None:
 
 
 async def plan_should_stop(db: AsyncSession, plan_id) -> bool:
-    """True when the plan was PAUSED or ARCHIVED, or no longer exists.
+    """True when the plan was PAUSED or ARCHIVED, no longer exists, or its run was cancelled.
 
     Collection loops call this between sources. PAUSED and ARCHIVED were never
     read by a running loop, so neither did anything until the run ended — and
     then completion overwrote them. A plan deleted mid-run stops the run too:
-    there is nothing left to collect for.
+    there is nothing left to collect for. ``POST /collection-plans/{id}/cancel``
+    marks the plan's latest job ``cancelled``; a plan has at most one live job,
+    so that job is the run asking.
     """
     status = await _read_plan_status(db, plan_id)
-    return status is None or status in _STOPPING_STATUSES
+    if status is None or status in _STOPPING_STATUSES:
+        return True
+    from intel_platform.db.jobs import CANCELLED, latest_job_status
+
+    pid = plan_id if isinstance(plan_id, uuid.UUID) else uuid.UUID(str(plan_id))
+    return await latest_job_status(db, pid) == CANCELLED
 
 
 def final_plan_status(current: str | None, *, failed: bool) -> str:
@@ -127,8 +125,10 @@ async def execute_plan(
 ) -> dict:
     """Execute all sources in a collection plan autonomously.
 
-    Designed to run as asyncio.create_task() — creates its own DB session
-    since the request session is closed after the response is sent.
+    Creates its own DB session, since a request session is closed after the
+    response is sent. Returns the run's progress record; nothing is kept in
+    memory after it returns (whether a run is in flight is the job table's to
+    say, see collection/job_runner.py).
 
     `source_limit` caps how many sources are actually collected, so a
     requirement can be answered *or* stop against a stated collection budget.
@@ -136,7 +136,7 @@ async def execute_plan(
     given a budget of 3 would happily run 5.
     """
     execution_id = str(uuid.uuid4())
-    _running_executions[plan_id] = {
+    record: dict = {
         "execution_id": execution_id,
         "status": "running",
         "started_at": datetime.now(timezone.utc).isoformat(),
@@ -155,12 +155,12 @@ async def execute_plan(
         async with db_factory() as db:
             plan = await db.get(CollectionPlan, uuid.UUID(plan_id))
             if not plan:
-                _running_executions[plan_id]["status"] = "error"
-                _running_executions[plan_id]["errors"].append("Plan not found")
-                return _running_executions[plan_id]
+                record["status"] = "error"
+                record["errors"].append("Plan not found")
+                return record
 
             sources = plan.sources or []
-            status = _running_executions[plan_id]
+            status = record
             status["sources_total"] = len(sources)
 
             status["source_limit"] = source_limit
@@ -265,20 +265,11 @@ async def execute_plan(
 
     except Exception as e:
         logger.exception("Plan execution failed for %s", plan_id)
-        _running_executions[plan_id]["status"] = "error"
-        _running_executions[plan_id]["errors"].append(str(e))
+        record["status"] = "error"
+        record["errors"].append(str(e))
         await _mark_plan_failed(db_factory, plan_id)
-    finally:
-        # A cancelled task raises CancelledError, which is a BaseException and
-        # so escapes the handler above — leaving the tracker saying "running"
-        # for the life of the process. Callers now treat that as a run in
-        # flight, so a cancellation would make the plan permanently
-        # unexecutable: exactly the trap this guard replaced.
-        if _running_executions.get(plan_id, {}).get("status") == "running":
-            _running_executions[plan_id]["status"] = "interrupted"
-            _running_executions[plan_id]["errors"].append("Execution was interrupted")
 
-    return _running_executions[plan_id]
+    return record
 
 
 async def _mark_plan_failed(db_factory: async_sessionmaker[AsyncSession], plan_id: str) -> None:

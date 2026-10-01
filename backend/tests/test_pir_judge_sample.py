@@ -13,14 +13,15 @@ import uuid
 
 import pytest
 
-from intel_platform.api.routes.pirs import _ranked_entities
+from intel_platform.services.pir_judge.evidence import _ranked_entities
 from intel_platform.models.entities import URL, Document, Organization, Person, ThreatActor
 from intel_platform.models.relationships import Relationship
+from tests.ids import tp
 
 
 @pytest.fixture
 def project(graph_store):
-    pid = f"test-judge-{uuid.uuid4().hex[:8]}"
+    pid = tp(f"judge-{uuid.uuid4().hex[:8]}")
     # Alphabetically first, and worth nothing to a judge.
     url = URL(name="000-cdn.example/asset.js", project_id=pid)
     doc = Document(name="AAA crawled page", content="x" * 5000, project_id=pid)
@@ -61,4 +62,4 @@ def test_no_document_content_is_carried(graph_store, project):
 
 
 def test_an_empty_project_is_empty_with_zero_total(graph_store):
-    assert _ranked_entities(graph_store, f"test-judge-empty-{uuid.uuid4().hex[:6]}", 10) == ([], 0)
+    assert _ranked_entities(graph_store, tp(f"judge-empty-{uuid.uuid4().hex[:6]}"), 10) == ([], 0)

@@ -1,0 +1,91 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-R45811#29",
+    "doc_id": "crs-R45811"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "South Korea",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Hycore",
+      "entity_type": "Weapon"
+    },
+    {
+      "name": "North Korea",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Hwasong-8",
+      "entity_type": "Weapon"
+    },
+    {
+      "name": "September 2021",
+      "entity_type": "Date"
+    },
+    {
+      "name": "January 2022",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Japan",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Hypersonic Cruise Missile",
+      "entity_type": "Weapon",
+      "aliases": [
+        "HCM"
+      ]
+    },
+    {
+      "name": "Hyper Velocity Gliding Projectile",
+      "entity_type": "Weapon",
+      "aliases": [
+        "HVGP",
+        "HVGPs"
+      ]
+    },
+    {
+      "name": "Japan Aerospace Exploration Agency",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Mitsubishi Heavy Industries",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "University of Tokyo",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "DOD",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "Iran",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Israel",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Brazil",
+      "entity_type": "Location"
+    }
+  ],
+  "relationships": []
+}

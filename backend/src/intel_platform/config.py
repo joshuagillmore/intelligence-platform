@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -29,6 +30,14 @@ class Settings(BaseSettings):
     encryption_key: str = ""
     # Browser origins allowed to call the API with credentials, comma-separated.
     cors_origins: str = "http://localhost:3000,http://localhost:8000"
+    # Browser session (contract 8): /api/auth/login sets this httpOnly,
+    # SameSite=Lax cookie holding the JWT, valid for session_cookie_max_age
+    # seconds. session_cookie_secure adds the Secure flag: set it to true on any
+    # deployment served over HTTPS (Railway), or the cookie also travels over
+    # plain HTTP. Off by default because local development is plain HTTP.
+    session_cookie_name: str = "sentinel_session"
+    session_cookie_secure: bool = False
+    session_cookie_max_age: int = 86400
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     # Per-client request/minute cap. High by default for the single-user
@@ -87,6 +96,17 @@ class Settings(BaseSettings):
 
     # Collection / agentic crawl
     collection_crawl_concurrency: int = 4  # max concurrent URL fetches per source
+    # Where collection runs execute (contract 4). "inline": an asyncio task in
+    # the API process, which still writes and heartbeats the job row; "worker":
+    # the API only enqueues and `python -m intel_platform.worker` runs the job.
+    collection_worker_mode: Literal["inline", "worker"] = "inline"
+    # A running job whose heartbeat is older than this is reported `stalled`
+    # and no longer blocks a new run (contract 3).
+    collection_stall_seconds: int = 120
+    # Route Chromium's crawl traffic through the local egress proxy, which
+    # resolves each host once through url_guard and connects only to the
+    # address it vetted (contract 5). Leave on.
+    egress_proxy_enabled: bool = True
 
     # Collection egress proxy (optional; OFF by default). ONLY web-collection
     # egress (crawl4ai + ddgs + the httpx connectors) is routed through the

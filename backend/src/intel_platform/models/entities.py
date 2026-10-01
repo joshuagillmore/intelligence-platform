@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import unicodedata
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -91,6 +92,43 @@ def probability_to_label(p: float) -> str:
 DATE_PRECISIONS = ("day", "month", "year")
 
 
+# Entity types whose identity is the record itself, not its name. Two documents
+# called "text_input", two notebook entries titled "Observations" and two
+# assessments of one entity are different things, so these are never keyed by
+# name and never merged on it. Every other type is: one node per
+# (project_id, normalized_name, entity_type).
+UNKEYED_ENTITY_TYPES = frozenset({"Document", "Report", "Assessment"})
+
+# Trimmed from both ends of a name before it is compared. Deliberately an
+# explicit list rather than every Unicode punctuation character: "C#", "100%",
+# "-5" and "AT&T" carry meaning in the character a blanket rule would strip,
+# and "C#" must not become the language "C".
+_TRIM_CHARS = frozenset(
+    ".,;:!?'\"`*_~|/\\()[]{}<>"
+    "‘’‚‛“”„‟"  # curly quotes
+    "«»‹›"  # guillemets
+    "…·•"  # ellipsis, middle dot, bullet
+)
+
+
+def normalize_name(name: str) -> str:
+    """The form two names are compared in: lower case, whitespace collapsed,
+    punctuation trimmed from both ends.
+
+    "Orion Holdings", " orion  holdings. " and "'Orion Holdings'" are one
+    entity. Interior punctuation stays ("U.S. Navy" keeps its dots), as does
+    any character outside `_TRIM_CHARS`. NFC first, so a composed and a
+    decomposed "é" compare equal.
+    """
+    text = " ".join(unicodedata.normalize("NFC", name or "").split()).lower()
+    start, end = 0, len(text)
+    while start < end and (text[start] in _TRIM_CHARS or text[start].isspace()):
+        start += 1
+    while end > start and (text[end - 1] in _TRIM_CHARS or text[end - 1].isspace()):
+        end -= 1
+    return text[start:end]
+
+
 class Entity(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
@@ -114,6 +152,21 @@ class Entity(BaseModel):
     t_end: datetime | None = None
     date_precision: str = ""  # one of DATE_PRECISIONS, or "" when undated
     date_text: str = ""  # the source's own wording, e.g. "early March 2026"
+
+    @computed_field
+    @property
+    def normalized_name(self) -> str | None:
+        """The name this entity is unique by, within its project and type.
+
+        `create_entity` MERGEs on (project_id, normalized_name, entity_type),
+        which a uniqueness constraint backs, so two builds that meet one entity
+        at once make one node. None for record types (UNKEYED_ENTITY_TYPES) and
+        for a name with nothing left after normalising: the store never writes
+        a None, so such a node is outside the constraint and keyed by id alone.
+        """
+        if self.entity_type.value in UNKEYED_ENTITY_TYPES:
+            return None
+        return normalize_name(self.name) or None
 
 
 class Person(Entity):

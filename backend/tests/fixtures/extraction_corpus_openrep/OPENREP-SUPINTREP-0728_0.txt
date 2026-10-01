@@ -1,0 +1,24 @@
+SYNTHETIC ANALYST PRODUCT — FICTIONAL, NOT A REAL INTELLIGENCE ASSESSMENT.
+Generated for an exercise collection (openrep-deep, chunk OPENREP-SUPINTREP-0728#0) from public reporting;
+its judgements are invented. All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+Prior product OPENREP-SUPINTREP-0728 — What are the current technical and operational capabilities of Iranian ballistic missiles and one-way attack UAVs, their employment patterns in the Gulf and Red Sea since 2023, and the implications for allied force protection over the next 12 months? How has Iran employed these systems (targets, frequency, tactics) in regional conflicts or demonstrations of force since 2023? Where are allied forces' critical vulnerabilities (e.g., basing, maritime chokepoints) in the Gulf and Red Sea?
+
+BOTTOM LINE UP FRONT: Likely that Iran has actively employed ballistic missiles and one-way attack UAVs in offensive operations in the Gulf and Red Sea since 2023, targeting allied forces and commercial shipping. Iran's disruption of commercial shipping has reduced transit through the Strait of Hormuz, a crucial conduit for energy resources and other commodities to reach global markets. Iran has also provided the Houthis with components and technical knowledge to construct long-range missiles and rockets and UAVs.
+
+KEY JUDGEMENTS: Likely that Iran has actively employed ballistic missiles and one-way attack UAVs in offensive operations in the Gulf and Red Sea since 2023, targeting allied forces and commercial shipping.
+
+Highly likely that Iran's use of these systems has focused on demonstrations of force and proxy support, with direct attacks on allied forces being less frequent.
+
+Realistic possibility that allied forces face critical vulnerabilities in basing and maritime chokepoints in the Gulf and Red Sea, given Iran's disruption of commercial shipping and control over the Strait of Hormuz.
+
+Unlikely that Iran's ballistic missile and UAV capabilities are exclusively defensive, given their offensive employment in regional conflicts and demonstrations of force.
+
+Highly unlikely that Iran will cease offensive operations in the Gulf and Red Sea in the next 12 months, given their ongoing regional conflicts and demonstrations of force.
+
+ASSESSMENT: Iran has developed ballistic missiles, cruise missiles, and space-launch vehicles, as well as drones (i.e., unmanned aircraft systems, or UAS). Iran's ballistic missile inventory has included short- and medium-range ballistic missiles, the largest of which have an estimated range of approximately 2,000 kilometers (1,864 miles), according to a 2020 U.S. government estimate. Iran has also mass-produced the Shahed-136, a long-range one-way attack drone, and has provided these drones to Russia for use in its war in Ukraine. The 2025 Worldwide Threat Assessment stated, "Iran has fielded a large quantity of ballistic and cruise missiles as well as [UAS] that can strike throughout the region and continues efforts to improve their accuracy, lethality, and reliability."
+
+Since February 28, U.S. and Israeli aircraft have targeted bases and equipment associated with Iran's ballistic missile program, including missiles Iran may have stored in underground facilities. The effect of the strikes on Iran's inventory of ballistic missiles and production capacity is unclear. Following the Israeli and U.S. attacks, Iran has reportedly conducted ballistic missile and drone strikes on U.S. and partner military and civilian sites in several countries.
+
+The size of Iran's ballistic missile inventory is uncertain. A 2019 Defense Intelligence Agency report described the inventory as "substantial." In 2022, then-U.S. Central Command Commander General Kenneth McKenzie testified Iran had an inventory of "

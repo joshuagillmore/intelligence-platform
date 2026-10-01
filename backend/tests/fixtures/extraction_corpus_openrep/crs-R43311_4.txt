@@ -1,0 +1,23 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-R43311#4) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Post-2018 Developments in U.S. Sanctions on Iran
+
+The Department of the Treasury's Office of Foreign Assets Control (OFAC) issued a new set of Frequently Asked Questions shortly after the President's announcement to explain how the United States intended to reestablish the sanctions regime.3 The State Department reported to Congress a set of waiver revocations, determinations, certifications, and findings to establish, in effect, a timeline for the reimposition of sanctions on certain Iranians and those who engage in business with and investment in Iran.4
+
+The Trump Administration reestablished the United States' sanctions regime in a wave of announcements, including the following:
+
+On June 27, 2018, OFAC began a wind-down and eventual prohibition of the importation of Iranian-origin carpets and foodstuffs, and contracts related to Iran's commercial passenger airline services.5 OFAC also revoked General License H of January 16, 2016, and authorizations that it had issued under the license relating to foreign entities owned or controlled by a U.S. person.6
+
+The President, on August 6, 2018, ordered the blocking of transactions related to the government of Iran's ability to acquire U.S. bank notes or precious metals; material support for Iran's trade in oil, other energy-related resources, shipping, shipbuilding, the automotive sector; port operations; or support for the Central Bank of Iran.7
+
+On November 5, 2018, "the United States fully re-imposed the sanctions on Iran that had been lifted or waived under the JCPOA."8 This action included the designation of "more than 700 individuals, entities, aircraft, and vessels."9
+
+Post-2018 U.S. sanctions measures related to Iran include the following:
+
+The April 2019 designation of Iran's Islamic Revolutionary Guards Corps (IRGC) as a Foreign Terrorist Organization (FTO).10
+
+E.O. 13871 (May 8, 2019), blocking transactions and trade related to Iran's iron, steel, aluminum, or copper sectors.11

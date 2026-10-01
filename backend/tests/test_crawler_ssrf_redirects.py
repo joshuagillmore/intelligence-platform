@@ -121,10 +121,14 @@ async def _open_page(hooks, url):
 
 @pytest.fixture
 def direct_mode(monkeypatch):
+    """Direct egress with the egress proxy off: these tests are about the
+    in-browser checks, which are what stands when the proxy is disabled (its
+    own behaviour is tested in test_egress_proxy.py)."""
     async def _direct():
         return ProxyConfig(mode="direct")
 
     monkeypatch.setattr(crawler_mod, "get_active_proxy_config", _direct)
+    monkeypatch.setattr(crawler_mod, "_egress_proxy_enabled", lambda: False)
 
 
 # ---------------------------------------------------------------------------

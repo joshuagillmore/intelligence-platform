@@ -16,8 +16,9 @@ import pytest
 
 from intel_platform.models.entities import Location, Organization
 from intel_platform.models.relationships import Relationship
+from tests.ids import tp
 
-PROJECT = "test-rel-direction"
+PROJECT = tp("rel-direction")
 
 
 @pytest.fixture

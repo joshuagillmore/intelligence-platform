@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import DegradedCard from '@/components/DegradedCard';
 import { healthApi, projectsApi, adminApi, exportApi, isAdminSession, type Project } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 
@@ -442,6 +443,9 @@ export default function AdminPage() {
               <p className="text-gray-500 text-sm">Loading...</p>
             ) : null}
           </div>
+
+          {/* Degraded outcomes (telemetry): what finished worse than asked */}
+          <DegradedCard />
 
           {/* LLM Configuration */}
           <div className="bg-navy-800 border border-navy-600 rounded-lg p-6">

@@ -3,12 +3,23 @@ import urllib.request
 import urllib.error
 
 from fastapi import APIRouter
+from pydantic import Field
 
 from intel_platform.api.deps import get_neo4j_driver
 from intel_platform.config import settings
 from intel_platform.models.responses import HealthResponse
+from intel_platform.services import telemetry
 
 router = APIRouter()
+
+
+class HealthStatus(HealthResponse):
+    """HealthResponse plus the degraded-outcome totals (contract 1)."""
+
+    # Degraded outcomes since this process started, per subsystem. Not part of
+    # `status`: the service is up; this says how much of its work came out
+    # worse than asked. The breakdown by reason is GET /api/admin/degraded.
+    degraded: dict[str, int] = Field(default_factory=dict)
 
 
 _PROBE_TTL_SECONDS = 20.0
@@ -79,7 +90,7 @@ def _check_ollama() -> bool:
     return result
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get("/health", response_model=HealthStatus)
 def health_check():
     try:
         driver = get_neo4j_driver()
@@ -101,7 +112,8 @@ def health_check():
 
     from intel_platform.db import engine as db_engine
 
-    return HealthResponse(
+    return HealthStatus(
         status=status, neo4j_connected=neo4j_ok, ollama_connected=ollama_ok,
         embeddings=db_engine.VECTOR_WIDTH_PROBLEM or "ok",
+        degraded=telemetry.totals(),
     )

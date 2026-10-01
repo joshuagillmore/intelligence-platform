@@ -7,8 +7,9 @@ Person "Wagner" resolved into the Organization "Wagner Group".
 from __future__ import annotations
 
 from intel_platform.services.graph_builder import build_graph_from_extractions, resolve_entity_name
+from tests.ids import tp
 
-PROJECT = "test-builder-resolution"
+PROJECT = tp("builder-resolution")
 
 
 def test_a_person_is_not_merged_into_an_organization():

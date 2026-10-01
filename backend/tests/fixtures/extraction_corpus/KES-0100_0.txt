@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0100#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Source, whose access derives from routine duties in the Ostrand Peninsula, stated that a patrol reports a darkened contact not correlating with any AIS track.
+
+2. Entities identified in this reporting: Sarn (P-121).
+
+3. Source noted that instructions were passed verbally rather than through the usual written schedule, which source considered unusual.
+
+4. Source observed 8 covered loads on the apron and was unable to identify type. Source's estimate derives from the length of the covered line at a range of some 600 metres in poor light.
+
+5. Source placed the activity between 2021Z and 1920Z, and was able to observe for approximately 45 minutes before withdrawing.
+
+6. Source was not tasked against this activity and could not answer follow-up questions before reporting.

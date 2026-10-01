@@ -1,0 +1,127 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IF12640#5",
+    "doc_id": "crs-IF12640"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "CPC",
+      "entity_type": "Organization",
+      "aliases": [
+        "Communist Party of China"
+      ]
+    },
+    {
+      "name": "PRC",
+      "entity_type": "Location",
+      "aliases": [
+        "China",
+        "PRC government"
+      ]
+    },
+    {
+      "name": "Douyin Information Services Co., Ltd",
+      "entity_type": "Organization",
+      "aliases": [
+        "Douyin Information Services"
+      ]
+    },
+    {
+      "name": "TikTok",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "E.O. 13873",
+      "entity_type": "Document",
+      "aliases": [
+        "Executive Order (E.O.) 13873",
+        "Executive Order 13873"
+      ]
+    },
+    {
+      "name": "May 2019",
+      "entity_type": "Date"
+    },
+    {
+      "name": "January 2020",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Shiji Technology",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Stayntouch",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "CFIUS",
+      "entity_type": "Organization",
+      "aliases": [
+        "Committee on Foreign Investment in the United States"
+      ]
+    },
+    {
+      "name": "March 2020",
+      "entity_type": "Date"
+    },
+    {
+      "name": "ByteDance",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Musical.ly",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "August 2020",
+      "entity_type": "Date"
+    },
+    {
+      "name": "E.O. 13942",
+      "entity_type": "Document",
+      "aliases": [
+        "Executive Order (E.O.) 13942",
+        "Executive Order 13942"
+      ]
+    },
+    {
+      "name": "E.O. 13943",
+      "entity_type": "Document",
+      "aliases": [
+        "Executive Order (E.O.) 13943",
+        "Executive Order 13943"
+      ]
+    },
+    {
+      "name": "WeChat",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "January 2021",
+      "entity_type": "Date"
+    },
+    {
+      "name": "E.O. 13971",
+      "entity_type": "Document",
+      "aliases": [
+        "Executive Order (E.O.) 13971",
+        "Executive Order 13971"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "source": "TikTok",
+      "target": "ByteDance",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "Stayntouch",
+      "target": "Shiji Technology",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

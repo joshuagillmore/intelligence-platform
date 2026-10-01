@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0071#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Commercial and press reporting states that 41st Coastal Defence Regiment participates in a publicised national exercise.
+
+2. Entities identified in this reporting: 41st Coastal Defence Regiment.
+
+3. The publication does not identify its own sourcing and gives no dateline beyond 2313Z.
+
+4. Schedule data show 8 affected sailings, all within the period 0640Z to 0107Z.
+
+5. The account is consistent with commercial reporting of the same period and contains no detail not already publicly available.
+
+6. Open reporting establishes that the event was publicly visible. It establishes nothing about military significance.

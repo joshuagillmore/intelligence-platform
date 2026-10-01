@@ -14,6 +14,7 @@ from intel_platform.db.engine import get_db
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.graph_rag import GraphRAGPipeline
 from intel_platform.services.reports import ReportService
+from intel_platform.services.telemetry import record_degraded
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 logger = logging.getLogger(__name__)
@@ -260,6 +261,7 @@ async def generate_report(
     from intel_platform.api.routes.llm import _get_provider
     provider = await _get_provider()
     if not provider:
+        record_degraded("llm", "report_no_provider")
         raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE)
 
     try:
@@ -269,12 +271,14 @@ async def generate_report(
             temperature=0.3,
             max_tokens=8192,
         )
-    except Exception:
+    except Exception as exc:
         # SECURITY: don't leak internal error details to the client
         logger.exception("LLM generation failed during report generation")
+        record_degraded("llm", "report_call_failed", detail=type(exc).__name__)
         raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE)
     if not (result.content or "").strip():
         logger.warning("LLM returned an empty report")
+        record_degraded("llm", "report_empty_reply")
         raise HTTPException(status_code=503, detail=LLM_UNAVAILABLE)
 
     response = {
@@ -302,10 +306,23 @@ async def generate_report(
 
 
 @router.get("/reports/{report_id}")
-def get_report(report_id: str, store: GraphStore = Depends(get_graph_store)):
+def get_report(
+    report_id: str,
+    project_id: str | None = None,
+    store: GraphStore = Depends(get_graph_store),
+):
+    """A saved report. Only a Report node, and only in `project_id` when given.
+
+    It used to return whatever node carried the id — an entity, a Document,
+    another project's report. Scoped as DELETE is; `project_id` stays optional
+    so existing clients keep working, and a client that passes it can no longer
+    be handed another project's report.
+    """
     svc = ReportService(store)
     report = svc.get_report(report_id)
-    if not report:
+    if not report or report.get("entity_type") != "Report":
+        raise HTTPException(status_code=404, detail="Report not found")
+    if project_id is not None and report.get("project_id") != project_id:
         raise HTTPException(status_code=404, detail="Report not found")
     return report
 

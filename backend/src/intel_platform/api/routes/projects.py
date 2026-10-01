@@ -43,6 +43,7 @@ _COUNT_QUERIES = {
     "relationship_count": """
         MATCH (a)-[r]->(b)
         WHERE a.project_id IS NOT NULL AND a.project_id = b.project_id
+          AND NOT (type(r) = 'MENTIONS' AND a:Document)
         RETURN a.project_id AS pid, count(r) AS c
     """,
     "collection_count": """

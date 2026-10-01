@@ -1,0 +1,28 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0063#0",
+    "doc_id": "KES-0063"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "entities": [
+    {
+      "name": "Ostrand Peninsula",
+      "entity_type": "Location",
+      "aliases": [
+        "the Ostrand Peninsula"
+      ]
+    },
+    {
+      "name": "Ekhaven",
+      "entity_type": "Ship"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Ekhaven",
+      "target": "Ostrand Peninsula",
+      "rel_type": "LOCATED_AT"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "OPENREP-SUPINTREP-0161#0",
+    "doc_id": "OPENREP-SUPINTREP-0161"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "NATO",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Baltic region",
+      "entity_type": "Location",
+      "aliases": [
+        "Baltic states",
+        "Baltic"
+      ]
+    },
+    {
+      "name": "Russia",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Europe",
+      "entity_type": "Location"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Russia",
+      "target": "Baltic region",
+      "rel_type": "TARGETS"
+    }
+  ]
+}

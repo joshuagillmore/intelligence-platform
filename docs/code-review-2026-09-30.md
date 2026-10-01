@@ -59,6 +59,29 @@ branch:
 Dependency advisories: backend 252 → 1 (a transitive nltk issue with no fix),
 frontend production 6 → 2 (both the deferred Next line).
 
+## Adjustments executed (2026-10-01, branch `feat/post-review-hardening`)
+
+The open items and the eight structural adjustments proposed after the
+remediation were executed per `docs/design/plans/2026-09-30-post-review-hardening.md`.
+
+| Item | Status | Note |
+|---|---|---|
+| Next.js 14 → 15, React 19 | Done | No page needed code changes (all pages are client components). `npm audit --omit=dev` is now clean. |
+| Collection off the API process | Done | `collection_jobs` table (Alembic revision), `python -m intel_platform.worker` claims with `SKIP LOCKED` and heartbeats; `start.sh` supervises three processes; compose and CI gain a `worker` service; run state is read from the job row; `POST /collection-plans/{id}/cancel`. Verified live: a queued run was claimed by the worker and cancelled mid-run. |
+| Egress proxy for Chromium | Done | `collection/egress_proxy.py`: resolve once, connect to the vetted address, chain to Tor/VPN when configured; rebinding test in the suite. |
+| Extraction quality + corpus eval | Done | Gold sets: `openrep-deep` (40 chunks, 510 entities, 73 relations; primary), `kestrel` (40), the three live-run cyber documents. Markings stripped; `@pytest.mark.eval` runs are opt-in. Hybrid gold edges found on openrep: 25 → 55 of 73; NLP typed F1 0.655 → 0.710; a scorer bug that matched any two equal-length names was fixed. |
+| Generated API client types | Done | `backend/openapi.json` exported by script; `frontend/src/lib/api.generated.ts` via `npm run gen:api`; a drift test; six real mismatches fixed. Only 14 of 156 operations declare a response model, so most responses still rely on hand-written interfaces. |
+| Alembic migrations | Done | Baseline `0001` plus `collection_jobs`; `init_db` runs `upgrade head` under an advisory lock; pre-Alembic databases are adopted by stamping the baseline. |
+| Countable degraded outcomes | Done | `services/telemetry.py`; `/health.degraded`, `GET /admin/degraded`, an admin card; per-run counts on the job row. |
+| Document MENTIONS edges + one evidence endpoint | Done | `GET /entities/{id}/documents` with passages; GraphRAG and hybrid retrieval read the edges; backfill at startup. |
+| Entity uniqueness | Done | `normalized_name` with a uniqueness constraint and a single-statement MERGE; concurrent builds make one node. |
+| Giant file splits | Done | `collection_plans` and `pirs` routes are packages; `services/plan_runs.py`, `services/pir_judge/`; the network page is 458 lines with 11 hooks and 18 components. OpenAPI diff empty. |
+| Per-run test prefix | Done | Two full suites share one Neo4j (proved); a file lock covers the few tests that write project-less reference data. |
+| Cookie sessions | Done | httpOnly `sentinel_session`, `X-Requested-With` CSRF header, `/me`, `/logout`; e2e spec. |
+| Personas / LLM override persistence, `GET /reports/{id}` scope, text ingest naming, OSM basemap, hero PNG | Done | |
+| Found during the final e2e | Fixed | A plan generated with no sources (model unavailable) executed as a clean zero; generation failures are now counted and a run with no requirement elements writes a trail event. The worker logged the status it asked for, not the cancelled one stored. |
+| Still open | | Relationship precision is low in every extraction mode (generic associations and event→date links the gold does not label); one country can appear as a government and a country node; NLP misses some acronyms; multi-user project ownership. |
+
 ## Check results
 
 | Check | Result |

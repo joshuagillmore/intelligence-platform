@@ -1,0 +1,92 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-R48477#18",
+    "doc_id": "crs-R48477"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Middle East",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Army",
+      "entity_type": "Organization",
+      "aliases": [
+        "the Army"
+      ]
+    },
+    {
+      "name": "2023",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Green Sands",
+      "entity_type": "Event"
+    },
+    {
+      "name": "Army Central Command",
+      "entity_type": "Organization",
+      "aliases": [
+        "ARCENT"
+      ]
+    },
+    {
+      "name": "August 2024",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Operation Hard Kill",
+      "entity_type": "Event"
+    },
+    {
+      "name": "October 2024",
+      "entity_type": "Date"
+    },
+    {
+      "name": "NORTHCOM",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Falcon Peak",
+      "entity_type": "Event",
+      "aliases": [
+        "Falcon Peak exercise"
+      ]
+    },
+    {
+      "name": "DOD",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "United States",
+      "entity_type": "Location",
+      "aliases": [
+        "the United States",
+        "U.S.",
+        "US"
+      ]
+    },
+    {
+      "name": "Saudi Arabia",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Red Sands",
+      "entity_type": "Event",
+      "aliases": [
+        "Red Sands exercise"
+      ]
+    },
+    {
+      "name": "FY2025 NDAA",
+      "entity_type": "Document"
+    },
+    {
+      "name": "Congress",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": []
+}

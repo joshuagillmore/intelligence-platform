@@ -1,6 +1,7 @@
 """Tests for document clustering (TF-IDF + K-Means)."""
 import numpy as np
 from intel_platform.services.document_clustering import build_tfidf
+from tests.ids import tp
 
 
 def test_tfidf_basic():
@@ -89,25 +90,25 @@ def test_cluster_documents_produces_tree():
         ("d3", "sanctions iran oil trade export revenue"),
         ("d4", "sanctions embargo trade iran nuclear deal"),
     ]
-    tree, doc_map, kw_map = cluster_documents(docs, project_id="test-proj")
+    tree, doc_map, kw_map = cluster_documents(docs, project_id=tp("proj"))
     assert tree["name"] != ""
     assert tree["id"].startswith("topic-")
     assert tree["entity_type"] == "topic"
     assert len(tree.get("doc_ids", [])) == 4
     # doc_map should have entries for the root node
-    assert "test-proj" in doc_map or tree["id"] in doc_map.get("test-proj", {})
+    assert tp("proj") in doc_map or tree["id"] in doc_map.get(tp("proj"), {})
 
 
 def test_cluster_documents_single_doc():
     """Single document returns leaf node."""
     docs = [("d1", "intelligence analysis report")]
-    tree, _, _ = cluster_documents(docs, project_id="test-proj")
+    tree, _, _ = cluster_documents(docs, project_id=tp("proj"))
     assert tree["entity_type"] == "topic"
 
 
 def test_cluster_documents_empty():
     """Empty corpus returns None."""
-    tree, _, _ = cluster_documents([], project_id="test-proj")
+    tree, _, _ = cluster_documents([], project_id=tp("proj"))
     assert tree is None
 
 
@@ -121,7 +122,7 @@ def test_cluster_labels_contain_terms():
         ("d5", "sanctions embargo trade iran nuclear deal"),
         ("d6", "oil export revenue sanctions iran economy"),
     ]
-    tree, _, kw_map = cluster_documents(docs, project_id="test-proj")
+    tree, _, kw_map = cluster_documents(docs, project_id=tp("proj"))
     # Root should have children (the clusters)
     assert len(tree.get("children", [])) >= 2
     # Each child should have a name with actual words, not UUIDs

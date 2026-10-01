@@ -1,0 +1,15 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-R45811#29) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+China
+
+In addition, South Korea reportedly has been developing a ground-launched Mach 6+ hypersonic cruise missile, Hycore, since 2018. According to Janes, South Korea is developing the missile "in response to growing concern about North Korea military modernization" and plans to eventually develop sea- and air-launched variants.
+
+Although North Korea tested the Hwasong-8—which it identifies as a hypersonic glide vehicle—in September 2021, reports indicate that the vehicle may have reached speeds of only Mach 3. Similarly, North Korea claims to have tested a second hypersonic weapon in January 2022; however, experts believe that that weapon may instead be a maneuvering reentry vehicle.
+
+Finally, Japan is developing the Hypersonic Cruise Missile (HCM) and the Hyper Velocity Gliding Projectile (HVGP). It reportedly plans to field HVGPs for area suppression and neutralizing aircraft carriers. A high-supersonic HVGP is expected to enter service in 2026, with a more advanced, hypersonic version available by FY2030; HCM is expected to enter service in 2030. The Japan Aerospace Exploration Agency operates three hypersonic wind tunnels, with two additional facilities at Mitsubishi Heavy Industries and the University of Tokyo. According to DOD, Japan and the United States have agreed to conduct "a joint analysis focused on future cooperation in counter-hypersonic technology."
+
+Other countries—including Iran, Israel, and Brazil—have conducted foundational research on hypersonic airflows and propulsion systems, but may not be pursuing a hypersonic weapons capability at this time. In addition, a number of countries are testing increasingly maneuverable systems that travel at hypersonic speeds but that do not qualify as "hypersonic weapons" as defined in this report.

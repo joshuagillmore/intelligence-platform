@@ -1,0 +1,62 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "contra-01#1",
+    "doc_id": "contra-01"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Allied Maritime Analysis Cell",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Navy",
+      "entity_type": "Organization",
+      "aliases": [
+        "the Navy",
+        "U.S. Navy"
+      ]
+    },
+    {
+      "name": "December 2016",
+      "entity_type": "Date"
+    },
+    {
+      "name": "FY2018 National Defense Authorization Act",
+      "entity_type": "Document",
+      "aliases": [
+        "H.R. 2810",
+        "P.L. 115-91",
+        "National Defense Authorization Act"
+      ]
+    },
+    {
+      "name": "December 12, 2017",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Congress",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "June 2023",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Battle Force Ship Assessment and Requirement",
+      "entity_type": "Document",
+      "aliases": [
+        "BFSAR"
+      ]
+    },
+    {
+      "name": "Congressional Research Service",
+      "entity_type": "Organization",
+      "aliases": [
+        "CRS"
+      ]
+    }
+  ],
+  "relationships": []
+}

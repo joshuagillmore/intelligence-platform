@@ -1,0 +1,43 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0010#0",
+    "doc_id": "KES-0010"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "entities": [
+    {
+      "name": "Torvik",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Ostravik",
+      "entity_type": "Ship",
+      "aliases": [
+        "Ostravik (A-411)",
+        "A-411"
+      ]
+    },
+    {
+      "name": "Kalvar",
+      "entity_type": "Ship",
+      "aliases": [
+        "Kalvar (A-417)",
+        "A-417"
+      ]
+    },
+    {
+      "name": "Hallgrim",
+      "entity_type": "Ship",
+      "aliases": [
+        "Hallgrim (A-425)",
+        "A-425"
+      ]
+    },
+    {
+      "name": "3rd Naval Auxiliary Group",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": []
+}

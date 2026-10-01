@@ -1,0 +1,17 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0112#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. In response to standing requirements against the Ostrand Peninsula, source reported that a source reports the regiment communications detachment relocated without its parent unit.
+
+2. Entities identified in this reporting: 41st Coastal Defence Regiment, 19th Signals Regiment.
+
+3. Source placed the activity between 0328Z and 0852Z, and was able to observe for approximately 90 minutes before withdrawing.
+
+4. Source assessed approximately 5 personnel involved, drawn from military rather than civilian establishment, which source described as without precedent in 14 months of access.
+
+5. Source's access does not extend beyond the immediate working area, and activity elsewhere in the same period would not have been observed.

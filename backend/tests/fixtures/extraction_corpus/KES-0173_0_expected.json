@@ -1,0 +1,38 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0173#0",
+    "doc_id": "KES-0173"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "entities": [
+    {
+      "name": "Nyhavn",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Torvald",
+      "entity_type": "Ship",
+      "aliases": [
+        "Torvald (A-430)",
+        "A-430"
+      ]
+    },
+    {
+      "name": "2nd Naval Auxiliary Group",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Torvald",
+      "target": "2nd Naval Auxiliary Group",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "Torvald",
+      "target": "Nyhavn",
+      "rel_type": "LOCATED_AT"
+    }
+  ]
+}

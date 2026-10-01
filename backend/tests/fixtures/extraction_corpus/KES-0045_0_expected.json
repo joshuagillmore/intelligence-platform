@@ -1,0 +1,16 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0045#0",
+    "doc_id": "KES-0045"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "notes": "'valdorian' is a demonym, not an entity.",
+  "entities": [
+    {
+      "name": "Torvik Harbour Authority",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": []
+}

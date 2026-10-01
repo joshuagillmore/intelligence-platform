@@ -18,8 +18,9 @@ import pytest
 
 from intel_platform.models.entities import Person
 from intel_platform.services.graph_rag import GraphRAGPipeline
+from tests.ids import tp
 
-PROJECT = "test-rag-foundation"
+PROJECT = tp("rag-foundation")
 
 
 class _Provider:

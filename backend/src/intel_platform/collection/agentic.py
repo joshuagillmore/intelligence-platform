@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+from intel_platform.collection import job_runner
 from intel_platform.collection.requirement_loop import plan_stop_requested
 from intel_platform.collection.url_guard import validate_url
 from intel_platform.connectors.base import get_connector
@@ -30,6 +31,33 @@ from intel_platform.services.llm_output import json_object
 from intel_platform.services.plan_executor import over_source_budget, planned_source_budget
 
 logger = logging.getLogger(__name__)
+
+try:
+    from intel_platform.services import telemetry as _telemetry
+except ImportError:  # pragma: no cover - the counters ship separately; without them this is a no-op
+    _telemetry = None
+
+
+def _record_degraded(subsystem: str, reason: str, detail: str = "") -> None:
+    """Count a degraded outcome, for this process and for the run's job row.
+
+    Each one is already in the activity trail, which only says so for one plan
+    at a time. services.telemetry (surfaced on /health) counts per process, so
+    a worker's counts would never reach the API: the job row carries the run's
+    own counts too (``collection_jobs.degraded``). Recording must never be what
+    fails a run.
+    """
+    try:
+        job_runner.record_run_degraded(subsystem, reason)
+    except Exception:
+        logger.debug("Could not count a degraded %s outcome for the job", subsystem, exc_info=True)
+    if _telemetry is None:
+        return
+    try:
+        _telemetry.record_degraded(subsystem, reason, detail=(detail or "")[:200])
+    except Exception:
+        logger.debug("Could not record a degraded %s outcome", subsystem, exc_info=True)
+
 
 # Max follow-up rounds per source in the evaluate phase
 MAX_FOLLOWUP_ROUNDS = 2
@@ -429,6 +457,7 @@ async def resolve_sources(plan, sources, db, provider, max_results: int = 10):
             ))
         except Exception as e:
             logger.warning("Failed to resolve source %s: %s", source.name, e)
+            _record_degraded("collection", "resolution_failed", detail=type(e).__name__)
             source.collection_status = "failed"
             source.last_error = f"Resolution failed: {str(e)[:300]}"
             db.add(CollectionActivity(
@@ -722,9 +751,11 @@ async def acquire_source(source, plan, db, store, extraction_mode="nlp", provide
                     reason = str(getattr(extraction, "reason", "") or "").strip()
                     if reason:
                         degrade_reasons.add(reason[:80])
+                    _record_degraded("extraction", "nlp_fallback", detail=reason)
             except Exception as e:
                 doc_failed += 1
                 logger.warning("Extraction failed for a chunk of %s (%s)", doc_label, type(e).__name__)
+                _record_degraded("extraction", "chunk_failed", detail=type(e).__name__)
             chunks_done += 1
             # A heartbeat often enough that a stalled run is distinguishable
             # from a slow one, rare enough not to write a row per chunk.
@@ -991,6 +1022,21 @@ def _final_status(current: str | None, *, failed: bool) -> str:
     return _PLAN_FAILED if failed else PlanStatus.COMPLETED
 
 
+async def _run_was_cancelled(db, plan_id) -> bool:
+    """Whether the run stopped because the analyst cancelled its job.
+
+    Asked only once a run has stopped early, so the common path pays nothing.
+    An unreadable answer is "no": the run is then summarised as stopped.
+    """
+    try:
+        from intel_platform.db.jobs import CANCELLED, latest_job_status
+
+        return await latest_job_status(db, plan_id) == CANCELLED
+    except Exception:
+        logger.debug("Could not read whether plan %s's run was cancelled", plan_id, exc_info=True)
+        return False
+
+
 async def _record_plan_failed(db_factory, plan_id, reason: str) -> None:
     """Write the failure through a fresh session.
 
@@ -1014,17 +1060,17 @@ async def _record_plan_failed(db_factory, plan_id, reason: str) -> None:
 async def run_agentic_loop(
     plan_id, db_factory, get_store, get_provider=None,
     max_results_per_source: int = 10, source_limit: int | None = None,
-):
-    """Background task: resolve, acquire, and evaluate all sources in a plan.
+) -> str | None:
+    """Resolve, acquire, and evaluate all sources in a plan, then re-task.
 
-    Runs as an asyncio task with nothing awaiting it, so nothing else would see
-    an exception: a crashed run read "running" for the stall window, then
-    "stalled", never "failed". Any failure is recorded as ``plan_failed`` and
-    not re-raised. Cancellation is recorded too and then propagated, so the
-    task still reports itself cancelled.
+    Any failure is recorded as ``plan_failed`` and not re-raised; the reason
+    recorded is returned (already sanitised: it names an exception type, never
+    its text), and None means the run finished or stopped as asked. The job
+    runner writes that onto the job row. Cancellation is recorded too and then
+    propagated, so the task still reports itself cancelled.
     """
     try:
-        await _run_agentic_loop(
+        return await _run_agentic_loop(
             plan_id, db_factory, get_store, get_provider,
             max_results_per_source=max_results_per_source, source_limit=source_limit,
         )
@@ -1034,9 +1080,9 @@ async def run_agentic_loop(
         raise
     except Exception as exc:
         logger.exception("Agentic loop for plan %s failed", plan_id)
-        await _record_plan_failed(
-            db_factory, plan_id, f"Collection run failed ({type(exc).__name__}); see server logs",
-        )
+        reason = f"Collection run failed ({type(exc).__name__}); see server logs"
+        await _record_plan_failed(db_factory, plan_id, reason)
+        return reason
 
 
 async def _run_agentic_loop(
@@ -1072,10 +1118,9 @@ async def _run_agentic_loop(
         logger.error("Failed to get LLM provider for agentic loop: %s", e)
         # A run that could not start is a failure. It used to be marked
         # COMPLETED, which reads as a collection that ran and found nothing.
-        await _record_plan_failed(
-            db_factory, plan_id, f"No LLM provider available ({type(e).__name__}); see server logs",
-        )
-        return
+        reason = f"No LLM provider available ({type(e).__name__}); see server logs"
+        await _record_plan_failed(db_factory, plan_id, reason)
+        return reason
 
     store = get_store()
 
@@ -1180,6 +1225,7 @@ async def _run_agentic_loop(
                     # with the reason, never as "acquired".
                     attempted -= 1
                     reasons = ", ".join(sorted({r for _u, r in rejected})) or "no content"
+                    _record_degraded("collection", "no_usable_content", detail=reasons)
                     source.collection_status = "failed"
                     source.last_failure_at = datetime.now(timezone.utc)
                     source.last_error = f"No usable content ({reasons})"[:500]
@@ -1256,6 +1302,7 @@ async def _run_agentic_loop(
                 completed += 1
 
             except Exception as e:
+                _record_degraded("collection", "source_failed", detail=type(e).__name__)
                 source.collection_status = "failed"
                 source.last_failure_at = datetime.now(timezone.utc)
                 source.last_error = str(e)[:500]
@@ -1312,11 +1359,16 @@ async def _run_agentic_loop(
         # Final status. Read in this fresh session, and never written over a
         # PAUSED or ARCHIVED plan: completion used to set COMPLETED
         # unconditionally, un-archiving plans the analyst had archived mid-run.
+        # A cancelled run is not a finished plan: the lifecycle status is left
+        # as it was rather than claiming COMPLETED.
+        cancelled = stopped and await _run_was_cancelled(db, plan_id)
         upload_sources = [s for s in (plan.sources or []) if s.source_type == "file_upload" and s.enabled]
-        if not upload_sources:
+        if not upload_sources and not cancelled:
             plan.status = _final_status(plan.status, failed=False)
 
-        if stopped:
+        if cancelled:
+            summary = f"Collection cancelled: {completed} succeeded, {failed} failed before it stopped"
+        elif stopped:
             summary = (
                 f"Collection stopped early: plan is {plan.status}. "
                 f"{completed} succeeded, {failed} failed before it stopped"

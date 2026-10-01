@@ -1,0 +1,15 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0145#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Valdorian naval liaison passed that ostravik and Kalvar conduct a routine coastal resupply run, returning same day.
+
+2. Entities identified in this reporting: Ostravik (A-411), Kalvar (A-417), 3rd Naval Auxiliary Group.
+
+3. Partner assesses the reporting as consistent with their own collection but has not stated whether it derives from an independent source.
+
+4. DESK COMMENT: The activity described is routine and is reported for completeness. It should not be read as related to the current tasking without further reporting establishing a connection. Graded B1; credibility reflects independent corroboration by another discipline rather than the source's own consistency.

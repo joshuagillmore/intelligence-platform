@@ -1,0 +1,122 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-R47390#22",
+    "doc_id": "crs-R47390"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Kuwait",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Middle East",
+      "entity_type": "Location",
+      "aliases": [
+        "Middle East region"
+      ]
+    },
+    {
+      "name": "Gulf Cooperation Council",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Yemen",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Qatar",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Saudi Arabia",
+      "entity_type": "Location"
+    },
+    {
+      "name": "United Arab Emirates",
+      "entity_type": "Location"
+    },
+    {
+      "name": "2016",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Ansar Allah",
+      "entity_type": "Organization",
+      "aliases": [
+        "Houthi",
+        "Ansar Allah (aka Houthi) movement"
+      ]
+    },
+    {
+      "name": "Iran",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Persian Gulf",
+      "entity_type": "Location",
+      "aliases": [
+        "northern Persian Gulf"
+      ]
+    },
+    {
+      "name": "July 2023",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Dorra/Arash gas field",
+      "entity_type": "Location",
+      "aliases": [
+        "Dorra/Arash field",
+        "Dorra Gas field",
+        "Dorra"
+      ]
+    },
+    {
+      "name": "March 2024",
+      "entity_type": "Date"
+    },
+    {
+      "name": "September 2025",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Khafji Joint Operations Company",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Saudi Aramco Gulf Operations Company",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Kuwait Gulf Oil Company",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Israel",
+      "entity_type": "Location"
+    },
+    {
+      "name": "June 2025",
+      "entity_type": "Date"
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Khafji Joint Operations Company",
+      "target": "Saudi Aramco Gulf Operations Company",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "Khafji Joint Operations Company",
+      "target": "Kuwait Gulf Oil Company",
+      "rel_type": "BELONGS_TO"
+    },
+    {
+      "source": "Israel",
+      "target": "Iran",
+      "rel_type": "TARGETS"
+    }
+  ]
+}

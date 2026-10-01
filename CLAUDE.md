@@ -31,7 +31,8 @@ Claude Code *online* branches alike. Read it first. `backend/CLAUDE.md` and
 - **Dual datastore:** Neo4j is the knowledge graph (entities + relationships);
   Postgres/pgvector holds documents, embeddings, and collection-plan state.
 - **Deploy:** Railway builds the root `Dockerfile`; its entrypoint `start.sh`
-  runs the Next.js server and uvicorn, and exits non-zero if either dies.
+  runs the Next.js server, uvicorn and the collection worker
+  (`python -m intel_platform.worker`), and exits non-zero if any of them dies.
   Local full stack via `docker compose`.
 
 ## Repo layout
@@ -114,7 +115,10 @@ docker compose up            # neo4j:7474/7687 · postgres:5432 · ollama:11434
   nodes) and survive restarts. The remaining in-memory state is the admin
   `_llm_override` (provider/model override in `admin_config`), which resets on
   restart — persist it if that matters.
-- **SSRF guard lives in `collection/url_guard.py`**, not in any one fetcher. It
+- **SSRF guard lives in `collection/url_guard.py`**, not in any one fetcher, and
+  the headless browser reaches the network only through the pinned local
+  `collection/egress_proxy.py`, which resolves once and connects to the vetted
+  address (or chains to the configured Tor/VPN upstream). It
   rejects non-HTTP(S) schemes, internal hostnames, and hosts resolving to
   private/reserved IPs (DNS-rebinding defence). The fetchers call it —
   `scraper`, `crawler` (every requested URL and the final redirected URL) and

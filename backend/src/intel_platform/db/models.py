@@ -40,13 +40,14 @@ except ImportError:  # pragma: no cover
 # Read once at import because SQLAlchemy needs the width when the class below is
 # defined; changing it takes effect on the next process start.
 #
-# NO MIGRATION: the schema is created by db.engine.init_db() at startup and
-# `create_all` never ALTERs an existing table, so on a database that already has
-# the embedding tables a new value does NOT resize the column — inserts keep
-# failing against the old width. Drop and recreate the embedding tables
-# (`chunk_embeddings`, `attack_technique_embeddings`) to adopt it; their contents
-# have to be re-embedded anyway, since vectors from a different provider are not
-# comparable to the stored ones.
+# The width is applied when the baseline migration creates the embedding tables
+# (backend/alembic/versions/0001_baseline.py reads the same setting). On a
+# database that already has them a new value does NOT resize the column, and
+# `alembic upgrade` will not either: inserts keep failing against the old width
+# (/health reports it). Drop and recreate the embedding tables
+# (`chunk_embeddings`, `attack_technique_embeddings`) to adopt it — init_db
+# recreates them on the next boot — since their contents have to be re-embedded
+# anyway: vectors from a different provider are not comparable to stored ones.
 _EMBEDDING_DIM = get_settings().embedding_dimensions
 
 
@@ -293,9 +294,9 @@ class CollectionPlan(Base):
     refined_pir: Mapped[str] = mapped_column(Text, default="")
     # Link back to the first-class PIR this plan was raised against. Deliberately
     # a bare UUID (no FK constraint): collection_plans predates the pirs table on
-    # existing deployments, where the column is added by the additive migration in
-    # db/engine.py — a constraint would only exist on freshly created databases.
-    # Unlinking on PIR delete is done explicitly in api/routes/pirs.py.
+    # existing deployments, where the column was added by a bare ALTER TABLE — a
+    # constraint would only exist on freshly created databases.
+    # Unlinking on PIR delete is done explicitly in api/routes/pirs/crud.py.
     pir_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True,
         comment="pirs.id this plan was generated for, if any")
@@ -597,3 +598,12 @@ class TopicEdit(Base):
     __table_args__ = (
         Index("ix_topic_edit_node_project", "node_id", "project_id"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Collection jobs live in db/jobs.py. Imported here so the table is in
+# Base.metadata wherever the models are, which is what Alembic autogenerate
+# and `alembic check` compare the database against.
+# ---------------------------------------------------------------------------
+
+from intel_platform.db import jobs  # noqa: F401,E402

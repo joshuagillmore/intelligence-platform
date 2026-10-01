@@ -12,6 +12,10 @@ COPY --from=ghcr.io/astral-sh/uv:0.12.21 /uv /usr/local/bin/uv
 # cryptography 46→49, openai 2.29→2.49 — and every rebuild could differ again.
 COPY pyproject.toml uv.lock ./
 COPY src/ src/
+# Alembic migrations: init_db runs `alembic upgrade head` at boot, reading
+# alembic.ini and the versions from /app, the layout `uv run` expects.
+COPY alembic/ alembic/
+COPY alembic.ini alembic.ini
 
 # --locked asserts uv.lock is current: add a dependency to pyproject.toml and
 # forget `uv lock`, and the build fails here rather than shipping an image that

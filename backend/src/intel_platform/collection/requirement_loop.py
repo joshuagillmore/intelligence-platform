@@ -184,7 +184,13 @@ async def run_requirement_passes(
             return outcome
         requirements = await sync_requirements(db, pir)
         if not requirements:
+            # Say so in the trail: a plan with no planned sources and no
+            # elements otherwise ends as "0 succeeded, 0 failed", which reads
+            # as a clean run rather than a run with nothing to do.
             outcome.stopped_on = "no_elements"
+            _log(db, plan_id, "requirement_no_elements",
+                 "The requirement has no essential elements to collect against; "
+                 "nothing was re-tasked. Refine the requirement so elements are captured.")
             await db.commit()
             return outcome
         project_id = pir.project_id

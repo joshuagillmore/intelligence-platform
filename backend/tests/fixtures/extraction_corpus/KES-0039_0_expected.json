@@ -1,0 +1,20 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0039#0",
+    "doc_id": "KES-0039"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "notes": "Lysgard typed Ship: a 'hydrographic survey transit' reported with the hydrographic service. 'Ravenskan' is a demonym, not an entity.",
+  "entities": [
+    {
+      "name": "RVK Hydrographic Service",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Lysgard",
+      "entity_type": "Ship"
+    }
+  ],
+  "relationships": []
+}

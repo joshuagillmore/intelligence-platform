@@ -1,0 +1,17 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0006#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Communications passed in the clear establish that pilots assigned for an 0400 movement; movement deferred, no reason passed in clear.
+
+2. Entities identified in this reporting: Torvik Harbour Authority, 3rd Naval Auxiliary Group.
+
+3. A gap in collection between 0048Z and 0803Z cannot be excluded, and activity during that window would not have been recovered.
+
+4. Traffic volume rose to approximately 22 transmissions per hour against a normal baseline of 5, without corresponding change in content.
+
+5. The reporting establishes that the activity occurred but not why it was ordered.

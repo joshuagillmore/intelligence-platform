@@ -1,0 +1,22 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "crs-IF13279#8",
+    "doc_id": "crs-IF13279"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "FAA",
+      "entity_type": "Organization",
+      "aliases": [
+        "Federal Aviation Administration"
+      ]
+    },
+    {
+      "name": "July 2026",
+      "entity_type": "Date"
+    }
+  ],
+  "relationships": []
+}

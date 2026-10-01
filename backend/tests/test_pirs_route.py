@@ -14,8 +14,8 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import HTTPException
 
-from intel_platform.api.routes.collection_plans import _plan_to_dict
-from intel_platform.api.routes.pirs import (
+from intel_platform.api.routes.collection_plans.plans import _plan_to_dict
+from intel_platform.api.routes.pirs.crud import (
     _pir_to_response,
     _plan_link,
     _validate_priority,
@@ -26,6 +26,7 @@ from intel_platform.api.routes.pirs import (
 )
 from intel_platform.db.models import PIR_PRIORITIES, PIR_STATUSES, CollectionPlan, Pir, PirStatus
 from intel_platform.models.requests import CreatePirRequest
+from tests.ids import tp
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +92,7 @@ class FakeSession:
 def _make_pir(**kwargs) -> Pir:
     defaults = dict(
         id=uuid.uuid4(),
-        project_id="test-proj",
+        project_id=tp("proj"),
         title="Actor infrastructure",
         text="What infrastructure does APT-29 use for C2?",
         refined_text="",
@@ -157,7 +158,7 @@ class TestSerialization:
     def test_pir_response_includes_plan_links(self):
         pir = _make_pir()
         plan = CollectionPlan(
-            id=uuid.uuid4(), project_id="test-proj", name="PIR: C2 infrastructure",
+            id=uuid.uuid4(), project_id=tp("proj"), name="PIR: C2 infrastructure",
             status="ACTIVE", pir_id=pir.id, created_at=datetime.now(timezone.utc),
         )
         resp = _pir_to_response(pir, [plan])
@@ -170,7 +171,7 @@ class TestSerialization:
     def test_plan_link_aggregates_source_records(self):
         from intel_platform.db.models import CollectionSource
 
-        plan = CollectionPlan(id=uuid.uuid4(), project_id="test-proj", name="p", status="ACTIVE")
+        plan = CollectionPlan(id=uuid.uuid4(), project_id=tp("proj"), name="p", status="ACTIVE")
         plan.sources = [
             CollectionSource(name="a", source_type="web_scrape", total_records_acquired=3),
             CollectionSource(name="b", source_type="rss_feed", total_records_acquired=4),
@@ -181,11 +182,11 @@ class TestSerialization:
 
     def test_plan_dict_exposes_pir_id(self):
         pir_id = uuid.uuid4()
-        plan = CollectionPlan(id=uuid.uuid4(), project_id="test-proj", name="p",
+        plan = CollectionPlan(id=uuid.uuid4(), project_id=tp("proj"), name="p",
                               status="DRAFT", pir_id=pir_id)
         assert _plan_to_dict(plan)["pir_id"] == str(pir_id)
 
-        unlinked = CollectionPlan(id=uuid.uuid4(), project_id="test-proj", name="p", status="DRAFT")
+        unlinked = CollectionPlan(id=uuid.uuid4(), project_id=tp("proj"), name="p", status="DRAFT")
         assert _plan_to_dict(unlinked)["pir_id"] is None
 
 
@@ -197,7 +198,7 @@ class TestCreatePir:
     async def test_create_persists_and_derives_title(self):
         db = FakeSession()
         resp = await create_pir(
-            CreatePirRequest(project_id="test-proj", text="  Where is APT-29 staging?  "),
+            CreatePirRequest(project_id=tp("proj"), text="  Where is APT-29 staging?  "),
             db=db,
         )
         assert db.commits == 1
@@ -209,19 +210,19 @@ class TestCreatePir:
 
     async def test_create_rejects_blank_text(self):
         with pytest.raises(HTTPException) as exc:
-            await create_pir(CreatePirRequest(project_id="test-proj", text="   "), db=FakeSession())
+            await create_pir(CreatePirRequest(project_id=tp("proj"), text="   "), db=FakeSession())
         assert exc.value.status_code == 400
 
     async def test_create_rejects_bad_status(self):
         with pytest.raises(HTTPException) as exc:
             await create_pir(
-                CreatePirRequest(project_id="test-proj", text="q", status="NOPE"), db=FakeSession()
+                CreatePirRequest(project_id=tp("proj"), text="q", status="NOPE"), db=FakeSession()
             )
         assert exc.value.status_code == 400
 
     async def test_create_drops_empty_eeis(self):
         resp = await create_pir(
-            CreatePirRequest(project_id="test-proj", text="q", eeis=["a", "", "  ", "b"]),
+            CreatePirRequest(project_id=tp("proj"), text="q", eeis=["a", "", "  ", "b"]),
             db=FakeSession(),
         )
         assert resp.eeis == ["a", "b"]
@@ -231,34 +232,34 @@ class TestGetOrCreatePir:
     async def test_resolves_existing_by_id(self):
         pir = _make_pir()
         db = FakeSession(get_result=pir)
-        resolved = await get_or_create_pir(db, "test-proj", "", pir_id=str(pir.id))
+        resolved = await get_or_create_pir(db, tp("proj"), "", pir_id=str(pir.id))
         assert resolved is pir
         assert db.added == []
 
     async def test_unknown_id_is_404(self):
         with pytest.raises(HTTPException) as exc:
-            await get_or_create_pir(FakeSession(get_result=None), "test-proj", "", pir_id=str(uuid.uuid4()))
+            await get_or_create_pir(FakeSession(get_result=None), tp("proj"), "", pir_id=str(uuid.uuid4()))
         assert exc.value.status_code == 404
 
     async def test_cross_project_id_is_400(self):
         pir = _make_pir(project_id="other-proj")
         with pytest.raises(HTTPException) as exc:
-            await get_or_create_pir(FakeSession(get_result=pir), "test-proj", "", pir_id=str(pir.id))
+            await get_or_create_pir(FakeSession(get_result=pir), tp("proj"), "", pir_id=str(pir.id))
         assert exc.value.status_code == 400
 
     async def test_malformed_id_is_400(self):
         with pytest.raises(HTTPException) as exc:
-            await get_or_create_pir(FakeSession(), "test-proj", "", pir_id="not-a-uuid")
+            await get_or_create_pir(FakeSession(), tp("proj"), "", pir_id="not-a-uuid")
         assert exc.value.status_code == 400
 
     async def test_blank_text_without_id_anchors_nothing(self):
         db = FakeSession()
-        assert await get_or_create_pir(db, "test-proj", "   ") is None
+        assert await get_or_create_pir(db, tp("proj"), "   ") is None
         assert db.added == []
 
     async def test_free_text_creates_a_requirement(self):
         db = FakeSession(query_rows=[])
-        pir = await get_or_create_pir(db, "test-proj", "  Who funds the network?  ")
+        pir = await get_or_create_pir(db, tp("proj"), "  Who funds the network?  ")
         assert pir is not None
         assert pir.text == "Who funds the network?"
         assert pir.title == "Who funds the network?"
@@ -269,7 +270,7 @@ class TestGetOrCreatePir:
     async def test_identical_live_text_is_reused_not_duplicated(self):
         existing = _make_pir(text="Who funds the network?")
         db = FakeSession(query_rows=[existing])
-        pir = await get_or_create_pir(db, "test-proj", "Who funds the network?")
+        pir = await get_or_create_pir(db, tp("proj"), "Who funds the network?")
         assert pir is existing
         assert db.added == []
 
@@ -287,9 +288,9 @@ def test_pir_routes_registered():
 
 
 def test_pir_column_backfill_registered():
-    """Existing databases only gain collection_plans.pir_id via the additive
-    migration — create_all never ALTERs a table that already exists."""
-    from intel_platform.db.engine import _ADDITIVE_COLUMNS
+    """A pre-Alembic database gains collection_plans.pir_id while it is adopted
+    (the legacy additive columns replayed before stamping the baseline)."""
+    from intel_platform.db.engine import _LEGACY_ADDITIVE_COLUMNS
 
-    joined = " ".join(_ADDITIVE_COLUMNS)
+    joined = " ".join(_LEGACY_ADDITIVE_COLUMNS)
     assert "ALTER TABLE collection_plans ADD COLUMN IF NOT EXISTS pir_id UUID" in joined

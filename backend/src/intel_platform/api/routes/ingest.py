@@ -11,6 +11,7 @@ from intel_platform.models.entities import Document
 from intel_platform.services.ingestion import ingest_text, process_file
 from intel_platform.services.extraction import extract_entities_nlp
 from intel_platform.services.graph_builder import build_graph_from_extractions
+from intel_platform.services.telemetry import record_degraded
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,15 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.md', '.csv', '.json'}
+# Name given to pasted text when the caller does not supply `source_name`.
+DEFAULT_TEXT_SOURCE_NAME = "text_input"
+MAX_SOURCE_NAME_CHARS = 256
+
+
+def _text_source_name(source_name: str | None) -> str:
+    """The analyst's name for pasted text: whitespace collapsed, bounded, or the default."""
+    name = " ".join((source_name or "").split())[:MAX_SOURCE_NAME_CHARS].strip()
+    return name or DEFAULT_TEXT_SOURCE_NAME
 
 # Everything below that parses, runs spaCy or talks to Neo4j is synchronous, and
 # these handlers run on the event loop that also serves /health and every other
@@ -105,7 +115,12 @@ async def _ingest_chunks(
     all_entities = []
     all_relationships = []
     for chunk in chunks:
-        entities, relationships = await _extract(chunk["content"], doc.id, extraction_mode)
+        extraction = await _extract(chunk["content"], doc.id, extraction_mode)
+        entities, relationships = extraction
+        # ExtractionResult says when the requested method failed and this chunk
+        # is the NLP fallback; a plain tuple (older callers, tests) never is.
+        if getattr(extraction, "degraded", False):
+            record_degraded("extraction", getattr(extraction, "reason", "") or "degraded", detail=doc.id)
         all_entities.extend(entities)
         all_relationships.extend(relationships)
 
@@ -126,12 +141,13 @@ async def _ingest_chunks(
             embeddings_stored = await embed_and_store_chunks(chunks, doc.id, project_id, db_session)
             await db_session.commit()
         indexed = bool(embeddings_stored) or not chunks
-    except Exception:
+    except Exception as exc:
         indexed = False
         logger.warning(
             "Embedding failed for %s — document is in the graph but will not be "
             "findable by semantic search", source_name, exc_info=True,
         )
+        record_degraded("embeddings", "store_unavailable", detail=type(exc).__name__)
 
     return {
         "document_id": doc.id,
@@ -151,6 +167,9 @@ async def ingest_document(
     file: UploadFile | None = File(None),
     reliability_rating: str = Form("C3"),
     extraction_mode: str | None = Form(None),
+    # The document's name when `content` is pasted text (default "text_input").
+    # An uploaded file is always named by its filename.
+    source_name: str | None = Form(None),
     store: GraphStore = Depends(get_graph_store),
 ):
     # None -> the configured default (hybrid). Explicit value still honored.
@@ -163,7 +182,7 @@ async def ingest_document(
         )
     elif content:
         chunks = await asyncio.to_thread(ingest_text, content, settings.chunk_size, settings.chunk_overlap)
-        source_name = "text_input"
+        source_name = _text_source_name(source_name)
     else:
         raise HTTPException(status_code=400, detail="Provide either content or file")
 

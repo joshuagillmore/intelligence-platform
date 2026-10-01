@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from intel_platform.db.models import _EMBEDDING_DIM as _COLUMN_WIDTH, ChunkEmbedding
 from intel_platform.llm.embeddings import EmbeddingProvider, get_embedding_provider
+from intel_platform.services.telemetry import record_degraded
 from intel_platform.services.text_utils import strip_markup
 
 logger = logging.getLogger(__name__)
@@ -62,12 +63,14 @@ async def embed_and_store_chunks(
             batch = texts[i : i + _EMBED_BATCH_SIZE]
             result = await provider.embed(batch, input_type="search_document")
             all_vectors.extend(result.embeddings)
-    except Exception:
+    except Exception as exc:
         logger.warning("Embedding failed for document %s — chunks stored without vectors", document_id, exc_info=True)
+        record_degraded("embeddings", "embed_failed", detail=type(exc).__name__)
         return 0
 
     if len(all_vectors) != len(chunks):
         logger.warning("Embedding count mismatch: %d vectors for %d chunks", len(all_vectors), len(chunks))
+        record_degraded("embeddings", "count_mismatch")
         return 0
 
     # A vector the column cannot hold fails in the database, on the caller's
@@ -79,6 +82,7 @@ async def embed_and_store_chunks(
             "chunk_embeddings expects %d (EMBEDDING_DIMENSIONS)",
             document_id, provider.name(), bad_width, _EMBEDDING_DIM,
         )
+        record_degraded("embeddings", "width_mismatch", detail=f"{bad_width} != {_EMBEDDING_DIM}")
         return 0
 
     rows = []
@@ -97,9 +101,10 @@ async def embed_and_store_chunks(
         async with session.begin_nested():
             session.add_all(rows)
             await session.flush()
-    except Exception:
+    except Exception as exc:
         # The savepoint is rolled back; the caller's transaction is intact.
         logger.warning("Storing embeddings failed for document %s", document_id, exc_info=True)
+        record_degraded("embeddings", "store_failed", detail=type(exc).__name__)
         return 0
     return len(rows)
 
@@ -134,6 +139,7 @@ async def vector_search(
                 "Ignoring query_vector of width %d; chunk_embeddings expects %d",
                 len(query_vector), _EMBEDDING_DIM,
             )
+            record_degraded("embeddings", "width_mismatch", detail=f"{len(query_vector)} != {_EMBEDDING_DIM}")
             return []
         query_vec = query_vector
     else:
@@ -144,8 +150,9 @@ async def vector_search(
                 provider = get_embedding_provider()
             result = await provider.embed([query], input_type="search_query")
             query_vec = result.embeddings[0]
-        except Exception:
+        except Exception as exc:
             logger.warning("Query embedding failed", exc_info=True)
+            record_degraded("embeddings", "query_embed_failed", detail=type(exc).__name__)
             return []
         # The provider's own output needs the same width check as a supplied
         # vector: a project indexed at 1536 and later queried through a 1024-dim
@@ -155,6 +162,7 @@ async def vector_search(
                 "Embedding provider returned a %d-wide vector; chunk_embeddings expects %d",
                 len(query_vec), _EMBEDDING_DIM,
             )
+            record_degraded("embeddings", "width_mismatch", detail=f"{len(query_vec)} != {_EMBEDDING_DIM}")
             return []
 
     # pgvector cosine distance: <=> returns distance (0 = identical),

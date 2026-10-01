@@ -1,0 +1,17 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0003#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Imagery of Torvik collected during the period shows that ostravik (A-411) and Kalvar (A-417) berth at quay 4.
+
+2. Entities identified in this reporting: Ostravik (A-411), Kalvar (A-417), 3rd Naval Auxiliary Group.
+
+3. Comparison against imagery of 3 days earlier shows 20 additional objects present and no objects removed.
+
+4. The observed dispersal pattern is consistent with, but not diagnostic of, preparation for movement.
+
+5. Imagery establishes presence and disposition. It does not establish cargo, readiness state or intent.

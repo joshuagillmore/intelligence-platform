@@ -1,0 +1,17 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0002#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Collection against Torvik during the reporting period establishes that ostravik (A-411) and Kalvar (A-417) berth at quay 4.
+
+2. Entities identified in this reporting: Ostravik (A-411), Kalvar (A-417), 3rd Naval Auxiliary Group.
+
+3. The transmission was made in the clear on a working frequency, which is consistent with routine administrative traffic rather than deliberate deception.
+
+4. A gap in collection between 1624Z and 0028Z cannot be excluded, and activity during that window would not have been recovered.
+
+5. The reporting establishes that the activity occurred but not why it was ordered.

@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { APP_TITLE, APP_TAGLINE } from '@/lib/branding';
 import { ProjectProvider } from '@/lib/ProjectContext';
+import { SessionProvider } from '@/lib/SessionContext';
 import { AssistantProvider } from '@/lib/AssistantContext';
 import { NotificationProvider } from '@/components/NotificationProvider';
 import KeyboardShortcuts from '@/components/KeyboardShortcuts';
@@ -41,22 +42,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
       </head>
       <body className="bg-navy-900 text-gray-100 font-sans antialiased">
-        <ProjectProvider>
-          <NotificationProvider>
-            {/* AssistantProvider is inside NotificationProvider because the
-                assistant's "Save as Product" raises notifications, and inside
-                ProjectProvider because the thread is project-scoped. */}
-            <AssistantProvider>
-              <KeyboardShortcuts />
-              <MobileHeader />
-              {children}
-              <StatusBar />
-              <MobileBottomNav />
-              {/* One assistant for all 13 views — see components/AssistantPanel. */}
-              <AssistantPanel />
-            </AssistantProvider>
-          </NotificationProvider>
-        </ProjectProvider>
+        {/* SessionProvider asks /api/auth/me on load: the sign-in gate for
+            every view, and the identity the sidebar and nav show. */}
+        <SessionProvider>
+          <ProjectProvider>
+            <NotificationProvider>
+              {/* AssistantProvider is inside NotificationProvider because the
+                  assistant's "Save as Product" raises notifications, and inside
+                  ProjectProvider because the thread is project-scoped. */}
+              <AssistantProvider>
+                <KeyboardShortcuts />
+                <MobileHeader />
+                {children}
+                <StatusBar />
+                <MobileBottomNav />
+                {/* One assistant for all 13 views — see components/AssistantPanel. */}
+                <AssistantPanel />
+              </AssistantProvider>
+            </NotificationProvider>
+          </ProjectProvider>
+        </SessionProvider>
       </body>
     </html>
   );

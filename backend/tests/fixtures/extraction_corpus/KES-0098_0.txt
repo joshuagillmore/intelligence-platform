@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0098#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Communications passed in the clear establish that bulk carrier Mirenda transmits an implausible speed-over-ground for its class.
+
+2. Entities identified in this reporting: Mirenda.
+
+3. Callsigns associated with the activity were used 5 times in the period, against a baseline of fewer than 5 in comparable periods.
+
+4. The activity was passed at 1110Z and repeated at 0016Z. No further traffic on the subject was recovered before collection ended at 1028Z.
+
+5. A gap in collection between 1914Z and 1234Z cannot be excluded, and activity during that window would not have been recovered.
+
+6. The reporting establishes that the activity occurred but not why it was ordered.

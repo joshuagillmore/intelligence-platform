@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0058#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Publicly available shipping and schedule data indicate that product tanker Stellar Vane ceases AIS transmission for 14 hours east of Ostrand.
+
+2. Entities identified in this reporting: Stellar Vane.
+
+3. The publication does not identify its own sourcing and gives no dateline beyond 0251Z.
+
+4. Schedule data show 3 affected sailings, all within the period 2316Z to 0025Z.
+
+5. The account is consistent with commercial reporting of the same period and contains no detail not already publicly available.
+
+6. Open reporting establishes that the event was publicly visible. It establishes nothing about military significance.

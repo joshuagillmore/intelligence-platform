@@ -45,20 +45,14 @@ export default function LlmHubPage() {
 
   const loadSkills = useCallback(async () => {
     try {
+      // `SkillListResponse` is `{skills: [{name, description, active}]}`. Any
+      // other shape is an error to show, not a list to guess at.
       const res = await llmApi.skills();
-      const data = res.data;
-      let arr: Skill[] = [];
-      if (Array.isArray(data)) {
-        arr = data;
-      } else if (data && Array.isArray(data.skills)) {
-        arr = data.skills as Skill[];
-      } else if (typeof data === 'object') {
-        arr = Object.entries(data).map(([name, val]) => ({
-          name,
-          ...(typeof val === 'object' && val !== null ? val as Record<string, unknown> : {}),
-        })) as Skill[];
-      }
-      setSkills(arr);
+      const rows: unknown = res.data?.skills;
+      if (!Array.isArray(rows)) throw new Error('Unexpected skills response shape.');
+      setSkills(
+        rows.filter((r): r is Skill => !!r && typeof r === 'object' && typeof (r as Skill).name === 'string'),
+      );
     } catch (e) {
       console.error('Failed to load skills', e);
       addNotification({

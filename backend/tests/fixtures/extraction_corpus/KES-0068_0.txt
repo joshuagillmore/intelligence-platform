@@ -1,0 +1,19 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0068#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Imagery collected against standing requirements shows that 12th Air Defence Battalion conducts a scheduled equipment rotation.
+
+2. Entities identified in this reporting: 12th Air Defence Battalion.
+
+3. The observed dispersal pattern is consistent with, but not diagnostic of, preparation for movement.
+
+4. Collection was at 2020Z with a NIIRS rating of 5. Cloud cover over approximately 10 per cent of the area prevented full coverage.
+
+5. Imagery establishes presence and disposition. It does not establish cargo, readiness state or intent.
+
+6. IMAGERY ANALYST COMMENT: The activity described is routine and is reported for completeness. It should not be read as related to the current tasking without further reporting establishing a connection.

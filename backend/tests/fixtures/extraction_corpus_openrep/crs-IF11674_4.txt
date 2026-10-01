@@ -1,0 +1,17 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-IF11674#4) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Basic Concept for Ship
+
+The TAOL program (referred to in some documents as the NGLS or Next-Generation Medium Logistics Ship program) was initiated in the Navy's FY2021 budget submission. The program envisages building a new class of CLF ships that would be smaller and individually less expensive to procure than the Navy's current CLF ships. Figure 1 shows a sketch of a Navy notional TAOL design concept.
+
+Figure 1. Navy Notional TAOL Design Concept
+
+Source: U.S. Navy information paper, June 14, 2022, received by CRS from Navy Office of Legislative Affairs, June 16, 2022. The Navy states that the rendering "was developed by the Navy as an illustration of the indicative design that supports the refuel, rearm and resupply missions currently contemplated by the NGLS program. This illustration does not represent the final NGLS design."
+
+is planned to be a new class of ships to augment the traditional Combat Logistics Force (CLF) to enable refueling, rearming, and resupply of Naval assets - afloat and ashore - near contested environments via ship-to-ship operations and ship-to port operations in support of Distributed Maritime Operations (DMO), Littoral Operations in a Contested Environment (LOCE), and Expeditionary Advanced Base Operations (EABO). Augmenting the traditional CLF, NGLS will provide a flexible, responsive platform to move fuel, personnel, equipment, and supplies between ships, advanced bases, ports, and dispersed nodes of the seabase; sustaining afloat (Surface Action Group) and ashore (Expeditionary Advanced Base) requirements.
+
+(Department of Defense, Fiscal Year (FY) 2026 Budget Estimates, Navy, Research, Development, Test & Evaluation, Navy [account], Justification Book Volume 2 of 5, June 2025, page 437.)

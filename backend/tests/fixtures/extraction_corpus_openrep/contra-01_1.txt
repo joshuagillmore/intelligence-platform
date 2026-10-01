@@ -1,0 +1,10 @@
+SYNTHETIC DOCUMENT — FABRICATED FOR EXERCISE USE; ITS FIGURES ARE INVENTED.
+From an exercise collection (openrep-deep, chunk contra-01#1). All classification and
+releasability markings have been removed. Used only to evaluate entity extraction.
+--- BEGIN FIXTURE ---
+
+Assessment
+
+Allied Maritime Analysis Cell assesses the following. In December 2016, the Navy released a force-structure goal that calls for achieving and maintaining a fleet of 381 ships of certain types and numbers. The 355-ship goal was made U.S. policy by Section 1025 of the FY2018 National Defense Authorization Act (H.R. 2810/P.L. 115-91 of December 12, 2017). The provision, which was codified as a note to 10 U.S.C. 8661, has no enforcement mechanism. The 355-ship goal predated national security and national defense strategies of the first Trump Administration and the Biden Administrations, and does not reflect the new fleet architecture (i.e., new mix of ships) that the Navy wants to shift toward in coming years, which is to feature, among other things, a significant number of large unmanned vehicles (UVs). In June 2023, the Navy submitted to Congress a classified Battle Force Ship Assessment and Requirement (BFSAR) in which the Navy calls for achieving a future fleet of 381 ships. As of September 11, 2025, the Trump Administration has not explicitly endorsed the 355-ship goal, the 381-ship goal, or any other total ship force-level goal for the Navy as a whole.
+
+This figure differs from that reported by the Congressional Research Service. The difference is not reconciled here and both figures remain in circulation.

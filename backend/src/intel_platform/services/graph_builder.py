@@ -173,7 +173,13 @@ def _host_of(name: str) -> str:
         return ""
     if "//" not in raw:
         raw = "//" + raw
-    host = urlsplit(raw).netloc or ""
+    try:
+        host = urlsplit(raw).netloc or ""
+    except ValueError:
+        # urlsplit reads any bracket in the authority as an IPv6 literal and
+        # refuses the string, so a defanged "evil-c2[.]com" raised out of the
+        # build and failed the whole ingest. Take the authority by hand.
+        host = re.split(r"[/?#]", raw.split("//", 1)[1], maxsplit=1)[0]
     host = host.split("@")[-1].split(":")[0]
     return host[4:] if host.startswith("www.") else host
 
@@ -419,14 +425,24 @@ def build_graph_from_extractions(
     # (entity id, document id) pairs already on the graph from this build, so
     # a merge records a document against an entity once, not once per mention.
     recorded_sources: set[tuple[str, str]] = set()
+    # How often each document mentions each entity in this build — one per
+    # extracted mention, on the create path and every merge path alike —
+    # written as (:Document)-[:MENTIONS {count}]->(:Entity) once the entities
+    # exist. The evidence chain and both retrievers read these edges.
+    mention_counts: dict[tuple[str, str], int] = {}
+
+    def _mentioned(entity_id: str, doc_id: str) -> None:
+        if doc_id and entity_id:
+            mention_counts[(doc_id, entity_id)] = mention_counts.get((doc_id, entity_id), 0) + 1
 
     def _merged_into(entity_id: str, doc_id: str) -> None:
         """Record that `doc_id` also mentions an existing entity.
 
         source_doc_id was set only on create, so a later document merging into
         the entity left no trace and GraphRAG / hybrid retrieval could only
-        reach the first.
+        reach the first. Kept for one release beside the MENTIONS edge.
         """
+        _mentioned(entity_id, doc_id)
         if doc_id and (entity_id, doc_id) not in recorded_sources:
             recorded_sources.add((entity_id, doc_id))
             store.record_entity_source(entity_id, doc_id)
@@ -550,23 +566,48 @@ def build_graph_from_extractions(
                 et = EntityType.CUSTOM
             entity = Entity(name=name, entity_type=et, project_id=project_id, source_doc_id=entity_doc_id)
 
-        store.create_entity(entity)
-        recorded_sources.add((entity.id, entity_doc_id))
-        name_to_id[name] = entity.id
+        # create_entity is a MERGE on (project, normalized name, type). When
+        # the key already exists — another build created the entity between
+        # the lookup above and this write, or resolution missed an exact
+        # match — the store returns that node, and this mention merges into it.
+        node = store.create_entity(entity)
+        entity_id = (node.get("id") if isinstance(node, dict) else None) or entity.id
+        name_to_id[name] = entity_id
         batch_names.append(name)
-        batch_name_to_id[name] = entity.id
+        batch_name_to_id[name] = entity_id
         batch_name_to_type[name] = raw_type
+        if entity_id != entity.id:
+            _merged_into(entity_id, entity_doc_id)
+            merged += 1
+            continue
+        recorded_sources.add((entity.id, entity_doc_id))
+        _mentioned(entity.id, entity_doc_id)
         new_entities.append({
             "id": entity.id, "name": name,
             "entity_type": entity.entity_type.value, "project_id": project_id,
         })
         created += 1
 
+    # One write for every mention in the build. A source that is not a
+    # Document of this project (an inline extraction) writes nothing.
+    mentions_recorded = store.record_mentions(project_id, mention_counts) if mention_counts else 0
+
     cooccurrence_min = settings.cooccurrence_confidence_min
     rels_created = 0
-    rels_dropped = 0
     rels_retired = 0
+    # Every relationship not written, by type and by why. The two reasons are
+    # kept apart because they mean different things: an unknown endpoint is
+    # the model naming something it never extracted; a co-occurrence edge
+    # below the bar is the filter doing its job. Both used to look like
+    # nothing — the second was never counted at all.
     dropped_types: dict[str, int] = {}
+    dropped_reasons: dict[str, int] = {"unknown_endpoint": 0, "below_cooccurrence_min": 0}
+    unknown_endpoint_types: dict[str, int] = {}
+
+    def _dropped(rel_type: str, reason: str) -> None:
+        dropped_types[rel_type] = dropped_types.get(rel_type, 0) + 1
+        dropped_reasons[reason] += 1
+
     for rel_data in relationships:
         # Endpoint names are cleaned exactly as entity names were, since
         # name_to_id is keyed by the cleaned name. They were not, so
@@ -588,10 +629,9 @@ def build_graph_from_extractions(
             ):
                 rels_retired += 1
             else:
-                rels_dropped += 1
-                dropped_types[rel_data.get("rel_type", "?")] = (
-                    dropped_types.get(rel_data.get("rel_type", "?"), 0) + 1
-                )
+                rel_type = rel_data.get("rel_type", "?")
+                _dropped(rel_type, "unknown_endpoint")
+                unknown_endpoint_types[rel_type] = unknown_endpoint_types.get(rel_type, 0) + 1
             continue
         confidence = rel_data.get("confidence", 0.5)
         # Blanket co-occurrence edges need a higher confidence bar to be
@@ -600,6 +640,7 @@ def build_graph_from_extractions(
         # from flooding the graph and skewing SNA/Graph-RAG. Doesn't affect
         # ASSOCIATED_WITH relationships an LLM asserted with real confidence.
         if rel_data["rel_type"] == "ASSOCIATED_WITH" and confidence < cooccurrence_min:
+            _dropped("ASSOCIATED_WITH", "below_cooccurrence_min")
             continue
         rel = Relationship(
             source_id=source_id, target_id=target_id,
@@ -632,12 +673,17 @@ def build_graph_from_extractions(
     except Exception:
         pass
 
-    if rels_dropped:
+    if dropped_reasons["unknown_endpoint"]:
         # Surfaced rather than swallowed: a build that discards a third of its
         # relationships looks identical to one that never produced them.
         logger.warning(
             "Dropped %d relationship(s) naming entities that were never extracted: %s",
-            rels_dropped, dropped_types,
+            dropped_reasons["unknown_endpoint"], unknown_endpoint_types,
+        )
+    if dropped_reasons["below_cooccurrence_min"]:
+        logger.info(
+            "Skipped %d co-occurrence edge(s) below cooccurrence_confidence_min (%s)",
+            dropped_reasons["below_cooccurrence_min"], cooccurrence_min,
         )
 
     return {
@@ -648,8 +694,13 @@ def build_graph_from_extractions(
         "dates_orphaned": dates_orphaned,
         "relationships_retired": rels_retired,
         "relationships_created": rels_created,
-        "relationships_dropped": rels_dropped,
+        # Every relationship not written, then the same total split by type
+        # and by reason (unknown_endpoint, below_cooccurrence_min).
+        "relationships_dropped": sum(dropped_reasons.values()),
         "relationships_dropped_by_type": dropped_types,
+        "relationships_dropped_by_reason": dropped_reasons,
         # LLM attributes that failed validation and were left off the entity.
         "dropped_attributes": dropped_attributes,
+        # Document -> entity MENTIONS edges written or added to by this build.
+        "mentions_recorded": mentions_recorded,
     }

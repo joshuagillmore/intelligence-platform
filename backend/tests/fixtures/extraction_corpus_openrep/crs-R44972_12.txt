@@ -1,0 +1,21 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-R44972#12) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+FFG-62 Class Program
+
+Figure 3 shows a U.S. Navy briefing slide summarizing what the U.S. Navy says are the "primary differences between the FFG 62 Class [design] and the FREMM Parent design." The Navy states that the design differences "were proposed by [the shipbuilding firm] Fincantieri and incorporated [into Fincantieri's proposed design for the FFG-62] prior to [the Navy's] contract award [for the FFG-62 program to Fincantieri]."21 An August 4, 2021, press report states
+
+The Navy has chosen to elongate and widen the hull of its next-generation Constellation-class frigate relative to the [FREMM] parent design, but the officer overseeing its production says the internal layout will largely remain the same.
+
+"The Italians did a very good job in the design of the internal spaces, and the flow of a lot of those spaces," Capt. Kevin Smith, program manager for the Constellation class, told attendees at the Sea Air Space exposition on Monday [August 2]. "You could say we bought a bigger house, [but] from a modeling and simulation perspective, it's exactly the same."…
+
+While some changes are to be expected to meet the Navy's needs, enlarging the hullform itself has the potential to change where components in the ship must be placed, as well as the overall cost.
+
+Asked about how possible changes in the ship's hull could affect the internal design, Smith said Fincantieri Marinette Marine, the Constellation's prime contractor, worked with Naval Surface Warfare Center Carderock to develop a scale model of the ship and that most elements will stay true to the parent design. He cited the bridge and propulsion plant as areas where the Navy has not made any significant changes to the layout.22
+
+Figure 3. FFG-62 Design Compared to FREMM Design
+
+Source: Navy briefing slide provided to CRS and Congressional Budget Office (CBO) by Navy Office of Legislative Affairs, August 27, 2021, with accompanying Navy information paper dated August 18, 2021.

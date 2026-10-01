@@ -1,0 +1,17 @@
+FICTIONAL EXERCISE REPORTING — NOT A REAL INTELLIGENCE PRODUCT.
+Taken from a synthetic exercise collection (kestrel, chunk KES-0081#0) to
+evaluate entity extraction. Every unit, vessel, place and person is invented.
+All classification and releasability markings have been removed.
+--- BEGIN FIXTURE ---
+
+EXERCISE — FICTIONAL
+
+1. Commercial and press reporting states that ferry operators alter routeing to avoid the affected sector.
+
+2. Entities identified in this reporting: Aldenkirk.
+
+3. Schedule data show 3 affected sailings, all within the period 1836Z to 0652Z.
+
+4. The same account appears in 4 outlets within 45 hours, with wording sufficiently similar to suggest a single origin.
+
+5. The account has not been corroborated by any other discipline.

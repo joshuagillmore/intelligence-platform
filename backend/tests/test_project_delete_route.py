@@ -19,6 +19,7 @@ from intel_platform.api.app import app
 from intel_platform.config import settings
 from intel_platform.db import engine as engine_mod
 from intel_platform.models.entities import Person
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
@@ -87,7 +88,7 @@ def _node_count(graph_store, pid: str) -> int:
 
 class TestSingleDelete:
     def test_every_project_table_is_cleared_for_that_project(self, graph_store, postgres):
-        pid = _project(graph_store, "test-a13-one")
+        pid = _project(graph_store, tp("a13-one"))
         resp = client.delete(f"/api/projects/{pid}", headers=headers)
         assert resp.status_code == 200
         deletes = _deletes(postgres["log"])
@@ -98,7 +99,7 @@ class TestSingleDelete:
         assert _node_count(graph_store, pid) == 0
 
     def test_a_postgres_failure_deletes_nothing(self, graph_store, postgres):
-        pid = _project(graph_store, "test-a13-fail")
+        pid = _project(graph_store, tp("a13-fail"))
         postgres["fail"] = True
         resp = client.delete(f"/api/projects/{pid}", headers=headers)
         assert resp.status_code == 503
@@ -108,8 +109,8 @@ class TestSingleDelete:
 
 class TestBatchDelete:
     def test_each_project_is_cleared_in_both_stores(self, graph_store, postgres):
-        a = _project(graph_store, "test-a13-batch-a")
-        b = _project(graph_store, "test-a13-batch-b")
+        a = _project(graph_store, tp("a13-batch-a"))
+        b = _project(graph_store, tp("a13-batch-b"))
         resp = client.post("/api/projects/batch-delete", json={"project_ids": [a, b]}, headers=headers)
         assert resp.status_code == 200
         sql = " ".join(_deletes(postgres["log"]).values())
@@ -119,7 +120,7 @@ class TestBatchDelete:
         assert _node_count(graph_store, b) == 0
 
     def test_a_postgres_failure_deletes_nothing(self, graph_store, postgres):
-        a = _project(graph_store, "test-a13-batch-fail")
+        a = _project(graph_store, tp("a13-batch-fail"))
         postgres["fail"] = True
         resp = client.post("/api/projects/batch-delete", json={"project_ids": [a]}, headers=headers)
         assert resp.status_code == 503
@@ -127,8 +128,8 @@ class TestBatchDelete:
 
     def test_ids_that_do_not_exist_are_not_counted_as_deleted(self, graph_store, postgres):
         """Low -> A: the count was the number of ids sent, not deleted."""
-        a = _project(graph_store, "test-a13-batch-real")
+        a = _project(graph_store, tp("a13-batch-real"))
         resp = client.post(
-            "/api/projects/batch-delete", json={"project_ids": [a, "test-a13-never-existed"]}, headers=headers,
+            "/api/projects/batch-delete", json={"project_ids": [a, tp("a13-never-existed")]}, headers=headers,
         )
         assert resp.json()["deleted"] == 1

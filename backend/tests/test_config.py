@@ -93,6 +93,13 @@ def test_no_env_example_value_carries_a_comment():
     ("ollama_num_ctx", 16384),
     ("max_fetch_bytes", 10_000_000),
     ("collection_llm_preference", "cloud-first"),
+    # Contract 11 (post-review hardening).
+    ("collection_worker_mode", "inline"),
+    ("collection_stall_seconds", 120),
+    ("egress_proxy_enabled", True),
+    ("session_cookie_name", "sentinel_session"),
+    ("session_cookie_secure", False),
+    ("session_cookie_max_age", 86400),
 ])
 def test_settings_other_packages_read_exist_with_their_defaults(field, default, monkeypatch):
     monkeypatch.delenv(field.upper(), raising=False)
@@ -103,6 +110,8 @@ def test_settings_other_packages_read_exist_with_their_defaults(field, default, 
 @pytest.mark.parametrize("field", [
     "JWT_SECRET", "ENCRYPTION_KEY", "CORS_ORIGINS", "TRUSTED_PROXY_HOPS",
     "OLLAMA_NUM_CTX", "MAX_FETCH_BYTES", "COLLECTION_LLM_PREFERENCE",
+    "COLLECTION_WORKER_MODE", "COLLECTION_STALL_SECONDS", "EGRESS_PROXY_ENABLED",
+    "SESSION_COOKIE_NAME", "SESSION_COOKIE_SECURE", "SESSION_COOKIE_MAX_AGE",
 ])
 def test_every_setting_is_discoverable_in_env_example(field):
     text = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")

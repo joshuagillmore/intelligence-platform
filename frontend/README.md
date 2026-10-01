@@ -1,6 +1,6 @@
 # SENTINEL — Frontend
 
-The analyst-facing UI for SENTINEL: a Next.js 14 (App Router) single-page
+The analyst-facing UI for SENTINEL: a Next.js 15 (App Router, React 19) single-page
 workbench over the FastAPI backend. TypeScript, Tailwind, React context + local
 state, d3 for the knowledge graph, and leaflet for the map.
 
@@ -16,6 +16,7 @@ npm run dev      # http://localhost:3000 (expects the backend on :8000)
 npm run lint     # eslint (next lint)
 npm run build    # production build
 npm run start    # serve the production build
+npm run gen:api  # regenerate src/lib/api.generated.ts from ../backend/openapi.json
 npm run test     # vitest — unit + component tests (tests/unit/)
 npm run e2e      # playwright — authenticated smoke across the views (tests/e2e/)
 ```

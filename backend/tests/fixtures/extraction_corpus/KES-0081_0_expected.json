@@ -1,0 +1,16 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0081#0",
+    "doc_id": "KES-0081"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "notes": "Aldenkirk typed Ship (see KES-0073_0); this text alone does not say what it is.",
+  "entities": [
+    {
+      "name": "Aldenkirk",
+      "entity_type": "Ship"
+    }
+  ],
+  "relationships": []
+}

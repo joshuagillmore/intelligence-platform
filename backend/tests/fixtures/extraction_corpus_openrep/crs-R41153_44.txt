@@ -1,0 +1,19 @@
+PUBLIC-DOMAIN REPORT TEXT IN A SYNTHETIC EXERCISE COLLECTION.
+U.S. Congressional Research Service text (17 U.S.C. 105) as carried by an exercise collection
+(openrep-deep, chunk crs-R41153#44) that attached fictional classification metadata. All
+classification and releasability markings have been removed. Used only to evaluate extraction.
+--- BEGIN FIXTURE ---
+
+Geopolitical Environment88
+
+The Nordic Council of Ministers similarly stated that it was suspending its cooperation with Russia and Belarus,128 and Finland, Denmark, Iceland, Norway, Sweden, and the EU suspended activities involving Russia within the Barents Euro-Arctic Council (BEAC), which was established in 1993 for collaboration primarily between Russia, Norway, Finland, and Sweden to promote stability and sustainable development in the Barents region.129 In September 2023, Russia announced that it would withdraw from BEAC, citing what it said was a failure by Finland to confirm the transfer of the BEAC presidency from Finland to Russia as scheduled in October 2023.130
+
+In October 2022, China's special envoy to the Arctic reportedly stated that China would not recognize the legitimacy of an Arctic Council that does not include Russia. He also reportedly stated that China would continue to cooperate in the Arctic with both the A7 states and Russia.131
+
+On February 21, 2023, Russia published amendments to its Arctic policy statement that removed mentions of the Arctic Council.132
+
+In May and June 2023, it was reported that while all cooperation with Russia would remain suspended, other activities of the Council and its working groups would resume in mid-June 2023.133 The suspension of Arctic Council meetings did not prevent the chairmanship of the council from being transferred from Russia to Norway on May 11, 2023.
+
+A June 2023 press report stated: "At the end of his tenure as chair of the Arctic Council's senior officials committee in May, Russia's Nikolai Korchunov said Moscow could withdraw from the organisation if it was not invited to participate in events during the Norwegian presidency."134
+
+A September 2023 press report stated that an August 29, 2023, meeting of all eight Arctic Council member states and the six Arctic Indigenous groups that are permanent participants had decided on guidelines for restarting the council's working groups.135

@@ -4,10 +4,12 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from intel_platform.collection import job_runner
 from intel_platform.collection.search import web_search
 from intel_platform.collection.crawler import crawl_urls
 from intel_platform.collection.proxy import get_active_proxy_config
 from intel_platform.config import settings
+from intel_platform.db import jobs
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import Document
 from intel_platform.services.extraction import extract_entities_nlp
@@ -21,13 +23,53 @@ logger = logging.getLogger(__name__)
 REVOKED = "REVOKED"
 
 
-class CollectionRunner:
-    """Executes a collection plan: search → crawl → ingest → extract → graph."""
+# Legacy outcome -> collection_jobs status. PARTIAL collected something, so the
+# run succeeded; its item errors stay in the returned result.
+_JOB_STATUS = {
+    "SUCCESS": jobs.SUCCEEDED,
+    "PARTIAL": jobs.SUCCEEDED,
+    "FAILURE": jobs.FAILED,
+    REVOKED: jobs.CANCELLED,
+}
 
-    def __init__(self, store: GraphStore):
+
+class CollectionRunner:
+    """Executes a collection plan: search → crawl → ingest → extract → graph.
+
+    Each run is also recorded in ``collection_jobs`` (kind ``legacy``), best
+    effort: the Collection node in Neo4j stays this path's own state.
+    """
+
+    def __init__(self, store: GraphStore, db_factory=None):
         self._store = store
+        self._db_factory = db_factory
 
     async def execute(
+        self,
+        collection_id: str,
+        project_id: str,
+        plan: list[dict],
+        extraction_mode: str = "nlp",
+        on_progress: callable = None,
+    ) -> dict:
+        job = job_runner.LegacyJob(collection_id, project_id, db_factory=self._db_factory)
+        await job.start()
+        try:
+            result = await self._execute(collection_id, project_id, plan, extraction_mode, on_progress)
+        except asyncio.CancelledError:
+            await job.finish(jobs.FAILED, "The collection run was cancelled before it finished")
+            raise
+        except Exception as exc:
+            await job.finish(jobs.FAILED, f"Collection run failed ({type(exc).__name__}); see server logs")
+            raise
+        status = result.get("status", "")
+        error = None
+        if status == "FAILURE":
+            error = f"None of {result.get('items_processed', 0)} item(s) collected anything"
+        await job.finish(_JOB_STATUS.get(status, jobs.FAILED), error)
+        return result
+
+    async def _execute(
         self,
         collection_id: str,
         project_id: str,

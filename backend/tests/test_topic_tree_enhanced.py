@@ -1,6 +1,7 @@
 """Tests for enhanced topic tree features: cross-references, relevant excerpts, caching."""
 from unittest.mock import MagicMock
 from intel_platform.services.topics import TopicTreeService
+from tests.ids import tp
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +43,7 @@ def test_cross_reference_detection():
     store = _make_mock_store()
     svc = TopicTreeService(store)
 
-    _populate_cluster_cache("test-cross-ref")
+    _populate_cluster_cache(tp("cross-ref"))
 
     documents = [
         {"id": "doc1", "name": "Iran Report"},
@@ -51,7 +52,7 @@ def test_cross_reference_detection():
         {"id": "doc4", "name": "Cyber Report"},
     ]
 
-    cross_refs = svc._detect_cross_references("test-cross-ref", documents)
+    cross_refs = svc._detect_cross_references(tp("cross-ref"), documents)
 
     # doc2 appears in both topic-0 and topic-1
     assert len(cross_refs) == 1
@@ -66,7 +67,7 @@ def test_cross_reference_no_shared_docs():
     svc = TopicTreeService(store)
 
     import intel_platform.services.topics as topics_module
-    topics_module._cluster_doc_map["test-no-cross"] = {
+    topics_module._cluster_doc_map[tp("no-cross")] = {
         "topic-0": ["doc1"],
         "topic-1": ["doc2"],
     }
@@ -76,7 +77,7 @@ def test_cross_reference_no_shared_docs():
         {"id": "doc2", "name": "Report B"},
     ]
 
-    cross_refs = svc._detect_cross_references("test-no-cross", documents)
+    cross_refs = svc._detect_cross_references(tp("no-cross"), documents)
     assert cross_refs == []
 
 
@@ -98,7 +99,7 @@ def test_get_topic_context_with_excerpts():
     store = _make_mock_store()
     svc = TopicTreeService(store)
 
-    _populate_cluster_cache("test-excerpts")
+    _populate_cluster_cache(tp("excerpts"))
 
     # Mock get_entity to return documents with content
     def mock_get_entity(entity_id):
@@ -123,7 +124,7 @@ def test_get_topic_context_with_excerpts():
     store.get_entity.side_effect = mock_get_entity
     store.get_relationships.return_value = []
 
-    context = svc.get_topic_context("topic-0", "test-excerpts")
+    context = svc.get_topic_context("topic-0", tp("excerpts"))
 
     assert context["document_count"] == 2
     docs = context["documents"]
@@ -145,10 +146,10 @@ def test_get_topic_context_no_keywords():
     svc = TopicTreeService(store)
 
     import intel_platform.services.topics as topics_module
-    topics_module._cluster_doc_map["test-no-kw"] = {
+    topics_module._cluster_doc_map[tp("no-kw")] = {
         "topic-x": ["doc1"],
     }
-    topics_module._cluster_keywords["test-no-kw"] = {
+    topics_module._cluster_keywords[tp("no-kw")] = {
         "topic-x": [],
     }
 
@@ -160,7 +161,7 @@ def test_get_topic_context_no_keywords():
     }
     store.get_relationships.return_value = []
 
-    context = svc.get_topic_context("topic-x", "test-no-kw")
+    context = svc.get_topic_context("topic-x", tp("no-kw"))
     assert context["document_count"] == 1
     doc = context["documents"][0]
     assert doc["relevant_excerpts"] == []
@@ -182,8 +183,10 @@ def test_get_topic_context_regular_entity():
         "entity_type": "ThreatActor",
     }
     store.get_relationships.return_value = []
+    # Documents now come from the MENTIONS edges, read separately.
+    store.documents_mentioning.return_value = ([], 0)
 
-    context = svc.get_topic_context("entity-123", "test-proj")
+    context = svc.get_topic_context("entity-123", tp("proj"))
     assert context["entity"]["name"] == "APT29"
     assert context["document_count"] == 0
 
@@ -195,7 +198,7 @@ def test_get_topic_context_entity_not_found():
 
     store.get_entity.return_value = None
 
-    context = svc.get_topic_context("nonexistent", "test-proj")
+    context = svc.get_topic_context("nonexistent", tp("proj"))
     assert "error" in context
 
 

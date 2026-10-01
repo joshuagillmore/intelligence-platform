@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useSession } from '@/lib/SessionContext';
 
 const bottomTabs = [
   { name: 'Projects', href: '/', icon: 'folder_open', iconFilled: 'folder_open' },
@@ -33,10 +34,7 @@ export default function MobileBottomNav() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
-  const [role, setRole] = useState('');
-  useEffect(() => {
-    if (typeof window !== 'undefined') setRole(localStorage.getItem('auth_role') || 'analyst');
-  }, []);
+  const role = useSession().user?.role ?? 'analyst';
 
   function isActive(href: string) {
     if (href === '/') return pathname === '/' || pathname.startsWith('/project/');

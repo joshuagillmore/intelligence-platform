@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 from intel_platform.graph.store import _MAX_SEARCH_TERMS, _search_terms
+from tests.ids import tp
 
 
 class TestSearchTerms:
@@ -75,7 +76,7 @@ class TestAgainstTheGraph:
     def seeded(self, graph_store):
         from intel_platform.models.entities import Organization
 
-        project = "test-search-terms"
+        project = tp("search-terms")
         for name in ("Baltic Sea Cable Incidents", "Baltic Air Policing", "Undersea Cable Repair"):
             graph_store.create_entity(Organization(name=name, project_id=project))
         return project
@@ -113,7 +114,7 @@ class TestEntityCount:
     def seeded(self, graph_store):
         from intel_platform.models.entities import Organization, Person
 
-        project = "test-entity-count"
+        project = tp("entity-count")
         for i in range(7):
             graph_store.create_entity(Organization(name=f"Baltic Org {i}", project_id=project))
         for i in range(3):
@@ -138,11 +139,11 @@ class TestEntityCount:
     def test_counting_is_scoped_to_the_project(self, graph_store, seeded):
         from intel_platform.models.entities import Organization
 
-        graph_store.create_entity(Organization(name="Elsewhere", project_id="test-entity-count-other"))
+        graph_store.create_entity(Organization(name="Elsewhere", project_id=tp("entity-count-other")))
         assert graph_store.count_entities(project_id=seeded) == 10
 
     def test_an_empty_project_counts_zero(self, graph_store):
-        assert graph_store.count_entities(project_id="test-entity-count-empty") == 0
+        assert graph_store.count_entities(project_id=tp("entity-count-empty")) == 0
 
     def test_count_and_search_agree_when_nothing_is_truncated(self, graph_store, seeded):
         found = graph_store.search_entities(project_id=seeded, entity_type="Person", limit=50)

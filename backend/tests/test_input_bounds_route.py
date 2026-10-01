@@ -12,10 +12,11 @@ from fastapi.testclient import TestClient
 
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests.ids import tp
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
-PID = "test-low-bounds"
+PID = tp("low-bounds")
 
 
 @pytest.mark.parametrize("params", [

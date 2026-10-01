@@ -15,8 +15,9 @@ import pytest
 
 from intel_platform.models.entities import Organization, Person
 from intel_platform.models.relationships import Relationship
+from tests.ids import tp
 
-PROJECT = "test-graph-selection"
+PROJECT = tp("graph-selection")
 
 
 @pytest.fixture
@@ -79,11 +80,11 @@ class TestEdgesDescribeReturnedNodes:
 
 class TestEdges:
     def test_an_empty_project_is_empty_not_an_error(self, graph_store):
-        g = graph_store.get_full_graph("test-graph-selection-empty", limit=50)
+        g = graph_store.get_full_graph(tp("graph-selection-empty"), limit=50)
         assert g == {"nodes": [], "edges": [], "node_count": 0, "edge_count": 0, "truncated": False}
 
     def test_another_projects_nodes_never_appear(self, graph_store, wired):
-        graph_store.create_entity(Organization(name="Elsewhere", project_id="test-graph-other"))
+        graph_store.create_entity(Organization(name="Elsewhere", project_id=tp("graph-other")))
         g = graph_store.get_full_graph(PROJECT, limit=100)
         assert "Elsewhere" not in {n["name"] for n in g["nodes"]}
 
@@ -94,7 +95,7 @@ class TestEdges:
 # different nodes and edges, and analytics that read the 10,000-node build had no
 # way to know it was a sample. Review A-4 / E-5.
 
-TIE_PROJECT = "test-graph-selection-ties"
+TIE_PROJECT = tp("graph-selection-ties")
 
 
 @pytest.fixture

@@ -23,6 +23,7 @@ from intel_platform.enrichment.base import ProviderError
 from intel_platform.enrichment.cache import RateLimiter
 from intel_platform.enrichment.providers import certs, dns, email, geocode, geoip, kev, nvd, rdap
 from intel_platform.enrichment.service import EnrichmentService
+from tests.ids import tp
 
 # (module, provider class, entity type, entity name)
 PROVIDERS = [
@@ -95,7 +96,7 @@ async def test_service_neither_caches_nor_writes_a_failed_lookup(
     client = make_client()
     monkeypatch.setattr(module, "ProxiedClient", lambda *a, **k: client)
 
-    entity = {"id": "e1", "name": name, "entity_type": entity_type, "project_id": "test-e1"}
+    entity = {"id": "e1", "name": name, "entity_type": entity_type, "project_id": tp("e1")}
     store = MagicMock()
     store.get_entity = MagicMock(return_value=entity)
     store.update_entity = MagicMock(return_value=entity)

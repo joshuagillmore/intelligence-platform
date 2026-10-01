@@ -1,0 +1,71 @@
+{
+  "source": {
+    "collection": "openrep-deep",
+    "chunk_id": "contra-10#1",
+    "doc_id": "contra-10"
+  },
+  "review": "hand-labelled by reading the text (no seed line)",
+  "entities": [
+    {
+      "name": "Partner Programmes Cell",
+      "entity_type": "Organization"
+    },
+    {
+      "name": "Japan",
+      "entity_type": "Location"
+    },
+    {
+      "name": "China",
+      "entity_type": "Location"
+    },
+    {
+      "name": "North Korea",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Self-Defense Forces",
+      "entity_type": "Organization",
+      "aliases": [
+        "Japan Self-Defense Forces"
+      ]
+    },
+    {
+      "name": "Takaichi",
+      "entity_type": "Person"
+    },
+    {
+      "name": "Tomahawk Weapon System",
+      "entity_type": "Weapon",
+      "aliases": [
+        "Tomahawk",
+        "Tomahawk missiles"
+      ]
+    },
+    {
+      "name": "2022",
+      "entity_type": "Date"
+    },
+    {
+      "name": "March 2026",
+      "entity_type": "Date"
+    },
+    {
+      "name": "Iran",
+      "entity_type": "Location"
+    },
+    {
+      "name": "Congressional Research Service",
+      "entity_type": "Organization",
+      "aliases": [
+        "CRS"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Self-Defense Forces",
+      "target": "Japan",
+      "rel_type": "BELONGS_TO"
+    }
+  ]
+}

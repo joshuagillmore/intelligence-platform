@@ -121,6 +121,8 @@ def _mock_graph_pipeline():
         "edge_count": 1,
         "node_name_map": {"ent-1": "APT29", "ent-2": "SUNBURST"},
         "doc_texts": {},
+        # The documents that MENTION those entities, ranked (contract 6).
+        "document_ids": ["doc-g1", "doc-g2"],
     }
     pipeline.assemble_context.return_value = "## Graph Context\n- APT29 uses SUNBURST"
     return pipeline

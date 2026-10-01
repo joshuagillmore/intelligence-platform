@@ -1,0 +1,15 @@
+{
+  "source": {
+    "collection": "kestrel",
+    "chunk_id": "KES-0148#0",
+    "doc_id": "KES-0148"
+  },
+  "review": "reviewed against the text; the seed line was the starting point",
+  "entities": [
+    {
+      "name": "41st Coastal Defence Regiment",
+      "entity_type": "Organization"
+    }
+  ],
+  "relationships": []
+}

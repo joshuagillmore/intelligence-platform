@@ -1,5 +1,5 @@
 """The refinement splitter — models label their output in several ways."""
-from intel_platform.api.routes.collection_plans import _split_refinement
+from intel_platform.api.routes.collection_plans.refinement import _split_refinement
 
 FALLBACK = "original pir"
 
@@ -70,7 +70,7 @@ def test_bold_label_inline_with_real_text():
 
 import pytest  # noqa: E402
 
-from intel_platform.api.routes.collection_plans import _split_refinement_parsed  # noqa: E402
+from intel_platform.api.routes.collection_plans.refinement import _split_refinement_parsed  # noqa: E402
 
 REQ = "Identify the state actors responsible for Baltic Sea cable damage between 2023 and 2025."
 
