@@ -54,7 +54,7 @@ init, then `pytest` — so it is the canonical reference for a green run.
 |---------|----------------|
 | `api/` | FastAPI app + `routes/` (27 routers: auth, documents, entities, graph, collections, collection_plans, pirs, query, assess, analysis, topics, reports, geo, timeline, search, watchlist, personas, snapshots, admin_config, llm, ingest, export, notebook, projects, health, enrichment, attack). App = `api.app:app`; middleware = rate-limit / request-logging / security-headers. |
 | `services/` | Business logic (22 + `attack/`): extraction, enrichment, ingestion, graph_builder, graph_rag, hybrid_retrieval, vector_search, document_clustering, topics, assessment, `requirement_assessor` (per-EEI gap analysis that drives re-tasking), analytic_agents, summarization, geocoding, `geo/` (`coordinates`: MGRS/DMS/decimal parsing and conversion via pygeodesy; `overpass`: OSM local-feature lookup through `ProxiedClient`), collection_planner, plan_executor, reports, mindmap_export, graph_cache, text_utils, `content_quality` (one gate deciding whether a fetched page is content), `llm_output` (reading labelled values and JSON back out of model replies). `attack/` = MITRE ATT&CK® (`stix_parser` pure STIX→model, `graph_ops` Neo4j load + matrix/technique/resolve/navigator/attribution reads, `ingest` fetch-and-load, `embeddings` technique-catalog→pgvector, `mapping` RAG text→technique, `vuln_chain` CVE→ATT&CK chain: CWE/CAPEC XML fetch+parse → `(:Cwe)-[:ENABLES]->(:AttackTechnique)` reference edges + per-project `resolve_cve`, `d3fend` lazy keyless D3FEND countermeasure fetch + Postgres cache, `report` ATT&CK-structured intelligence product: graph sections + deterministic markdown + optional LLM narrative). |
-| `collection/` | Agentic web collection: `search` (multi-engine via ddgs, see below) → `crawler`/`scraper` (crawl4ai) → `runner`/`executor` (CollectionRunner) → ingest. `agentic.py` = LLM-driven planning; its runs are asyncio tasks in the API process (no Celery/Redis). `requirement_loop.py` = re-tasks collection at the EEIs the planned sources left unanswered (see "Collecting against a requirement"). |
+| `collection/` | Agentic web collection: `search` (multi-engine via ddgs, see below) → `crawler`/`scraper` (crawl4ai) → `runner`/`executor` (CollectionRunner) → ingest. `agentic.py` = LLM-driven planning; runs are rows in Postgres `collection_jobs`, executed by `intel_platform.worker` (or inline in the API process when `COLLECTION_WORKER_MODE=inline`), with `job_runner.py` owning claim, heartbeat and run state. The browser egresses through `egress_proxy.py`. `requirement_loop.py` = re-tasks collection at the EEIs the planned sources left unanswered (see "Collecting against a requirement"). |
 | `llm/` | Multi-provider layer: `anthropic`, `openai_provider`, `cohere_provider`, `ollama`, plus `embeddings`, `skills`, the **`orchestrator`**, and **`providers`** (`_get_provider` / `_get_collection_provider` / `_get_extraction_provider` / `_resolve_api_key` / `_cloud_provider_from_env` — the single source of truth for provider selection; services import from here, not from `api/routes/llm.py`, which only re-exports them). |
 | `enrichment/` | Cyber-observable enrichment: `observables` (refang/classify), `base` (provider ABC + registry), `cache` (Postgres cache + rate limiter), `service` (Investigate orchestrator), `hook` (auto-enrich), `providers/` (dns, geoip, kev, nvd, rdap, certs, email — keyless, egress via `ProxiedClient`). |
 | `graph/` | Neo4j: `schema.py` (`initialize_schema`), `store.py`. |
@@ -70,7 +70,8 @@ init, then `pytest` — so it is the canonical reference for a green run.
 - **Postgres + pgvector** — documents, embeddings, PIRs (`pirs` — the
   requirements spine, linked to the plans they drove via `collection_plans.pir_id`,
   with per-EEI collection state in `pir_requirements`)
-  and collection-plan state. Async SQLAlchemy; the schema is owned by **Alembic**
+  collection-plan state and `collection_jobs` (one row per collection run:
+  status, heartbeat, worker, error, degraded counts). Async SQLAlchemy; the schema is owned by **Alembic**
   and migrated at startup by `db.engine.init_db()` — see "Postgres schema
   migrations" below.
 
@@ -270,7 +271,9 @@ to a dedicated provider so it won't drain a rate-limited cloud key — see
   read `os.environ` ad hoc in business logic.
 - Don't leak internal error detail to API clients (past review finding);
   log server-side, return clean errors.
-- The SSRF guard is `collection/url_guard.py`, not any one fetcher. `scraper`,
+- The SSRF guard is `collection/url_guard.py`, not any one fetcher, and Chromium
+  goes through `collection/egress_proxy.py` (resolve once, connect to the vetted
+  address, or chain to the Tor/VPN upstream). `scraper`,
   `crawler` and `proxy` call it, so it cannot be bypassed by reaching for a
   lower-level fetch helper — keep it that way, and route any new outbound
   fetch through it.

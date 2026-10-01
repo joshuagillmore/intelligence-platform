@@ -4109,6 +4109,52 @@
         ]
       }
     },
+    "/api/collection-plans/{plan_id}/cancel": {
+      "post": {
+        "description": "Cancel the plan's live run (queued, running, or stalled).\n\nA running job is marked ``cancelled`` and stops before its next source\n(``plan_should_stop`` reads it); ``stopping`` says so, and the run state\nstays ``running`` until it has. A queued or stalled job has nothing left to\nstop and is finished at once. 409 when no run is live.",
+        "operationId": "cancel_plan_run_api_collection_plans__plan_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Plan Run",
+        "tags": [
+          "collection-plans"
+        ]
+      }
+    },
     "/api/collection-plans/{plan_id}/catalog": {
       "get": {
         "operationId": "list_catalog_api_collection_plans__plan_id__catalog_get",
@@ -4201,7 +4247,7 @@
     },
     "/api/collection-plans/{plan_id}/execute": {
       "post": {
-        "description": "Approve and execute a collection plan — activates and triggers autonomous acquisition.\n\nLaunches a background task that iterates over all sources, acquires data\nvia registered connectors, runs entity extraction, and builds the knowledge graph.\nFile upload sources are skipped (require manual upload).",
+        "description": "Approve and execute a collection plan: 202 with the ``job_id`` of the run.\n\nInserts a ``collection_jobs`` row. In ``inline`` worker mode the API process\nruns it at once as a background task; in ``worker`` mode it is ``queued``\nfor ``python -m intel_platform.worker``. The run resolves sources, acquires\nthem through the registered connectors, extracts entities into the graph,\nthen re-tasks against the requirement's open elements. File upload sources\nare skipped (they need a manual upload). With nothing to run the plan is\nstill activated, and ``job_id`` is null.",
         "operationId": "execute_plan_endpoint_api_collection_plans__plan_id__execute_post",
         "parameters": [
           {
@@ -4232,7 +4278,7 @@
           }
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {}
@@ -4264,7 +4310,7 @@
     },
     "/api/collection-plans/{plan_id}/execution-status": {
       "get": {
-        "description": "Poll the execution progress of a running collection plan.\n\nThe in-memory plan_executor tracker only covers the synchronous plan_executor\npath; the agentic loop (run_agentic_loop) records progress to CollectionActivity\ninstead. Fall back to that trail so the endpoint reflects a real agentic run\n(previously it always reported \"idle\" while a crawl was in flight).",
+        "description": "Poll the execution progress of a collection plan's latest run.\n\n``status`` is the job table's answer (``current_run_state``), the same one\nthe execute guard enforces; the activity trail supplies the message and the\nper-run counts. ``job_status``, ``seconds_since_heartbeat`` and ``error``\ncome from the job row so a caller can see why a run reads as it does.",
         "operationId": "get_execution_status_api_collection_plans__plan_id__execution_status_get",
         "parameters": [
           {

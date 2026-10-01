@@ -601,16 +601,9 @@ class TopicEdit(Base):
 
 
 # ---------------------------------------------------------------------------
-# Collection jobs (contract 2) live in db/jobs.py. Imported here so the table is
-# in Base.metadata wherever the models are, which is what Alembic autogenerate
-# and `alembic check` compare the database against. Guarded only until that
-# module lands; a jobs module that exists but fails to import still raises.
+# Collection jobs live in db/jobs.py. Imported here so the table is in
+# Base.metadata wherever the models are, which is what Alembic autogenerate
+# and `alembic check` compare the database against.
 # ---------------------------------------------------------------------------
 
-try:
-    from intel_platform.db import jobs  # noqa: F401,E402
-except ImportError:  # pragma: no cover - until db/jobs.py lands
-    import importlib.util
-
-    if importlib.util.find_spec("intel_platform.db.jobs") is not None:
-        raise
+from intel_platform.db import jobs  # noqa: F401,E402
