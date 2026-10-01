@@ -598,3 +598,19 @@ class TopicEdit(Base):
     __table_args__ = (
         Index("ix_topic_edit_node_project", "node_id", "project_id"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Collection jobs (contract 2) live in db/jobs.py. Imported here so the table is
+# in Base.metadata wherever the models are, which is what Alembic autogenerate
+# and `alembic check` compare the database against. Guarded only until that
+# module lands; a jobs module that exists but fails to import still raises.
+# ---------------------------------------------------------------------------
+
+try:
+    from intel_platform.db import jobs  # noqa: F401,E402
+except ImportError:  # pragma: no cover - until db/jobs.py lands
+    import importlib.util
+
+    if importlib.util.find_spec("intel_platform.db.jobs") is not None:
+        raise
