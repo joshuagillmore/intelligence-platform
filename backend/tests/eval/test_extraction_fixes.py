@@ -367,6 +367,51 @@ def test_signal_and_navigation_acronyms_are_not_organizations():
     assert types.get("Stellar Vane") == "Ship"
 
 
+# ── What the model is asked for ───────────────────────────────────────────────
+# On the corpus the model returned 384 entities for 132 gold: "Source",
+# "Partner", "Quay 4", "gap in collection", "Imagery collection of Torvik".
+# The prompt told it to "err on the side of inclusion".
+
+def _extraction_prompt() -> str:
+    from intel_platform.llm.skills.loader import SkillsLoader
+
+    return SkillsLoader().get_system_prompt("entity_extraction") or ""
+
+
+def test_the_prompt_asks_for_named_entities_not_everything():
+    prompt = _extraction_prompt()
+    assert "err on the side of inclusion" not in prompt
+    for excluded in ("the source", "berth 7", "0930Z", "12 vehicles", "unloading activity"):
+        assert excluded in prompt, excluded
+
+
+def test_the_prompt_types_vessels_and_tools_and_forbids_invented_relationship_types():
+    prompt = _extraction_prompt()
+    assert "(F-231)" in prompt and "`Ship`" in prompt
+    assert "certutil" in prompt and "`Software`, not `TTP`" in prompt
+    assert '"REPORTED"' in prompt  # named as a type not to invent
+
+
+def test_the_prompt_examples_are_not_taken_from_the_eval_corpus():
+    """Examples lifted from the documents being scored would score the prompt,
+    not the extractor."""
+    import json
+    from pathlib import Path
+
+    prompt = _extraction_prompt()
+    fixtures = Path(__file__).resolve().parents[1] / "fixtures"
+    names = set()
+    for d in ("extraction_corpus", "extraction_corpus_cyber"):
+        for f in (fixtures / d).glob("*_expected.json"):
+            for e in json.loads(f.read_text(encoding="utf-8"))["entities"]:
+                names.update(n for n in [e["name"], *e.get("aliases", [])] if len(n) > 4)
+    # Names the prompt already used before the corpus existed (its cyber
+    # example's C2 address is also the one the live-run documents reused).
+    names -= {"China", "NATO", "Brussels", "T1059.001", "185.220.101.42"}
+    leaked = sorted(n for n in names if n in prompt)
+    assert not leaked, leaked
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}
