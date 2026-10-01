@@ -550,7 +550,32 @@ _TYPE_HINTS: tuple[tuple[re.Pattern, str, tuple[str, ...]], ...] = (
      "Weapon", ("Custom", "Organization", "Person", "Location", "Product", "Technology", "")),
     # Named operations: "Operation Hard Kill".
     (re.compile(r'^Operation\s+[A-Z]'), "Event", ("Custom", "Organization", "Location", "Person", "Product", "")),
+    # A ship class named as one: "Constellation-class frigate", "Medium Landing
+    # Ship (LSM) program", which the model types "Equipment".
+    (re.compile(r'(?i).*?\b(?:[\w-]+-class|frigate|destroyer|corvette|cruiser|warship|submarine|'
+                r'landing ship|amphibious ship|oiler)\b'),
+     "Ship", ("Equipment", "EquipmentType", "Technology", "Custom", "Product", "Vehicle", "")),
 )
+
+# Types outside the vocabulary that name no thing: the model files reporting
+# sources, gradings, substances and abstractions under them ("Commercial
+# reporting [DataSource]", "B2 [Indicator]", "fissile material [Material]",
+# "uranium enrichment program [Program]"). None maps to a graph type.
+_ABSTRACT_TYPES = frozenset({
+    "source", "datasource", "indicator", "material", "concept", "activity", "duration", "program", "programme",
+    "capability", "trend", "issue", "quote", "statement",
+})
+
+
+def _drop_abstract_types(entities: list[dict], relationships: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Drop entities of an abstract invented type, and the edges that point at them."""
+    gone = {e.get("name") for e in entities if (e.get("entity_type") or "").strip().lower() in _ABSTRACT_TYPES}
+    if not gone:
+        return entities, relationships
+    return (
+        [e for e in entities if e.get("name") not in gone],
+        [r for r in relationships if r.get("source_name") not in gone and r.get("target_name") not in gone],
+    )
 
 
 def _apply_type_hints(entities: list[dict]) -> list[dict]:
@@ -2296,6 +2321,7 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
     entities = _drop_model_sourcing(entities, text)
     _refang_model_indicators(entities, relationships)
     entities, relationships = _drop_undatable_dates(entities, relationships)
+    entities, relationships = _drop_abstract_types(entities, relationships)
     _apply_vessel_hints(_apply_type_hints(entities), text)
     _link_event_dates(entities, relationships)
     return entities, relationships, skipped

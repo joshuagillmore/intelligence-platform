@@ -653,6 +653,37 @@ def test_a_known_waterway_is_one_location_not_two_fragments():
     assert "Hormuz" not in types and "Strait of" not in types
 
 
+# ── Types the model invents ───────────────────────────────────────────────────
+
+def test_abstract_types_outside_the_vocabulary_are_not_entities():
+    from intel_platform.services.extraction import _drop_abstract_types
+
+    # From Cohere's openrep replies.
+    ents = [
+        {"name": "uranium enrichment program", "entity_type": "Program"},
+        {"name": "B2", "entity_type": "Indicator"}, {"name": "fissile material", "entity_type": "Material"},
+        {"name": "European security", "entity_type": "Concept"},
+        {"name": "Commercial reporting", "entity_type": "DataSource"},
+        {"name": "Iran", "entity_type": "Location"},
+    ]
+    rels = [{"source_name": "Iran", "target_name": "uranium enrichment program", "rel_type": "USES"}]
+    ents, rels = _drop_abstract_types(ents, rels)
+    assert [e["name"] for e in ents] == ["Iran"]
+    assert rels == []
+
+
+def test_a_ship_class_the_model_calls_equipment_is_a_ship():
+    from intel_platform.services.extraction import _apply_type_hints
+
+    ents = _apply_type_hints([
+        {"name": "Constellation-class frigate", "entity_type": "Equipment"},
+        {"name": "Medium Landing Ship (LSM) program", "entity_type": "Equipment"},
+        {"name": "Cargo", "entity_type": "Equipment"},
+        {"name": "Class Action Group", "entity_type": "Organization"},
+    ])
+    assert [e["entity_type"] for e in ents] == ["Ship", "Ship", "Equipment", "Organization"]
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}
