@@ -726,19 +726,34 @@ _REL_TYPE_SYNONYMS = {
 }
 _REL_TYPE_CANON = {syn: canon for canon, syns in _REL_TYPE_SYNONYMS.items() for syn in syns}
 
+# Types that state something about the reporting, not a relationship between
+# the two entities: "Source REPORTED Ostravik", "Imagery DOES_NOT_ESTABLISH
+# Intent", "Identities BASED_ON Berth assignment". 41 of the 43 off-vocabulary
+# edges in the corpus baseline were of this kind.
+_REPORTING_REL = re.compile(
+    r"^(?:REPORT|OBSERV|IDENTIF|ESTABLISH|DOES_NOT_|DID_NOT_|NOT_|UNABLE_|CANNOT_|INDICAT|CORROBORAT"
+    r"|CONFIRM|PUBLISH|BASED_ON|DENIE|REQUESTED)"
+)
+
 
 def _normalize_rel_type(raw: str) -> str | None:
     """The vocabulary type a model relationship type means, or None.
 
     A synonym keeps its type: "BERTHS_AT" is LOCATED_AT, and collapsing it to
-    ASSOCIATED_WITH threw away the one thing the sentence said. A type with no
-    meaning in the vocabulary ("REPORTED", "DOES_NOT_ESTABLISH") returns None:
-    storing it as ASSOCIATED_WITH asserted an association the model never made.
+    ASSOCIATED_WITH threw away the one thing the sentence said. A statement
+    about the reporting ("REPORTED", "DOES_NOT_ESTABLISH") returns None:
+    storing it as ASSOCIATED_WITH asserted an association the model never
+    made. Any other unlisted type ("PARTNERS_WITH") is still a relationship
+    between the two, and stays the generic association it always was.
     """
     rt = re.sub(r"[\s-]+", "_", (raw or "").strip().upper())
     if rt in _VALID_REL_TYPES:
         return rt
-    return _REL_TYPE_CANON.get(rt)
+    if rt in _REL_TYPE_CANON:
+        return _REL_TYPE_CANON[rt]
+    if _REPORTING_REL.match(rt):
+        return None
+    return "ASSOCIATED_WITH"
 
 
 def _clean_evidence(sentence: str, name_a: str, name_b: str, pad: int = 45, max_len: int = 300) -> str:
@@ -1978,9 +1993,10 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
             skipped += 1
             continue
         if rel["rel_type"] is None:
-            # Well-formed, but its type means nothing the graph can store
-            # ("REPORTED", "DOES_NOT_ESTABLISH"). Not malformed, so not a
-            # skipped item; counted here so the loss is visible.
+            # Well-formed, but it states something about the reporting
+            # ("REPORTED", "DOES_NOT_ESTABLISH"), not a relationship between
+            # entities. Not malformed, so not a skipped item; counted here so
+            # the loss is visible.
             raw_type = str(r.get("relationship_type", r.get("rel_type", "")))[:40]
             untyped[raw_type] = untyped.get(raw_type, 0) + 1
             continue
@@ -1988,7 +2004,7 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
     if skipped:
         logger.warning("LLM extraction for doc %s skipped %d malformed item(s)", doc_id, skipped)
     if untyped:
-        logger.info("LLM extraction for doc %s dropped %d relationship(s) of no vocabulary type: %s",
+        logger.info("LLM extraction for doc %s dropped %d relationship(s) about the reporting rather than the entities: %s",
                     doc_id, sum(untyped.values()), untyped)
 
     # The same provenance rule the regex pass applies (G-8): a citation link

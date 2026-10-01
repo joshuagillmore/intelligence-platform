@@ -153,12 +153,16 @@ def test_a_model_synonym_keeps_its_type_and_an_unknown_type_is_not_stored_as_an_
     assert _normalize_rel_type("member_of") == "BELONGS_TO"
     assert _normalize_rel_type("uses") == "USES"
     assert _normalize_rel_type("ASSOCIATED_WITH") == "ASSOCIATED_WITH"
-    # "Source REPORTED Ostravik", "Imagery DOES_NOT_ESTABLISH Intent": no type
-    # in the vocabulary, and calling them associations asserts what the model
-    # did not.
-    assert _normalize_rel_type("REPORTED") is None
-    assert _normalize_rel_type("DOES_NOT_ESTABLISH") is None
-    assert _normalize_rel_type("") is None
+    # "Source REPORTED Ostravik", "Imagery DOES_NOT_ESTABLISH Intent": a
+    # statement about the reporting, not a relationship between the entities,
+    # and calling it an association asserts what the model did not.
+    for reporting in ("REPORTED", "OBSERVED", "IDENTIFIED", "DOES_NOT_ESTABLISH", "UNABLE_TO_ESTABLISH_DESTINATION",
+                      "CANNOT_BE_EXCLUDED", "CORROBORATES", "INDICATES", "PUBLISHED", "BASED_ON"):
+        assert _normalize_rel_type(reporting) is None, reporting
+    # A relationship between the entities that the vocabulary has no word for
+    # is still one: it stays the generic association it always was.
+    assert _normalize_rel_type("PARTNERS_WITH") == "ASSOCIATED_WITH"
+    assert _normalize_rel_type("") == "ASSOCIATED_WITH"
 
 
 async def test_the_llm_path_keeps_the_synonym_and_drops_the_off_vocabulary_edge():
