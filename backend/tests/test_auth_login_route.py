@@ -99,15 +99,16 @@ def _login(username, password):
 
 class TestLogin:
     def test_a_correct_password_returns_a_token_for_that_user(self, user):
+        # Contract 8: the token is in the httpOnly session cookie, not the body.
         resp = _login(user, "correct-horse-1")
         assert resp.status_code == 200
         body = resp.json()
-        claims = jwt.decode(body["access_token"], settings.jwt_secret, algorithms=["HS256"])
+        claims = jwt.decode(resp.cookies[settings.session_cookie_name], settings.jwt_secret, algorithms=["HS256"])
         assert (claims["sub"], claims["role"]) == (user, "analyst")
         assert (body["username"], body["role"]) == (user, "analyst")
 
     def test_the_token_authenticates_api_calls(self, user):
-        token = _login(user, "correct-horse-1").json()["access_token"]
+        token = _login(user, "correct-horse-1").cookies[settings.session_cookie_name]
         resp = client.get("/api/personas", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 200
 

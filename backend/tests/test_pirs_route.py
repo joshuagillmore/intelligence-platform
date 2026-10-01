@@ -287,9 +287,9 @@ def test_pir_routes_registered():
 
 
 def test_pir_column_backfill_registered():
-    """Existing databases only gain collection_plans.pir_id via the additive
-    migration — create_all never ALTERs a table that already exists."""
-    from intel_platform.db.engine import _ADDITIVE_COLUMNS
+    """A pre-Alembic database gains collection_plans.pir_id while it is adopted
+    (the legacy additive columns replayed before stamping the baseline)."""
+    from intel_platform.db.engine import _LEGACY_ADDITIVE_COLUMNS
 
-    joined = " ".join(_ADDITIVE_COLUMNS)
+    joined = " ".join(_LEGACY_ADDITIVE_COLUMNS)
     assert "ALTER TABLE collection_plans ADD COLUMN IF NOT EXISTS pir_id UUID" in joined

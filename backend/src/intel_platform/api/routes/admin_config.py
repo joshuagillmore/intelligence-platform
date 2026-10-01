@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 import httpx
@@ -9,8 +10,10 @@ from intel_platform.api.deps import require_admin
 from intel_platform.collection.proxy import PROXY_MODE_KEY, VALID_PROXY_MODES
 from intel_platform.config import settings
 from intel_platform.crypto import decrypt, encrypt
-from intel_platform.db.engine import get_session_factory
+from intel_platform.db.engine import get_session_factory, on_schema_ready
 from intel_platform.db.models import ApiKey, AppSetting
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(require_admin)])
 
@@ -59,11 +62,79 @@ class EnrichmentConfigRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# In-memory state
+# Persisted runtime settings (AppSetting rows)
 # ---------------------------------------------------------------------------
 
-# Runtime-mutable LLM overrides (survive until container restart)
+# The admin's runtime provider/model choice. The row is the source of truth;
+# this dict is the process's cache of it, because provider selection reads it
+# synchronously (llm/providers.py). Loaded when the schema is ready (init_db)
+# and by refresh_persisted_settings(), which any other process — the collection
+# worker — calls to pick up a change made through the API.
+LLM_OVERRIDE_KEY = "llm_override"
 _llm_override: dict = {"provider": "", "model": ""}
+
+
+async def read_app_settings(keys: list[str]) -> dict[str, str]:
+    """The stored values of ``keys``; a key with no row is absent from the result."""
+    factory = get_session_factory()
+    async with factory() as session:
+        result = await session.execute(select(AppSetting.key, AppSetting.value).where(AppSetting.key.in_(keys)))
+        return {key: value for key, value in result.all()}
+
+
+async def write_app_settings(values: dict[str, str]) -> None:
+    """Upsert every key in ``values`` in one transaction."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy.dialects.postgresql import insert
+
+    now = datetime.now(timezone.utc)
+    factory = get_session_factory()
+    async with factory() as session:
+        for key, value in values.items():
+            stmt = insert(AppSetting).values(key=key, value=value, updated_at=now)
+            await session.execute(stmt.on_conflict_do_update(
+                index_elements=[AppSetting.key], set_={"value": value, "updated_at": now},
+            ))
+        await session.commit()
+
+
+async def load_llm_override() -> None:
+    """Replace the cached override with the stored one. No row: unchanged."""
+    import json
+
+    stored = (await read_app_settings([LLM_OVERRIDE_KEY])).get(LLM_OVERRIDE_KEY)
+    if stored is None:
+        return
+    try:
+        data = json.loads(stored)
+    except ValueError:
+        logger.warning("Ignoring an unreadable %s setting", LLM_OVERRIDE_KEY)
+        return
+    if not isinstance(data, dict):
+        return
+    _llm_override["provider"] = str(data.get("provider") or "")
+    _llm_override["model"] = str(data.get("model") or "")
+
+
+async def refresh_persisted_settings() -> None:
+    """Load every persisted runtime setting into this process's caches.
+
+    Run by init_db once the schema is at head (registered below). A process
+    that does not serve the admin routes — the collection worker — calls it
+    itself at startup and per job, so an admin's change reaches it without a
+    restart. Never raises: a failed read keeps the cache as it is.
+    """
+    from intel_platform.api.routes import personas
+
+    for load in (load_llm_override, personas.load_personas):
+        try:
+            await load()
+        except Exception:
+            logger.warning("Could not load persisted settings (%s)", load.__name__, exc_info=True)
+
+
+on_schema_ready(refresh_persisted_settings)
 
 
 async def _read_proxy_mode() -> str:
@@ -176,6 +247,19 @@ async def get_config():
         "neo4j_uri": settings.neo4j_uri.split("@")[-1] if "@" in settings.neo4j_uri else settings.neo4j_uri,
         "proxy": {"mode": proxy_mode},
     }
+
+
+@router.get("/admin/degraded")
+def get_degraded():
+    """Degraded outcomes since this process started (contract 1).
+
+    ``{"since": iso8601, <subsystem>: {<reason>: count}}`` — only subsystems
+    that degraded at least once appear. Per process: the collection worker
+    counts its own.
+    """
+    from intel_platform.services.telemetry import snapshot
+
+    return snapshot()
 
 
 # ---------------------------------------------------------------------------
@@ -369,8 +453,19 @@ async def list_available_models():
 
 
 @router.put("/admin/llm/select")
-def select_llm(req: LLMConfigRequest):
-    """Switch the active LLM provider and model at runtime."""
+async def select_llm(req: LLMConfigRequest):
+    """Switch the active LLM provider and model; persisted, so it survives a restart.
+
+    Saved before it takes effect: a choice that would silently revert on the
+    next restart is refused (503) instead.
+    """
+    import json
+
+    try:
+        await write_app_settings({LLM_OVERRIDE_KEY: json.dumps({"provider": req.provider, "model": req.model})})
+    except Exception:
+        logger.warning("Could not persist the LLM selection", exc_info=True)
+        raise HTTPException(status_code=503, detail="Could not save the LLM selection")
     _llm_override["provider"] = req.provider
     _llm_override["model"] = req.model
     return {

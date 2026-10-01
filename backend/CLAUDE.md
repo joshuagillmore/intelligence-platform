@@ -70,12 +70,77 @@ init, then `pytest` — so it is the canonical reference for a green run.
 - **Postgres + pgvector** — documents, embeddings, PIRs (`pirs` — the
   requirements spine, linked to the plans they drove via `collection_plans.pir_id`,
   with per-EEI collection state in `pir_requirements`)
-  and collection-plan state. Async SQLAlchemy; tables initialized at startup via
-  `db.engine.init_db()` (no Alembic migration flow yet — schema is created on
-  boot). `create_all` never ALTERs an existing table, so a **new column on an
-  existing table** must also be added to `_ADDITIVE_COLUMNS` in `db/engine.py`
-  (idempotent `ADD COLUMN IF NOT EXISTS`) or deployments that already have the
-  table will not get it.
+  and collection-plan state. Async SQLAlchemy; the schema is owned by **Alembic**
+  and migrated at startup by `db.engine.init_db()` — see "Postgres schema
+  migrations" below.
+
+## Postgres schema migrations
+
+The schema lives in `backend/alembic/versions/`; `backend/alembic.ini` and
+`alembic/env.py` read the URL from `Settings.postgres_url` (never from the ini).
+`init_db()` runs `alembic upgrade head` on every boot, inside one transaction
+holding a Postgres advisory lock, so the API and the collection worker can boot
+against one database at once.
+
+**Changing the schema** = change the model in `db/models.py`, then a revision:
+
+```bash
+uv run alembic revision --autogenerate -m "add foo to bar"   # needs POSTGRES_URL at head
+# read the generated file line by line: pgvector columns must be
+# Vector(get_settings().embedding_dimensions) (autogenerate writes the literal
+# width and an unimported pgvector.sqlalchemy.vector.VECTOR), and check indexes
+uv run alembic upgrade head
+uv run alembic check          # "No new upgrade operations detected." = models and migrations agree
+```
+
+Never edit `0001_baseline.py` or add a table to it; a new table is a new
+revision. `tests/test_alembic_migrations.py` runs `alembic check` against a fresh
+database, so a model change without a revision fails the suite (with a Postgres
+exported; it skips without one).
+
+**Existing deployments (adoption).** Every database created before Alembic has
+the tables but no `alembic_version`. `init_db` detects that and, before
+upgrading, replays the old bootstrap's last step — creates any baseline table
+still missing, re-runs the frozen `_LEGACY_ADDITIVE_COLUMNS` — then
+`alembic stamp 0001` (the baseline, not head), so later revisions still run.
+For a database from the last pre-Alembic build the whole thing is a stamp.
+To do it by hand instead of letting the app boot:
+
+```bash
+cd backend
+uv run alembic current        # empty on a pre-Alembic database
+uv run alembic stamp 0001     # only on a database create_all built at the current build
+uv run alembic upgrade head
+uv run alembic check
+```
+
+**Without pgvector** the baseline leaves out `chunk_embeddings` and
+`attack_technique_embeddings` and the app runs graph-only; once the extension
+is installed, the next boot creates them. The migrations ship in the images
+next to `src/` (`/app/alembic`, `/app/alembic.ini`); `init_db` refuses to start
+without them rather than run with an unmigrated schema.
+
+## Degraded outcomes (telemetry)
+
+A degraded outcome is work that completed worse than asked: an NLP-fallback
+chunk, a document stored without embeddings, an enrichment provider error, a
+keyword topic label, an unreadable ATT&CK mapping reply, a product that 503'd
+on the LLM. Logging them was not enough to notice a quiet provider outage, so
+they are also **counted**: `services/telemetry.py`.
+
+- `record_degraded(subsystem, reason, *, detail="")` — call it where the
+  degradation is decided, next to the existing log line. `reason` is counted,
+  so keep it a short fixed vocabulary (`embed_failed`, `rdap: http 503`, an
+  exception *type*), never an id or an exception message; `detail` goes to the
+  log only. It never raises.
+- Subsystems: `extraction`, `embeddings`, `enrichment`, `llm`, `topics`,
+  `attack_mapping`, `collection`. Extraction itself does not record — it returns
+  `ExtractionResult.degraded`/`reason`, and the caller (ingest, the agentic
+  loop) records it.
+- `snapshot()` → `{"since": iso8601, subsystem: {reason: count}}`, served at
+  `GET /api/admin/degraded` (admin); `/health` carries `degraded: {subsystem: total}`.
+- Counts are in-process and reset on restart; the collection worker process
+  keeps its own and they do not reach the API's endpoints.
 
 ## Collecting against a requirement
 
@@ -150,10 +215,11 @@ per-module provider selection.
 **Embeddings**: OpenAI (1536), Cohere (1024) or Ollama `nomic-embed-text` (768).
 `EMBEDDING_DIMENSIONS` must match the provider you pick — both pgvector columns
 and `vector_search`'s width guard read it, so a mismatch is rejected rather than
-stored wrong. There is no migration flow, so the value is applied when the
-tables are created: changing it on an existing database means dropping and
-recreating `chunk_embeddings` and `attack_technique_embeddings` (their vectors
-need re-embedding under the new provider anyway).
+stored wrong. The value is applied when the baseline migration creates the
+tables, and no migration resizes them: changing it on an existing database
+means dropping `chunk_embeddings` and `attack_technique_embeddings` (the next
+boot recreates them at the new width; their vectors need re-embedding under the
+new provider anyway).
 
 High-volume **collection** work (source resolution + per-doc summaries) can route
 to a dedicated provider so it won't drain a rate-limited cloud key — see

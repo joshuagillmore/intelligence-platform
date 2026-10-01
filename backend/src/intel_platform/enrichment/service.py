@@ -28,6 +28,7 @@ from intel_platform.enrichment.base import (
 )
 from intel_platform.enrichment.cache import RateLimiter
 from intel_platform.enrichment.observables import cve_id, refang
+from intel_platform.services.telemetry import record_degraded
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +177,9 @@ class EnrichmentService:
             )
         except asyncio.TimeoutError:
             for provider in providers:
-                results.setdefault(provider.name, {"status": "timeout"})
+                if provider.name not in results:
+                    results[provider.name] = {"status": "timeout"}
+                    record_degraded("enrichment", f"{provider.name}: timeout")
 
         return {"entity_id": entity_id, "observable": observable, "providers": results}
 
@@ -198,6 +201,8 @@ class EnrichmentService:
             results[provider.name] = (
                 {"status": "cached"} if applied else {"status": "error", "reason": "graph write failed"}
             )
+            if not applied:
+                record_degraded("enrichment", f"{provider.name}: graph write failed")
             return
 
         # A failed lookup is recorded with its reason and goes no further: it is
@@ -215,12 +220,14 @@ class EnrichmentService:
                 exc_info=exc.__cause__ is not None,
             )
             results[provider.name] = {"status": "error", "reason": exc.reason}
+            record_degraded("enrichment", f"{provider.name}: {exc.reason}")
             return
         except Exception:  # per-provider isolation (lookup)
             logger.warning(
                 "enrichment provider %s raised for %s", provider.name, observable, exc_info=True
             )
             results[provider.name] = {"status": "error", "reason": "lookup failed"}
+            record_degraded("enrichment", f"{provider.name}: lookup failed")
             return
 
         if result.skipped:
@@ -233,6 +240,7 @@ class EnrichmentService:
         # abort the other providers. The write runs in a worker thread.
         if not await asyncio.to_thread(self._safe_apply, entity, project_id, result):
             results[provider.name] = {"status": "error", "reason": "graph write failed"}
+            record_degraded("enrichment", f"{provider.name}: graph write failed")
             return
 
         if self.cache is not None:
