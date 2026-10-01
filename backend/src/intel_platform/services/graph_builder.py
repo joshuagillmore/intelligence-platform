@@ -594,9 +594,20 @@ def build_graph_from_extractions(
 
     cooccurrence_min = settings.cooccurrence_confidence_min
     rels_created = 0
-    rels_dropped = 0
     rels_retired = 0
+    # Every relationship not written, by type and by why. The two reasons are
+    # kept apart because they mean different things: an unknown endpoint is
+    # the model naming something it never extracted; a co-occurrence edge
+    # below the bar is the filter doing its job. Both used to look like
+    # nothing — the second was never counted at all.
     dropped_types: dict[str, int] = {}
+    dropped_reasons: dict[str, int] = {"unknown_endpoint": 0, "below_cooccurrence_min": 0}
+    unknown_endpoint_types: dict[str, int] = {}
+
+    def _dropped(rel_type: str, reason: str) -> None:
+        dropped_types[rel_type] = dropped_types.get(rel_type, 0) + 1
+        dropped_reasons[reason] += 1
+
     for rel_data in relationships:
         # Endpoint names are cleaned exactly as entity names were, since
         # name_to_id is keyed by the cleaned name. They were not, so
@@ -618,10 +629,9 @@ def build_graph_from_extractions(
             ):
                 rels_retired += 1
             else:
-                rels_dropped += 1
-                dropped_types[rel_data.get("rel_type", "?")] = (
-                    dropped_types.get(rel_data.get("rel_type", "?"), 0) + 1
-                )
+                rel_type = rel_data.get("rel_type", "?")
+                _dropped(rel_type, "unknown_endpoint")
+                unknown_endpoint_types[rel_type] = unknown_endpoint_types.get(rel_type, 0) + 1
             continue
         confidence = rel_data.get("confidence", 0.5)
         # Blanket co-occurrence edges need a higher confidence bar to be
@@ -630,6 +640,7 @@ def build_graph_from_extractions(
         # from flooding the graph and skewing SNA/Graph-RAG. Doesn't affect
         # ASSOCIATED_WITH relationships an LLM asserted with real confidence.
         if rel_data["rel_type"] == "ASSOCIATED_WITH" and confidence < cooccurrence_min:
+            _dropped("ASSOCIATED_WITH", "below_cooccurrence_min")
             continue
         rel = Relationship(
             source_id=source_id, target_id=target_id,
@@ -662,12 +673,17 @@ def build_graph_from_extractions(
     except Exception:
         pass
 
-    if rels_dropped:
+    if dropped_reasons["unknown_endpoint"]:
         # Surfaced rather than swallowed: a build that discards a third of its
         # relationships looks identical to one that never produced them.
         logger.warning(
             "Dropped %d relationship(s) naming entities that were never extracted: %s",
-            rels_dropped, dropped_types,
+            dropped_reasons["unknown_endpoint"], unknown_endpoint_types,
+        )
+    if dropped_reasons["below_cooccurrence_min"]:
+        logger.info(
+            "Skipped %d co-occurrence edge(s) below cooccurrence_confidence_min (%s)",
+            dropped_reasons["below_cooccurrence_min"], cooccurrence_min,
         )
 
     return {
@@ -678,8 +694,11 @@ def build_graph_from_extractions(
         "dates_orphaned": dates_orphaned,
         "relationships_retired": rels_retired,
         "relationships_created": rels_created,
-        "relationships_dropped": rels_dropped,
+        # Every relationship not written, then the same total split by type
+        # and by reason (unknown_endpoint, below_cooccurrence_min).
+        "relationships_dropped": sum(dropped_reasons.values()),
         "relationships_dropped_by_type": dropped_types,
+        "relationships_dropped_by_reason": dropped_reasons,
         # LLM attributes that failed validation and were left off the entity.
         "dropped_attributes": dropped_attributes,
         # Document -> entity MENTIONS edges written or added to by this build.
