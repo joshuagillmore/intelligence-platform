@@ -31,6 +31,7 @@ from intel_platform.llm.embeddings import EmbeddingProvider, get_embedding_provi
 from intel_platform.llm.providers import _get_extraction_provider
 from intel_platform.llm.skills.loader import SkillsLoader
 from intel_platform.services.llm_output import json_object
+from intel_platform.services.telemetry import record_degraded
 
 logger = logging.getLogger(__name__)
 
@@ -194,6 +195,7 @@ async def _confirm_matches(provider, skill_system: str, ttp_text: str, candidate
         )
     except Exception as exc:
         logger.warning("ATT&CK mapping LLM call failed", exc_info=True)
+        record_degraded("attack_mapping", "llm_unavailable", detail=type(exc).__name__)
         raise LLMUnavailable("ATT&CK mapping LLM call failed") from exc
     return _parse_matches(getattr(result, "content", "") or "")
 
@@ -241,6 +243,11 @@ async def map_project_ttps(
         return {"mapped": 0, "skipped": 0, "skip_reasons": {}, **remap_fields}
 
     def _batch_skipped(reason: str, detail: str) -> dict:
+        # One degraded outcome per TTP the batch could not attempt, as `skipped`
+        # counts them. An unembedded catalogue is setup, not degradation.
+        if reason != "technique_catalogue_not_embedded":
+            for _ in ttps:
+                record_degraded("attack_mapping", reason)
         return {
             "mapped": 0,
             "skipped": len(ttps),
@@ -276,8 +283,10 @@ async def map_project_ttps(
         llm_provider = await _get_extraction_provider()
     except Exception as exc:
         logger.warning("No LLM provider for ATT&CK mapping", exc_info=True)
+        record_degraded("attack_mapping", "llm_unavailable", detail=type(exc).__name__)
         raise LLMUnavailable("no LLM provider for ATT&CK mapping") from exc
     if llm_provider is None:
+        record_degraded("attack_mapping", "llm_unavailable", detail="no provider")
         raise LLMUnavailable("no LLM provider for ATT&CK mapping")
     skill_system = SkillsLoader().get_system_prompt("attack_mapping", include_foundation=True) or ""
 
@@ -314,6 +323,8 @@ async def map_project_ttps(
             # not attempted, with the reason.
             logger.warning("pgvector candidate retrieval failed for ATT&CK mapping", exc_info=True)
             skip_reasons["candidate_retrieval_failed"] += len(ttps) - index
+            for _ in range(len(ttps) - index):
+                record_degraded("attack_mapping", "candidate_retrieval_failed")
             break
         if not candidates:
             skip_reasons["no_candidates"] += 1
@@ -322,6 +333,7 @@ async def map_project_ttps(
         matches = await _confirm_matches(llm_provider, skill_system, _ttp_text(ttp), candidates)
         if matches is None:  # the reply could not be read — not a rejection
             skip_reasons["unparsed"] += 1
+            record_degraded("attack_mapping", "unparsed")
             continue
 
         candidate_ids = {c["technique_id"] for c in candidates}

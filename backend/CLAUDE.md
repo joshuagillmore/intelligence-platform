@@ -120,6 +120,28 @@ is installed, the next boot creates them. The migrations ship in the images
 next to `src/` (`/app/alembic`, `/app/alembic.ini`); `init_db` refuses to start
 without them rather than run with an unmigrated schema.
 
+## Degraded outcomes (telemetry)
+
+A degraded outcome is work that completed worse than asked: an NLP-fallback
+chunk, a document stored without embeddings, an enrichment provider error, a
+keyword topic label, an unreadable ATT&CK mapping reply, a product that 503'd
+on the LLM. Logging them was not enough to notice a quiet provider outage, so
+they are also **counted**: `services/telemetry.py`.
+
+- `record_degraded(subsystem, reason, *, detail="")` — call it where the
+  degradation is decided, next to the existing log line. `reason` is counted,
+  so keep it a short fixed vocabulary (`embed_failed`, `rdap: http 503`, an
+  exception *type*), never an id or an exception message; `detail` goes to the
+  log only. It never raises.
+- Subsystems: `extraction`, `embeddings`, `enrichment`, `llm`, `topics`,
+  `attack_mapping`, `collection`. Extraction itself does not record — it returns
+  `ExtractionResult.degraded`/`reason`, and the caller (ingest, the agentic
+  loop) records it.
+- `snapshot()` → `{"since": iso8601, subsystem: {reason: count}}`, served at
+  `GET /api/admin/degraded` (admin); `/health` carries `degraded: {subsystem: total}`.
+- Counts are in-process and reset on restart; the collection worker process
+  keeps its own and they do not reach the API's endpoints.
+
 ## Collecting against a requirement
 
 Collection is driven by the requirement, not just by the planner's source list.

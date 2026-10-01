@@ -8,6 +8,7 @@ import time
 from collections import defaultdict
 import networkx as nx
 from intel_platform.graph.store import GraphStore
+from intel_platform.services.telemetry import record_degraded
 from intel_platform.models.entities import SYSTEM_ENTITY_TYPES
 from intel_platform.services.document_clustering import cluster_documents
 from intel_platform.services.text_utils import extract_relevant_passages, count_keyword_matches
@@ -281,9 +282,13 @@ class TopicTreeService:
         try:
             from intel_platform.services.document_clustering import refine_labels_with_llm
             await refine_labels_with_llm(tree_node, doc_pairs)
-        except Exception:
+        except Exception as exc:
             logger.warning("Topic label refinement failed; keeping keyword labels", exc_info=True)
             tree_node["label_source"] = "keywords"
+            record_degraded("topics", "label_refinement_failed", detail=type(exc).__name__)
+        # One per topic left with its keyword label after a refinement attempt.
+        for _ in range(int(tree_node.get("labels_failed") or 0)):
+            record_degraded("topics", "label_failed")
 
         # Update module-level caches
         _cluster_doc_map.update(doc_map)
@@ -651,6 +656,7 @@ class TopicTreeService:
 
         if not provider:
             logger.warning("Topic summary requested with no LLM provider available")
+            record_degraded("topics", "summary_no_provider")
             yield _SSE_ERROR
             yield _SSE_DONE
             return
@@ -693,9 +699,15 @@ class TopicTreeService:
             # (hosts, credentials in URLs, provider error bodies) was streamed
             # to the analyst and cached as though it were the summary.
             logger.exception("Topic summary generation failed for %s", entity_id)
-            full_response = ""
+            record_degraded("topics", "summary_failed")
+            full_response = None
 
+        if full_response is None:
+            yield _SSE_ERROR
+            yield _SSE_DONE
+            return
         if not full_response.strip():
+            record_degraded("topics", "summary_empty")
             yield _SSE_ERROR
             yield _SSE_DONE
             return

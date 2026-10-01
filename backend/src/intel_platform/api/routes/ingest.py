@@ -11,6 +11,7 @@ from intel_platform.models.entities import Document
 from intel_platform.services.ingestion import ingest_text, process_file
 from intel_platform.services.extraction import extract_entities_nlp
 from intel_platform.services.graph_builder import build_graph_from_extractions
+from intel_platform.services.telemetry import record_degraded
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,12 @@ async def _ingest_chunks(
     all_entities = []
     all_relationships = []
     for chunk in chunks:
-        entities, relationships = await _extract(chunk["content"], doc.id, extraction_mode)
+        extraction = await _extract(chunk["content"], doc.id, extraction_mode)
+        entities, relationships = extraction
+        # ExtractionResult says when the requested method failed and this chunk
+        # is the NLP fallback; a plain tuple (older callers, tests) never is.
+        if getattr(extraction, "degraded", False):
+            record_degraded("extraction", getattr(extraction, "reason", "") or "degraded", detail=doc.id)
         all_entities.extend(entities)
         all_relationships.extend(relationships)
 
@@ -126,12 +132,13 @@ async def _ingest_chunks(
             embeddings_stored = await embed_and_store_chunks(chunks, doc.id, project_id, db_session)
             await db_session.commit()
         indexed = bool(embeddings_stored) or not chunks
-    except Exception:
+    except Exception as exc:
         indexed = False
         logger.warning(
             "Embedding failed for %s — document is in the graph but will not be "
             "findable by semantic search", source_name, exc_info=True,
         )
+        record_degraded("embeddings", "store_unavailable", detail=type(exc).__name__)
 
     return {
         "document_id": doc.id,

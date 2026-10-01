@@ -178,6 +178,19 @@ async def get_config():
     }
 
 
+@router.get("/admin/degraded")
+def get_degraded():
+    """Degraded outcomes since this process started (contract 1).
+
+    ``{"since": iso8601, <subsystem>: {<reason>: count}}`` — only subsystems
+    that degraded at least once appear. Per process: the collection worker
+    counts its own.
+    """
+    from intel_platform.services.telemetry import snapshot
+
+    return snapshot()
+
+
 # ---------------------------------------------------------------------------
 # API Key management endpoints
 # ---------------------------------------------------------------------------
