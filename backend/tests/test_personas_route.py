@@ -14,9 +14,18 @@ headers = {"Authorization": f"Bearer {settings.api_key}"}
 
 @pytest.fixture(autouse=True)
 def _isolated_personas(monkeypatch):
-    """Personas are process-global; every test here gets its own copy."""
+    """Personas are process-global; every test here gets its own copy.
+
+    Changes are persisted to Postgres (AppSetting) before they apply; that is
+    covered in test_persisted_settings.py, so here the save always succeeds.
+    """
     monkeypatch.setattr(personas_route, "_personas", copy.deepcopy(personas_route._personas))
     monkeypatch.setattr(personas_route, "_active_persona", personas_route._active_persona)
+
+    async def _saved(values):
+        return None
+
+    monkeypatch.setattr(personas_route, "_persist", _saved)
 
 
 def test_list_personas():

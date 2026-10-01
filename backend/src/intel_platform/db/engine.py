@@ -111,6 +111,20 @@ _DATA_REPAIRS = (
 )
 
 
+# Async callables run by init_db once the schema is at head: modules that cache
+# persisted settings in process memory register their loaders here, so they are
+# warm before the first request without this module importing them.
+_schema_ready_loaders: list = []
+
+
+def on_schema_ready(loader):
+    """Register ``loader`` (an async callable, no arguments) to run at the end of
+    init_db. A loader that raises is logged and skipped. Returns ``loader``."""
+    if loader not in _schema_ready_loaders:
+        _schema_ready_loaders.append(loader)
+    return loader
+
+
 def alembic_config(connection=None):
     """Alembic Config for the migrations, optionally bound to a sync connection.
 
@@ -307,3 +321,9 @@ async def init_db():
                     logger.info("Data repair applied to %d row(s): %s", result.rowcount, statement)
         except Exception as exc:
             logger.warning("Data repair skipped (%s): %s", statement, exc)
+
+    for loader in list(_schema_ready_loaders):
+        try:
+            await loader()
+        except Exception:
+            logger.warning("Startup loader %s failed", getattr(loader, "__name__", loader), exc_info=True)
