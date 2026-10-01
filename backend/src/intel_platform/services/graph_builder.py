@@ -419,14 +419,24 @@ def build_graph_from_extractions(
     # (entity id, document id) pairs already on the graph from this build, so
     # a merge records a document against an entity once, not once per mention.
     recorded_sources: set[tuple[str, str]] = set()
+    # How often each document mentions each entity in this build — one per
+    # extracted mention, on the create path and every merge path alike —
+    # written as (:Document)-[:MENTIONS {count}]->(:Entity) once the entities
+    # exist. The evidence chain and both retrievers read these edges.
+    mention_counts: dict[tuple[str, str], int] = {}
+
+    def _mentioned(entity_id: str, doc_id: str) -> None:
+        if doc_id and entity_id:
+            mention_counts[(doc_id, entity_id)] = mention_counts.get((doc_id, entity_id), 0) + 1
 
     def _merged_into(entity_id: str, doc_id: str) -> None:
         """Record that `doc_id` also mentions an existing entity.
 
         source_doc_id was set only on create, so a later document merging into
         the entity left no trace and GraphRAG / hybrid retrieval could only
-        reach the first.
+        reach the first. Kept for one release beside the MENTIONS edge.
         """
+        _mentioned(entity_id, doc_id)
         if doc_id and (entity_id, doc_id) not in recorded_sources:
             recorded_sources.add((entity_id, doc_id))
             store.record_entity_source(entity_id, doc_id)
@@ -565,11 +575,16 @@ def build_graph_from_extractions(
             merged += 1
             continue
         recorded_sources.add((entity.id, entity_doc_id))
+        _mentioned(entity.id, entity_doc_id)
         new_entities.append({
             "id": entity.id, "name": name,
             "entity_type": entity.entity_type.value, "project_id": project_id,
         })
         created += 1
+
+    # One write for every mention in the build. A source that is not a
+    # Document of this project (an inline extraction) writes nothing.
+    mentions_recorded = store.record_mentions(project_id, mention_counts) if mention_counts else 0
 
     cooccurrence_min = settings.cooccurrence_confidence_min
     rels_created = 0
@@ -661,4 +676,6 @@ def build_graph_from_extractions(
         "relationships_dropped_by_type": dropped_types,
         # LLM attributes that failed validation and were left off the entity.
         "dropped_attributes": dropped_attributes,
+        # Document -> entity MENTIONS edges written or added to by this build.
+        "mentions_recorded": mentions_recorded,
     }

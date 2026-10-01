@@ -10,7 +10,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from intel_platform.services.graph_rag import GraphRAGPipeline, source_documents_of
+from intel_platform.services.graph_rag import GraphRAGPipeline
 from intel_platform.services.vector_search import vector_search
 
 logger = logging.getLogger(__name__)
@@ -109,15 +109,10 @@ class HybridRetriever:
             logger.warning("Vector search failed, using graph-only results", exc_info=True)
             vec_results = []
 
-        # 3. Extract document IDs from graph results for RRF — every document
-        # that mentions an entity, not only the one that first created it.
-        graph_doc_ids = []
-        seen = set()
-        for node in graph_context.get("nodes", []):
-            for src in source_documents_of(node):
-                if src not in seen:
-                    seen.add(src)
-                    graph_doc_ids.append(src)
+        # 3. The graph's document ranking for RRF: every document that
+        # MENTIONS an entity found, ranked by retrieve_context (the query's
+        # targets first), not only the document that first created it.
+        graph_doc_ids = list(dict.fromkeys(graph_context.get("document_ids") or []))
 
         # 4. RRF merge
         merged = _rrf_merge(graph_doc_ids, vec_results, graph_weight)

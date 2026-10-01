@@ -344,6 +344,62 @@ def ensure_normalized_names(driver: Driver, batch_size: int = _NAME_KEY_BATCH) -
     return outcome
 
 
+_MENTIONS_BATCH = 1000
+
+
+def ensure_mentions_edges(driver: Driver, batch_size: int = _MENTIONS_BATCH) -> int:
+    """Backfill `(:Document)-[:MENTIONS]->(:Entity)` from `source_doc_ids`. Returns edges created.
+
+    graph_builder writes these edges for every build; entities written before
+    it did carry only the `source_doc_id`/`source_doc_ids` properties. Every
+    such entity with no MENTIONS edge yet gets one from each listed document
+    that exists in its project, with `count` 1 (one mention known) and
+    `first_seen` the document's creation time. Idempotent: MERGE, and entities
+    that already have mentions are not read again.
+    """
+    from datetime import datetime, timezone
+
+    with driver.session() as session:
+        ids = [
+            r["id"] for r in session.run(
+                f"""
+                MATCH (e:{ENTITY_LABEL})
+                WHERE NOT e:Document AND e.project_id IS NOT NULL AND e.id IS NOT NULL
+                  AND (coalesce(e.source_doc_id, '') <> '' OR size(coalesce(e.source_doc_ids, [])) > 0)
+                  AND NOT EXISTS {{ MATCH (:Document)-[:MENTIONS]->(e) }}
+                RETURN e.id AS id ORDER BY id
+                """
+            )
+        ]
+        if not ids:
+            return 0
+        now = datetime.now(timezone.utc).isoformat()
+
+        def _backfill(tx, batch: list[str]) -> int:
+            return tx.run(
+                f"""
+                UNWIND $ids AS eid
+                MATCH (e:{ENTITY_LABEL} {{id: eid}})
+                UNWIND [x IN [e.source_doc_id] + coalesce(e.source_doc_ids, []) WHERE x IS NOT NULL AND x <> '']
+                    AS doc_id
+                WITH DISTINCT e, doc_id
+                MATCH (d:Document {{id: doc_id}})
+                WHERE d.project_id = e.project_id
+                MERGE (d)-[m:MENTIONS]->(e)
+                ON CREATE SET m.count = 1, m.project_id = e.project_id,
+                              m.first_seen = coalesce(toString(d.created_at), toString(e.created_at), $now)
+                """,
+                ids=batch, now=now,
+            ).consume().counters.relationships_created
+
+        created = 0
+        for start in range(0, len(ids), batch_size):
+            created += session.execute_write(_backfill, ids[start:start + batch_size])
+    if created:
+        logger.info("Backfilled %d document MENTIONS edge(s) from source_doc_ids", created)
+    return created
+
+
 def initialize_schema(driver: Driver) -> None:
     with driver.session() as session:
         for stmt in CONSTRAINTS + INDEXES:
@@ -373,6 +429,10 @@ def initialize_schema(driver: Driver) -> None:
             # Duplicates the backfill could not merge. Startup continues; the
             # MERGE in create_entity still dedupes, without the race guarantee.
             logger.warning("Could not create the %s constraint", ENTITY_NAME_KEY, exc_info=True)
+    try:
+        ensure_mentions_edges(driver)
+    except Exception:
+        logger.warning("MENTIONS backfill failed; it will be retried on the next start", exc_info=True)
     with driver.session() as session:
         try:
             _sync_entity_name_index(session)

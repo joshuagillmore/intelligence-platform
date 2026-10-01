@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from intel_platform.api.deps import get_graph_store, project_exists, verify_api_key
+from intel_platform.graph.evidence import find_passages
 from intel_platform.graph.store import GraphStore
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
@@ -9,11 +10,10 @@ DOCUMENT_LIST_LIMIT = 500
 # How many passages one evidence response carries. `total` counts every mention.
 MAX_EVIDENCE_PASSAGES = 50
 
-# An entity belongs to the document it was extracted from. Ingestion records
-# that as `source_doc_id` on the entity (and the store appends later documents
-# to `source_doc_ids` when an entity is merged); it never creates an edge to the
-# Document node, so counting edges read 0 entities for every document.
-_EXTRACTED_FROM = "[x IN [e.source_doc_id] + coalesce(e.source_doc_ids, []) WHERE x IS NOT NULL AND x <> '']"
+# A document's entities are the ones it MENTIONS: graph_builder writes that
+# edge for every entity it extracts or merges, and the startup backfill builds
+# it from the older `source_doc_ids` property. Both reads below used to invert
+# that property by scanning every entity in the project.
 
 
 @router.get("/documents")
@@ -37,20 +37,7 @@ def list_documents(project_id: str, store: GraphStore = Depends(get_graph_store)
             """,
             pid=project_id, limit=DOCUMENT_LIST_LIMIT,
         ))
-        doc_ids = [r["id"] for r in rows]
-        counts = {
-            r["doc_id"]: r["n"]
-            for r in session.run(
-                f"""
-                MATCH (e) WHERE e.project_id = $pid AND NOT e:Document
-                UNWIND {_EXTRACTED_FROM} AS doc_id
-                WITH DISTINCT doc_id, e
-                WHERE doc_id IN $doc_ids
-                RETURN doc_id, count(e) AS n
-                """,
-                pid=project_id, doc_ids=doc_ids,
-            )
-        }
+    counts = store.count_entities_mentioned([r["id"] for r in rows], project_id)
     docs = [
         {
             "id": r["id"],
@@ -81,27 +68,16 @@ def get_document(doc_id: str, store: GraphStore = Depends(get_graph_store)):
     if not doc or doc.get("entity_type") != "Document":
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # The entities extracted from this document, found the way ingestion links
-    # them: by their source document id, within the document's project.
-    with store._driver.session() as session:
-        result = session.run(
-            f"""
-            MATCH (e) WHERE e.project_id = $pid AND NOT e:Document
-              AND $doc_id IN {_EXTRACTED_FROM}
-            RETURN e.id AS id, e.name AS name, e.entity_type AS entity_type
-            ORDER BY e.name
-            """,
-            pid=doc.get("project_id", ""), doc_id=doc_id,
-        )
-        entities = [
-            {
-                "id": r["id"],
-                "name": r["name"],
-                "entity_type": r["entity_type"],
-                "relationship": "EXTRACTED_FROM",
-            }
-            for r in result
-        ]
+    # The entities this document mentions, within its project.
+    entities = [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "entity_type": r["entity_type"],
+            "relationship": "EXTRACTED_FROM",
+        }
+        for r in store.entities_mentioned_in(doc_id, doc.get("project_id", ""))
+    ]
 
     content = doc.get("content", "") or ""
 
@@ -152,31 +128,11 @@ def get_evidence_for_entity(doc_id: str, entity_name: str, store: GraphStore = D
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    content = doc.get("content", "") or ""
-    passages = []
-    total = content.count(entity_name)
-
-    # Find occurrences and extract surrounding context (200 chars each side)
-    start = 0
-    while len(passages) < MAX_EVIDENCE_PASSAGES:
-        idx = content.find(entity_name, start)
-        if idx == -1:
-            break
-        context_start = max(0, idx - 200)
-        context_end = min(len(content), idx + len(entity_name) + 200)
-        passage = content[context_start:context_end]
-        if context_start > 0:
-            passage = "..." + passage
-        if context_end < len(content):
-            passage = passage + "..."
-        passages.append({
-            "text": passage,
-            "position": idx,
-            "entity_name": entity_name,
-        })
-        # Past the whole match, so the passages and `total` count the same
-        # (non-overlapping) mentions.
-        start = idx + len(entity_name)
+    found, total = find_passages(doc.get("content", "") or "", entity_name, MAX_EVIDENCE_PASSAGES)
+    passages = [
+        {"text": p["text"], "position": p["offset"], "entity_name": entity_name}
+        for p in found
+    ]
 
     return {
         "document_id": doc_id,

@@ -56,6 +56,22 @@ def _is_catalog(var: str) -> str:
     return "(" + " OR ".join(f"{var}:{label}" for label in CATALOG_LABELS) + ")"
 
 
+def _not_provenance(rel: str) -> str:
+    """Cypher predicate: `rel` is not a document-mention edge.
+
+    `(:Document)-[:MENTIONS]->(:Entity)` records which documents an entity
+    was extracted from. It is provenance, not a claim about the world, so the
+    knowledge-graph reads (relationships, subgraphs, paths, the full graph,
+    project stats) leave it out: otherwise every document becomes the most
+    connected node in the network view, a two-hop walk reaches everything
+    co-mentioned in any document, and the first relationships an assessor
+    reads are "Document X mentions this". Mentions are read through the
+    methods under "Document mentions" instead. A Report's MENTIONS edges are
+    analyst links, not provenance, and stay visible as before.
+    """
+    return f"NOT (type({rel}) = 'MENTIONS' AND startNode({rel}):Document)"
+
+
 def _validate_label(label: str) -> str:
     """Validate entity label. Must be alphanumeric (Neo4j label requirement)."""
     if not label or not re.match(r'^[A-Za-z][A-Za-z0-9_]*$', label):
@@ -217,6 +233,51 @@ class GraphStore:
                 id=entity_id, doc=source_doc_id,
             )
 
+    # ── Document mentions ────────────────────────────────────────────────
+    # `(:Document)-[:MENTIONS {count, first_seen, project_id}]->(:Entity)`:
+    # which documents an entity was extracted from, and how often. Written by
+    # graph_builder on every build, backfilled from `source_doc_ids` by
+    # schema.ensure_mentions_edges. Left out of the knowledge-graph reads (see
+    # _not_provenance) and read through these methods instead.
+
+    def record_mentions(self, project_id: str, mentions: dict[tuple[str, str], int]) -> int:
+        """Write `{(document_id, entity_id): count}` as MENTIONS edges. Returns how many.
+
+        One statement for the whole build. An existing edge has `count` added
+        to it and keeps its `first_seen`. A pair whose document is not a
+        Document node in the project (an inline extraction, a collection id
+        standing in for a document) writes nothing, rather than an edge to
+        nowhere or across projects.
+        """
+        rows = [
+            {"doc_id": doc_id, "entity_id": entity_id, "count": int(count)}
+            for (doc_id, entity_id), count in sorted(mentions.items())
+            if doc_id and entity_id and count > 0
+        ]
+        if not rows:
+            return 0
+        from datetime import datetime, timezone
+
+        def _write(tx) -> int:
+            # Sorted rows lock nodes in one order, so concurrent builds that
+            # share entities queue rather than deadlock.
+            return tx.run(
+                """
+                UNWIND $rows AS row
+                MATCH (d:Document {id: row.doc_id})
+                MATCH (e:Entity {id: row.entity_id})
+                WHERE d.project_id = $project_id AND e.project_id = $project_id AND NOT e:Document
+                MERGE (d)-[m:MENTIONS]->(e)
+                ON CREATE SET m.count = row.count, m.first_seen = $now, m.project_id = $project_id
+                ON MATCH SET m.count = coalesce(m.count, 0) + row.count
+                RETURN count(m) AS n
+                """,
+                rows=rows, project_id=project_id, now=datetime.now(timezone.utc).isoformat(),
+            ).single()["n"]
+
+        with self._driver.session() as session:
+            return session.execute_write(_write)
+
     def move_mentions(self, from_id: str, to_id: str) -> int:
         """Re-point the documents that mention `from_id` at `to_id`. Returns edges moved.
 
@@ -261,6 +322,114 @@ class GraphStore:
 
         with self._driver.session() as session:
             return session.execute_write(_move)
+
+    def entities_mentioned_in(self, doc_id: str, project_id: str) -> list[dict]:
+        """The entities a document mentions, by name: `{id, name, entity_type}`."""
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (d:Document {id: $doc_id})-[:MENTIONS]->(e:Entity)
+                WHERE e.project_id = $project_id AND NOT e:Document
+                RETURN e.id AS id, e.name AS name, e.entity_type AS entity_type
+                ORDER BY e.name, e.id
+                """,
+                doc_id=doc_id, project_id=project_id,
+            )
+            return [dict(record) for record in result]
+
+    def count_entities_mentioned(self, doc_ids: list[str], project_id: str) -> dict[str, int]:
+        """How many entities each document mentions. Documents mentioning none are absent."""
+        if not doc_ids:
+            return {}
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (d:Document)-[:MENTIONS]->(e:Entity)
+                WHERE d.id IN $doc_ids AND e.project_id = $project_id AND NOT e:Document
+                RETURN d.id AS doc_id, count(DISTINCT e) AS n
+                """,
+                doc_ids=list(doc_ids), project_id=project_id,
+            )
+            return {record["doc_id"]: record["n"] for record in result}
+
+    def documents_mentioning(
+        self, entity_id: str, project_id: str, limit: int = 20, offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """The documents in `project_id` that mention an entity, and how many there are.
+
+        Most mentions first, then the earliest seen. Each row carries the
+        document's content so the caller can cut evidence passages from it;
+        `limit` bounds how much text one call moves.
+        """
+        with self._driver.session() as session:
+            total = session.run(
+                """
+                MATCH (d:Document)-[:MENTIONS]->(:Entity {id: $id})
+                WHERE d.project_id = $project_id
+                RETURN count(DISTINCT d) AS n
+                """,
+                id=entity_id, project_id=project_id,
+            ).single()["n"]
+            rows = session.run(
+                """
+                MATCH (d:Document)-[m:MENTIONS]->(:Entity {id: $id})
+                WHERE d.project_id = $project_id
+                RETURN d.id AS id, d.name AS name, coalesce(d.url, '') AS url,
+                       coalesce(d.source_doc_id, '') AS source_doc_id,
+                       coalesce(m.count, 1) AS mention_count, m.first_seen AS first_seen,
+                       coalesce(d.content, '') AS content
+                ORDER BY mention_count DESC, first_seen, d.id
+                SKIP $offset LIMIT $limit
+                """,
+                id=entity_id, project_id=project_id, offset=max(0, int(offset)), limit=max(0, int(limit)),
+            )
+            return [dict(record) for record in rows], total
+
+    def mentioning_documents(self, entity_ids: list[str], project_id: str, limit: int) -> list[dict]:
+        """Documents that mention any of `entity_ids`, ranked, at most `limit`.
+
+        Ranked by the earliest entity in `entity_ids` they mention — callers
+        pass the entities they care about most first — then by how many
+        mentions they carry. One statement however many entities are passed:
+        retrieval used to fetch documents one id at a time. Rows are
+        `{id, name, reliability_rating}`; content is fetched separately, for
+        the few documents that will be quoted.
+        """
+        ids = [i for i in dict.fromkeys(entity_ids) if i]
+        if not ids or limit <= 0:
+            return []
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                UNWIND range(0, size($ids) - 1) AS i
+                MATCH (d:Document)-[m:MENTIONS]->(e:Entity {id: $ids[i]})
+                WHERE d.project_id = $project_id
+                WITH d, min(i) AS rank, sum(coalesce(m.count, 1)) AS weight
+                ORDER BY rank, weight DESC, d.id
+                LIMIT $limit
+                RETURN d.id AS id, d.name AS name, coalesce(d.reliability_rating, '') AS reliability_rating
+                """,
+                ids=ids, project_id=project_id, limit=int(limit),
+            )
+            return [dict(record) for record in result]
+
+    def documents_content(self, doc_ids: list[str], project_id: str) -> dict[str, dict]:
+        """`{id: {name, content, reliability_rating}}` for Documents of the project."""
+        if not doc_ids:
+            return {}
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (d:Document) WHERE d.id IN $ids AND d.project_id = $project_id
+                RETURN d.id AS id, d.name AS name, coalesce(d.content, '') AS content,
+                       coalesce(d.reliability_rating, '') AS reliability_rating
+                """,
+                ids=list(doc_ids), project_id=project_id,
+            )
+            return {
+                r["id"]: {"name": r["name"], "content": r["content"], "reliability_rating": r["reliability_rating"]}
+                for r in result
+            }
 
     def get_geolocatable_entities(self, project_id: str, limit: int = 2000) -> list[dict]:
         """Nodes that can appear on the map: any Location-category node, an
@@ -576,7 +745,7 @@ class GraphStore:
         """
         with self._driver.session() as session:
             result = session.run(
-                f"MATCH (n:Entity {{id: $id}})-[r]-(m) RETURN {self._REL_ROW}",
+                f"MATCH (n:Entity {{id: $id}})-[r]-(m) WHERE {_not_provenance('r')} RETURN {self._REL_ROW}",
                 id=entity_id,
             )
             return [self._rel_from_record(record) for record in result]
@@ -598,7 +767,7 @@ class GraphStore:
             result = session.run(
                 f"""
                 MATCH (n:Entity)-[r]-(m)
-                WHERE n.id IN $ids
+                WHERE n.id IN $ids AND {_not_provenance('r')}
                 RETURN n.id AS key, {self._REL_ROW}
                 """,
                 ids=list(entity_ids),
@@ -619,12 +788,14 @@ class GraphStore:
         """
         hops = _clamp_hops(hops)
         params: dict = {"id": entity_id, "max_paths": _MAX_SUBGRAPH_PATHS}
-        start_scope = path_scope = ""
+        start_scope = ""
+        # Document mentions are provenance, not part of the walk.
+        path_scope = f"WHERE all(r IN relationships(path) WHERE {_not_provenance('r')})"
         if project_id:
             params["project_id"] = project_id
             start_scope = "WHERE start.project_id = $project_id"
-            path_scope = f"""
-                WHERE all(x IN nodes(path) WHERE x.project_id = $project_id OR {_is_catalog('x')})
+            path_scope += f"""
+                  AND all(x IN nodes(path) WHERE x.project_id = $project_id OR {_is_catalog('x')})
                   AND none(x IN nodes(path)[1..-1] WHERE {_is_catalog('x')})
             """
         with self._driver.session() as session:
@@ -707,9 +878,9 @@ class GraphStore:
             # One row past the budget, so a full page is distinguishable from a
             # truncated one without a separate count.
             nodes_result = session.run(
-                """
+                f"""
                 MATCH (n:Entity) WHERE n.project_id = $project_id
-                OPTIONAL MATCH (n)-[r]-()
+                OPTIONAL MATCH (n)-[r]-() WHERE {_not_provenance('r')}
                 WITH n, count(r) AS degree
                 ORDER BY degree DESC, n.id
                 LIMIT $limit + 1
@@ -726,9 +897,9 @@ class GraphStore:
             # stopped it describing nodes the caller never received; that it
             # never did was luck of the scan order, not a guarantee.
             edges_result = session.run(
-                """
+                f"""
                 MATCH (a)-[r]->(b)
-                WHERE a.id IN $node_ids AND b.id IN $node_ids
+                WHERE a.id IN $node_ids AND b.id IN $node_ids AND {_not_provenance('r')}
                 WITH r, a.id AS source_id, b.id AS target_id
                 ORDER BY coalesce(r.confidence, 0.0) DESC, source_id, type(r), target_id
                 LIMIT $limit + 1
@@ -755,11 +926,13 @@ class GraphStore:
         be interior — which the scoping rule forbids — and none qualify.
         """
         params: dict = {"id1": entity_id_1, "id2": entity_id_2}
-        end_scope = path_scope = ""
+        end_scope = ""
+        # Two entities named in one document are not connected by that alone.
+        path_scope = f"WHERE all(r IN relationships(path) WHERE {_not_provenance('r')})"
         if project_id:
             params["project_id"] = project_id
             end_scope = "WHERE a.project_id = $project_id AND b.project_id = $project_id"
-            path_scope = "WHERE all(x IN nodes(path) WHERE x.project_id = $project_id)"
+            path_scope += " AND all(x IN nodes(path) WHERE x.project_id = $project_id)"
         with self._driver.session() as session:
             result = session.run(
                 f"""
@@ -863,12 +1036,12 @@ class GraphStore:
     def get_project_stats(self, project_id: str) -> dict:
         with self._driver.session() as session:
             result = session.run(
-                """
-                OPTIONAL MATCH (n:Entity {project_id: $pid}) WHERE NOT n:Project
+                f"""
+                OPTIONAL MATCH (n:Entity {{project_id: $pid}}) WHERE NOT n:Project
                 WITH count(n) as entity_count
-                OPTIONAL MATCH (d:Document {project_id: $pid})
+                OPTIONAL MATCH (d:Document {{project_id: $pid}})
                 WITH entity_count, count(d) as doc_count
-                OPTIONAL MATCH (a {project_id: $pid})-[r]->(b {project_id: $pid})
+                OPTIONAL MATCH (a {{project_id: $pid}})-[r]->(b {{project_id: $pid}}) WHERE {_not_provenance('r')}
                 RETURN entity_count, doc_count, count(r) as rel_count
                 """,
                 pid=project_id,

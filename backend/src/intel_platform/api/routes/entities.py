@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.graph.evidence import find_passages
 from intel_platform.graph.merge import copy_edge_verbatim, merge_entity_into, transfer_edge
 from intel_platform.graph.store import GraphStore
 
@@ -57,6 +58,71 @@ def get_entity(entity_id: str, store: GraphStore = Depends(get_graph_store)):
         raise HTTPException(status_code=404, detail="Entity not found")
     relationships = store.get_relationships(entity_id)
     return {"entity": entity, "relationships": relationships}
+
+
+# Evidence passages quoted per document in the evidence chain.
+PASSAGES_PER_DOCUMENT = 3
+
+
+class EvidencePassage(BaseModel):
+    text: str
+    # Character offset of the mention in the document's content.
+    offset: int
+
+
+class MentioningDocument(BaseModel):
+    id: str
+    name: str
+    url: str
+    source_doc_id: str
+    # How many extracted mentions of the entity the document carries.
+    mention_count: int
+    passages: list[EvidencePassage]
+
+
+class EntityDocumentsResponse(BaseModel):
+    documents: list[MentioningDocument]
+    count: int
+    total: int
+
+
+@router.get("/entities/{entity_id}/documents", response_model=EntityDocumentsResponse)
+def get_entity_documents(
+    entity_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    store: GraphStore = Depends(get_graph_store),
+):
+    """The documents that mention an entity, with evidence passages: its evidence chain.
+
+    One call, from the entity's MENTIONS edges, in its own project; the
+    network page used to request evidence document by document. Most-
+    mentioning documents first. Each carries up to PASSAGES_PER_DOCUMENT
+    passages around the entity's name — matched exactly first, then ignoring
+    case, since reporting does not keep an extractor's capitalisation.
+    `count` is this page, `total` every document that mentions the entity.
+    """
+    entity = store.get_entity(entity_id)
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+    rows, total = store.documents_mentioning(
+        entity_id, entity.get("project_id") or "", limit=limit, offset=offset,
+    )
+    name = entity.get("name") or ""
+    documents = []
+    for row in rows:
+        passages, _ = find_passages(row["content"], name, PASSAGES_PER_DOCUMENT)
+        if not passages:
+            passages, _ = find_passages(row["content"], name, PASSAGES_PER_DOCUMENT, ignore_case=True)
+        documents.append({
+            "id": row["id"],
+            "name": row["name"] or "",
+            "url": row["url"],
+            "source_doc_id": row["source_doc_id"],
+            "mention_count": int(row["mention_count"]),
+            "passages": passages,
+        })
+    return {"documents": documents, "count": len(documents), "total": total}
 
 
 _NO_SCOPE = (
