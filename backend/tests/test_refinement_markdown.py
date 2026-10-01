@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from intel_platform.api.routes.collection_plans import _split_refinement
+from intel_platform.api.routes.collection_plans.refinement import _split_refinement
 from intel_platform.api.routes.pirs import derive_title
 
 # Observed live. Note the bare "**" first line, the blockquoted label, the

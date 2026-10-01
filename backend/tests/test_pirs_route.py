@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import HTTPException
 
-from intel_platform.api.routes.collection_plans import _plan_to_dict
+from intel_platform.api.routes.collection_plans.plans import _plan_to_dict
 from intel_platform.api.routes.pirs import (
     _pir_to_response,
     _plan_link,
