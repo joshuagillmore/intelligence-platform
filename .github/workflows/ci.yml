@@ -260,7 +260,10 @@ jobs:
       - name: start.sh exits non-zero when the frontend dies
         run: |
           # Next renames its process to "next-server (vX)", so match that too.
-          docker exec app bash -c 'for p in /proc/[0-9]*; do tr "\0" " " < $p/cmdline 2>/dev/null | grep -qE "^(next-server|node server\.js)" && kill ${p#/proc/}; done'
+          # The trailing `true` matters: `docker exec` returns the status of the
+          # loop's last `grep && kill`, which is 1 whenever the last process is
+          # not Next, and this step runs under `bash -e`.
+          docker exec app bash -c 'for p in /proc/[0-9]*; do tr "\0" " " < $p/cmdline 2>/dev/null | grep -qE "^(next-server|node server\.js)" && kill ${p#/proc/}; done; true'
           for i in $(seq 1 30); do [ "$(docker inspect -f '{{.State.Running}}' app)" = false ] && break; sleep 1; done
           code=$(docker inspect -f '{{.State.ExitCode}}' app)
           echo "container exit code: $code"
