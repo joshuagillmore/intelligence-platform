@@ -2,14 +2,14 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import {
   createRequestSequencer,
-  mapWithConcurrency,
   useDebouncedValue,
 } from '@/app/network/graphFilters';
 
 /**
- * Request hygiene for the network page (findings P-4, P-5, P-12): a keystroke
- * must not fan out requests, a slow response must not overwrite a newer one,
- * and the per-document evidence loop must be bounded and abandonable.
+ * Request hygiene for the network page (findings P-4, P-5): a keystroke must
+ * not fan out requests, and a slow response must not overwrite a newer one.
+ * (P-12's per-document evidence loop is gone: one GET /entities/{id}/documents
+ * replaced it; see readEntityDocuments.test.ts.)
  */
 
 afterEach(() => {
@@ -42,44 +42,6 @@ describe('createRequestSequencer', () => {
     await vi.advanceTimersByTimeAsync(60);
     await Promise.all([slow, fast]);
     expect(applied).toEqual(['acm']);
-  });
-});
-
-describe('mapWithConcurrency', () => {
-  it('never runs more than the limit at once and keeps input order', async () => {
-    let inFlight = 0;
-    let peak = 0;
-    const items = Array.from({ length: 20 }, (_, i) => i);
-    const out = await mapWithConcurrency(items, 6, async (i) => {
-      inFlight++;
-      peak = Math.max(peak, inFlight);
-      await new Promise(r => setTimeout(r, (20 - i) % 5));
-      inFlight--;
-      return i * 2;
-    });
-    expect(peak).toBeLessThanOrEqual(6);
-    expect(peak).toBeGreaterThan(1);
-    expect(out).toEqual(items.map(i => i * 2));
-  });
-
-  it('stops starting new work once the caller is no longer current', async () => {
-    const seq = createRequestSequencer();
-    const token = seq.next();
-    const started: number[] = [];
-    const items = Array.from({ length: 30 }, (_, i) => i);
-    const run = mapWithConcurrency(items, 6, async (i) => {
-      started.push(i);
-      if (i === 3) seq.next(); // the analyst selected another entity
-      await new Promise(r => setTimeout(r, 1));
-      return i;
-    }, () => seq.isCurrent(token));
-    await run;
-    // The first wave was already in flight; nothing past it was started.
-    expect(started.length).toBeLessThanOrEqual(6);
-  });
-
-  it('handles an empty list', async () => {
-    expect(await mapWithConcurrency([], 6, async (x: number) => x)).toEqual([]);
   });
 });
 

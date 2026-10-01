@@ -8,7 +8,7 @@ import TemporalHistogram, { HistogramData } from '@/components/TemporalHistogram
 import { useProject } from '@/lib/ProjectContext';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { totalFrom, entitiesApi, graphApi, queryApi, llmApi, assessApi, analysisApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi, timelineApi, entityFields } from '@/lib/api';
+import { totalFrom, entitiesApi, graphApi, queryApi, llmApi, assessApi, analysisApi, watchlistApi, entityMgmtApi, documentsApi, snapshotsApi, timelineApi, entityFields, readEntityDocuments, type EntityDocument } from '@/lib/api';
 import { useAssistant } from '@/lib/AssistantContext';
 import { TYPE_COLOR_CLASS as TYPE_COLORS } from '@/lib/entityStyles';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
@@ -18,7 +18,7 @@ import { collapseToCommunities } from '@/lib/graphLayout';
 import { useNotifications } from '@/components/NotificationProvider';
 import Markdown from '@/components/Markdown';
 import {
-  filterGraph, createRequestSequencer, useDebouncedValue, mapWithConcurrency,
+  filterGraph, createRequestSequencer, useDebouncedValue,
   normaliseGraphEdge, graphTruncationNote, displayProperties,
 } from './graphFilters';
 
@@ -102,10 +102,9 @@ const ENTITY_PANEL_LIMIT = 500;
 // The entity search waits for typing to pause before it asks the server.
 const SEARCH_DEBOUNCE_MS = 300;
 
-// The evidence chain asks each document whether it mentions the entity; there
-// is no per-entity endpoint yet (deferred in the 2026-09-30 remediation plan).
-// Bounded so a 500-document project neither crawls serially nor floods the API.
-const EVIDENCE_CONCURRENCY = 6;
+// How many of an entity's source documents the evidence chain lists. The panel
+// says when there are more (`total` from GET /entities/{id}/documents).
+const EVIDENCE_DOC_LIMIT = 50;
 
 const TYPE_LABELS: Record<string, string> = {
   TTP: 'Tactics, Techniques & Procedures',
@@ -247,7 +246,9 @@ function NetworkPageInner() {
   const [communityMap, setCommunityMap] = useState<Record<string, number>>({});
   const [collapseCommunities, setCollapseCommunities] = useState(false);
   // Evidence chain: source documents for selected entity
-  const [evidenceDocs, setEvidenceDocs] = useState<Array<{ id: string; name: string; reliability_rating: string }>>([]);
+  const [evidenceDocs, setEvidenceDocs] = useState<Array<EntityDocument & { reliability_rating: string }>>([]);
+  const [evidenceTotal, setEvidenceTotal] = useState(0);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   // Snapshots (bins)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -702,6 +703,8 @@ function NetworkPageInner() {
     setRelationshipsError(null);
     setIsWatchlisted(false);
     setEvidenceDocs([]);
+    setEvidenceTotal(0);
+    setEvidenceError(null);
     setRelEvidenceOpen({});
     checkWatchlistStatus(entity.id, isCurrent);
     try {
@@ -716,31 +719,25 @@ function NetworkPageInner() {
       console.error('Failed to load entity details', e);
       setRelationshipsError(getErrorMessage(e));
     }
-    // Load evidence chain: source documents mentioning this entity. Every
-    // document is asked, EVIDENCE_CONCURRENCY at a time; the run stops
-    // starting requests as soon as another entity is selected.
+    // Load evidence chain: the documents that mention this entity, in one call
+    // (its MENTIONS edges), plus the project's document list for the
+    // reliability grades that payload does not carry. A failure shows as an
+    // error, not as "no source documents".
     if (activeProject) {
       setEvidenceLoading(true);
       try {
-        const docsRes = await documentsApi.list(activeProject.id);
+        const [mentionsRes, docsRes] = await Promise.all([
+          entitiesApi.documents(entity.id, EVIDENCE_DOC_LIMIT),
+          documentsApi.list(activeProject.id).catch(() => null),
+        ]);
         if (!isCurrent()) return;
-        const allDocs: Array<{ id: string; name: string; reliability_rating?: string }> = docsRes.data.documents || [];
-        const mentions = await mapWithConcurrency(allDocs, EVIDENCE_CONCURRENCY, async (doc) => {
-          try {
-            const evRes = await documentsApi.evidence(doc.id, entity.name);
-            return evRes.data.count > 0;
-          } catch {
-            return false; // skip docs that fail
-          }
-        }, isCurrent);
-        if (!isCurrent()) return;
-        setEvidenceDocs(
-          allDocs
-            .filter((_, i) => mentions[i])
-            .map(doc => ({ id: doc.id, name: doc.name, reliability_rating: doc.reliability_rating || '' })),
-        );
-      } catch {
-        if (isCurrent()) setEvidenceDocs([]);
+        const page = readEntityDocuments(mentionsRes.data);
+        const listed: Array<{ id: string; reliability_rating?: string }> = docsRes?.data?.documents || [];
+        const ratings = new Map(listed.map(d => [d.id, d.reliability_rating || '']));
+        setEvidenceDocs(page.documents.map(doc => ({ ...doc, reliability_rating: ratings.get(doc.id) || '' })));
+        setEvidenceTotal(page.total);
+      } catch (e) {
+        if (isCurrent()) setEvidenceError(getErrorMessage(e));
       } finally {
         if (isCurrent()) setEvidenceLoading(false);
       }
@@ -2267,7 +2264,7 @@ function NetworkPageInner() {
                                     ? (() => {
                                         // evidenceDocs is already loaded for this entity —
                                         // reuse it rather than re-fetching document names.
-                                        const d = evidenceDocs.find(x => x.id === rel.source_doc_id);
+                                        const d = evidenceDocs.find(x => x.id === rel.source_doc_id || x.source_doc_id === rel.source_doc_id);
                                         return {
                                           id: rel.source_doc_id,
                                           name: d?.name || 'Source document',
@@ -2292,19 +2289,41 @@ function NetworkPageInner() {
                   <h4 className="text-sm font-semibold text-gray-400 mb-2">Evidence Chain</h4>
                   {evidenceLoading ? (
                     <p className="text-xs text-gray-500">Loading source documents...</p>
+                  ) : evidenceError ? (
+                    <p className="text-xs text-red-400">Could not load source documents: {evidenceError}</p>
                   ) : evidenceDocs.length > 0 ? (
                     <div className="space-y-1">
+                      {evidenceTotal > evidenceDocs.length && (
+                        <p className="text-[10px] text-gray-500">
+                          Showing {evidenceDocs.length} of {evidenceTotal} documents.
+                        </p>
+                      )}
                       {evidenceDocs.map((doc) => (
                         <div
                           key={doc.id}
                           onClick={() => networkRouter.push(`/documents/${doc.id}`)}
-                          className="text-xs bg-navy-700 rounded p-2 cursor-pointer hover:bg-navy-600 transition-colors flex items-center gap-2"
+                          className="text-xs bg-navy-700 rounded p-2 cursor-pointer hover:bg-navy-600 transition-colors"
                         >
-                          <span className="text-accent-blue hover:underline flex-1 truncate">{doc.name}</span>
-                          {doc.reliability_rating && (
-                            <span className="text-[10px] px-1 py-0.5 rounded bg-navy-600 text-gray-400 flex-none">
-                              {doc.reliability_rating}
-                            </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-accent-blue hover:underline flex-1 truncate">{doc.name}</span>
+                            {doc.mention_count > 0 && (
+                              <span
+                                className="text-[10px] text-gray-500 flex-none"
+                                title={`Mentioned ${doc.mention_count} time${doc.mention_count === 1 ? '' : 's'}`}
+                              >
+                                &times;{doc.mention_count}
+                              </span>
+                            )}
+                            {doc.reliability_rating && (
+                              <span className="text-[10px] px-1 py-0.5 rounded bg-navy-600 text-gray-400 flex-none">
+                                {doc.reliability_rating}
+                              </span>
+                            )}
+                          </div>
+                          {doc.passages[0] && (
+                            <p className="mt-1 text-[11px] text-gray-400 italic line-clamp-2" title={doc.passages[0].text}>
+                              &ldquo;{doc.passages[0].text}&rdquo;
+                            </p>
                           )}
                         </div>
                       ))}

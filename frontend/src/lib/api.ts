@@ -205,7 +205,61 @@ export const entitiesApi = {
   get: (id: string) => http.get(`/entities/${id}`),
   subgraph: (id: string, hops?: number) => http.get(`/subgraph/${id}`, { params: { hops } satisfies QueryOf<'/api/subgraph/{entity_id}', 'get'> }),
   shortestPath: (id1: string, id2: string) => http.get(`/paths/${id1}/${id2}`),
+  /** The documents that mention the entity (its MENTIONS edges), each with
+   *  up to three passages, one page at a time. Read the body with
+   *  `readEntityDocuments`. */
+  documents: (id: string, limit?: number, offset?: number) =>
+    http.get<EntityDocumentsPage>(`/entities/${id}/documents`, { params: { limit, offset } }),
 };
+
+/**
+ * One document that mentions an entity, from `GET /entities/{id}/documents`
+ * (2026-09-30 hardening, contract 6). Hand-written from the contract; switch to
+ * `ResponseOf` once the route declares a response model.
+ */
+export interface EntityDocument {
+  id: string;
+  name: string;
+  url: string;
+  source_doc_id: string;
+  mention_count: number;
+  /** Up to three passages that mention the entity, with their character offset. */
+  passages: Array<{ text: string; offset: number }>;
+}
+
+export interface EntityDocumentsPage {
+  documents: EntityDocument[];
+  /** Documents in this page. */
+  count: number;
+  /** Documents that mention the entity in all. */
+  total: number;
+}
+
+/**
+ * The page in a `GET /entities/{id}/documents` body. Throws on any other
+ * shape: an evidence chain that silently reads as "no source documents" when
+ * the response was something else is worse than an error.
+ */
+export function readEntityDocuments(data: unknown): EntityDocumentsPage {
+  const body = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : null;
+  if (!body || !Array.isArray(body.documents)) throw new Error('Unexpected entity documents response shape.');
+  const documents = body.documents
+    .filter((d): d is Record<string, unknown> => !!d && typeof d === 'object' && typeof (d as { id?: unknown }).id === 'string')
+    .map((d) => ({
+      id: d.id as string,
+      name: typeof d.name === 'string' && d.name ? d.name : (d.id as string),
+      url: typeof d.url === 'string' ? d.url : '',
+      source_doc_id: typeof d.source_doc_id === 'string' ? d.source_doc_id : '',
+      mention_count: typeof d.mention_count === 'number' ? d.mention_count : 0,
+      passages: Array.isArray(d.passages)
+        ? d.passages
+            .filter((p): p is { text: string; offset?: unknown } => !!p && typeof (p as { text?: unknown }).text === 'string')
+            .map((p) => ({ text: p.text, offset: typeof p.offset === 'number' ? p.offset : 0 }))
+        : [],
+    }));
+  const total = typeof body.total === 'number' ? body.total : documents.length;
+  return { documents, count: documents.length, total: Math.max(total, documents.length) };
+}
 
 // Local context (Overpass) + AOI spatial query around/within a geotarget.
 export const geoApiExtra = {
