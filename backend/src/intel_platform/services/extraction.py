@@ -1335,6 +1335,13 @@ def _entity_for_token(token, sent, spans: list[tuple[int, int, dict]]) -> dict |
     found = _entity_at(token, sent, spans)
     if found is not None:
         return found
+    # The name compounded with the head noun is what the phrase is about:
+    # "Iran-backed Houthi movement" is the Houthi movement, not its backer.
+    for child in token.children:
+        if child.dep_ == "compound":
+            found = _entity_at(child, sent, spans)
+            if found is not None:
+                return found
     lo = token.left_edge.idx - sent.start_char
     hi = token.right_edge.idx + len(token.right_edge.text) - sent.start_char
     inside = sorted((s for s in spans if lo <= s[0] and s[1] <= hi), key=lambda s: s[0])
@@ -1466,6 +1473,181 @@ def _refine_rel_type(rel_type: str, target: dict) -> str:
     if rel_type == "USES" and target.get("entity_type") == "Vulnerability":
         return "EXPLOITS"
     return rel_type
+
+
+# Relations named from the receiving end: "Iran supplied Russia" is Russia
+# SUPPLIED_BY Iran. The verb map pairs these verbs with them, so in the active
+# voice the edge runs from what the verb acts on back to its subject.
+_REVERSED_RELATIONS = frozenset({"SUPPLIED_BY", "FUNDED_BY", "COMMANDED_BY"})
+
+
+def _verb_edges(token, rel_type: str, sent, spans, resolve_anaphor) -> list[tuple[dict, dict]]:
+    """(source, target) entity pairs the mapped verb states, in the relation's direction."""
+    passive_subj = [c for c in token.children if c.dep_ == "nsubjpass"]
+    agent = [c for c in token.children if c.dep_ == "agent"]
+    if passive_subj and agent:
+        # "Hezbollah is funded by Iran", "Ukraine was attacked by Russia".
+        patient = _entity_for_token(passive_subj[0], sent, spans) or resolve_anaphor(passive_subj[0])
+        actors = [e for p in agent[0].children if p.dep_ == "pobj" for e in _phrase_entities(p, sent, spans)]
+        if patient is None:
+            return []
+        return [(patient, a) if rel_type in _REVERSED_RELATIONS else (a, patient) for a in actors]
+
+    subj = _verb_subject(token, sent, spans, resolve_anaphor)
+    if subj is None:
+        return []
+    if rel_type not in _REVERSED_RELATIONS:
+        return [(subj, o) for o in _verb_objects(token, rel_type, sent, spans)]
+    # Active voice, receiving-end relation: the recipient is the indirect
+    # object ("provided the Houthis with components", "to Russia").
+    recipients: list[dict] = []
+    for child in token.children:
+        if child.dep_ == "dative":
+            recipients += _phrase_entities(child, sent, spans)
+        elif child.dep_ == "prep" and child.lower_ == "to":
+            recipients += [e for p in child.children if p.dep_ == "pobj" for e in _phrase_entities(p, sent, spans)]
+    if not recipients:
+        with_prep = any(c.dep_ == "prep" and c.lower_ == "with" for c in token.children)
+        if with_prep or rel_type != "SUPPLIED_BY":
+            # The direct object is the recipient when what was given follows
+            # "with", or for funding and command ("Iran funds Hezbollah").
+            recipients = [e for c in token.children if c.dep_ == "dobj" for e in _phrase_entities(c, sent, spans)]
+    return [(r, subj) for r in recipients]
+
+
+# ── Relations stated without a verb ──────────────────────────────────────────
+# Analytic prose states most of its relations as a possessive ("Poland's
+# Internal Security Agency"), a title ("Russian President Vladimir Putin",
+# "Commander of U.S. European Command") or an action noun ("Russia's invasion
+# of Ukraine", "its military presence in the Arctic").
+
+# Adjective -> the country it names, used only when that country is itself an
+# entity of the text.
+_DEMONYMS = {
+    "russian": "russia", "iranian": "iran", "israeli": "israel", "syrian": "syria", "chinese": "china",
+    "ukrainian": "ukraine", "japanese": "japan", "taiwanese": "taiwan", "turkish": "turkey", "polish": "poland",
+    "french": "france", "german": "germany", "british": "united kingdom", "american": "united states",
+    "u.s.": "united states", "saudi": "saudi arabia", "iraqi": "iraq", "pakistani": "pakistan",
+    "indian": "india", "north korean": "north korea", "south korean": "south korea", "lebanese": "lebanon",
+    "yemeni": "yemen", "egyptian": "egypt", "belarusian": "belarus", "georgian": "georgia",
+    "venezuelan": "venezuela", "cuban": "cuba", "afghan": "afghanistan", "qatari": "qatar",
+}
+_DEMONYM_ALT = "|".join(sorted((re.escape(d) for d in _DEMONYMS), key=len, reverse=True))
+_TITLE = (
+    r"(?:President|Vice President|Prime Minister|Premier|[Ll]eader|Supreme Leader|General|Gen\.|Admiral|"
+    r"Ambassador|(?:Foreign |Defen[cs]e |Oil )?Minister|Secretary(?: of State| of Defense)?|Chancellor|"
+    r"[Cc]ommander|[Dd]irector|[Cc]hief|[Hh]ead|Chairman|High Representative|[Ss]pokes(?:man|person))"
+)
+_TITLE_RUN = rf"(?:(?:[Ff]ormer|[Tt]hen-|now\s+deceased)\s*)?{_TITLE}(?:\s+{_TITLE}){{0,2}}"
+_GAP_TITLE_BEFORE = re.compile(rf"^\s+{_TITLE_RUN}\s+$")
+_GAP_TITLE_AFTER = re.compile(
+    rf"^,\s+(?:the\s+)?{_TITLE_RUN}(?:\s+[A-Z][a-z]+){{0,3}}\s+of\s+(?:the\s+)?"
+    r"(?:[A-Z][\w.]*(?:\s[A-Z][\w.]*)*['’]s\s+)?$"
+)
+_TITLE_OF_BEFORE = re.compile(rf"\b{_TITLE_RUN}\s+of\s+(?:the\s+)?$")
+_DEMONYM_TITLE_BEFORE = re.compile(rf"(?:^|\s)(?:[Tt]hen-|[Ff]ormer\s+)?({_DEMONYM_ALT})\s+{_TITLE_RUN}\s+$", re.I)
+_GAP_POSSESSIVE = re.compile(r"^['’]s(?:\s+[a-z][\w-]*){0,2}\s+$")
+_BACKED = re.compile(r"(?:^|[\s(])([A-Z][\w.]*)-(?:backed|sponsored|funded)\s+$")
+
+_HOLDERS = frozenset({"Organization", "Location", "ThreatActor"})
+_MEMBERS = frozenset({"Organization", "Person", "ThreatActor"})
+
+# Action nouns and the prepositions that name what they are against.
+_ATTACK_NOUNS = {
+    "invasion": {"of"}, "attack": {"on", "against"}, "strike": {"on", "against"}, "airstrike": {"on", "against"},
+    "war": {"against", "on"}, "offensive": {"against"}, "aggression": {"against"}, "operation": {"against"},
+    "campaign": {"against"}, "threat": {"against"}, "warfare": {"against"}, "activity": {"against"},
+}
+
+
+def _country_entity(word: str, entities_by_name: dict[str, dict]) -> dict | None:
+    target = _DEMONYMS.get(word.lower())
+    return entities_by_name.get(target) if target else None
+
+
+def _phrase_relations(sent, spans, entities_by_name, resolve_anaphor) -> list[tuple[dict, str, dict]]:
+    """Possessive, title and action-noun relations in one sentence."""
+    out: list[tuple[dict, str, dict]] = []
+    text = sent.text
+    ordered = sorted(spans, key=lambda s: (s[0], -(s[1] - s[0])))
+    # Keep the longest mention at each position: "U.S. European Command", not "U.S.".
+    mentions = []
+    for s in ordered:
+        if mentions and s[0] < mentions[-1][1]:
+            continue
+        mentions.append(s)
+
+    for i, (a_start, a_end, a) in enumerate(mentions):
+        a_type = a.get("entity_type")
+        for b_start, b_end, b in mentions[i + 1:]:
+            gap = text[a_end:b_start]
+            if len(gap) > 120:
+                break
+            b_type = b.get("entity_type")
+            # "Poland's Internal Security Agency": B belongs to A.
+            if _GAP_POSSESSIVE.match(gap) and a_type in _HOLDERS and b_type in _MEMBERS:
+                out.append((b, "BELONGS_TO", a))
+            # "European Commission President Ursula von der Leyen".
+            elif _GAP_TITLE_BEFORE.match(gap) and a_type in _HOLDERS and b_type == "Person":
+                rel = "COMMANDED_BY" if re.search(r"[Cc]ommander", gap) else "BELONGS_TO"
+                out.append((a, rel, b) if rel == "COMMANDED_BY" else (b, rel, a))
+            # "Kaja Kallas, High Representative of the European Union".
+            elif _GAP_TITLE_AFTER.match(gap) and a_type == "Person" and b_type in _HOLDERS:
+                rel = "COMMANDED_BY" if re.search(r"[Cc]ommander", gap) else "BELONGS_TO"
+                out.append((b, rel, a) if rel == "COMMANDED_BY" else (a, rel, b))
+            # "head of Hezbollah, Hassan Nasrallah".
+            elif re.fullmatch(r",\s+", gap) and a_type in _HOLDERS and b_type == "Person" \
+                    and _TITLE_OF_BEFORE.search(text[max(0, a_start - 60):a_start]):
+                out.append((b, "BELONGS_TO", a))
+
+        # "Russian President Vladimir Putin": the country is an adjective.
+        if a_type == "Person":
+            m = _DEMONYM_TITLE_BEFORE.search(text[max(0, a_start - 80):a_start])
+            country = _country_entity(m.group(1), entities_by_name) if m else None
+            if country is not None:
+                out.append((a, "BELONGS_TO", country))
+        # "Iran-backed Houthi movement".
+        m = _BACKED.search(text[max(0, a_start - 40):a_start])
+        if m:
+            backer = entities_by_name.get(m.group(1).lower())
+            if backer is not None and backer is not a:
+                out.append((a, "FUNDED_BY", backer))
+
+    def actor_for(noun) -> dict | None:
+        for child in noun.children:
+            if child.dep_ == "poss":
+                ent = _entity_at(child, sent, spans)
+                if ent is not None:
+                    return ent
+            if child.dep_ in ("amod", "compound"):
+                ent = _country_entity(child.text, entities_by_name) or _entity_at(child, sent, spans)
+                if ent is not None and ent.get("entity_type") in _HOLDERS:
+                    return ent
+        if noun.dep_ in ("dobj", "attr", "pobj") and noun.head.pos_ in ("VERB", "AUX"):
+            return _verb_subject(noun.head, sent, spans, resolve_anaphor)
+        return None
+
+    for token in sent:
+        lemma = token.lemma_.lower()
+        if token.pos_ != "NOUN" or (lemma not in _ATTACK_NOUNS and lemma != "presence"):
+            continue
+        preps = {"in"} if lemma == "presence" else _ATTACK_NOUNS[lemma]
+        holders = [token]
+        if token.dep_ == "dobj":
+            # The parse often hangs the phrase on the verb: "increasing its
+            # military presence in the Arctic".
+            holders.append(token.head)
+        targets = [e for h in holders for c in h.children if c.dep_ == "prep" and c.lower_ in preps
+                   for p in c.children if p.dep_ == "pobj" for e in _phrase_entities(p, sent, spans)]
+        if not targets:
+            continue
+        actor = actor_for(token)
+        if actor is None:
+            continue
+        rel = "DEPLOYED_AT" if lemma == "presence" else "TARGETS"
+        out.extend((actor, rel, t) for t in targets)
+    return [(s, r, t) for s, r, t in out
+            if s is not t and s["name"] != t["name"] and "Date" not in (s.get("entity_type"), t.get("entity_type"))]
 
 
 def _postprocess_entities(entities: list[dict]) -> list[dict]:
@@ -1749,6 +1931,13 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         key=lambda pair: pair[0],
     )
 
+    # Lower-cased name -> entity, for the countries a demonym names and the
+    # backer an "X-backed" names.
+    entities_by_name: dict[str, dict] = {}
+    for e in entities:
+        for n in [e["name"], *(e.get("aliases") or [])]:
+            entities_by_name.setdefault(str(n).lower(), e)
+
     def _resolve_anaphor(tok) -> dict | None:
         if tok.lemma_.lower() not in _ACTOR_ANAPHORS:
             return None
@@ -1796,15 +1985,17 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             if not rel_type_from_verb:
                 continue
 
-            subj_ent = _verb_subject(token, sent, mention_spans, _resolve_anaphor)
-            if subj_ent is None:
-                continue
-            for obj_ent in _verb_objects(token, rel_type_from_verb, sent, mention_spans):
-                if obj_ent["name"] == subj_ent["name"] or obj_ent.get("entity_type") == "Date":
+            for src_ent, tgt_ent in _verb_edges(token, rel_type_from_verb, sent, mention_spans, _resolve_anaphor):
+                if src_ent["name"] == tgt_ent["name"] or "Date" in (
+                        src_ent.get("entity_type"), tgt_ent.get("entity_type")):
                     # A date is when, not what: it is never a node to point at.
                     continue
-                _add_rel(subj_ent["name"], obj_ent["name"],
-                         _refine_rel_type(rel_type_from_verb, obj_ent), 0.7, sent_text)
+                _add_rel(src_ent["name"], tgt_ent["name"],
+                         _refine_rel_type(rel_type_from_verb, tgt_ent), 0.7, sent_text)
+
+        # ── Stage A2: relations stated as a possessive, a title or an action noun ──
+        for src_ent, rel_type, tgt_ent in _phrase_relations(sent, mention_spans, entities_by_name, _resolve_anaphor):
+            _add_rel(src_ent["name"], tgt_ent["name"], rel_type, 0.7, sent_text)
 
         # ── Stage B: Co-occurrence relationships (fallback) ──
         # Bounded to nearby entities (COOCCURRENCE_WINDOW), not the full

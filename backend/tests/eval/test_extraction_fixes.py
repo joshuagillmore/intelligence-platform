@@ -526,6 +526,69 @@ async def test_a_list_reply_with_no_keys_still_degrades():
     assert result.degraded is True
 
 
+# ── Relationships analytic prose states without a verb ────────────────────────
+# NLP found 1 of the 73 openrep gold edges. Most are written as a possessive,
+# a title, or an action noun rather than a subject-verb-object clause.
+
+def test_a_possessive_body_belongs_to_its_possessor():
+    rels = _rels("In April 2025, Poland's Internal Security Agency reported that the agency had detained 44 people.")
+    assert ("Internal Security Agency", "BELONGS_TO", "Poland") in rels
+    rels = _rels("Officials from DOJ's National Security Division and the FBI testified.")
+    assert ("National Security Division", "BELONGS_TO", "DOJ") in rels
+
+
+def test_a_title_ties_a_person_to_the_country_or_body_it_names():
+    rels = _rels("There, he held talks with Russian President Vladimir Putin and voiced support for Russia's war.")
+    assert ("Vladimir Putin", "BELONGS_TO", "Russia") in rels
+    rels = _rels(
+        "In November 2025, for example, Kaja Kallas, High Representative of the European Union (EU) for Foreign "
+        "Affairs and Security Policy, stated that Russia is committing state-sponsored terrorism. In an October "
+        "2025 speech, European Commission President Ursula von der Leyen stated that it is hybrid warfare."
+    )
+    assert ("Kaja Kallas", "BELONGS_TO", "European Union") in rels
+    # en_core_web_sm cuts the name at "der"; the relation still binds.
+    assert {r for r in rels if r[0].startswith("Ursula von der") and r[1:] == ("BELONGS_TO", "European Commission")}
+
+
+def test_a_commander_title_is_the_command_relationship_the_right_way_round():
+    rels = _rels(
+        "According to congressional testimony in March 2026 by General Alexus G. Grynkewich, Commander of U.S. "
+        "European Command and NATO Supreme Allied Commander Europe, the Russian activity is robust."
+    )
+    assert ("U.S. European Command", "COMMANDED_BY", "Alexus G. Grynkewich") in rels
+
+
+def test_an_invasion_of_a_country_targets_it():
+    rels = _rels("The Russian Federation (Russia) launched a full-scale invasion of Ukraine in February 2022.")
+    assert ("Russia", "TARGETS", "Ukraine") in rels or ("Russian Federation", "TARGETS", "Ukraine") in rels
+    rels = _rels(
+        "In April and October 2024, Iran used ballistic missiles to directly attack Israel. Subsequent Israeli "
+        "strikes on Iran destroyed Iran's ability to produce ballistic missiles for a year."
+    )
+    assert ("Israel", "TARGETS", "Iran") in rels
+
+
+def test_supplying_points_from_recipient_to_supplier():
+    rels = _rels("Iran has transferred close-range ballistic missiles to Russia, according to U.S. officials.")
+    assert ("Russia", "SUPPLIED_BY", "Iran") in rels
+    assert ("Iran", "SUPPLIED_BY", "Russia") not in rels
+    rels = _rels("Iran has also provided the Houthis with components and technical knowledge to construct missiles.")
+    assert ("Houthis", "SUPPLIED_BY", "Iran") in rels
+
+
+def test_a_backed_group_is_funded_by_its_backer():
+    rels = _rels("Iran-backed Houthi movement has attacked Saudi Arabia-linked vessels and energy targets.")
+    assert ("Houthi", "FUNDED_BY", "Iran") in rels
+    # The subject is the movement the phrase names, not the backer inside it.
+    assert ("Houthi", "TARGETS", "Saudi Arabia") in rels
+    assert ("Iran", "TARGETS", "Saudi Arabia") not in rels
+
+
+def test_a_military_presence_in_a_place_is_deployment_there():
+    rels = _rels("Highly likely that NATO is significantly increasing its military presence in the Arctic.")
+    assert ("NATO", "DEPLOYED_AT", "Arctic") in rels
+
+
 def test_the_group_is_not_resolved_without_an_actor_to_resolve_to():
     rels = _rels("The group used the Fortinet vulnerability CVE-2023-27997.")
     assert not {r for r in rels if r[1] == "EXPLOITS"}
