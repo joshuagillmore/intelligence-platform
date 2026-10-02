@@ -39,6 +39,10 @@ class RegisterRequest(BaseModel):
     def _check_username(cls, v: str) -> str:
         if len(v) < 3 or len(v) > 50:
             raise ValueError("Username must be 3-50 characters")
+        # The API key's identity: it owns the projects it creates, so an
+        # account by this name would sign in as their owner.
+        if v == "api_key_user":
+            raise ValueError("That username is reserved")
         return v
 
     @field_validator("password")
