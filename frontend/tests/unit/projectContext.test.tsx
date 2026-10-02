@@ -81,7 +81,9 @@ describe('ProjectProvider access', () => {
 
     await waitFor(() => expect(screen.getByTestId('active')).toHaveTextContent('none'));
     expect(mockGet).toHaveBeenCalledWith('p1');
-    expect(localStorage.getItem('activeProject')).toBeNull();
+    // Storage is cleared by a separate effect after the state update; on a
+    // slow runner it had not flushed yet when the rendered state had.
+    await waitFor(() => expect(localStorage.getItem('activeProject')).toBeNull());
     expect(api.deniedProject?.id).toBe('p1');
     expect(screen.getByRole('heading', { name: "You don't have access to this project" })).toBeInTheDocument();
     expect(screen.getByText(/Nightfall/)).toBeInTheDocument();
