@@ -1189,3 +1189,68 @@ class BatchIngestResponse(BaseModel):
     total_entities_created: int
     total_relationships_created: int
     results: list[IngestResponse]
+
+
+# ---------------------------------------------------------------------------
+# Legacy collections (/collections)
+# ---------------------------------------------------------------------------
+
+class LegacyCollectionResponse(BaseModel):
+    """A legacy collection: the Collection node's stored properties, with its
+    plan decoded from ``plan_json``.
+
+    Open-ended (``extra="allow"``): the node's properties are passed through as
+    stored, and the runner adds its own (``progress``, ``updated_at``).
+    """
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    project_id: str | None = None
+    pir: str | None = None
+    refined_pir: str | None = None
+    refinement: str | None = None
+    plan: list[dict[str, Any]]
+    status: str | None = None
+    documents_acquired: int | None = None
+    # 0..1 while a run is going; written by the runner.
+    progress: float | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class LegacyCollectionStatusResponse(BaseModel):
+    status: str | None = None
+    progress: float
+    documents_acquired: int
+
+
+class LegacyCollectionProgressResponse(BaseModel):
+    collection_id: str
+    status: str
+    progress: float
+    documents_acquired: int
+    # Documents the run stored in the graph.
+    documents_in_graph: int
+
+
+class LegacyCollectionStartedResponse(BaseModel):
+    collection_id: str
+    status: str
+
+
+class CollectionCountResponse(BaseModel):
+    project_id: str
+    count: int
+
+
+class ParsedPlanItem(BaseModel):
+    id: int
+    description: str
+    source_type: str
+    status: str
+    approved: bool
+
+
+class ParsedPlanResponse(BaseModel):
+    items: list[ParsedPlanItem]
+    count: int

@@ -21,6 +21,15 @@ from pydantic import BaseModel
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.collection.runner import CollectionRunner
 from intel_platform.graph.store import GraphStore
+from intel_platform.models.responses import (
+    CollectionCountResponse,
+    LegacyCollectionProgressResponse,
+    LegacyCollectionResponse,
+    LegacyCollectionStartedResponse,
+    LegacyCollectionStatusResponse,
+    ParsedPlanResponse,
+    StatusResponse,
+)
 from intel_platform.services.collection_planner import parse_collection_plan
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
@@ -134,7 +143,7 @@ def _get_collection_count(store: GraphStore, project_id: str) -> int:
 # Legacy endpoints (backwards-compatible)
 # ---------------------------------------------------------------------------
 
-@router.post("/collections")
+@router.post("/collections", response_model=LegacyCollectionResponse, response_model_exclude_unset=True)
 def create_collection(req: CreateCollectionRequest, store: GraphStore = Depends(get_graph_store)):
     """Legacy: create a collection. New code should use POST /collection-plans/from-pir."""
     collection = {
@@ -152,7 +161,7 @@ def create_collection(req: CreateCollectionRequest, store: GraphStore = Depends(
     return collection
 
 
-@router.get("/collections/{task_id}")
+@router.get("/collections/{task_id}", response_model=LegacyCollectionResponse, response_model_exclude_unset=True)
 def get_collection(task_id: str, store: GraphStore = Depends(get_graph_store)):
     with store._driver.session() as session:
         result = session.run("MATCH (c:Collection {id: $id}) RETURN properties(c) as props", id=task_id)
@@ -168,7 +177,7 @@ def get_collection(task_id: str, store: GraphStore = Depends(get_graph_store)):
         return props
 
 
-@router.put("/collections/{task_id}")
+@router.put("/collections/{task_id}", response_model=LegacyCollectionResponse, response_model_exclude_unset=True)
 def update_collection(task_id: str, req: UpdateCollectionRequest, store: GraphStore = Depends(get_graph_store)):
     with store._driver.session() as session:
         updates = {}
@@ -187,13 +196,13 @@ def update_collection(task_id: str, req: UpdateCollectionRequest, store: GraphSt
     return get_collection(task_id, store)
 
 
-@router.get("/collections/{task_id}/status")
+@router.get("/collections/{task_id}/status", response_model=LegacyCollectionStatusResponse)
 def get_collection_status(task_id: str, store: GraphStore = Depends(get_graph_store)):
     coll = get_collection(task_id, store)
     return {"status": coll.get("status"), "progress": coll.get("progress", 0), "documents_acquired": coll.get("documents_acquired", 0)}
 
 
-@router.post("/collections/{task_id}/cancel")
+@router.post("/collections/{task_id}/cancel", response_model=StatusResponse)
 def cancel_collection(task_id: str, store: GraphStore = Depends(get_graph_store)):
     with store._driver.session() as session:
         session.run(
@@ -203,14 +212,14 @@ def cancel_collection(task_id: str, store: GraphStore = Depends(get_graph_store)
     return {"status": "cancelled"}
 
 
-@router.post("/collections/parse-plan")
+@router.post("/collections/parse-plan", response_model=ParsedPlanResponse)
 def parse_plan(data: dict):
     plan_text = data.get("plan_text", "")
     items = parse_collection_plan(plan_text)
     return {"items": items, "count": len(items)}
 
 
-@router.post("/collections/{task_id}/execute", status_code=202)
+@router.post("/collections/{task_id}/execute", status_code=202, response_model=LegacyCollectionStartedResponse)
 async def execute_collection(
     task_id: str,
     background_tasks: BackgroundTasks,
@@ -273,7 +282,7 @@ def _mark_failed(store: GraphStore, task_id: str) -> None:
         )
 
 
-@router.get("/collections/{task_id}/progress")
+@router.get("/collections/{task_id}/progress", response_model=LegacyCollectionProgressResponse)
 def get_collection_progress(task_id: str, store: GraphStore = Depends(get_graph_store)):
     """Get detailed collection execution progress."""
     coll = get_collection(task_id, store)
@@ -295,11 +304,11 @@ def get_collection_progress(task_id: str, store: GraphStore = Depends(get_graph_
     }
 
 
-@router.get("/collections")
+@router.get("/collections", response_model=list[LegacyCollectionResponse], response_model_exclude_unset=True)
 def list_collections(project_id: str | None = None, store: GraphStore = Depends(get_graph_store)):
     return _load_collections_from_neo4j(store, project_id)
 
 
-@router.get("/collections/count/{project_id}")
+@router.get("/collections/count/{project_id}", response_model=CollectionCountResponse)
 def get_collection_count_for_project(project_id: str, store: GraphStore = Depends(get_graph_store)):
     return {"project_id": project_id, "count": _get_collection_count(store, project_id)}
