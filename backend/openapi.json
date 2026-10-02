@@ -7642,8 +7642,92 @@
         "title": "ProjectDeleteResponse",
         "type": "object"
       },
+      "ProjectMemberItem": {
+        "properties": {
+          "added_at": {
+            "title": "Added At",
+            "type": "string"
+          },
+          "added_by": {
+            "title": "Added By",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "editor",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "role",
+          "added_by",
+          "added_at"
+        ],
+        "title": "ProjectMemberItem",
+        "type": "object"
+      },
+      "ProjectMembersResponse": {
+        "description": "A project's members, owners first. Admins are implicit owners and never listed.",
+        "properties": {
+          "access": {
+            "enum": [
+              "open",
+              "restricted"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectMemberItem"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "my_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "owner",
+                  "editor",
+                  "viewer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "My Role"
+          }
+        },
+        "required": [
+          "members",
+          "access",
+          "my_role"
+        ],
+        "title": "ProjectMembersResponse",
+        "type": "object"
+      },
       "ProjectResponse": {
         "properties": {
+          "access": {
+            "enum": [
+              "open",
+              "restricted"
+            ],
+            "title": "Access",
+            "type": "string"
+          },
           "classification_level": {
             "title": "Classification Level",
             "type": "string"
@@ -7676,6 +7760,22 @@
             "title": "Id",
             "type": "string"
           },
+          "my_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "owner",
+                  "editor",
+                  "viewer"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "My Role"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -7705,7 +7805,9 @@
           "description",
           "classification_level",
           "priority",
-          "status"
+          "status",
+          "my_role",
+          "access"
         ],
         "title": "ProjectResponse",
         "type": "object"
@@ -8613,6 +8715,24 @@
           "role"
         ],
         "title": "SessionUser",
+        "type": "object"
+      },
+      "SetMemberRequest": {
+        "properties": {
+          "role": {
+            "enum": [
+              "owner",
+              "editor",
+              "viewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "SetMemberRequest",
         "type": "object"
       },
       "ShortestPathResponse": {
@@ -17007,6 +17127,7 @@
     },
     "/api/projects": {
       "get": {
+        "description": "The projects the caller may read, newest first, each with their role on it.\n\nFiltered here, not in the client: an admin sees every project; anyone else\nsees the open ones (no members) and those they are a member of.",
         "operationId": "list_projects_api_projects_get",
         "responses": {
           "200": {
@@ -17035,6 +17156,7 @@
         ]
       },
       "post": {
+        "description": "Create a project. Its creator becomes its owner, which makes it restricted.\n\nAn admin is an implicit owner of every project and is never listed as a\nmember, so a project an admin creates starts open.",
         "operationId": "create_project_api_projects_post",
         "requestBody": {
           "content": {
@@ -17327,6 +17449,176 @@
           }
         ],
         "summary": "Get Project Activity",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{project_id}/members": {
+      "get": {
+        "description": "The project's members (owners first), whether it is open, and the caller's role.",
+        "operationId": "list_project_members_api_projects__project_id__members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMembersResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Project Members",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{project_id}/members/{username}": {
+      "delete": {
+        "description": "Remove a member (owners only). 409 for the project's last owner.",
+        "operationId": "remove_project_member_api_projects__project_id__members__username__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove Project Member",
+        "tags": [
+          "projects"
+        ]
+      },
+      "put": {
+        "description": "Add a member or change their role (owners only; anyone on an open project).\n\n409 when the project has no members and the role is not owner (the first\nmember closes the project, so it must be someone who can manage it), or when\nthe change would leave the project without an owner.",
+        "operationId": "put_project_member_api_projects__project_id__members__username__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMemberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMemberItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Project Member",
         "tags": [
           "projects"
         ]
