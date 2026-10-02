@@ -242,7 +242,7 @@ async def test_hybrid_lookup_failure_does_not_escape():
 def test_nlp_results_carry_the_record_too():
     result = extraction.extract_entities_nlp(TEXT, "doc-g5")
     assert result.method == "nlp" and result.degraded is False
-    assert set(result.meta) == {"method", "degraded", "reason", "skipped_items"}
+    assert set(result.meta) == {"method", "degraded", "reason", "skipped_items", "relationships_dropped_by_reason"}
 
 
 def test_empty_text_still_compares_equal_to_an_empty_pair():

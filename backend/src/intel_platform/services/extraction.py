@@ -34,20 +34,27 @@ class ExtractionResult(tuple):
       *type*, never its message, so it is safe to show an analyst.
     - ``skipped_items``: individual model entities/relationships dropped for
       being malformed, without discarding the rest of the reply.
+    - ``relationships_dropped_by_reason``: well-formed relationships the
+      extraction did not keep, by why: ``generic_on_typed_pair`` (an
+      ASSOCIATED_WITH on a pair a typed relation already links). The graph
+      build keeps its own count of what reaches it.
     """
 
     method: str
     degraded: bool
     reason: str
     skipped_items: int
+    relationships_dropped_by_reason: dict[str, int]
 
     def __new__(cls, entities: list[dict], relationships: list[dict], *, method: str,
-                degraded: bool = False, reason: str = "", skipped_items: int = 0):
+                degraded: bool = False, reason: str = "", skipped_items: int = 0,
+                relationships_dropped_by_reason: dict[str, int] | None = None):
         self = super().__new__(cls, (entities, relationships))
         self.method = method
         self.degraded = degraded
         self.reason = reason
         self.skipped_items = skipped_items
+        self.relationships_dropped_by_reason = dict(relationships_dropped_by_reason or {})
         return self
 
     def __getnewargs_ex__(self):
@@ -56,6 +63,7 @@ class ExtractionResult(tuple):
         return (self[0], self[1]), {
             "method": self.method, "degraded": self.degraded,
             "reason": self.reason, "skipped_items": self.skipped_items,
+            "relationships_dropped_by_reason": self.relationships_dropped_by_reason,
         }
 
     @property
@@ -65,6 +73,7 @@ class ExtractionResult(tuple):
             "degraded": self.degraded,
             "reason": self.reason,
             "skipped_items": self.skipped_items,
+            "relationships_dropped_by_reason": dict(self.relationships_dropped_by_reason),
         }
 
 
@@ -824,6 +833,28 @@ def _normalize_rel_type(raw: str) -> str | None:
     if _REPORTING_REL.match(rt):
         return None
     return "ASSOCIATED_WITH"
+
+
+def _drop_generic_on_typed_pairs(relationships: list[dict]) -> tuple[list[dict], int]:
+    """Drop each ASSOCIATED_WITH on a pair that an asserted typed relation links.
+
+    A generic association says two things are related without saying how; next
+    to an edge that says how, it adds nothing. The model returned Iran TARGETS
+    and ASSOCIATED_WITH the Strait of Hormuz; hybrid kept the model's Russia
+    ASSOCIATED_WITH Ukraine beside NLP's TARGETS for "Russia's 2022 invasion of
+    Ukraine". Direction does not matter; a denied typed relation does not rule
+    an association out. Returns the kept edges and how many were dropped.
+    """
+    typed = {
+        frozenset((r.get("source_name"), r.get("target_name"))) for r in relationships
+        if r.get("rel_type") != "ASSOCIATED_WITH" and r.get("polarity", "asserts") != "denies"
+    }
+    kept = [
+        r for r in relationships
+        if r.get("rel_type") != "ASSOCIATED_WITH"
+        or frozenset((r.get("source_name"), r.get("target_name"))) not in typed
+    ]
+    return kept, len(relationships) - len(kept)
 
 
 def _clean_evidence(sentence: str, name_a: str, name_b: str, pad: int = 45, max_len: int = 300) -> str:
@@ -2118,9 +2149,21 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         earlier = [e for start, e in actor_mentions if start < tok.idx]
         return earlier[-1] if earlier else None
 
+    # Generic co-occurrence edges wait until every sentence has been read: a
+    # typed relation stated later in the text still rules one out.
+    generic_candidates: list[tuple[str, str, str]] = []
+
     for sent in doc.sents:
         sent_text = sent.text
         sent_entities_list = []
+        # Which paragraphs of the sentence each entity is named in. spaCy joins
+        # a heading to the sentence under it ("China" over "In addition, South
+        # Korea ..."); a sentence never really crosses a paragraph break.
+        paragraphs: dict[int, set[int]] = {}
+        breaks = [m.start() for m in _PARAGRAPH_BREAK.finditer(sent_text)]
+
+        def _paragraph(offset: int) -> int:
+            return sum(1 for b in breaks if b < offset)
 
         # spaCy-detected entities in this sentence. Looked up by the name the
         # entity ended up with: postprocessing strips determiners and quotes,
@@ -2128,13 +2171,16 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         for ent in sent.ents:
             name = ent.text.strip()
             match = seen_names.get(name) or seen_names.get(_strip_determiner(name.strip("'\"")))
-            if match is not None and match not in sent_entities_list:
-                sent_entities_list.append(match)
+            if match is not None:
+                paragraphs.setdefault(id(match), set()).add(_paragraph(ent.start_char - sent.start_char))
+                if match not in sent_entities_list:
+                    sent_entities_list.append(match)
 
         # Regex-extracted entities that appear in this sentence text
         for e in entities:
             if e.get("method") == "regex" and e["name"] in sent_text and e not in sent_entities_list:
                 sent_entities_list.append(e)
+                paragraphs[id(e)] = {_paragraph(m.start()) for m in re.finditer(re.escape(e["name"]), sent_text)}
 
         # The typed stage also sees entities spaCy did not tag in this sentence
         # but which were extracted elsewhere in the text: its NER is not
@@ -2199,10 +2245,11 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
                     continue
                 if e1_is_date and e2_is_date:
                     continue
-                # ASSOCIATED_WITH is noise — only emit within the window, and never
-                # on top of a pair a typed/pattern relation already links.
-                if (j - i) <= COOCCURRENCE_WINDOW and frozenset((e1["name"], e2["name"])) not in linked_pairs:
-                    _add_rel(e1["name"], e2["name"], "ASSOCIATED_WITH", 0.5, sent_text)
+                # ASSOCIATED_WITH is noise — only a candidate within the window,
+                # when both are named in one paragraph of the sentence, and
+                # emitted below only if no typed relation links the pair.
+                if (j - i) <= COOCCURRENCE_WINDOW and paragraphs.get(id(e1), {0}) & paragraphs.get(id(e2), {0}):
+                    generic_candidates.append((e1["name"], e2["name"], sent_text))
 
     # "torvald (A-430) of 2nd Naval Auxiliary Group": a vessel of a unit
     # belongs to it. Read off the text, since the parse attaches the unit to the
@@ -2219,11 +2266,22 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             if ship and unit:
                 _add_rel(ship, unit, "BELONGS_TO", 0.7, text[max(0, m.start() - 60):m.end() + len(unit) + 60])
 
+    # A generic association only where nothing typed links the pair anywhere
+    # in the text. Before, the check ran sentence by sentence, so a pair
+    # related later ("torvald (A-430) of 2nd Naval Auxiliary Group", read after
+    # the loop) kept the association from an earlier sentence as well.
+    for a_name, b_name, sentence in generic_candidates:
+        if frozenset((a_name, b_name)) not in linked_pairs:
+            _add_rel(a_name, b_name, "ASSOCIATED_WITH", 0.5, sentence)
+
     # Resolve event_datetime on Event entities from their OCCURRED_ON Date links
     _link_event_dates(entities, relationships)
 
     return ExtractionResult(entities, relationships, method="nlp")
 
+
+# A blank line: the end of a paragraph or a heading, which no sentence crosses.
+_PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
 
 # "<name> (<hull>) of [the] " — what follows is checked against extracted units.
 _SHIP_OF_UNIT = re.compile(
@@ -2290,8 +2348,8 @@ def _describe_failure(exc: BaseException) -> str:
     return f"provider error ({type(exc).__name__})"
 
 
-async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[dict], int]:
-    """The LLM half alone: (entities, relationships, skipped_items).
+async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[dict], int, dict[str, int]]:
+    """The LLM half alone: (entities, relationships, skipped_items, relationships dropped by reason).
 
     Raises ``_LLMExtractionFailed`` with a reason when the model produced
     nothing usable. The callers decide what the fallback is.
@@ -2391,7 +2449,8 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
     entities, relationships = _drop_abstract_types(entities, relationships)
     _apply_vessel_hints(_apply_type_hints(entities), text)
     _link_event_dates(entities, relationships)
-    return entities, relationships, skipped
+    relationships, generic_dropped = _drop_generic_on_typed_pairs(relationships)
+    return entities, relationships, skipped, {"generic_on_typed_pair": generic_dropped}
 
 
 async def extract_entities_llm(text: str, doc_id: str) -> ExtractionResult:
@@ -2404,7 +2463,7 @@ async def extract_entities_llm(text: str, doc_id: str) -> ExtractionResult:
     the result rather than only in the log.
     """
     try:
-        entities, relationships, skipped = await _extract_with_llm(text, doc_id)
+        entities, relationships, skipped, dropped = await _extract_with_llm(text, doc_id)
     except Exception as exc:
         reason = exc.reason if isinstance(exc, _LLMExtractionFailed) else f"extraction failed ({type(exc).__name__})"
         if not isinstance(exc, _LLMExtractionFailed):
@@ -2412,7 +2471,8 @@ async def extract_entities_llm(text: str, doc_id: str) -> ExtractionResult:
         logger.warning("LLM extraction degraded to NLP for doc %s: %s", doc_id, reason)
         ents, rels = extract_entities_nlp(text, doc_id)
         return ExtractionResult(ents, rels, method="nlp", degraded=True, reason=reason)
-    return ExtractionResult(entities, relationships, method="llm", skipped_items=skipped)
+    return ExtractionResult(entities, relationships, method="llm", skipped_items=skipped,
+                            relationships_dropped_by_reason=dropped)
 
 
 # Indicator types that are only ever the same entity when the value is the same.
@@ -2447,7 +2507,7 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
 
     nlp_entities, nlp_rels = extract_entities_nlp(text, doc_id)
     try:
-        llm_entities, llm_rels, skipped = await _extract_with_llm(text, doc_id)
+        llm_entities, llm_rels, skipped, dropped = await _extract_with_llm(text, doc_id)
     except Exception as exc:
         reason = exc.reason if isinstance(exc, _LLMExtractionFailed) else f"extraction failed ({type(exc).__name__})"
         if not isinstance(exc, _LLMExtractionFailed):
@@ -2550,6 +2610,11 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
                     merged_entities.append(nlp_by_name[end])
                     kept_nlp_keys.add(end_key)
 
+    # A model association on a pair NLP read a typed relation for goes here,
+    # once both halves are in.
+    merged_rels, generic_dropped = _drop_generic_on_typed_pairs(merged_rels)
+    dropped["generic_on_typed_pair"] = dropped.get("generic_on_typed_pair", 0) + generic_dropped
+
     # Re-resolve event_datetime over the merged set — catches cases where the
     # Event came from one method and its OCCURRED_ON Date from the other.
     _link_event_dates(merged_entities, merged_rels)
@@ -2559,4 +2624,5 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
     # same name could still carry the generic type into the merge.
     _apply_vessel_hints(_apply_type_hints(merged_entities), text)
 
-    return ExtractionResult(merged_entities, merged_rels, method="hybrid", skipped_items=skipped)
+    return ExtractionResult(merged_entities, merged_rels, method="hybrid", skipped_items=skipped,
+                            relationships_dropped_by_reason=dropped)

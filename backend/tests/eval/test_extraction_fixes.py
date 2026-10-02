@@ -812,3 +812,89 @@ async def test_hybrid_keeps_the_nlp_entity_a_kept_nlp_edge_names():
     }
     assert "U.S. Space Force" in names
     assert all(r["source_name"] in names and r["target_name"] in names for r in rels)
+
+
+# ── Generic associations: a shared sentence and nothing typed between them ────
+# openrep: NLP emitted ASSOCIATED_WITH between entities spaCy's sentence joined
+# across a heading ("China" + "In addition, South Korea ..."), and on pairs a
+# typed relation linked later in the text; the model emitted it on pairs it
+# also related by type.
+
+KES_0173 = (
+    "1. Partner service reporting passed by liaison indicates that torvald (A-430) of 2nd Naval Auxiliary Group "
+    "loads at Nyhavn.\n\n2. Entities identified in this reporting: Torvald (A-430), 2nd Naval Auxiliary Group."
+)
+
+
+def _generic(rels) -> set[frozenset[str]]:
+    return {frozenset((r["source_name"], r["target_name"])) for r in rels if r["rel_type"] == "ASSOCIATED_WITH"}
+
+
+def test_no_generic_edge_on_a_pair_a_typed_relation_links_anywhere_in_the_text():
+    _, rels = extract_entities_nlp(KES_0173, "doc-fix")
+    assert ("Torvald", "BELONGS_TO", "2nd Naval Auxiliary Group") in {
+        (r["source_name"], r["rel_type"], r["target_name"]) for r in rels}
+    # The entity line in paragraph 2 co-mentions the pair; the typed edge is
+    # read from paragraph 1 after every sentence has been seen.
+    assert frozenset(("Torvald", "2nd Naval Auxiliary Group")) not in _generic(rels)
+
+
+def test_a_heading_line_does_not_share_a_sentence_with_the_text_below_it():
+    # openrep crs-R45811_29: spaCy reads the heading "China" and the first
+    # sentence under it as one sentence.
+    text = (
+        "China\n\nIn addition, South Korea reportedly has been developing a ground-launched Mach 6+ hypersonic "
+        "cruise missile, Hycore, since 2018."
+    )
+    _, rels = extract_entities_nlp(text, "doc-fix")
+    assert frozenset(("China", "South Korea")) not in _generic(rels)
+
+
+def test_entities_in_one_sentence_with_nothing_typed_between_them_keep_the_generic_edge():
+    _, rels = extract_entities_nlp(
+        "In addition, South Korea reportedly has been developing a ground-launched Mach 6+ hypersonic cruise "
+        "missile, Hycore, since 2018, and Japan is procuring the Tomahawk Weapon System.", "doc-fix")
+    assert _generic(rels), "co-occurrence still links what one sentence names together"
+
+
+async def test_the_models_generic_edge_on_a_pair_nlp_reads_as_typed_is_dropped():
+    # openrep OPENREP-SUPINTREP-0010: the model returned Russia ASSOCIATED_WITH
+    # Ukraine for "Russia's 2022 invasion of Ukraine", which NLP reads as
+    # TARGETS; hybrid kept both.
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    text = ("Some of these operations have been hampered by the expulsion of Russian diplomats from Europe and the "
+            "United States following Russia's 2022 invasion of Ukraine.")
+    reply = {
+        "entities": [{"name": "Russia", "entity_type": "Country"}, {"name": "Ukraine", "entity_type": "Country"},
+                     {"name": "Europe", "entity_type": "Region"}],
+        "relationships": [{"source_entity": "Russia", "target_entity": "Ukraine",
+                           "relationship_type": "ASSOCIATED_WITH", "evidence": "Russia's 2022 invasion of Ukraine"}],
+    }
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        _, rels = await extraction.extract_entities_hybrid(text, "doc-fix")
+    triples = {(r["source_name"], r["rel_type"], r["target_name"]) for r in rels}
+    assert ("Russia", "TARGETS", "Ukraine") in triples
+    assert frozenset(("Russia", "Ukraine")) not in _generic(rels)
+
+
+async def test_the_models_generic_edge_beside_its_own_typed_edge_is_dropped():
+    # openrep OPENREP-SUPINTREP-0042: Iran TARGETS, USES and ASSOCIATED_WITH
+    # the Strait of Hormuz, all from the model.
+    reply = (
+        '{"entities": [{"name": "Iran", "entity_type": "Country"}, {"name": "Strait of Hormuz", "entity_type": '
+        '"Strait"}], "relationships": [{"source_entity": "Iran", "target_entity": "Strait of Hormuz", '
+        '"relationship_type": "TARGETS"}, {"source_entity": "Strait of Hormuz", "target_entity": "Iran", '
+        '"relationship_type": "ASSOCIATED_WITH"}]}'
+    )
+    result = await _llm_reply(reply, "Iran has sought to formalise its de facto control over the Strait of Hormuz.")
+    assert [(r["source_name"], r["rel_type"]) for r in result[1]] == [("Iran", "TARGETS")]
