@@ -17,6 +17,9 @@ from intel_platform.db.models import CollectionPlan, CollectionSource, PlanStatu
 from intel_platform.services.collection_planner import parse_plan_sources
 from intel_platform.services.llm_output import normalise_line
 from intel_platform.services.pir_judge import extract_eeis
+from intel_platform.models.responses import (
+    PlanFromPirResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +203,7 @@ def _count_generation_failure(failure: str) -> None:
     reason = failure.split(" (")[0].strip().lower().replace(" ", "_")
     telemetry.record_degraded("collection", reason, detail=failure)
 
-@router.post("/collection-plans/from-pir")
+@router.post("/collection-plans/from-pir", response_model=PlanFromPirResponse, response_model_exclude_unset=True)
 async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends(get_db)):
     """Submit a PIR → LLM refines it, generates a collection plan with sources.
 

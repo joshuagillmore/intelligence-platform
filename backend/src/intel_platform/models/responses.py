@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 
 class ProjectResponse(BaseModel):
@@ -1688,3 +1688,214 @@ class NavigatorLayerResponse(BaseModel):
     legendItems: list[Any]
     showTacticRowBackground: bool
     hideDisabled: bool
+
+
+# ---------------------------------------------------------------------------
+# Collection plans
+# ---------------------------------------------------------------------------
+
+class CollectionSourceResponse(BaseModel):
+    id: str
+    plan_id: str
+    name: str
+    source_type: str
+    config: dict[str, Any]
+    # pending, resolving, queued, collecting, succeeded or failed.
+    collection_status: str
+    schedule_cron: str
+    enabled: bool
+    last_success_at: str | None = None
+    last_failure_at: str | None = None
+    last_error: str
+    total_records_acquired: int
+    acquisition_count: int
+    next_run_at: str | None = None
+    created_at: str | None = None
+
+
+class CollectionPlanResponse(BaseModel):
+    id: str
+    project_id: str
+    name: str
+    description: str
+    requirement: str
+    pir: str
+    pir_id: str | None = None
+    refined_pir: str
+    # A lifecycle flag an analyst sets; whether a run is in flight is
+    # /execution-status, never this.
+    status: str
+    routing_rules: dict[str, Any]
+    created_by: str
+    assigned_to: str
+    schedule_cron: str
+    next_run_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    sources: list[CollectionSourceResponse]
+    source_count: int
+
+
+class LlmRequirementsItem(BaseModel):
+    message: str
+    supported_providers: list[str]
+    configuration: str
+    minimum_capability: str
+
+
+class PlanFromPirResponse(CollectionPlanResponse):
+    """A plan generated from a PIR, with how the generation went."""
+    llm_plan_text: str
+    llm_available: bool
+    llm_status: str
+    # Why generation produced less than it should have.
+    generation_failures: list[str]
+    # Essential elements captured onto the requirement.
+    eeis_captured: int
+    # Present when no LLM provider could be used.
+    llm_requirements: LlmRequirementsItem | None = None
+
+
+class PlanExecutionStartedResponse(CollectionPlanResponse):
+    """``POST /execute`` (202): the plan, and how its run started."""
+    # Null when nothing could run.
+    job_id: str | None = None
+    # "inline" (this process runs it) or "worker" (queued for the worker).
+    worker_mode: str
+    # started, queued or no_executable_sources.
+    execution_status: str
+    message: str
+    sources_queued: int
+    sources_manual: int
+    sources_missing_config: int
+    source_limit: int | None = None
+    sources_over_budget: int
+    warnings: list[str]
+
+
+class PlanExecutionStatusResponse(BaseModel):
+    """Whether a run is in flight and how it is going, from the job table and the
+    activity trail. Keys about the trail are absent before it has any events, and
+    keys about the job row are absent before the plan's first run."""
+    plan_id: str
+    # idle, running, stalled, completed, failed or cancelled.
+    status: str
+    message: str
+    last_event: str | None = None
+    sources_succeeded: int
+    sources_failed: int
+    updated_at: str | None = None
+    seconds_since_last_event: int | None = None
+    job_id: str | None = None
+    # queued, running, succeeded, failed or cancelled.
+    job_status: str | None = None
+    heartbeat_at: str | None = None
+    seconds_since_heartbeat: int | None = None
+    # Why the run failed, sanitised.
+    error: str | None = None
+    # This run's degraded outcomes, {subsystem: {reason: count}}.
+    degraded: dict[str, dict[str, int]] | None = None
+
+
+class PlanCancelResponse(BaseModel):
+    plan_id: str
+    job_id: str
+    status: str
+    previous_status: str
+    # True when the run was mid-flight and stops before its next source.
+    stopping: bool
+    message: str
+
+
+class CollectionActivityItem(BaseModel):
+    id: str
+    plan_id: str
+    source_id: str | None = None
+    event: str
+    message: str
+    created_at: str
+
+
+class UploadRoutingItem(BaseModel):
+    document_id: str
+    entities_created: int
+    relationships_created: int
+
+
+class FileUploadResponse(BaseModel):
+    catalog_id: str
+    plan_id: str
+    source_id: str
+    filename: str
+    file_format: str
+    record_count: int
+    column_count: int
+    # Column names, inferred types and sample values, as the parser reports them.
+    schema_info: dict[str, Any]
+    profiling: dict[str, Any]
+    preview_rows: list[dict[str, Any]]
+    routing_results: UploadRoutingItem
+
+
+class AcquisitionLogItem(BaseModel):
+    id: str
+    source_id: str
+    plan_id: str
+    result: str
+    record_count: int
+    error_message: str
+    source_type: str
+    entities_created: int
+    relationships_created: int
+    document_id: str
+    started_at: str | None = None
+    completed_at: str | None = None
+    duration_ms: int
+
+
+class DataCatalogItem(BaseModel):
+    id: str
+    plan_id: str
+    source_id: str
+    name: str
+    file_format: str
+    original_filename: str
+    file_size_bytes: int
+    row_count: int
+    column_count: int
+    schema_info: dict[str, Any]
+    profiling: dict[str, Any]
+    preview_rows: list[dict[str, Any]]
+    ingested_at: str | None = None
+
+
+class CatalogPreviewResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    rows: list[dict[str, Any]]
+    total: int
+    offset: int
+    # Sent as `schema` (a name BaseModel reserves).
+    schema_info: dict[str, Any] = Field(alias="schema")
+
+
+class SourceHealthItem(BaseModel):
+    healthy: int
+    unhealthy: int
+    disabled: int
+    total: int
+
+
+class CollectionDashboardResponse(BaseModel):
+    project_id: str
+    # Plan status -> how many plans have it.
+    plan_counts: dict[str, int]
+    total_plans: int
+    source_health: SourceHealthItem
+    total_records_acquired: int
+    recent_acquisitions: list[AcquisitionLogItem]
+
+
+class ConnectorTypeItem(BaseModel):
+    source_type: str
+    description: str

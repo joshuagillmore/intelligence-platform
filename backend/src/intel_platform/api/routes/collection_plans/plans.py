@@ -16,6 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from intel_platform.connectors.base import CONNECTOR_REGISTRY, get_connector
 from intel_platform.db.engine import get_db
 from intel_platform.db.models import CollectionPlan, CollectionSource, PlanStatus
+from intel_platform.models.responses import (
+    CollectionPlanResponse,
+    CollectionSourceResponse,
+    DeletedResponse,
+)
 
 # Mounted by the package router, which carries the API-key dependency.
 router = APIRouter()
@@ -155,7 +160,7 @@ def _source_to_dict(src: CollectionSource) -> dict:
 # Collection Plan CRUD
 # ---------------------------------------------------------------------------
 
-@router.post("/collection-plans")
+@router.post("/collection-plans", response_model=CollectionPlanResponse)
 async def create_plan(req: CreatePlanRequest, db: AsyncSession = Depends(get_db)):
     # Local import: the PIR routes import this module's _parse_uuid.
     from intel_platform.api.routes.pirs import get_or_create_pir
@@ -184,7 +189,7 @@ async def create_plan(req: CreatePlanRequest, db: AsyncSession = Depends(get_db)
     return _plan_to_dict(plan)
 
 
-@router.get("/collection-plans")
+@router.get("/collection-plans", response_model=list[CollectionPlanResponse])
 async def list_plans(
     project_id: str | None = None,
     status: str | None = None,
@@ -200,7 +205,7 @@ async def list_plans(
     return [_plan_to_dict(p) for p in plans]
 
 
-@router.get("/collection-plans/{plan_id}")
+@router.get("/collection-plans/{plan_id}", response_model=CollectionPlanResponse)
 async def get_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -208,7 +213,7 @@ async def get_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     return _plan_to_dict(plan)
 
 
-@router.put("/collection-plans/{plan_id}")
+@router.put("/collection-plans/{plan_id}", response_model=CollectionPlanResponse)
 async def update_plan(plan_id: str, req: UpdatePlanRequest, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -230,7 +235,7 @@ async def update_plan(plan_id: str, req: UpdatePlanRequest, db: AsyncSession = D
     return _plan_to_dict(plan)
 
 
-@router.delete("/collection-plans/{plan_id}")
+@router.delete("/collection-plans/{plan_id}", response_model=DeletedResponse)
 async def delete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -244,7 +249,7 @@ async def delete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
 # Plan status transitions
 # ---------------------------------------------------------------------------
 
-@router.post("/collection-plans/{plan_id}/activate")
+@router.post("/collection-plans/{plan_id}/activate", response_model=CollectionPlanResponse)
 async def activate_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -257,7 +262,7 @@ async def activate_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     return _plan_to_dict(plan)
 
 
-@router.post("/collection-plans/{plan_id}/pause")
+@router.post("/collection-plans/{plan_id}/pause", response_model=CollectionPlanResponse)
 async def pause_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -270,7 +275,7 @@ async def pause_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     return _plan_to_dict(plan)
 
 
-@router.post("/collection-plans/{plan_id}/complete")
+@router.post("/collection-plans/{plan_id}/complete", response_model=CollectionPlanResponse)
 async def complete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -284,7 +289,7 @@ async def complete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     return _plan_to_dict(plan)
 
 
-@router.post("/collection-plans/{plan_id}/archive")
+@router.post("/collection-plans/{plan_id}/archive", response_model=CollectionPlanResponse)
 async def archive_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -299,7 +304,7 @@ async def archive_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
 # Source assignment
 # ---------------------------------------------------------------------------
 
-@router.post("/collection-plans/{plan_id}/sources")
+@router.post("/collection-plans/{plan_id}/sources", response_model=CollectionSourceResponse)
 async def add_source(plan_id: str, req: AddSourceRequest, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -331,7 +336,7 @@ async def add_source(plan_id: str, req: AddSourceRequest, db: AsyncSession = Dep
     return _source_to_dict(source)
 
 
-@router.get("/collection-plans/{plan_id}/sources")
+@router.get("/collection-plans/{plan_id}/sources", response_model=list[CollectionSourceResponse])
 async def list_sources(plan_id: str, db: AsyncSession = Depends(get_db)):
     stmt = select(CollectionSource).where(
         CollectionSource.plan_id == _parse_uuid(plan_id, "plan_id")
@@ -340,7 +345,7 @@ async def list_sources(plan_id: str, db: AsyncSession = Depends(get_db)):
     return [_source_to_dict(s) for s in result.scalars().all()]
 
 
-@router.put("/collection-plans/{plan_id}/sources/{source_id}")
+@router.put("/collection-plans/{plan_id}/sources/{source_id}", response_model=CollectionSourceResponse)
 async def update_source(
     plan_id: str, source_id: str, req: UpdateSourceRequest, db: AsyncSession = Depends(get_db)
 ):
@@ -368,7 +373,7 @@ async def update_source(
     return _source_to_dict(source)
 
 
-@router.delete("/collection-plans/{plan_id}/sources/{source_id}")
+@router.delete("/collection-plans/{plan_id}/sources/{source_id}", response_model=DeletedResponse)
 async def delete_source(plan_id: str, source_id: str, db: AsyncSession = Depends(get_db)):
     source = await db.get(CollectionSource, _parse_uuid(source_id, "source_id"))
     if not source or str(source.plan_id) != plan_id:

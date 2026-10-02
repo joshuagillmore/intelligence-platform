@@ -11,6 +11,13 @@ from intel_platform.api.routes.collection_plans.plans import _parse_uuid
 from intel_platform.connectors.base import CONNECTOR_REGISTRY
 from intel_platform.db.engine import get_db
 from intel_platform.db.models import AcquisitionLog, CollectionPlan, CollectionSource, DataCatalog
+from intel_platform.models.responses import (
+    AcquisitionLogItem,
+    CatalogPreviewResponse,
+    CollectionDashboardResponse,
+    ConnectorTypeItem,
+    DataCatalogItem,
+)
 
 # Mounted by the package router, which carries the API-key dependency.
 router = APIRouter()
@@ -56,7 +63,7 @@ def _catalog_to_dict(cat: DataCatalog) -> dict:
 # Acquisition log
 # ---------------------------------------------------------------------------
 
-@router.get("/collection-plans/{plan_id}/acquisitions")
+@router.get("/collection-plans/{plan_id}/acquisitions", response_model=list[AcquisitionLogItem])
 async def list_acquisitions(
     plan_id: str,
     limit: int = 50,
@@ -72,7 +79,10 @@ async def list_acquisitions(
     return [_log_to_dict(log) for log in result.scalars().all()]
 
 
-@router.get("/collection-plans/{plan_id}/sources/{source_id}/acquisitions")
+@router.get(
+    "/collection-plans/{plan_id}/sources/{source_id}/acquisitions",
+    response_model=list[AcquisitionLogItem],
+)
 async def list_source_acquisitions(
     plan_id: str,
     source_id: str,
@@ -93,7 +103,7 @@ async def list_source_acquisitions(
 # Data catalog
 # ---------------------------------------------------------------------------
 
-@router.get("/collection-plans/{plan_id}/catalog")
+@router.get("/collection-plans/{plan_id}/catalog", response_model=list[DataCatalogItem])
 async def list_catalog(plan_id: str, db: AsyncSession = Depends(get_db)):
     stmt = (
         select(DataCatalog)
@@ -104,7 +114,7 @@ async def list_catalog(plan_id: str, db: AsyncSession = Depends(get_db)):
     return [_catalog_to_dict(c) for c in result.scalars().all()]
 
 
-@router.get("/data-catalog/{catalog_id}")
+@router.get("/data-catalog/{catalog_id}", response_model=DataCatalogItem)
 async def get_catalog_entry(catalog_id: str, db: AsyncSession = Depends(get_db)):
     entry = await db.get(DataCatalog, _parse_uuid(catalog_id, "catalog_id"))
     if not entry:
@@ -112,7 +122,7 @@ async def get_catalog_entry(catalog_id: str, db: AsyncSession = Depends(get_db))
     return _catalog_to_dict(entry)
 
 
-@router.get("/data-catalog/{catalog_id}/preview")
+@router.get("/data-catalog/{catalog_id}/preview", response_model=CatalogPreviewResponse)
 async def get_catalog_preview(
     catalog_id: str,
     offset: int = 0,
@@ -135,7 +145,7 @@ async def get_catalog_preview(
 # Collection dashboard — summary stats across all plans for a project
 # ---------------------------------------------------------------------------
 
-@router.get("/collection-dashboard")
+@router.get("/collection-dashboard", response_model=CollectionDashboardResponse)
 async def collection_dashboard(project_id: str, db: AsyncSession = Depends(get_db)):
     """Dashboard summary: plan counts, recent acquisitions, source health."""
     # Plan counts by status
@@ -199,7 +209,7 @@ async def collection_dashboard(project_id: str, db: AsyncSession = Depends(get_d
 # Connector info
 # ---------------------------------------------------------------------------
 
-@router.get("/connector-types")
+@router.get("/connector-types", response_model=list[ConnectorTypeItem])
 async def list_connector_types():
     """List available connector types and their capabilities."""
     result = []
