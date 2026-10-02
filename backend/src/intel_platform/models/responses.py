@@ -624,3 +624,54 @@ class DocumentEvidenceResponse(BaseModel):
     count: int
     total: int
     truncated: bool
+
+
+# ---------------------------------------------------------------------------
+# Entities and traversals
+# ---------------------------------------------------------------------------
+
+class EntityTypeHierarchyResponse(BaseModel):
+    # Parent category -> its specific entity types.
+    hierarchy: dict[str, list[str]]
+    categories: list[str]
+
+
+class EntityDetailResponse(BaseModel):
+    entity: EntityProperties
+    relationships: list[RelationshipItem]
+
+
+class SubgraphResponse(BaseModel):
+    nodes: list[GraphNodeProperties]
+    edges: list[TraversalEdgeItem]
+    node_count: int
+    edge_count: int
+    # Whether the path budget cut the walk short; null when the entity is unknown.
+    truncated: bool | None = None
+
+
+class ShortestPathResponse(BaseModel):
+    nodes: list[GraphNodeProperties]
+    edges: list[TraversalEdgeItem]
+    # -1 when no path was found.
+    path_length: int
+    found: bool
+
+
+class EntityMergeResponse(BaseModel):
+    primary_id: str
+    primary_name: str | None = None
+    entities_merged: int
+    relationships_transferred: int
+    # Edges that could not be recreated on the primary; their entity was kept.
+    dropped_edges: int
+    entities_not_merged: list[str]
+    entities_not_found: list[str]
+    complete: bool
+
+
+class EntityTypeChangedResponse(BaseModel):
+    id: str
+    name: str | None = None
+    old_type: str | None = None
+    new_type: str
