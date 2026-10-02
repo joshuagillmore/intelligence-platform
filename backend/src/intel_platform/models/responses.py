@@ -991,3 +991,107 @@ class GraphRagQueryResponse(BaseModel):
     retrieval_mode: str
     # Hybrid mode only: how many document passages vector search contributed.
     vector_results: int | None = None
+
+
+# ---------------------------------------------------------------------------
+# Structured analytic techniques
+# ---------------------------------------------------------------------------
+
+class SourceEvaluationItem(BaseModel):
+    document_id: str
+    name: str | None = None
+    current_rating: str
+    # Parsed from the model's RATINGS block; "" when it gave none.
+    admiralty_rating: str
+    entity_count: int
+    corroborating_documents: int
+
+
+class SourceMetricItem(BaseModel):
+    document_id: str
+    name: str | None = None
+    url: str
+    current_rating: str
+    created_at: str
+    content_length: int
+    entity_count: int
+    entity_names: list[str]
+    corroborating_documents: int
+
+
+class SourceEvaluationResponse(BaseModel):
+    analysis: str
+    skill_applied: str
+    model: str
+    tokens_used: int
+    retrieval_mode: str
+    documents_evaluated: int
+    evaluations: list[SourceEvaluationItem]
+    metrics: list[SourceMetricItem]
+    ratings_applied: int
+
+
+class HypothesisItem(BaseModel):
+    id: str
+    statement: str
+    probability: float
+    probability_label: str
+
+
+class HypothesesResponse(BaseModel):
+    question: str
+    analysis: str
+    hypotheses: list[HypothesisItem]
+    skill_applied: str
+    model: str
+    tokens_used: int
+    retrieval_mode: str
+    context_nodes: int
+    context_edges: int
+    vector_hits: int
+    focus_entities: list[str]
+    # Set when the leading hypothesis was saved as an Assessment.
+    assessment_id: str | None = None
+    probability: float | None = None
+    probability_label: str | None = None
+
+
+class CoverageItem(BaseModel):
+    entities: int
+    isolated: int
+    single_link: int
+    unsourced: int
+    isolated_names: list[str]
+    single_link_names: list[str]
+    unsourced_names: list[str]
+    documents: int
+    unrated_documents: int
+    unrated_document_names: list[str]
+    locations: int
+    ungeocoded_locations: int
+    ungeocoded_names: list[str]
+    entity_type_counts: dict[str, int]
+    relationship_type_counts: dict[str, int]
+    relationships: int
+
+
+class StructuralGapItem(BaseModel):
+    kind: str
+    title: str
+    detail: str
+    priority: str
+    count: int
+    examples: list[str]
+
+
+class GapAnalysisResponse(BaseModel):
+    analysis: str
+    skill_applied: str
+    model: str
+    tokens_used: int
+    retrieval_mode: str
+    coverage: CoverageItem
+    structural_gaps: list[StructuralGapItem]
+    context_nodes: int
+    context_edges: int
+    focus_entities: list[str]
