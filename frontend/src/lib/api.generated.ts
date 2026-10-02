@@ -3881,6 +3881,8 @@ export interface components {
             name?: string | null;
             /** Project Id */
             project_id?: string | null;
+            /** Relationship Count */
+            relationship_count?: number | null;
         } & {
             [key: string]: unknown;
         };
@@ -5107,6 +5109,8 @@ export interface components {
             note_type?: string | null;
             /** Project Id */
             project_id?: string | null;
+            /** Relationship Count */
+            relationship_count?: number | null;
             /** Report Type */
             report_type?: string | null;
         } & {
@@ -5814,6 +5818,8 @@ export interface components {
             name?: string | null;
             /** Project Id */
             project_id?: string | null;
+            /** Relationship Count */
+            relationship_count?: number | null;
             /** Report Type */
             report_type?: string | null;
             /** Status */

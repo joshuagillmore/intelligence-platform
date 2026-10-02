@@ -3254,6 +3254,17 @@
               }
             ],
             "title": "Project Id"
+          },
+          "relationship_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationship Count"
           }
         },
         "required": [
@@ -6384,6 +6395,17 @@
             ],
             "title": "Project Id"
           },
+          "relationship_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationship Count"
+          },
           "report_type": {
             "anyOf": [
               {
@@ -8238,6 +8260,17 @@
               }
             ],
             "title": "Project Id"
+          },
+          "relationship_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationship Count"
           },
           "report_type": {
             "anyOf": [

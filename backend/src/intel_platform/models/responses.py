@@ -123,6 +123,12 @@ class EntityProperties(BaseModel):
     entity_type: str | None = None
     entity_category: str | None = None
     project_id: str | None = None
+    # Computed, not stored: the entity's degree over the knowledge graph, every
+    # edge touching it except the Document MENTIONS edges recording where it
+    # was extracted from. Set on every row `GraphStore.search_entities` lists,
+    # so on every `GET /entities` item; absent where a route reads a node
+    # alone (`GET /entities/{id}` lists the edges themselves).
+    relationship_count: int | None = None
 
 
 class GraphNodeProperties(BaseModel):
