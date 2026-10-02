@@ -104,3 +104,33 @@ def _neo4j_global_state(request):
 
     with neo4j_global_lock(os.environ["NEO4J_URI"]):
         yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _migrated_postgres():
+    """Migrate the exported Postgres once per session.
+
+    The migration tests run in a scratch database, so nothing else guaranteed
+    that the exported one was at head before a route test needed it. On a
+    fresh database (CI, a new container) the access check then found no
+    `project_members` table and answered 503 for every non-admin, which only
+    showed up in the test order that reached the attack routes first. A `.invalid`
+    placeholder means no Postgres: nothing to migrate.
+    """
+    import asyncio
+
+    url = os.environ.get("POSTGRES_URL", "")
+    if not url or ".invalid" in url:
+        return
+    from intel_platform.api.routes import admin_config  # noqa: F401  (registers the schema-ready hook)
+    from intel_platform.db import engine as engine_module
+
+    async def _migrate():
+        await engine_module.init_db()
+        await engine_module.get_engine().dispose()
+
+    asyncio.run(_migrate())
+    # The engine above belonged to that short-lived loop; later tests build
+    # their own on their own loops.
+    engine_module._engine = None
+    engine_module._session_factory = None
