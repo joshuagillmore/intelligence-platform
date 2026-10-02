@@ -26,7 +26,7 @@ headers = {"Authorization": f"Bearer {settings.api_key}"}
 
 PROJECT_TABLES = {
     "pirs", "pir_requirements", "collection_plans", "collection_sources", "collection_activity",
-    "acquisition_log", "data_catalog", "chunk_embeddings", "topic_edits",
+    "acquisition_log", "data_catalog", "chunk_embeddings", "topic_edits", "project_members",
 }
 
 
@@ -97,6 +97,11 @@ class TestSingleDelete:
             assert pid in sql, f"{table} delete is not scoped to the project: {sql}"
         assert postgres["log"][-1] == "COMMIT"
         assert _node_count(graph_store, pid) == 0
+        # Membership goes last, in its own transaction after the graph: a delete
+        # that fails half way must leave the project restricted, never open.
+        tables = [s if s == "COMMIT" else s.table.name for s in postgres["log"]]
+        assert tables[-2:] == ["project_members", "COMMIT"]
+        assert tables.index("project_members") > tables.index("COMMIT")
 
     def test_a_postgres_failure_deletes_nothing(self, graph_store, postgres):
         pid = _project(graph_store, tp("a13-fail"))

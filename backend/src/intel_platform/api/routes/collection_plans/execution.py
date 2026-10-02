@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from intel_platform.api.deps import get_graph_store
+from intel_platform.api.deps import get_graph_store, require_project_access
 from intel_platform.api.routes.collection_plans.plans import _parse_uuid, _plan_to_dict
 from intel_platform.collection import job_runner
 from intel_platform.db import jobs
@@ -49,7 +49,10 @@ class ExecuteRequest(BaseModel):
     source_limit: int | None = Field(default=None, ge=1)
 
 
-@router.post("/collection-plans/{plan_id}/execute", status_code=202, response_model=PlanExecutionStartedResponse)
+@router.post(
+    "/collection-plans/{plan_id}/execute", status_code=202, response_model=PlanExecutionStartedResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def execute_plan_endpoint(
     plan_id: str,
     body: ExecuteRequest | None = None,
@@ -176,6 +179,7 @@ async def _start_execution(
 @router.get(
     "/collection-plans/{plan_id}/execution-status", response_model=PlanExecutionStatusResponse,
     response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
 )
 async def get_execution_status(plan_id: str, db: AsyncSession = Depends(get_db)):
     """Poll the execution progress of a collection plan's latest run.
@@ -263,7 +267,10 @@ def _job_message(state: str, job) -> str:
     return "Collection run complete"
 
 
-@router.post("/collection-plans/{plan_id}/cancel", status_code=202, response_model=PlanCancelResponse)
+@router.post(
+    "/collection-plans/{plan_id}/cancel", status_code=202, response_model=PlanCancelResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def cancel_plan_run(plan_id: str, db: AsyncSession = Depends(get_db)):
     """Cancel the plan's live run (queued, running, or stalled).
 
@@ -312,7 +319,10 @@ async def cancel_plan_run(plan_id: str, db: AsyncSession = Depends(get_db)):
 # Activity log
 # ---------------------------------------------------------------------------
 
-@router.get("/collection-plans/{plan_id}/activity", response_model=list[CollectionActivityItem])
+@router.get(
+    "/collection-plans/{plan_id}/activity", response_model=list[CollectionActivityItem],
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def get_activity(
     plan_id: str,
     since: str | None = None,

@@ -15,9 +15,14 @@ route already returns; it never reshapes it:
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
+
+# A member's role on a project, weakest last (api/access.py has the rules).
+ProjectRole = Literal["owner", "editor", "viewer"]
+# "open": no members, every authenticated user may use it; "restricted": members only.
+ProjectAccessMode = Literal["open", "restricted"]
 
 
 class ProjectResponse(BaseModel):
@@ -33,6 +38,10 @@ class ProjectResponse(BaseModel):
     collection_count: int = 0
     created_at: str = ""
     updated_at: str = ""
+    # The caller's role: their membership, "owner" for an admin, null when they
+    # are not a member (always the case on an open project, which they may still use).
+    my_role: ProjectRole | None
+    access: ProjectAccessMode
 
 
 class PirPlanLink(BaseModel):
@@ -1985,3 +1994,22 @@ class PirAssessmentResponse(BaseModel):
     recommendation: str
     model: str
     narrative: str
+
+
+# ---------------------------------------------------------------------------
+# Project members (contract 3)
+# ---------------------------------------------------------------------------
+
+class ProjectMemberItem(BaseModel):
+    username: str
+    role: ProjectRole
+    # Who added them, and when (ISO 8601). A role change keeps both.
+    added_by: str
+    added_at: str
+
+
+class ProjectMembersResponse(BaseModel):
+    """A project's members, owners first. Admins are implicit owners and never listed."""
+    members: list[ProjectMemberItem]
+    access: ProjectAccessMode
+    my_role: ProjectRole | None

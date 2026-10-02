@@ -1,7 +1,7 @@
 import asyncio
 from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, require_project_access, verify_api_key
 from intel_platform.collection.proxy import ProxiedClient
 from intel_platform.config import settings
 from intel_platform.graph.store import GraphStore
@@ -92,7 +92,10 @@ def _compute_location_edges(
     return sorted(edge_map.values(), key=lambda e: e["weight"], reverse=True)
 
 
-@router.get("/geo/locations", response_model=GeoLocationsResponse, response_model_exclude_unset=True)
+@router.get(
+    "/geo/locations", response_model=GeoLocationsResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_geo_locations(project_id: str, store: GraphStore = Depends(get_graph_store)):
     """Get all geolocatable entities (places + IP/WHOIS geo) with relationships and edges."""
     locations = geolocate_entities(store, project_id)
@@ -131,7 +134,10 @@ def get_geo_locations(project_id: str, store: GraphStore = Depends(get_graph_sto
     }
 
 
-@router.get("/geo/within", response_model=GeoWithinResponse, response_model_exclude_unset=True)
+@router.get(
+    "/geo/within", response_model=GeoWithinResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_within(
     project_id: str, min_lat: float, min_lng: float, max_lat: float, max_lng: float,
     store: GraphStore = Depends(get_graph_store),
@@ -155,7 +161,10 @@ def get_within(
     }
 
 
-@router.get("/geo/nearby/{entity_id}", response_model=NearbyFeaturesResponse, response_model_exclude_unset=True)
+@router.get(
+    "/geo/nearby/{entity_id}", response_model=NearbyFeaturesResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def get_nearby(entity_id: str, radius: int = 2000, store: GraphStore = Depends(get_graph_store)):
     """Nearby OSM features (airfields / military / ports / infrastructure /
     government / neighbourhoods) around a geolocated entity — local GEOINT
@@ -180,7 +189,10 @@ async def get_nearby(entity_id: str, radius: int = 2000, store: GraphStore = Dep
     }
 
 
-@router.get("/geo/entity-timeline", response_model=EntityTimelineResponse, response_model_exclude_unset=True)
+@router.get(
+    "/geo/entity-timeline", response_model=EntityTimelineResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_entity_timeline(
     entity_id: str,
     project_id: str,

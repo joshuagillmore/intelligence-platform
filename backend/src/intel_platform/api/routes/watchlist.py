@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, require_project_access, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.responses import WatchlistAddResponse, WatchlistRemoveResponse, WatchlistResponse
 
@@ -13,7 +13,10 @@ class WatchlistRequest(BaseModel):
     entity_id: str
 
 
-@router.post("/watchlist/add", response_model=WatchlistAddResponse)
+@router.post(
+    "/watchlist/add", response_model=WatchlistAddResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 def add_to_watchlist(req: WatchlistRequest, store: GraphStore = Depends(get_graph_store)):
     entity = store.get_entity(req.entity_id)
     if not entity:
@@ -44,7 +47,10 @@ def add_to_watchlist(req: WatchlistRequest, store: GraphStore = Depends(get_grap
     }
 
 
-@router.post("/watchlist/remove", response_model=WatchlistRemoveResponse)
+@router.post(
+    "/watchlist/remove", response_model=WatchlistRemoveResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 def remove_from_watchlist(req: WatchlistRequest, store: GraphStore = Depends(get_graph_store)):
     with store._driver.session() as session:
         session.run(
@@ -54,7 +60,7 @@ def remove_from_watchlist(req: WatchlistRequest, store: GraphStore = Depends(get
     return {"entity_id": req.entity_id, "status": "removed"}
 
 
-@router.get("/watchlist", response_model=WatchlistResponse)
+@router.get("/watchlist", response_model=WatchlistResponse, dependencies=[Depends(require_project_access("viewer"))])
 def get_watchlist(project_id: str, store: GraphStore = Depends(get_graph_store)):
     with store._driver.session() as session:
         result = session.run(

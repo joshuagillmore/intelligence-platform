@@ -4,14 +4,27 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api import access as project_access
+from intel_platform.api.access import OPEN, OWNER, RESTRICTED, Grant, is_admin
+from intel_platform.api.deps import (
+    ProjectAccess,
+    get_current_user,
+    get_graph_store,
+    project_exists,
+    require_project_access,
+    verify_api_key,
+)
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.requests import CreateProjectRequest
 from intel_platform.models.responses import (
     ProjectActivityResponse,
     ProjectBatchDeleteResponse,
     ProjectDeleteResponse,
+    ProjectMemberItem,
+    ProjectMembersResponse,
     ProjectResponse,
+    ProjectRole,
+    StatusResponse,
 )
 from intel_platform.services.text_utils import normalize_datetime as _normalize_datetime
 
@@ -22,6 +35,10 @@ router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 class BatchDeleteRequest(BaseModel):
     project_ids: list[str]
+
+
+class SetMemberRequest(BaseModel):
+    role: ProjectRole
 
 
 # Counts for every project at once, keyed by project_id. Each is a single pass
@@ -58,8 +75,8 @@ _COUNT_QUERIES = {
 }
 
 
-@router.get("/projects", response_model=list[ProjectResponse])
-def list_projects(store: GraphStore = Depends(get_graph_store)):
+def _project_rows(store: GraphStore) -> list[dict]:
+    """Every Project node with its counts, newest first."""
     with store._driver.session() as session:
         counts = {
             field: {r["pid"]: r["c"] for r in session.run(query)}
@@ -94,62 +111,116 @@ def list_projects(store: GraphStore = Depends(get_graph_store)):
     return projects
 
 
+def _project_response(project: dict, stats: dict, grant: Grant, collection_count: int | None = None) -> ProjectResponse:
+    extra = {} if collection_count is None else {"collection_count": collection_count}
+    return ProjectResponse(
+        id=project["id"], name=project["name"], description=project["description"],
+        classification_level=project["classification_level"], priority=project["priority"],
+        status=project["status"],
+        created_at=_normalize_datetime(project.get("created_at", "")),
+        updated_at=_normalize_datetime(project.get("updated_at", "")),
+        my_role=grant.role, access=grant.access,
+        **extra,
+        **stats,
+    )
+
+
+@router.get("/projects", response_model=list[ProjectResponse])
+async def list_projects(store: GraphStore = Depends(get_graph_store), user: dict = Depends(get_current_user)):
+    """The projects the caller may read, newest first, each with their role on it.
+
+    Filtered here, not in the client: an admin sees every project; anyone else
+    sees the open ones (no members) and those they are a member of.
+    """
+    rows = await asyncio.to_thread(_project_rows, store)
+    granted = await project_access.load_grants(user, (r["id"] for r in rows))
+    admin = is_admin(user)
+    visible = []
+    for row in rows:
+        # A Project node without an id holds no members.
+        grant = granted.get(row["id"]) or Grant(role=OWNER if admin else None, access=OPEN)
+        if admin or grant.allows("viewer"):
+            visible.append({**row, "my_role": grant.role, "access": grant.access})
+    return visible
+
+
+def _delete_project_node(store: GraphStore, project_id: str) -> None:
+    with store._driver.session() as session:
+        session.run("MATCH (p:Project {id: $id}) DETACH DELETE p", id=project_id)
+
+
 @router.post("/projects", response_model=ProjectResponse)
-def create_project(req: CreateProjectRequest, store: GraphStore = Depends(get_graph_store)):
-    project = store.create_project(
+async def create_project(
+    req: CreateProjectRequest,
+    store: GraphStore = Depends(get_graph_store),
+    user: dict = Depends(get_current_user),
+):
+    """Create a project. Its creator becomes its owner, which makes it restricted.
+
+    An admin is an implicit owner of every project and is never listed as a
+    member, so a project an admin creates starts open.
+    """
+    project = await asyncio.to_thread(
+        store.create_project,
         name=req.name, description=req.description,
         classification_level=req.classification_level, priority=req.priority,
     )
-    stats = store.get_project_stats(project["id"])
-    return ProjectResponse(
-        id=project["id"], name=project["name"], description=project["description"],
-        classification_level=project["classification_level"], priority=project["priority"],
-        status=project["status"],
-        created_at=_normalize_datetime(project.get("created_at", "")),
-        updated_at=_normalize_datetime(project.get("updated_at", "")),
-        **stats,
-    )
+    if is_admin(user):
+        grant = Grant(role=OWNER, access=OPEN)
+    else:
+        from intel_platform.db import members
+
+        try:
+            await members.add_owner(project["id"], user["username"])
+        except Exception:
+            # Without its owner row the project would be open to everyone, so
+            # it is not kept.
+            logger.exception("Recording the owner of new project %s failed; removing it", project["id"])
+            await asyncio.to_thread(_delete_project_node, store, project["id"])
+            raise HTTPException(status_code=503, detail="The project could not be created. Try again.")
+        grant = Grant(role=OWNER, access=RESTRICTED)
+    stats = await asyncio.to_thread(store.get_project_stats, project["id"])
+    return _project_response(project, stats, grant)
 
 
 @router.get("/projects/{project_id}", response_model=ProjectResponse)
-def get_project(project_id: str, store: GraphStore = Depends(get_graph_store)):
-    project = store.get_project(project_id)
+async def get_project(
+    project_id: str,
+    store: GraphStore = Depends(get_graph_store),
+    access: ProjectAccess = Depends(require_project_access("viewer")),
+):
+    project = await asyncio.to_thread(store.get_project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    stats = store.get_project_stats(project_id)
+    stats = await asyncio.to_thread(store.get_project_stats, project_id)
     try:
         from intel_platform.api.routes.collections import _get_collection_count
-        coll_count = _get_collection_count(store, project_id)
+        coll_count = await asyncio.to_thread(_get_collection_count, store, project_id)
     except Exception:
         coll_count = 0
-    return ProjectResponse(
-        id=project["id"], name=project["name"], description=project["description"],
-        classification_level=project["classification_level"], priority=project["priority"],
-        status=project["status"],
-        created_at=_normalize_datetime(project.get("created_at", "")),
-        updated_at=_normalize_datetime(project.get("updated_at", "")),
-        collection_count=coll_count,
-        **stats,
-    )
+    grant = await project_access.grant_on(access, project_id)
+    return _project_response(project, stats, grant, collection_count=coll_count)
 
 
 @router.put("/projects/{project_id}", response_model=ProjectResponse)
-def update_project(project_id: str, req: CreateProjectRequest, store: GraphStore = Depends(get_graph_store)):
-    project = store.get_project(project_id)
+async def update_project(
+    project_id: str,
+    req: CreateProjectRequest,
+    store: GraphStore = Depends(get_graph_store),
+    access: ProjectAccess = Depends(require_project_access("editor")),
+):
+    project = await asyncio.to_thread(store.get_project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    store.update_project(project_id, name=req.name, description=req.description,
-                         classification_level=req.classification_level, priority=req.priority)
-    updated = store.get_project(project_id)
-    stats = store.get_project_stats(project_id)
-    return ProjectResponse(
-        id=updated["id"], name=updated["name"], description=updated["description"],
-        classification_level=updated["classification_level"], priority=updated["priority"],
-        status=updated["status"],
-        created_at=_normalize_datetime(updated.get("created_at", "")),
-        updated_at=_normalize_datetime(updated.get("updated_at", "")),
-        **stats,
-    )
+
+    def update() -> tuple[dict, dict]:
+        store.update_project(project_id, name=req.name, description=req.description,
+                             classification_level=req.classification_level, priority=req.priority)
+        return store.get_project(project_id), store.get_project_stats(project_id)
+
+    updated, stats = await asyncio.to_thread(update)
+    grant = await project_access.grant_on(access, project_id)
+    return _project_response(updated, stats, grant)
 
 
 async def _delete_relational_rows(project_ids: list[str]) -> dict[str, int]:
@@ -158,6 +229,10 @@ async def _delete_relational_rows(project_ids: list[str]) -> dict[str, int]:
     Children go before parents, explicitly: the plan tables declare ON DELETE
     CASCADE, but a table created before a constraint existed would not have it,
     and a delete that half-works is the failure this replaces.
+
+    Membership is not among them: it goes last (``_delete_memberships``), once
+    the graph is gone, so a delete that fails half way leaves the project
+    restricted rather than open.
     """
     from sqlalchemy import delete, select
 
@@ -186,6 +261,29 @@ async def _delete_relational_rows(project_ids: list[str]) -> dict[str, int]:
             removed[statement.table.name] = result.rowcount or 0
         await session.commit()
     return removed
+
+
+async def _delete_memberships(project_ids: list[str]) -> dict[str, int]:
+    """Remove the deleted projects' member rows; ``{}`` when that fails.
+
+    A row left behind is harmless: it names a project that no longer exists,
+    and keeps any data later written under that id restricted to its old
+    members rather than open.
+    """
+    from sqlalchemy import delete
+
+    from intel_platform.db.engine import get_session_factory
+    from intel_platform.db.models import ProjectMember
+
+    statement = delete(ProjectMember).where(ProjectMember.project_id.in_(project_ids))
+    try:
+        async with get_session_factory()() as session:
+            result = await session.execute(statement)
+            await session.commit()
+    except Exception:
+        logger.exception("Project delete: member rows for %s were not removed", project_ids)
+        return {}
+    return {statement.table.name: result.rowcount or 0}
 
 
 async def _delete_projects(store: GraphStore, project_ids: list[str]) -> tuple[dict[str, int], dict[str, int]]:
@@ -222,10 +320,14 @@ async def _delete_projects(store: GraphStore, project_ids: list[str]) -> tuple[d
     from intel_platform.services.graph_cache import graph_cache
     for pid in project_ids:
         graph_cache.invalidate(pid)
+    rows.update(await _delete_memberships(project_ids))
     return nodes, rows
 
 
-@router.post("/projects/batch-delete", response_model=ProjectBatchDeleteResponse)
+@router.post(
+    "/projects/batch-delete", response_model=ProjectBatchDeleteResponse,
+    dependencies=[Depends(require_project_access("owner"))],
+)
 async def batch_delete_projects(req: BatchDeleteRequest, store: GraphStore = Depends(get_graph_store)):
     project_ids = list(dict.fromkeys(req.project_ids))
     nodes, rows = await _delete_projects(store, project_ids)
@@ -233,13 +335,19 @@ async def batch_delete_projects(req: BatchDeleteRequest, store: GraphStore = Dep
     return {"deleted": sum(1 for n in nodes.values() if n), "relational_rows_removed": rows}
 
 
-@router.delete("/projects/{project_id}", response_model=ProjectDeleteResponse)
+@router.delete(
+    "/projects/{project_id}", response_model=ProjectDeleteResponse,
+    dependencies=[Depends(require_project_access("owner"))],
+)
 async def delete_project(project_id: str, store: GraphStore = Depends(get_graph_store)):
     nodes, rows = await _delete_projects(store, [project_id])
     return {"status": "deleted", "entities_removed": nodes[project_id], "relational_rows_removed": rows}
 
 
-@router.get("/projects/{project_id}/activity", response_model=ProjectActivityResponse)
+@router.get(
+    "/projects/{project_id}/activity", response_model=ProjectActivityResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_project_activity(
     project_id: str, limit: int = Query(20, ge=1, le=500), store: GraphStore = Depends(get_graph_store),
 ):
@@ -270,3 +378,101 @@ def get_project_activity(
 
     activity.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
     return {"activity": activity[:limit], "count": len(activity)}
+
+
+# ---------------------------------------------------------------------------
+# Members (contract 3). The rules are in api/access.py and db/members.py.
+# ---------------------------------------------------------------------------
+
+async def _require_project(store: GraphStore, project_id: str) -> None:
+    if not await asyncio.to_thread(project_exists, store, project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+
+def _user_exists(store: GraphStore, username: str) -> bool:
+    with store._driver.session() as session:
+        return session.run("MATCH (u:User {username: $u}) RETURN count(u) AS n", u=username).single()["n"] > 0
+
+
+def _member_item(row) -> dict:
+    return {
+        "username": row.username,
+        "role": row.role,
+        "added_by": row.added_by or "",
+        "added_at": row.added_at.isoformat() if row.added_at else "",
+    }
+
+
+def _membership_unavailable() -> HTTPException:
+    logger.exception("Project membership could not be read or written")
+    return HTTPException(status_code=503, detail=project_access.ACCESS_UNAVAILABLE)
+
+
+@router.get("/projects/{project_id}/members", response_model=ProjectMembersResponse)
+async def list_project_members(
+    project_id: str,
+    store: GraphStore = Depends(get_graph_store),
+    access: ProjectAccess = Depends(require_project_access("viewer")),
+):
+    """The project's members (owners first), whether it is open, and the caller's role."""
+    from intel_platform.db import members
+
+    await _require_project(store, project_id)
+    try:
+        rows = await members.list_members(project_id)
+    except Exception:
+        raise _membership_unavailable() from None
+    grant = await project_access.grant_on(access, project_id)
+    return {
+        "members": [_member_item(r) for r in rows],
+        "access": RESTRICTED if rows else OPEN,
+        "my_role": grant.role,
+    }
+
+
+@router.put("/projects/{project_id}/members/{username}", response_model=ProjectMemberItem)
+async def put_project_member(
+    project_id: str,
+    username: str,
+    req: SetMemberRequest,
+    store: GraphStore = Depends(get_graph_store),
+    access: ProjectAccess = Depends(require_project_access("owner")),
+):
+    """Add a member or change their role (owners only; anyone on an open project).
+
+    409 when the project has no members and the role is not owner (the first
+    member closes the project, so it must be someone who can manage it), or when
+    the change would leave the project without an owner.
+    """
+    from intel_platform.db import members
+
+    await _require_project(store, project_id)
+    if not await asyncio.to_thread(_user_exists, store, username):
+        raise HTTPException(status_code=404, detail="No such user")
+    try:
+        row = await members.put_member(project_id, username, req.role, added_by=access.username)
+    except members.MembershipRuleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except Exception:
+        raise _membership_unavailable() from None
+    return _member_item(row)
+
+
+@router.delete(
+    "/projects/{project_id}/members/{username}", response_model=StatusResponse,
+    dependencies=[Depends(require_project_access("owner"))],
+)
+async def remove_project_member(project_id: str, username: str, store: GraphStore = Depends(get_graph_store)):
+    """Remove a member (owners only). 409 for the project's last owner."""
+    from intel_platform.db import members
+
+    await _require_project(store, project_id)
+    try:
+        await members.remove_member(project_id, username)
+    except members.NotAMemberError:
+        raise HTTPException(status_code=404, detail="Not a member of this project") from None
+    except members.MembershipRuleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except Exception:
+        raise _membership_unavailable() from None
+    return {"status": "removed"}

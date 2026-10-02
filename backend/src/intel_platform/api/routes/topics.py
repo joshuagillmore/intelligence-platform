@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from intel_platform.api.cache import cached
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, require_project_access, verify_api_key
 from intel_platform.db.engine import get_db
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.topics import TopicTreeService, apply_topic_edits
@@ -58,7 +58,10 @@ async def _topic_edits(db: AsyncSession, project_id: str) -> list | None:
         return None
 
 
-@router.get("/topics", response_model=TopicTreeResponse, response_model_exclude_unset=True)
+@router.get(
+    "/topics", response_model=TopicTreeResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def get_topic_tree(
     project_id: str,
     method: str = "tfidf",
@@ -87,6 +90,7 @@ async def get_topic_tree(
 @router.get(
     "/topics/{entity_id}", response_model=TopicContextResponse | ErrorMessageResponse,
     response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
 )
 def get_topic_context(entity_id: str, project_id: str, store: GraphStore = Depends(get_graph_store)):
     svc = TopicTreeService(store)
@@ -103,6 +107,7 @@ class SummarizeRequest(BaseModel):
     "/topics/{entity_id}/summarize", response_class=_EventStream,
     response_description='Server-sent events: `data: {"text": ...}` frames, then `data: [DONE]`; '
     'a failure is one `data: {"error": ...}` frame.',
+    dependencies=[Depends(require_project_access("viewer"))],
 )
 async def summarize_topic(
     entity_id: str,
@@ -141,7 +146,10 @@ class TopicCreateRequest(BaseModel):
     description: str = ""
 
 
-@router.put("/topics/{node_id}", response_model=TopicNodeUpdatedResponse)
+@router.put(
+    "/topics/{node_id}", response_model=TopicNodeUpdatedResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def update_topic_node(node_id: str, req: TopicEditRequest, db: AsyncSession = Depends(get_db)):
     """Rename or update a topic node."""
     from intel_platform.db.models import TopicEdit
@@ -175,7 +183,10 @@ async def update_topic_node(node_id: str, req: TopicEditRequest, db: AsyncSessio
     return {"node_id": node_id, "updated": True}
 
 
-@router.post("/topics/{node_id}/children", response_model=TopicChildCreatedResponse)
+@router.post(
+    "/topics/{node_id}/children", response_model=TopicChildCreatedResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def add_topic_child(node_id: str, req: TopicCreateRequest, db: AsyncSession = Depends(get_db)):
     """Add a user-created child node to a topic."""
     import uuid
@@ -195,7 +206,10 @@ async def add_topic_child(node_id: str, req: TopicCreateRequest, db: AsyncSessio
     return {"node_id": child_id, "parent_id": node_id, "name": req.name}
 
 
-@router.delete("/topics/{node_id}", response_model=TopicNodeDeletedResponse)
+@router.delete(
+    "/topics/{node_id}", response_model=TopicNodeDeletedResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def delete_topic_node(node_id: str, project_id: str, db: AsyncSession = Depends(get_db)):
     """Mark a topic node as deleted (hidden from view)."""
     from intel_platform.db.models import TopicEdit

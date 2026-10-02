@@ -58,13 +58,13 @@ init, then `pytest` — so it is the canonical reference for a green run.
 
 | Package | Responsibility |
 |---------|----------------|
-| `api/` | FastAPI app + `routes/` (`collection_plans/` and `pirs/` are packages split by concern and re-export their routers; 27 routers: auth, documents, entities, graph, collections, collection_plans, pirs, query, assess, analysis, topics, reports, geo, timeline, search, watchlist, personas, snapshots, admin_config, llm, ingest, export, notebook, projects, health, enrichment, attack). App = `api.app:app`; middleware = rate-limit / request-logging / security-headers. |
+| `api/` | FastAPI app + `routes/` (`collection_plans/` and `pirs/` are packages split by concern and re-export their routers; 27 routers: auth, documents, entities, graph, collections, collection_plans, pirs, query, assess, analysis, topics, reports, geo, timeline, search, watchlist, personas, snapshots, admin_config, llm, ingest, export, notebook, projects, health, enrichment, attack). App = `api.app:app`; middleware = rate-limit / request-logging / security-headers. `deps.py` = shared dependencies, including `require_project_access`; `access.py` = the per-project access rules it applies (see "Access control"). |
 | `services/` | Business logic: `plan_runs` (run state and readiness for collection plans), `pir_judge/` (PIR satisfaction judging: EEIs, evidence sampling, verdict parsing, the model exchange), extraction, enrichment, ingestion, graph_builder, graph_rag, hybrid_retrieval, vector_search, document_clustering, topics, assessment, `requirement_assessor` (per-EEI gap analysis that drives re-tasking), analytic_agents, summarization, geocoding, `geo/` (`coordinates`: MGRS/DMS/decimal parsing and conversion via pygeodesy; `overpass`: OSM local-feature lookup through `ProxiedClient`), collection_planner, plan_executor, reports, mindmap_export, graph_cache, text_utils, `content_quality` (one gate deciding whether a fetched page is content), `llm_output` (reading labelled values and JSON back out of model replies). `attack/` = MITRE ATT&CK® (`stix_parser` pure STIX→model, `graph_ops` Neo4j load + matrix/technique/resolve/navigator/attribution reads, `ingest` fetch-and-load, `embeddings` technique-catalog→pgvector, `mapping` RAG text→technique, `vuln_chain` CVE→ATT&CK chain: CWE/CAPEC XML fetch+parse → `(:Cwe)-[:ENABLES]->(:AttackTechnique)` reference edges + per-project `resolve_cve`, `d3fend` lazy keyless D3FEND countermeasure fetch + Postgres cache, `report` ATT&CK-structured intelligence product: graph sections + deterministic markdown + optional LLM narrative). |
 | `collection/` | Agentic web collection: `search` (multi-engine via ddgs, see below) → `crawler`/`scraper` (crawl4ai) → `runner`/`executor` (CollectionRunner) → ingest. `agentic.py` = LLM-driven planning; runs are rows in Postgres `collection_jobs`, executed by `intel_platform.worker` (or inline in the API process when `COLLECTION_WORKER_MODE=inline`), with `job_runner.py` owning claim, heartbeat and run state. The browser egresses through `egress_proxy.py`. `requirement_loop.py` = re-tasks collection at the EEIs the planned sources left unanswered (see "Collecting against a requirement"). |
 | `llm/` | Multi-provider layer: `anthropic`, `openai_provider`, `cohere_provider`, `ollama`, plus `embeddings`, `skills`, the **`orchestrator`**, and **`providers`** (`_get_provider` / `_get_collection_provider` / `_get_extraction_provider` / `_resolve_api_key` / `_cloud_provider_from_env` — the single source of truth for provider selection; services import from here, not from `api/routes/llm.py`, which only re-exports them). |
 | `enrichment/` | Cyber-observable enrichment: `observables` (refang/classify), `base` (provider ABC + registry), `cache` (Postgres cache + rate limiter), `service` (Investigate orchestrator), `hook` (auto-enrich), `providers/` (dns, geoip, kev, nvd, rdap, certs, email — keyless, egress via `ProxiedClient`). |
 | `graph/` | Neo4j: `schema.py` (`initialize_schema`), `store.py`. |
-| `db/` | Postgres (SQLAlchemy async): `engine.py` (`init_db`), `models.py`. |
+| `db/` | Postgres (SQLAlchemy async): `engine.py` (`init_db`), `models.py`, `jobs.py` (collection jobs), `members.py` (project membership reads and writes). |
 | `models/` | Pydantic v2 domain: `entities`, `relationships`, `type_hierarchy`, `requests`, `responses`. |
 | `connectors/`, `data/`, `mcp/` | External connectors, seed/data, and an MCP server surface. |
 
@@ -103,7 +103,10 @@ uv run alembic check          # "No new upgrade operations detected." = models a
 Never edit `0001_baseline.py` or add a table to it; a new table is a new
 revision. `tests/test_alembic_migrations.py` runs `alembic check` against a fresh
 database, so a model change without a revision fails the suite (with a Postgres
-exported; it skips without one).
+exported; it skips without one). A revision that creates a table returns early
+when the table already exists (`4418e903536f`, `99f913170802`). Test fixtures
+build the exported database with `create_all`, and the worker test then migrates
+that same database.
 
 **Existing deployments (adoption).** Every database created before Alembic has
 the tables but no `alembic_version`. `init_db` detects that and, before
@@ -126,6 +129,52 @@ uv run alembic check
 is installed, the next boot creates them. The migrations ship in the images
 next to `src/` (`/app/alembic`, `/app/alembic.ini`); `init_db` refuses to start
 without them rather than run with an unmigrated schema.
+
+## Access control
+
+Projects have members (`project_members` in Postgres; `db/members.py`), each
+with the role **viewer** (read), **editor** (write project data) or **owner**
+(manage members, delete the project). Admins (session `role == "admin"`, which
+includes the API key) are implicit owners everywhere, are never listed as
+members, and are never checked. `SECURITY.md` ("Project access") has the
+operator's view.
+
+- **Open vs restricted.** A project with no members is *open*: every
+  authenticated user may do anything on it, which is how every project made
+  before membership behaves. The first member must be an owner, and adding
+  them makes the project *restricted*. Neither removal nor demotion may take
+  away the last owner (409). Analyst-created projects get their creator as
+  owner; admin-created ones start open.
+- **Every project-scoped route declares the dependency**, choosing the role:
+  `dependencies=[Depends(require_project_access("viewer"))]` for reads,
+  `"editor"` for writes, and `"owner"` for project deletion and members. Declare
+  it as a parameter (`access: ProjectAccess = Depends(...)`) when the handler
+  needs the caller. A route listing several projects' rows (`GET /projects`,
+  and `/collection-plans` and `/collections` without a `project_id`) filters
+  with `access.visible_projects`.
+- **What the dependency checks** (`api/access.py`). It collects the scoped
+  field names (`access.FIELDS`) from the path, the query and the JSON/form
+  body. FastAPI has already parsed the body and Starlette caches it, so nothing
+  is read twice. Every id is resolved to its project: graph nodes (entity,
+  document, report, note, snapshot, legacy collection ids) through one Neo4j
+  query, and plans, sources, catalog entries and PIRs through Postgres. The
+  caller needs `min_role` on **every** project touched, so naming a project you
+  can use does not reach another project's entity. An id that resolves to
+  nothing touches no project, and the handler's own 404 answers it. A
+  non-member gets 403 `"No access to this project"`, a member with too low a
+  role gets 403 naming the role, and a membership read that fails is a 503,
+  never a pass.
+- **Adding a route.** `tests/test_project_access_coverage.py` walks
+  `app.openapi()`. It fails when an operation carrying a scoped field lacks the
+  dependency, when an operation without the dependency is missing from its
+  `UNGUARDED` allowlist (each entry gives a reason, and admin entries must have
+  `require_admin`), when a guarded route has a path parameter the check does
+  not resolve, and when a GET or write uses the wrong role. If a route takes a
+  new kind of id, teach `access.py` to resolve it. Do not allowlist it.
+- **Tests.** `tests/test_project_access.py` signs analysts in with
+  `create_access_token(username, role="analyst")`. The API key is an admin and
+  skips every check, so a test that uses only `HEADERS` proves nothing about
+  access.
 
 ## Degraded outcomes (telemetry)
 

@@ -1,10 +1,41 @@
+import asyncio
+
+import pytest
 from fastapi.testclient import TestClient
 from intel_platform.api.app import app
 from intel_platform.config import settings
+from tests import pg
 from tests.ids import tp
+from tests.pg import requires_postgres
 
 client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
+
+# The project list reports the caller's access to each project, which is read
+# from Postgres (project_members), so listing needs one.
+
+
+async def _create_schema() -> None:
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    from intel_platform.db.models import Base
+
+    engine = create_async_engine(pg._engine_url(), poolclass=NullPool)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _postgres_schema():
+    if pg.postgres_configured():
+        asyncio.run(_create_schema())
 
 
 def test_create_project():
@@ -20,6 +51,7 @@ def test_create_project():
     client.delete(f"/api/projects/{data['id']}", headers=headers)
 
 
+@requires_postgres
 def test_list_projects():
     response = client.get("/api/projects", headers=headers)
     assert response.status_code == 200
@@ -31,6 +63,7 @@ def test_unauthorized():
     assert response.status_code == 401
 
 
+@requires_postgres
 class TestProjectListCounts:
     """The per-project counts on the landing page.
 
