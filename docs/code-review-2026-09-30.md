@@ -90,7 +90,17 @@ remediation were executed per `docs/design/plans/2026-09-30-post-review-hardenin
 | Government ↔ country | Done | `data/governments.yaml` (29 countries: name templates, forms such as "the Kremlin", capitals as metonyms) applied in every extraction mode and in graph resolution; a capital joins its country only when parsed as an actor. The largest typed-F1 gain in the model modes (llm 0.707 → 0.735). |
 | NLP gaps | Done | Proper-name acronyms (JCPOA, NDAA, INDOPACOM) are extracted; heading fragments ("Assess Russian") are rejected by a heading-aware filter. |
 | Response models on every operation | Done | 156 of 156 operations declare a model (was 14), proven by `tests/test_response_models.py` (84 tests comparing each declared response with the handler's value). Nine models are open-ended by design and say so. The stronger client types found one real UI bug (the network view's community mapping was always empty) and a dozen dead reads of fields no route sends. |
-| Still open | | Typed relationship precision in the model modes is still low (0.13 to 0.17): the model names plausible edges the gold does not label. Graph Location nodes carry no alias field, so a government form resolves to its country but is not stored as an alias. The cyber IOC "relations" column reads a field `/entities` never sends. Multi-user project ownership. |
+| Still open | | Typed relationship precision in the model modes is still low (0.13 to 0.17): the model names plausible edges the gold does not label. |
+
+## Final round (2026-10-02, branch `feat/aliases-relations-and-project-access`)
+
+| Item | Status | Note |
+|---|---|---|
+| Location aliases | Done | `Location.aliases`; the government↔country rule stores the written form ("the Kremlin", "PRC government", "Moscow" as actor) as an alias on the country node, merged as a set union; search and resolution match aliases; a name in the governments table is never resolved through an alias (so "talks in Moscow" stays a place). |
+| IOC relation counts | Done | `GET /entities` items carry `relationship_count` (degree over analytic edges, Document mentions excluded); the cyber column shows it. |
+| Project access control | Done | `project_members` (Alembic revision), roles owner/editor/viewer, admin bypass, open projects until the first owner is added, `require_project_access` on 121 of 159 operations with a fail-closed coverage test and an explicit allowlist; member routes; MCP tools apply the same rules through the request scope; the frontend shows roles, a members panel, and one shared no-access state. Verified live: non-member 403 (not 404), viewer refused a write through a form body, owner allowed, admin bypass, last-owner 409, project list filtered, MCP refusal. |
+| Found on the way | Fixed | The source-acquisitions route never checked that the source belonged to the plan; `GET /collection-plans` and `GET /collections` without a project returned every project's rows. |
+| Still open | | Typed relationship precision in the model modes. Projects created by an admin stay open until a member is added (by design; `SECURITY.md` says an admin should claim existing projects before analysts do). |
 
 ## Check results
 
