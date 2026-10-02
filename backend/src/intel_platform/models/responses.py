@@ -364,3 +364,28 @@ class PersonaListResponse(BaseModel):
 
 class PersonaActivatedResponse(BaseModel):
     active_persona: str
+
+
+# ---------------------------------------------------------------------------
+# Notebook
+# ---------------------------------------------------------------------------
+
+class NoteCreatedResponse(BaseModel):
+    note_id: str
+    title: str
+    note_type: str
+    linked_entities: int
+    # Entity ids no link could be made to (unknown, or in another project).
+    unlinked_entity_ids: list[str]
+
+
+class NoteResponse(EntityProperties):
+    """A notebook entry: a Report node with ``report_type`` "notebook_entry".
+
+    Open-ended (``extra="allow"``) as every ``EntityProperties`` is; the fields
+    the notebook reads are declared.
+    """
+    content: str | None = None
+    report_type: str | None = None
+    note_type: str | None = None
+    created_at: str | None = None
