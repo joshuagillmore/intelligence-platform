@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, require_project_access, verify_api_key
 from intel_platform.db.engine import get_db
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.responses import (
@@ -61,7 +61,10 @@ class GapAnalysisRequest(BaseModel):
     token_budget: int = Field(8000, ge=500, le=32000)
 
 
-@router.post("/analysis/source-evaluation", response_model=SourceEvaluationResponse)
+@router.post(
+    "/analysis/source-evaluation", response_model=SourceEvaluationResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def evaluate_sources(
     req: SourceEvaluationRequest,
     store: GraphStore = Depends(get_graph_store),
@@ -81,7 +84,10 @@ async def evaluate_sources(
     )
 
 
-@router.post("/analysis/hypotheses", response_model=HypothesesResponse, response_model_exclude_unset=True)
+@router.post(
+    "/analysis/hypotheses", response_model=HypothesesResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def generate_hypotheses(
     req: HypothesesRequest,
     store: GraphStore = Depends(get_graph_store),
@@ -102,7 +108,10 @@ async def generate_hypotheses(
     )
 
 
-@router.post("/analysis/gaps", response_model=GapAnalysisResponse)
+@router.post(
+    "/analysis/gaps", response_model=GapAnalysisResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def analyze_gaps(
     req: GapAnalysisRequest,
     store: GraphStore = Depends(get_graph_store),

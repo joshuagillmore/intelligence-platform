@@ -72,6 +72,44 @@ def _not_provenance(rel: str) -> str:
     return f"NOT (type({rel}) = 'MENTIONS' AND startNode({rel}):Document)"
 
 
+def _clean_aliases(values) -> list[str]:
+    """The non-empty strings in `values`, stripped, each once ignoring case, in order."""
+    if isinstance(values, str) or not isinstance(values, (list, tuple)):
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        alias = value.strip()
+        if alias and alias.lower() not in seen:
+            seen.add(alias.lower())
+            out.append(alias)
+    return out
+
+
+def _alias_union(var: str, param: str) -> str:
+    """Cypher expression: `var`'s aliases plus those in `param` it lacks.
+
+    Compared ignoring case; an alias that is the node's own name is left out.
+    Aliases only accumulate: a second document naming a country another way
+    adds that form and never takes away the forms earlier ones recorded.
+    """
+    return (
+        f"reduce(acc = coalesce({var}.aliases, []), a IN {param} | "
+        f"CASE WHEN toLower(a) IN [x IN acc | toLower(x)] OR toLower(a) = toLower(coalesce({var}.name, '')) "
+        f"THEN acc ELSE acc + a END)"
+    )
+
+
+def _matches_term(var: str, param: str) -> str:
+    """Cypher predicate: the lowercased term `param` is in `var`'s name or in one of its aliases."""
+    return (
+        f"(toLower({var}.name) CONTAINS {param} "
+        f"OR any(a IN coalesce({var}.aliases, []) WHERE toLower(a) CONTAINS {param}))"
+    )
+
+
 def _validate_label(label: str) -> str:
     """Validate entity label. Must be alphanumeric (Neo4j label requirement)."""
     if not label or not re.match(r'^[A-Za-z][A-Za-z0-9_]*$', label):
@@ -175,6 +213,8 @@ class GraphStore:
 
         Used by enrichment to write looked-up properties (asn, dns_records,
         cvss_score, enriched flags) onto an already-extracted observable node.
+        `aliases` are added to the node's own (see `add_aliases`), never
+        written over them.
         """
         if not props:
             return self.get_entity(entity_id)
@@ -188,14 +228,22 @@ class GraphStore:
         if "name" in clean:
             rekey = " SET n.normalized_name = CASE WHEN n.normalized_name IS NULL THEN NULL ELSE $nn END"
             params["nn"] = normalize_name(str(clean["name"])) or None
+        merge_aliases = ""
+        if "aliases" in clean:
+            # The lock is taken before the list is read, as in add_aliases.
+            params["aliases"] = _clean_aliases(clean.pop("aliases"))
+            merge_aliases = (
+                f" SET n._aliases_lock = true SET n.aliases = {_alias_union('n', '$aliases')}"
+                " REMOVE n._aliases_lock"
+            )
         with self._driver.session() as session:
             record = session.run(
-                f"MATCH (n:Entity {{id: $id}}) SET n += $props{rekey} RETURN n", parameters=params,
+                f"MATCH (n:Entity {{id: $id}}) SET n += $props{rekey}{merge_aliases} RETURN n", parameters=params,
             ).single()
             if record is None:
                 # Unlabelled node (see get_entity).
                 record = session.run(
-                    f"MATCH (n {{id: $id}}) SET n += $props{rekey} RETURN n", parameters=params,
+                    f"MATCH (n {{id: $id}}) SET n += $props{rekey}{merge_aliases} RETURN n", parameters=params,
                 ).single()
             node = dict(record["n"]) if record else None
 
@@ -232,6 +280,45 @@ class GraphStore:
                 """,
                 id=entity_id, doc=source_doc_id,
             )
+
+    def add_aliases(self, aliases: dict[str, list[str]]) -> int:
+        """Add `{entity_id: [alias, ...]}` to the entities' `aliases`. Returns nodes written.
+
+        A union, never an overwrite: an alias already on the node (in any
+        case) or equal to its name is skipped, and every alias it had stays.
+        One statement for a whole build. The first SET takes each node's write
+        lock before its list is read, so concurrent builds cannot drop each
+        other's aliases; rows go in id order so they queue rather than deadlock.
+        """
+        rows = [
+            {"id": entity_id, "aliases": cleaned}
+            for entity_id, values in sorted(aliases.items())
+            if entity_id and (cleaned := _clean_aliases(values))
+        ]
+        if not rows:
+            return 0
+
+        def _write(tx) -> tuple[int, list]:
+            record = tx.run(
+                f"""
+                UNWIND $rows AS row
+                MATCH (n:Entity {{id: row.id}})
+                SET n._aliases_lock = true
+                SET n.aliases = {_alias_union('n', 'row.aliases')}
+                REMOVE n._aliases_lock
+                RETURN count(n) AS written, collect(DISTINCT n.project_id) AS projects
+                """,
+                rows=rows,
+            ).single()
+            return (record["written"], list(record["projects"])) if record else (0, [])
+
+        with self._driver.session() as session:
+            written, projects = session.execute_write(_write)
+        from intel_platform.services.graph_cache import graph_cache
+        for project_id in projects:
+            if project_id:
+                graph_cache.invalidate(project_id)
+        return written
 
     # ── Document mentions ────────────────────────────────────────────────
     # `(:Document)-[:MENTIONS {count, first_seen, project_id}]->(:Entity)`:
@@ -482,8 +569,19 @@ class GraphStore:
         if entity_type:
             cypher += " AND n.entity_type = $entity_type"
             params["entity_type"] = entity_type
+        # Every term must appear somewhere in the name, in any order.
+        #
+        # This matched the whole query as one literal substring, so any search
+        # of more than one word returned nothing: on a 5,486-entity project
+        # about Baltic cable sabotage, "Baltic" and "cable" each returned
+        # results and "Baltic cable" returned zero — no entity is named that
+        # exactly. An analyst typing a phrase, which is how anyone uses a
+        # search box, got a well-formed empty page.
+        #
+        # A term may also be in one of the entity's aliases: a search for
+        # "Kremlin" finds Russia once a document has named it that way.
         for i, term in enumerate(_search_terms(query)):
-            cypher += f" AND toLower(n.name) CONTAINS $q{i}"
+            cypher += f" AND {_matches_term('n', f'$q{i}')}"
             params[f"q{i}"] = term
         return cypher, params
 
@@ -503,26 +601,28 @@ class GraphStore:
         self, project_id: str, query: str = "", entity_type: str | None = None,
         limit: int = 50, offset: int = 0,
     ) -> list[dict]:
-        cypher = "MATCH (n:Entity) WHERE n.project_id = $project_id"
-        params: dict = {"project_id": project_id, "limit": limit, "offset": offset}
-        if entity_type:
-            cypher += " AND n.entity_type = $entity_type"
-            params["entity_type"] = entity_type
-        # Every term must appear somewhere in the name, in any order.
-        #
-        # This matched the whole query as one literal substring, so any search
-        # of more than one word returned nothing: on a 5,486-entity project
-        # about Baltic cable sabotage, "Baltic" and "cable" each returned
-        # results and "Baltic cable" returned zero — no entity is named that
-        # exactly. An analyst typing a phrase, which is how anyone uses a
-        # search box, got a well-formed empty page.
-        for i, term in enumerate(_search_terms(query)):
-            cypher += f" AND toLower(n.name) CONTAINS $q{i}"
-            params[f"q{i}"] = term
-        cypher += " RETURN n ORDER BY n.name SKIP $offset LIMIT $limit"
+        """One page of the entities `_entity_filter` matches, by name, each with its `relationship_count`.
+
+        `relationship_count` is the entity's degree over the knowledge graph:
+        every edge touching it except the Document MENTIONS edges that record
+        where it was extracted from (``_not_provenance``), so it counts what
+        `get_relationships` lists. Computed after the page is cut, so a page
+        costs one expansion per row it returns, not one per match.
+        """
+        cypher, params = self._entity_filter(project_id, query, entity_type)
+        params.update(limit=limit, offset=offset)
+        cypher += f"""
+            WITH n ORDER BY n.name SKIP $offset LIMIT $limit
+            OPTIONAL MATCH (n)-[r]-() WHERE {_not_provenance('r')}
+            WITH n, count(DISTINCT r) AS relationship_count
+            RETURN n, relationship_count ORDER BY n.name
+        """
         with self._driver.session() as session:
             result = session.run(cypher, parameters=params)
-            return [dict(record["n"]) for record in result]
+            return [
+                {**dict(record["n"]), "relationship_count": record["relationship_count"]}
+                for record in result
+            ]
 
     VALID_REL_TYPES = {
         "ASSOCIATED_WITH", "BELONGS_TO", "LOCATED_AT", "COMMUNICATES_WITH",
@@ -532,43 +632,69 @@ class GraphStore:
         "COMMANDED_BY", "FUNDED_BY", "SUPPLIED_BY", "DEPLOYED_AT",
     }
 
-    def search_entity_by_name(self, project_id: str, name: str, limit: int = 20) -> list[dict]:
+    def search_entity_by_name(
+        self, project_id: str, name: str, limit: int = 20, match_aliases: bool = True,
+    ) -> list[dict]:
         """Search entities by name using the fulltext index for efficient resolution.
 
         Returns candidate entities for fuzzy matching — much faster than loading
-        all entities when the project is large.
+        all entities when the project is large. With `match_aliases`, up to
+        `limit` entities carrying `name` as one of their aliases (ignoring
+        case) follow the name hits: the name index covers names only, and
+        resolution matches aliases too, so the entity "Fancy Bear" names must
+        be among the candidates for it to be found. That costs a scan of the
+        project's entities (~14 ms at 22k), so a caller that will not match
+        aliases turns it off.
         """
         with self._driver.session() as session:
-            # Try fulltext index first
-            try:
-                result = session.run(
-                    """
-                    CALL db.index.fulltext.queryNodes("entity_name_search", $search_name)
-                    YIELD node, score
-                    WHERE node.project_id = $project_id
-                    RETURN node
-                    LIMIT $limit
-                    """,
-                    parameters={"search_name": name, "project_id": project_id, "limit": limit},
-                )
-                candidates = [dict(record["node"]) for record in result]
-                if candidates:
-                    return candidates
-            except Exception:
-                pass  # Fulltext index may not exist; fall through
-
-            # Fallback: CONTAINS search
+            candidates = self._candidates_by_name(session, project_id, name, limit)
+            if not match_aliases:
+                return candidates
             result = session.run(
                 """
-                MATCH (n)
-                WHERE n.project_id = $project_id
-                AND toLower(n.name) CONTAINS toLower($search_name)
+                MATCH (n:Entity)
+                WHERE n.project_id = $project_id AND n.aliases IS NOT NULL
+                  AND any(a IN n.aliases WHERE toLower(a) = toLower($search_name))
                 RETURN n
                 LIMIT $limit
                 """,
                 parameters={"search_name": name, "project_id": project_id, "limit": limit},
             )
-            return [dict(record["n"]) for record in result]
+            seen = {c.get("id") for c in candidates}
+            return candidates + [n for n in (dict(record["n"]) for record in result) if n.get("id") not in seen]
+
+    @staticmethod
+    def _candidates_by_name(session, project_id: str, name: str, limit: int) -> list[dict]:
+        # Try fulltext index first
+        try:
+            result = session.run(
+                """
+                CALL db.index.fulltext.queryNodes("entity_name_search", $search_name)
+                YIELD node, score
+                WHERE node.project_id = $project_id
+                RETURN node
+                LIMIT $limit
+                """,
+                parameters={"search_name": name, "project_id": project_id, "limit": limit},
+            )
+            candidates = [dict(record["node"]) for record in result]
+            if candidates:
+                return candidates
+        except Exception:
+            pass  # Fulltext index may not exist; fall through
+
+        # Fallback: CONTAINS search
+        result = session.run(
+            """
+            MATCH (n)
+            WHERE n.project_id = $project_id
+            AND toLower(n.name) CONTAINS toLower($search_name)
+            RETURN n
+            LIMIT $limit
+            """,
+            parameters={"search_name": name, "project_id": project_id, "limit": limit},
+        )
+        return [dict(record["n"]) for record in result]
 
     # Distinct evidence sentences kept per list on one edge.
     _MAX_EVIDENCE = 20

@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, require_project_access, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.responses import (
     AssessmentCreatedResponse,
@@ -57,7 +57,10 @@ class GenerateAssessmentRequest(BaseModel):
     methodology: str = ""
 
 
-@router.post("/entities/{entity_id}/assess", response_model=AssessmentCreatedResponse)
+@router.post(
+    "/entities/{entity_id}/assess", response_model=AssessmentCreatedResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 def create_assessment(
     entity_id: str,
     req: CreateAssessmentRequest,
@@ -86,7 +89,10 @@ class MultiAssessmentRequest(BaseModel):
     methodology: str = ""
 
 
-@router.post("/assess/generate", response_model=GeneratedAssessmentResponse, response_model_exclude_unset=True)
+@router.post(
+    "/assess/generate", response_model=GeneratedAssessmentResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def generate_assessment(req: GenerateAssessmentRequest, store: GraphStore = Depends(get_graph_store)):
     """Use LLM to generate an assessment for an entity based on graph context."""
     from intel_platform.services.graph_rag import GraphRAGPipeline
@@ -180,7 +186,10 @@ CONFIDENCE_LABEL: [Almost No Chance | Very Unlikely | Unlikely | Roughly Even Ch
     }
 
 
-@router.post("/assess/multi", response_model=MultiAssessmentResponse, response_model_exclude_unset=True)
+@router.post(
+    "/assess/multi", response_model=MultiAssessmentResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 def assess_multiple_entities(req: MultiAssessmentRequest, store: GraphStore = Depends(get_graph_store)):
     """Assess multiple entities at once — gathers context for all and returns combined assessment data."""
     entities_data = []

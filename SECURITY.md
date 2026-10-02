@@ -26,7 +26,8 @@ are especially valuable:
   `collection/url_guard.py` (`validate_url`) on every request and redirect hop.
 - **Injection** — stored XSS from document- or LLM-derived text, Cypher/SQL
   injection, prompt injection that escalates privilege.
-- **AuthN / AuthZ** — JWT handling, the admin-gated routes, privilege escalation.
+- **AuthN / AuthZ** — JWT handling, the admin-gated routes, per-project access
+  (see "Project access" below), privilege escalation.
 - **Secret handling** — provider API keys saved through the admin UI are
   Fernet-encrypted at rest **when `ENCRYPTION_KEY` is set**; without it they are
   stored in plaintext (a warning is logged at boot, and `REQUIRE_SECURE_AUTH=true`
@@ -95,6 +96,48 @@ cannot act as a signed-in analyst. `SameSite=Lax` is the second layer.
 
 The local `docker compose` stack binds all services to `127.0.0.1` by design;
 do not rebind app ports to `0.0.0.0` on an untrusted network.
+
+### Project access
+
+Each project has members, held in Postgres (`project_members`), with one of
+three roles: **viewer** (read), **editor** (read and write project data) and
+**owner** (also manage members and delete the project). An admin (`role` admin
+on the session, which includes the `API_KEY`) is an implicit owner of every
+project and is never listed.
+
+- **Open projects.** A project with no members is usable by every signed-in
+  user. Every project created before membership existed is open, so a
+  single-analyst deployment works as before. Any signed-in user may add the
+  first member of an open project, and that member must be an owner. Adding the
+  first member restricts the project. On a shared deployment, have an admin or
+  the right analyst add owners to every existing project, because until that
+  happens anyone can do it.
+- **Restricted projects.** Only members can use a restricted project, each up to
+  their role. Anyone else gets **403** `No access to this project`. A member
+  whose role is too low gets a 403 that names the role required. **404** means
+  only that the project does not exist. So a 403 does confirm that a project id
+  exists, but project ids are random UUIDs.
+- **New projects.** When an analyst creates a project, they become its owner,
+  so the project starts restricted. A project an admin creates starts open.
+- **Owners.** The members of a restricted project always include at least one
+  owner. The API refuses (409) to remove or demote the last one.
+- **What is checked.** Every project-scoped API operation declares
+  `require_project_access`. A `project_id` is read from the path, the query
+  string or the JSON/form body. So is the id of anything a project owns: an
+  entity, document, report, note, snapshot, legacy collection, plan, source,
+  catalog entry or PIR. Each id is resolved to its project, and the caller must
+  hold the role on **every** project a request touches. Naming a project you can
+  access does not reach another project's entity. The project list and the
+  unscoped plan and collection lists are filtered on the server.
+  `tests/test_project_access_coverage.py` walks the OpenAPI schema and fails on
+  any project-scoped operation that does not declare the check.
+- **Failing closed.** If membership cannot be read, the API returns 503 and does
+  not let the request through.
+- **Outside this model.** Admin routes (`/api/admin/*`, ATT&CK catalogue loads,
+  user registration, personas) are admin-only, as before. The MCP endpoint (off
+  by default, and refused under `REQUIRE_SECURE_AUTH`) does **not** apply
+  per-project access: its tools act on whichever project they name. Keep MCP
+  off on a shared deployment.
 
 ## Supported versions
 

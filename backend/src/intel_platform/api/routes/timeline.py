@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from intel_platform.api.deps import get_graph_store, project_exists, verify_api_key
+from intel_platform.api.deps import get_graph_store, project_exists, require_project_access, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.responses import TimelineHistogramResponse, TimelineResponse
 from intel_platform.services.text_utils import normalize_datetime
@@ -66,7 +66,7 @@ def _timeline_page(store: GraphStore, project_id: str, limit: int, offset: int) 
     return entities, total, types
 
 
-@router.get("/timeline", response_model=TimelineResponse)
+@router.get("/timeline", response_model=TimelineResponse, dependencies=[Depends(require_project_access("viewer"))])
 def get_timeline(
     project_id: str,
     limit: int = Query(500, ge=1, le=_TIMELINE_MAX_PAGE),
@@ -128,7 +128,10 @@ def _bucket_key(dt: datetime, bucket: str) -> str:
     return f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}"
 
 
-@router.get("/timeline/histogram", response_model=TimelineHistogramResponse)
+@router.get(
+    "/timeline/histogram", response_model=TimelineHistogramResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_timeline_histogram(
     project_id: str,
     bucket: str = Query("month", pattern="^(day|month|year)$"),

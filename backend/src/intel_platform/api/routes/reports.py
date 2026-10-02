@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from intel_platform.api.routes.assess import LLM_UNAVAILABLE
 from intel_platform.services.llm_output import labelled_probability_parsed
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, require_project_access, verify_api_key
 from intel_platform.db.engine import get_db
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.responses import (
@@ -95,7 +95,7 @@ class GenerateReportRequest(BaseModel):
     use_vector: bool = True
 
 
-@router.post("/reports", response_model=ReportSavedResponse)
+@router.post("/reports", response_model=ReportSavedResponse, dependencies=[Depends(require_project_access("editor"))])
 def save_report(req: SaveReportRequest, store: GraphStore = Depends(get_graph_store)):
     svc = ReportService(store)
     return svc.save_report(
@@ -104,13 +104,19 @@ def save_report(req: SaveReportRequest, store: GraphStore = Depends(get_graph_st
     )
 
 
-@router.get("/reports", response_model=list[ReportResponse], response_model_exclude_unset=True)
+@router.get(
+    "/reports", response_model=list[ReportResponse], response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def list_reports(project_id: str, store: GraphStore = Depends(get_graph_store)):
     svc = ReportService(store)
     return svc.list_reports(project_id)
 
 
-@router.post("/reports/generate", response_model=GeneratedReportResponse, response_model_exclude_unset=True)
+@router.post(
+    "/reports/generate", response_model=GeneratedReportResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def generate_report(
     req: GenerateReportRequest,
     store: GraphStore = Depends(get_graph_store),
@@ -311,7 +317,10 @@ async def generate_report(
     return response
 
 
-@router.get("/reports/{report_id}", response_model=ReportResponse, response_model_exclude_unset=True)
+@router.get(
+    "/reports/{report_id}", response_model=ReportResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_report(
     report_id: str,
     project_id: str | None = None,
@@ -333,7 +342,10 @@ def get_report(
     return report
 
 
-@router.delete("/reports/{report_id}", response_model=StatusResponse)
+@router.delete(
+    "/reports/{report_id}", response_model=StatusResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 def delete_report(
     report_id: str,
     project_id: str | None = None,

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from intel_platform.api.deps import require_project_access
 from intel_platform.api.routes.collection_plans.plans import _parse_uuid
 from intel_platform.db.engine import get_db
 from intel_platform.db.models import Pir
@@ -14,7 +15,10 @@ from intel_platform.models.responses import PirRequirementsResponse
 router = APIRouter()
 
 
-@router.get("/pirs/{pir_id}/requirements", response_model=PirRequirementsResponse)
+@router.get(
+    "/pirs/{pir_id}/requirements", response_model=PirRequirementsResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def get_pir_requirements(pir_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     """Per-element collection state: what is answered, what was tried, what is missing.
 

@@ -11,7 +11,7 @@ argument schema from the live annotations.
 import asyncio
 import inspect
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 # mcp >= 1.30 rejects any Host header it was not told about (its own
@@ -51,6 +51,38 @@ def _project_of(store, entity_id: str) -> str:
     return str(entity.get("project_id") or "")
 
 
+def _caller(ctx) -> dict | None:
+    """The authenticated REST user the transport stored on the request scope."""
+    try:
+        return ctx.request_context.request.scope.get("state", {}).get("user")
+    except Exception:
+        return None
+
+
+async def _require(ctx, project_id: str, min_role: str) -> None:
+    """Apply the REST project-access rules to a tool call.
+
+    An analyst JWT reaches MCP exactly as it reaches the REST API, so a tool
+    naming a project must hold the same role on it the equivalent route
+    requires. With no caller on the scope (a direct in-process call) the tool
+    is allowed only while REQUIRE_SECURE_AUTH is off, the same condition under
+    which MCP may be mounted at all.
+    """
+    from intel_platform.api import access
+    from intel_platform.config import settings
+
+    user = _caller(ctx)
+    if user is None:
+        if getattr(settings, "require_secure_auth", False):
+            raise PermissionError("Not authenticated")
+        return
+    if access.is_admin(user) or not project_id:
+        return
+    grant = (await access.grants(user, [project_id])).get(project_id)
+    if grant is None or not grant.allows(min_role):
+        raise PermissionError(access.refusal(grant, min_role) if grant else "No access to this project")
+
+
 def _scope(method, project_id: str) -> dict:
     """``project_id=`` for a store method that accepts it (contract 2).
 
@@ -68,8 +100,9 @@ def _subgraph(store, entity_id: str, hops: int, project_id: str) -> dict:
 
 
 @mcp.tool()
-async def search_entities(project_id: str, query: str = "", entity_type: str | None = None) -> dict:
+async def search_entities(project_id: str, query: str = "", entity_type: str | None = None, ctx: Context | None = None) -> dict:
     """Search for entities in the knowledge graph by name or type."""
+    await _require(ctx, project_id, "viewer")
     store = _store()
     results = await asyncio.to_thread(
         store.search_entities, project_id=project_id, query=query, entity_type=entity_type, limit=20,
@@ -78,11 +111,12 @@ async def search_entities(project_id: str, query: str = "", entity_type: str | N
 
 
 @mcp.tool()
-async def get_subgraph(entity_id: str, hops: int = 1, project_id: str = "") -> dict:
+async def get_subgraph(entity_id: str, hops: int = 1, project_id: str = "", ctx: Context | None = None) -> dict:
     """Get the subgraph around an entity (1-4 hops), within its project.
 
     ``project_id`` defaults to the entity's own project.
     """
+    await _require(ctx, project_id or await asyncio.to_thread(_project_of, _store(), entity_id), "viewer")
     store = _store()
     return await asyncio.to_thread(_subgraph, store, entity_id, hops, project_id)
 
@@ -106,18 +140,20 @@ def _connections(store, entity_id_1: str, entity_id_2: str, project_id: str) -> 
 
 
 @mcp.tool()
-async def find_connections(entity_id_1: str, entity_id_2: str, project_id: str = "") -> dict:
+async def find_connections(entity_id_1: str, entity_id_2: str, project_id: str = "", ctx: Context | None = None) -> dict:
     """Find the entities two entities share within two hops, within one project.
 
     ``project_id`` defaults to the first entity's project.
     """
+    await _require(ctx, project_id or await asyncio.to_thread(_project_of, _store(), entity_id_1), "viewer")
     store = _store()
     return await asyncio.to_thread(_connections, store, entity_id_1, entity_id_2, project_id)
 
 
 @mcp.tool()
-async def get_communities(project_id: str) -> dict:
+async def get_communities(project_id: str, ctx: Context | None = None) -> dict:
     """Detect and return communities in the knowledge graph using Louvain algorithm."""
+    await _require(ctx, project_id, "viewer")
     from intel_platform.services.enrichment import detect_communities
 
     communities = await asyncio.to_thread(detect_communities, _store(), project_id)
@@ -125,8 +161,9 @@ async def get_communities(project_id: str) -> dict:
 
 
 @mcp.tool()
-async def query_corpus(project_id: str, query: str) -> dict:
+async def query_corpus(project_id: str, query: str, ctx: Context | None = None) -> dict:
     """Query the knowledge graph using Graph RAG to answer intelligence questions."""
+    await _require(ctx, project_id, "viewer")
     from intel_platform.services.graph_rag import GraphRAGPipeline
 
     pipeline = GraphRAGPipeline(_store())
@@ -134,8 +171,9 @@ async def query_corpus(project_id: str, query: str) -> dict:
 
 
 @mcp.tool()
-async def assess_entity(entity_id: str, project_id: str, judgment: str, probability: float) -> dict:
+async def assess_entity(entity_id: str, project_id: str, judgment: str, probability: float, ctx: Context | None = None) -> dict:
     """Create an intelligence assessment for an entity with a probability rating."""
+    await _require(ctx, project_id, "editor")
     from intel_platform.services.assessment import AssessmentService
 
     svc = AssessmentService(_store())
@@ -147,12 +185,13 @@ async def assess_entity(entity_id: str, project_id: str, judgment: str, probabil
 
 
 @mcp.tool()
-async def ingest_document(project_id: str, content: str, source_name: str = "mcp_input", reliability_rating: str = "C3", extraction_mode: str = "") -> dict:
+async def ingest_document(project_id: str, content: str, source_name: str = "mcp_input", reliability_rating: str = "C3", extraction_mode: str = "", ctx: Context | None = None) -> dict:
     """Ingest a document into the knowledge graph with entity extraction.
 
     Args:
         extraction_mode: "nlp", "llm", or "hybrid". Defaults to the configured extraction_mode setting.
     """
+    await _require(ctx, project_id, "editor")
     from intel_platform.config import settings
     from intel_platform.models.entities import Document
     from intel_platform.services import graph_builder, ingestion
@@ -197,8 +236,9 @@ async def _mcp_extract(text: str, doc_id: str, mode: str):
 
 
 @mcp.tool()
-async def get_graph_stats(project_id: str) -> dict:
+async def get_graph_stats(project_id: str, ctx: Context | None = None) -> dict:
     """Get graph statistics including node count, edge count, density, and centrality metrics."""
+    await _require(ctx, project_id, "viewer")
     from intel_platform.services.enrichment import compute_all_statistics
 
     return await asyncio.to_thread(compute_all_statistics, _store(), project_id)
@@ -212,26 +252,29 @@ def _shortest_path(store, entity_id_1: str, entity_id_2: str, project_id: str) -
 
 
 @mcp.tool()
-async def find_shortest_path(entity_id_1: str, entity_id_2: str, project_id: str = "") -> dict:
+async def find_shortest_path(entity_id_1: str, entity_id_2: str, project_id: str = "", ctx: Context | None = None) -> dict:
     """Find the shortest path between two entities, within one project.
 
     ``project_id`` defaults to the first entity's project.
     """
+    await _require(ctx, project_id or await asyncio.to_thread(_project_of, _store(), entity_id_1), "viewer")
     store = _store()
     return await asyncio.to_thread(_shortest_path, store, entity_id_1, entity_id_2, project_id)
 
 
 @mcp.tool()
-async def get_topic_tree(project_id: str) -> dict:
+async def get_topic_tree(project_id: str, ctx: Context | None = None) -> dict:
     """Get the topic tree showing all entities organized by type."""
+    await _require(ctx, project_id, "viewer")
     from intel_platform.services.topics import TopicTreeService
 
     return await TopicTreeService(_store()).build_topic_tree(project_id)
 
 
 @mcp.tool()
-async def get_geo_locations(project_id: str) -> dict:
+async def get_geo_locations(project_id: str, ctx: Context | None = None) -> dict:
     """Get all geocoded locations with their relationships."""
+    await _require(ctx, project_id, "viewer")
     from intel_platform.services.geocoding import geocode_all_locations
 
     locations = await asyncio.to_thread(geocode_all_locations, _store(), project_id)

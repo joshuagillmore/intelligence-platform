@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from intel_platform.api.deps import get_graph_store
+from intel_platform.api.deps import get_graph_store, require_project_access
 from intel_platform.api.routes.collection_plans.plans import _parse_uuid
 from intel_platform.config import settings
 from intel_platform.connectors.base import get_connector
@@ -67,7 +67,10 @@ async def _read_upload_capped(file: UploadFile, cap: int) -> bytes:
         buf.extend(chunk)
 
 
-@router.post("/collection-plans/{plan_id}/sources/{source_id}/upload", response_model=FileUploadResponse)
+@router.post(
+    "/collection-plans/{plan_id}/sources/{source_id}/upload", response_model=FileUploadResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def upload_file_to_source(
     plan_id: str,
     source_id: str,

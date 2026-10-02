@@ -99,6 +99,7 @@ GET_PATHS = _plain_get_paths()
 # The routes that read Postgres; they skip when none is exported.
 POSTGRES_PATHS = {
     "/api/admin/api-keys",
+    "/api/admin/llm/models",  # lists stored provider keys, so it reads Postgres too
     "/api/attack/technique/{tid}/d3fend",
     "/api/collection-dashboard",
     "/api/collection-plans",
@@ -114,6 +115,10 @@ POSTGRES_PATHS = {
     "/api/pirs",
     "/api/pirs/{pir_id}",
     "/api/pirs/{pir_id}/requirements",
+    # The project routes report the caller's access, read from project_members.
+    "/api/projects",
+    "/api/projects/{project_id}",
+    "/api/projects/{project_id}/members",
 }
 
 # The routes that read the global ATT&CK catalogue (tests/neo4j_lock.py).
@@ -222,6 +227,7 @@ def _calls(s: SimpleNamespace) -> dict[str, list[tuple[dict, dict]]]:
         "/api/projects": [({}, {})],
         "/api/projects/{project_id}": [({"project_id": s.project}, {})],
         "/api/projects/{project_id}/activity": [({"project_id": s.project}, {})],
+        "/api/projects/{project_id}/members": [({"project_id": s.project}, {})],
         "/api/reports": [({}, p)],
         "/api/reports/{report_id}": [({"report_id": s.report_id}, {}), ({"report_id": s.report_id}, p)],
         "/api/search": [({}, {**p, "q": "a"})],

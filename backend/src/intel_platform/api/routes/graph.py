@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from intel_platform.api.cache import cached
-from intel_platform.api.deps import get_graph_store, project_exists, verify_api_key
+from intel_platform.api.deps import get_graph_store, project_exists, require_project_access, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.responses import (
     CentralityItem,
@@ -28,7 +28,7 @@ def _edge_prop(edge: dict, key: str, default=None):
     return default if value is None else value
 
 
-@router.get("/graph", response_model=GraphViewResponse)
+@router.get("/graph", response_model=GraphViewResponse, dependencies=[Depends(require_project_access("viewer"))])
 def get_full_graph(
     project_id: str,
     limit: int = Query(500, ge=1, le=10000),
@@ -131,18 +131,27 @@ def get_full_graph(
     }
 
 
-@router.get("/communities", response_model=list[CommunityItem])
+@router.get(
+    "/communities", response_model=list[CommunityItem],
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 @cached(ttl=30)
 def get_communities(project_id: str, store: GraphStore = Depends(get_graph_store)):
     return detect_communities(store, project_id)
 
 
-@router.get("/graph/centrality", response_model=list[CentralityItem])
+@router.get(
+    "/graph/centrality", response_model=list[CentralityItem],
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_centrality(project_id: str, store: GraphStore = Depends(get_graph_store)):
     return compute_degree_centrality(store, project_id)
 
 
-@router.get("/graph/statistics", response_model=GraphStatisticsResponse)
+@router.get(
+    "/graph/statistics", response_model=GraphStatisticsResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 @cached(ttl=30)
 def get_statistics(project_id: str, store: GraphStore = Depends(get_graph_store)):
     # `project_exists` is added only where the response is already an object.
@@ -155,7 +164,10 @@ def get_statistics(project_id: str, store: GraphStore = Depends(get_graph_store)
     }
 
 
-@router.get("/graph/structural-holes", response_model=list[StructuralHoleItem])
+@router.get(
+    "/graph/structural-holes", response_model=list[StructuralHoleItem],
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 @cached(ttl=30)
 def get_structural_holes(
     project_id: str, top_n: int = Query(20, ge=1, le=1000), store: GraphStore = Depends(get_graph_store),
@@ -163,7 +175,10 @@ def get_structural_holes(
     return compute_structural_holes(store, project_id, top_n=top_n)
 
 
-@router.get("/graph/ego-network/{entity_id}", response_model=EgoNetworkResponse, response_model_exclude_unset=True)
+@router.get(
+    "/graph/ego-network/{entity_id}", response_model=EgoNetworkResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_ego_network(
     entity_id: str, project_id: str, hops: int = Query(2, ge=1, le=4),
     store: GraphStore = Depends(get_graph_store),
@@ -180,7 +195,10 @@ class InfluenceRequest(BaseModel):
     threshold: float = Field(default=0.3, ge=0.0, le=1.0)
 
 
-@router.post("/graph/influence", response_model=InfluenceResponse, response_model_exclude_unset=True)
+@router.post(
+    "/graph/influence", response_model=InfluenceResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def post_influence_propagation(
     body: InfluenceRequest,
     store: GraphStore = Depends(get_graph_store),

@@ -17,15 +17,17 @@ from tests.ids import tp
 PROJECT = tp("builder-countries")
 
 
-def _store():
+def _store(aliased: list | None = None):
     created: list = []
     written: list = []
+    aliased = aliased if aliased is not None else []
     return created, written, SimpleNamespace(
         create_entity=lambda e: created.append(e) or {"id": e.id},
         search_entity_by_name=lambda *a, **k: [],
         record_entity_source=lambda *a, **k: None,
         record_mentions=lambda *a, **k: 0,
         create_relationship=lambda rel: written.append(rel) or {},
+        add_aliases=lambda by_id: aliased.append(by_id) or len(by_id),
     )
 
 
@@ -47,7 +49,8 @@ def test_a_government_form_and_its_country_are_one_node_and_its_edges_follow():
 
 
 def test_the_kremlin_is_russia_and_a_country_name_is_its_canonical_name():
-    created, _, store = _store()
+    aliased: list = []
+    created, _, store = _store(aliased)
     build_graph_from_extractions(
         store,
         [{"name": "the Kremlin", "entity_type": "Organization"}, {"name": "Russian Federation", "entity_type": "Location"},
@@ -55,6 +58,22 @@ def test_the_kremlin_is_russia_and_a_country_name_is_its_canonical_name():
         [], project_id=PROJECT,
     )
     assert [(e.name, e.entity_type.value) for e in created] == [("Russia", "Location"), ("China", "Location")]
+    # The forms as written stay on the node: the first on the created node, a
+    # later one merging into it in one write after the loop.
+    russia, china = created
+    assert russia.aliases == ["the Kremlin"] and china.aliases == ["PRC"]
+    assert aliased == [{russia.id: ["Russian Federation"]}]
+
+
+def test_a_country_named_as_itself_gets_no_alias_and_writes_none():
+    aliased: list = []
+    created, _, store = _store(aliased)
+    build_graph_from_extractions(
+        store, [{"name": "Iran", "entity_type": "Location"}, {"name": "iran", "entity_type": "Location"}], [],
+        project_id=PROJECT,
+    )
+    assert [(e.name, e.aliases) for e in created] == [("Iran", [])]
+    assert aliased == []
 
 
 def test_a_capital_stays_a_place_unless_it_arrives_typed_as_a_government():
@@ -92,4 +111,6 @@ def test_a_later_build_naming_the_government_merges_into_the_country_node(graph_
     with graph_store._driver.session() as s:
         names = sorted(r["name"] for r in s.run("MATCH (n:Entity {project_id: $p}) RETURN n.name AS name",
                                                  p=project))
+        aliases = s.run("MATCH (n:Entity {project_id: $p, name: 'Iran'}) RETURN n.aliases AS a", p=project).single()["a"]
     assert names == ["IAEA", "Iran"]
+    assert aliases == ["Iranian government"]

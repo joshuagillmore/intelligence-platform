@@ -2178,10 +2178,22 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Projects */
+        /**
+         * List Projects
+         * @description The projects the caller may read, newest first, each with their role on it.
+         *
+         *     Filtered here, not in the client: an admin sees every project; anyone else
+         *     sees the open ones (no members) and those they are a member of.
+         */
         get: operations["list_projects_api_projects_get"];
         put?: never;
-        /** Create Project */
+        /**
+         * Create Project
+         * @description Create a project. Its creator becomes its owner, which makes it restricted.
+         *
+         *     An admin is an implicit owner of every project and is never listed as a
+         *     member, so a project an admin creates starts open.
+         */
         post: operations["create_project_api_projects_post"];
         delete?: never;
         options?: never;
@@ -2223,6 +2235,54 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Project Members
+         * @description The project's members (owners first), whether it is open, and the caller's role.
+         */
+        get: operations["list_project_members_api_projects__project_id__members_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/members/{username}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Project Member
+         * @description Add a member or change their role (owners only; anyone on an open project).
+         *
+         *     409 when the project has no members and the role is not owner (the first
+         *     member closes the project, so it must be someone who can manage it), or when
+         *     the change would leave the project without an owner.
+         */
+        put: operations["put_project_member_api_projects__project_id__members__username__put"];
+        post?: never;
+        /**
+         * Remove Project Member
+         * @description Remove a member (owners only). 409 for the project's last owner.
+         */
+        delete: operations["remove_project_member_api_projects__project_id__members__username__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3881,6 +3941,8 @@ export interface components {
             name?: string | null;
             /** Project Id */
             project_id?: string | null;
+            /** Relationship Count */
+            relationship_count?: number | null;
         } & {
             [key: string]: unknown;
         };
@@ -5107,6 +5169,8 @@ export interface components {
             note_type?: string | null;
             /** Project Id */
             project_id?: string | null;
+            /** Relationship Count */
+            relationship_count?: number | null;
             /** Report Type */
             report_type?: string | null;
         } & {
@@ -5588,8 +5652,42 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** ProjectMemberItem */
+        ProjectMemberItem: {
+            /** Added At */
+            added_at: string;
+            /** Added By */
+            added_by: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "owner" | "editor" | "viewer";
+            /** Username */
+            username: string;
+        };
+        /**
+         * ProjectMembersResponse
+         * @description A project's members, owners first. Admins are implicit owners and never listed.
+         */
+        ProjectMembersResponse: {
+            /**
+             * Access
+             * @enum {string}
+             */
+            access: "open" | "restricted";
+            /** Members */
+            members: components["schemas"]["ProjectMemberItem"][];
+            /** My Role */
+            my_role: ("owner" | "editor" | "viewer") | null;
+        };
         /** ProjectResponse */
         ProjectResponse: {
+            /**
+             * Access
+             * @enum {string}
+             */
+            access: "open" | "restricted";
             /** Classification Level */
             classification_level: string;
             /**
@@ -5616,6 +5714,8 @@ export interface components {
             entity_count?: number;
             /** Id */
             id: string;
+            /** My Role */
+            my_role: ("owner" | "editor" | "viewer") | null;
             /** Name */
             name: string;
             /** Priority */
@@ -5814,6 +5914,8 @@ export interface components {
             name?: string | null;
             /** Project Id */
             project_id?: string | null;
+            /** Relationship Count */
+            relationship_count?: number | null;
             /** Report Type */
             report_type?: string | null;
             /** Status */
@@ -5956,6 +6058,14 @@ export interface components {
             role: string;
             /** Username */
             username: string;
+        };
+        /** SetMemberRequest */
+        SetMemberRequest: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "owner" | "editor" | "viewer";
         };
         /** ShortestPathResponse */
         ShortestPathResponse: {
@@ -10691,6 +10801,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectActivityResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_project_members_api_projects__project_id__members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectMembersResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_project_member_api_projects__project_id__members__username__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMemberRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectMemberItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_project_member_api_projects__project_id__members__username__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusResponse"];
                 };
             };
             /** @description Validation Error */

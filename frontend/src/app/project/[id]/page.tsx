@@ -3,10 +3,15 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import PirPanel from '@/components/PirPanel';
+import ProjectMembersPanel from '@/components/ProjectMembersPanel';
+import ProjectAccessDenied from '@/components/ProjectAccessDenied';
+import { OpenAccessBadge, RoleChip } from '@/components/ProjectAccessBadges';
 import { useProject } from '@/lib/ProjectContext';
 import {
   projectsApi, graphApi, reportsApi, timelineApi, exportApi, collectionPlansApi, isHttpStatus, type Project,
+  type ProjectAccess, type ProjectRole,
 } from '@/lib/api';
+import { isNoProjectAccess } from '@/lib/projectAccess';
 import { useNotifications } from '@/components/NotificationProvider';
 import { TYPE_BADGE_CLASS, TYPE_COLOR_HEX } from '@/lib/entityStyles';
 import { rankByDegree, type KeyEntity } from '@/lib/centrality';
@@ -28,11 +33,15 @@ const colors = {
 export default function ProjectDashboard() {
   const params = useParams();
   const router = useRouter();
-  const { setActiveProject } = useProject();
+  const { setActiveProject, dropProject } = useProject();
   const { addNotification } = useNotifications();
   const [project, setProject] = useState<Project | null>(null);
   // Why the project itself failed to load, when it was not a plain 404.
   const [projectError, setProjectError] = useState<string | null>(null);
+  // A project-scoped read was refused with 403: the analyst is not a member of
+  // this restricted project. Its own state, not the generic error above,
+  // whose Retry cannot help.
+  const [accessDenied, setAccessDenied] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [stats, setStats] = useState<any>(null);
   const [topEntities, setTopEntities] = useState<KeyEntity[]>([]);
@@ -55,6 +64,7 @@ export default function ProjectDashboard() {
     let cancelled = false;
     setLoading(true);
     setProjectError(null);
+    setAccessDenied(false);
     Promise.allSettled([
       projectsApi.get(projectId),
       graphApi.statistics(projectId),
@@ -64,6 +74,18 @@ export default function ProjectDashboard() {
       collectionPlansApi.list(projectId),
     ]).then(([projRes, statsRes, centralRes, timeRes, repRes, plansRes]) => {
       if (cancelled) return;
+      // Every call here is a read of this project, so a 403 from any of them
+      // means no access to it: show that, and stop offering it as active.
+      const refused = [projRes, statsRes, centralRes, timeRes, repRes, plansRes].some(
+        (r) => r.status === 'rejected' && isNoProjectAccess(r.reason),
+      );
+      if (refused) {
+        setProject(null);
+        setAccessDenied(true);
+        dropProject(projectId);
+        setLoading(false);
+        return;
+      }
       if (projRes.status === 'rejected') {
         setProject(null);
         // A 404 is "not found"; anything else is a failure to load, and saying
@@ -95,7 +117,18 @@ export default function ProjectDashboard() {
       setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [projectId, setActiveProject, reloadKey]);
+  }, [projectId, setActiveProject, dropProject, reloadKey]);
+
+  /** A read made after the load (an export, the members list) was refused. */
+  function denyAccess() {
+    setAccessDenied(true);
+    dropProject(projectId);
+  }
+
+  /** The members panel's answer, which follows changes made in it. */
+  function followAccess(access: ProjectAccess, myRole: ProjectRole | null) {
+    setProject((p) => (p && (p.access !== access || p.my_role !== myRole) ? { ...p, access, my_role: myRole } : p));
+  }
 
   if (loading) {
     return (
@@ -103,6 +136,17 @@ export default function ProjectDashboard() {
         <Sidebar />
         <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8" style={{ backgroundColor: colors.surface, minHeight: '100vh' }}>
           <div className="text-gray-500">Loading project...</div>
+        </main>
+      </div>
+    );
+  }
+
+  if (accessDenied) {
+    return (
+      <div className="flex">
+        <Sidebar />
+        <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8" style={{ backgroundColor: colors.surface, minHeight: '100vh' }}>
+          <ProjectAccessDenied projectName={project?.name} />
         </main>
       </div>
     );
@@ -207,7 +251,7 @@ export default function ProjectDashboard() {
             <p className="text-sm mt-2" style={{ color: '#8b95a8' }}>
               Target Analysis: {project.description || project.name}
             </p>
-            <div className="flex gap-2 mt-3">
+            <div className="flex flex-wrap gap-2 mt-3">
               <span className={`text-xs px-2 py-0.5 rounded ${
                 project.priority === 'critical' ? 'bg-red-900/30 text-red-400' :
                 project.priority === 'high' ? 'bg-orange-900/30 text-orange-400' :
@@ -215,6 +259,9 @@ export default function ProjectDashboard() {
               }`}>{project.priority}</span>
               <span className="text-xs px-2 py-0.5 rounded bg-green-900/30 text-green-400">{project.status}</span>
               <span className="text-xs px-2 py-0.5 rounded bg-navy-600 text-gray-400">{project.classification_level}</span>
+              {/* What this analyst may do here, and whether anyone may. */}
+              <RoleChip role={project.my_role} prefix="Your role:" />
+              <OpenAccessBadge access={project.access} />
             </div>
           </div>
           <div className="flex gap-3">
@@ -234,7 +281,11 @@ export default function ProjectDashboard() {
                     title: 'STIX Export Ready',
                     message: 'The STIX 2.1 bundle has been downloaded.',
                   });
-                } catch {
+                } catch (e) {
+                  if (isNoProjectAccess(e)) {
+                    denyAccess();
+                    return;
+                  }
                   addNotification({
                     type: 'error',
                     title: 'Export Failed',
@@ -576,6 +627,11 @@ export default function ProjectDashboard() {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Who can open this project; owners manage it here. */}
+        <div className="mt-8">
+          <ProjectMembersPanel projectId={projectId} onAccessChange={followAccess} onNoAccess={denyAccess} />
         </div>
 
         {/* Action Buttons */}

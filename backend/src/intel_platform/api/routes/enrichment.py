@@ -15,7 +15,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, require_project_access, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.responses import (
     CachedEnrichmentResponse,
@@ -66,7 +66,10 @@ def list_providers():
     }
 
 
-@router.post("/enrichment/entities/{entity_id}", response_model=EnrichmentRunResponse, response_model_exclude_unset=True)
+@router.post(
+    "/enrichment/entities/{entity_id}", response_model=EnrichmentRunResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def investigate(entity_id: str, store: GraphStore = Depends(get_graph_store)):
     """Run every eligible provider for the entity and merge the results."""
     result = await _service(store).enrich_entity(entity_id)
@@ -75,7 +78,10 @@ async def investigate(entity_id: str, store: GraphStore = Depends(get_graph_stor
     return result
 
 
-@router.post("/enrichment/entities/{entity_id}/refresh", response_model=EnrichmentRunResponse, response_model_exclude_unset=True)
+@router.post(
+    "/enrichment/entities/{entity_id}/refresh", response_model=EnrichmentRunResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def refresh(
     entity_id: str,
     provider: str = Query(..., description="Provider name to force-refresh"),
@@ -97,7 +103,10 @@ async def refresh(
     return result
 
 
-@router.get("/enrichment/entities/{entity_id}", response_model=CachedEnrichmentResponse)
+@router.get(
+    "/enrichment/entities/{entity_id}", response_model=CachedEnrichmentResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def get_enrichment(entity_id: str, store: GraphStore = Depends(get_graph_store)):
     """Return the cached enrichment view without hitting any provider.
 

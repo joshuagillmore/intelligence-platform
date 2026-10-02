@@ -18,9 +18,15 @@ import AttackAttribution from '@/components/AttackAttribution';
 import Markdown from '@/components/Markdown';
 import { useNotifications } from '@/components/NotificationProvider';
 
-/** An indicator or actor row from `/entities`. That route sends no
- *  `relationship_count`, so the column reading it shows "--". */
-type IOCEntity = EntityRecord & { relationship_count?: number };
+/** An indicator or actor row from `/entities`, which carries the entity's
+ *  `relationship_count`: its edges, not counting the documents that mention it. */
+type IOCEntity = EntityRecord;
+
+/** A row's stored properties for its detail panel. `relationship_count` is
+ *  computed by the list route, not stored, and has its own column (IOCs) and
+ *  label (actors). */
+const storedPropertyEntries = (entity: unknown) =>
+  entityPropertyEntries(entity).filter(([k]) => k !== 'relationship_count');
 
 type Relationship = EntityRelationship;
 
@@ -542,10 +548,10 @@ export default function CyberPage() {
                                       )}
                                     </div>
                                     <div>
-                                      {entityPropertyEntries(entity).length > 0 && (
+                                      {storedPropertyEntries(entity).length > 0 && (
                                         <div className="mb-3">
                                           <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-2">Properties</h4>
-                                          {entityPropertyEntries(entity).map(([k, v]) => (
+                                          {storedPropertyEntries(entity).map(([k, v]) => (
                                             <div key={k} className="text-xs mb-1">
                                               <span className="text-gray-500">{k}:</span>{' '}
                                               <span className="text-gray-300">{formatPropertyValue(v)}</span>
@@ -666,7 +672,7 @@ export default function CyberPage() {
                           <span className={`text-xs px-2 py-0.5 rounded ${getBadgeStyle('ThreatActor')}`}>
                             ThreatActor
                           </span>
-                          {actor.relationship_count !== undefined && (
+                          {actor.relationship_count != null && (
                             <span className="text-xs text-gray-400">{actor.relationship_count} connections</span>
                           )}
                         </div>
@@ -728,10 +734,10 @@ export default function CyberPage() {
                               )}
                             </div>
                             <div>
-                              {entityPropertyEntries(actor).length > 0 && (
+                              {storedPropertyEntries(actor).length > 0 && (
                                 <div>
                                   <h4 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-2">Properties / Assessment</h4>
-                                  {entityPropertyEntries(actor).map(([k, v]) => (
+                                  {storedPropertyEntries(actor).map(([k, v]) => (
                                     <div key={k} className="text-xs mb-1">
                                       <span className="text-gray-500">{k}:</span>{' '}
                                       <span className="text-gray-300">{formatPropertyValue(v)}</span>

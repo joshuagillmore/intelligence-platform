@@ -16,7 +16,7 @@ from intel_platform.models.entities import (
 )
 from intel_platform.models.relationships import Relationship
 from intel_platform.models.type_hierarchy import normalize_entity_type
-from intel_platform.services.text_utils import country_of
+from intel_platform.services.text_utils import country_key, country_of
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +48,18 @@ def _types_compatible(a: str, b: str) -> bool:
 def resolve_entity_name(
     name: str, existing_names: list[str], threshold: float = 0.92,
     entity_type: str = "", existing_types: dict[str, str] | None = None,
+    existing_aliases: dict[str, list[str]] | None = None,
 ) -> str | None:
     """Resolve entity name using Jaro-Winkler similarity + substring matching.
 
     Only merges entities of compatible types when type info is available.
     Cyber entities (IP, Domain, Hash, CVE, TTP) require exact match only.
+
+    `existing_aliases` maps an existing name to that entity's aliases. A name
+    equal to one of them, ignoring case, resolves to the entity, after an
+    exact name match and before any fuzzy one. Aliases are only ever matched
+    exactly ("Fancy Bear" is APT28, "Fancy Bears" is not) and never for the
+    exact-match cyber types, whose names are values.
     """
     if not existing_names:
         return None
@@ -70,6 +77,7 @@ def resolve_entity_name(
 
     best_match = None
     best_score = 0.0
+    alias_match = None
     name_lower = name.lower().strip()
 
     for existing in existing_names:
@@ -93,11 +101,22 @@ def resolve_entity_name(
         if name_lower == existing_lower:
             return existing
 
+        # Exact alias match: kept, and used only if no name matches exactly.
+        aliases = existing_aliases.get(existing) if existing_aliases else None
+        if alias_match is None and isinstance(aliases, (list, tuple)) and any(
+            isinstance(a, str) and a.lower().strip() == name_lower for a in aliases
+        ):
+            alias_match = existing
+
         # Jaro-Winkler similarity
         score = jellyfish.jaro_winkler_similarity(name_lower, existing_lower)
         if score > best_score:
             best_score = score
             best_match = existing
+
+    if alias_match is not None:
+        logger.debug("Resolved %r to %r by alias", name, alias_match)
+        return alias_match
 
     if best_score >= threshold:
         return best_match
@@ -340,6 +359,30 @@ def _country_node(name: str, entity_type: str) -> str | None:
     return country
 
 
+def _country_aliases(country: str, written) -> list[str]:
+    """The forms in `written` the governments table resolves to `country`, as written.
+
+    What a country node keeps as aliases: the government form, other name or
+    acting capital a document used for it ("the Kremlin", "PRC government",
+    "Tehran"). Any other alias extraction listed is left off, so a country's
+    aliases are only forms the table vouches for. The canonical name and
+    repeats (by `country_key`: case, a leading "the") are dropped.
+    """
+    seen = {country_key(country)}
+    out: list[str] = []
+    for form in written:
+        if not isinstance(form, str) or not form.strip():
+            continue
+        form = form.strip()
+        key = country_key(form)
+        hit = country_of(form)
+        if key in seen or hit is None or hit[0] != country:
+            continue
+        seen.add(key)
+        out.append(form)
+    return out
+
+
 def _type_from_name(name: str, current: str) -> str:
     """Re-type an entity whose name follows an unambiguous naming convention.
 
@@ -445,6 +488,11 @@ def build_graph_from_extractions(
     batch_names: list[str] = []
     batch_name_to_id: dict[str, str] = {}
     batch_name_to_type: dict[str, str] = {}
+    batch_name_to_aliases: dict[str, list[str]] = {}
+    # Aliases for entities this build merged into rather than created, by id,
+    # written in one statement after the loop (a created node is born with
+    # its own). The store adds them to the node's aliases, never replacing.
+    pending_aliases: dict[str, list[str]] = {}
     # (entity id, document id) pairs already on the graph from this build, so
     # a merge records a document against an entity once, not once per mention.
     recorded_sources: set[tuple[str, str]] = set()
@@ -470,6 +518,11 @@ def build_graph_from_extractions(
             recorded_sources.add((entity_id, doc_id))
             store.record_entity_source(entity_id, doc_id)
 
+    def _alias_later(entity_id: str, aliases: list[str]) -> None:
+        if entity_id and aliases:
+            pending = pending_aliases.setdefault(entity_id, [])
+            pending.extend(a for a in aliases if a not in pending)
+
     for ent_data in entities:
         # Normalise before anything reads the name: the junk check, resolution
         # and the stored node must all see the same string, or "**Yi Peng 3**"
@@ -487,12 +540,24 @@ def build_graph_from_extractions(
             continue
 
         # A government or a country written another way resolves to the
-        # country's node; edges naming the form as written still find it.
+        # country's node; edges naming the form as written still find it, and
+        # the node keeps the form, and those extraction already folded into
+        # this entity, as aliases.
         written_name = name
         country = _country_node(name, raw_type)
+        country_aliases: list[str] = []
         if country is not None:
+            listed = ent_data.get("aliases")
+            country_aliases = _country_aliases(
+                country, [written_name, *(listed if isinstance(listed, (list, tuple)) else [])],
+            )
             name, raw_type = country, "Location"
             ent_data = {**ent_data, "name": name, "entity_type": raw_type}
+        # A name the governments table knows resolves through the table alone,
+        # never through an alias: "Moscow" used as a place ("talks in
+        # Moscow") must stay a city, though a document that used it for the
+        # state left "Moscow" among Russia's aliases.
+        alias_lookup = country_of(written_name) is None
 
         def _bind(entity_id: str) -> None:
             name_to_id[name] = entity_id
@@ -525,6 +590,7 @@ def build_graph_from_extractions(
             if cached:
                 _bind(cached)
                 _merged_into(cached, entity_doc_id)
+                _alias_later(cached, country_aliases)
                 merged += 1
                 continue
 
@@ -532,11 +598,13 @@ def build_graph_from_extractions(
         match = resolve_entity_name(
             name, batch_names, threshold=resolution_threshold,
             entity_type=raw_type, existing_types=batch_name_to_type,
+            existing_aliases=batch_name_to_aliases if alias_lookup else None,
         )
         if match:
             _bind(batch_name_to_id[match])
             _resolution_cache[cache_key] = batch_name_to_id[match]
             _merged_into(batch_name_to_id[match], entity_doc_id)
+            _alias_later(batch_name_to_id[match], country_aliases)
             merged += 1
             continue
 
@@ -545,15 +613,17 @@ def build_graph_from_extractions(
         # a node an earlier build made under the written name ("U.S.") is found.
         found_in_graph = None
         for lookup_name in dict.fromkeys((name, written_name)):
-            candidates = store.search_entity_by_name(project_id, lookup_name, limit=20)
+            candidates = store.search_entity_by_name(project_id, lookup_name, limit=20, match_aliases=alias_lookup)
             if not candidates:
                 continue
             candidate_names = [c["name"] for c in candidates]
             candidate_name_to_id = {c["name"]: c["id"] for c in candidates}
             candidate_name_to_type = {c["name"]: c.get("entity_type", "") for c in candidates}
+            candidate_name_to_aliases = {c["name"]: c.get("aliases") or [] for c in candidates}
             match = resolve_entity_name(
                 lookup_name, candidate_names, threshold=resolution_threshold,
                 entity_type=raw_type, existing_types=candidate_name_to_type,
+                existing_aliases=candidate_name_to_aliases if alias_lookup else None,
             )
             if match:
                 found_in_graph = candidate_name_to_id[match]
@@ -562,6 +632,7 @@ def build_graph_from_extractions(
             _bind(found_in_graph)
             _resolution_cache[cache_key] = found_in_graph
             _merged_into(found_in_graph, entity_doc_id)
+            _alias_later(found_in_graph, country_aliases)
             merged += 1
             continue
 
@@ -608,6 +679,8 @@ def build_graph_from_extractions(
             except ValueError:
                 et = EntityType.CUSTOM
             entity = Entity(name=name, entity_type=et, project_id=project_id, source_doc_id=entity_doc_id)
+        if country_aliases and "aliases" in type(entity).model_fields:
+            entity.aliases = list(dict.fromkeys([*entity.aliases, *country_aliases]))
 
         # create_entity is a MERGE on (project, normalized name, type). When
         # the key already exists — another build created the entity between
@@ -619,8 +692,10 @@ def build_graph_from_extractions(
         batch_names.append(name)
         batch_name_to_id[name] = entity_id
         batch_name_to_type[name] = raw_type
+        batch_name_to_aliases[name] = list(getattr(entity, "aliases", None) or [])
         if entity_id != entity.id:
             _merged_into(entity_id, entity_doc_id)
+            _alias_later(entity_id, country_aliases)
             merged += 1
             continue
         recorded_sources.add((entity.id, entity_doc_id))
@@ -634,6 +709,13 @@ def build_graph_from_extractions(
     # One write for every mention in the build. A source that is not a
     # Document of this project (an inline extraction) writes nothing.
     mentions_recorded = store.record_mentions(project_id, mention_counts) if mention_counts else 0
+    # One write for every alias a merge brought to an existing node.
+    if pending_aliases:
+        written = store.add_aliases(pending_aliases)
+        logger.info(
+            "Merged %d alias(es) into %d existing node(s): %s",
+            sum(len(v) for v in pending_aliases.values()), written, dict(sorted(pending_aliases.items())),
+        )
 
     cooccurrence_min = settings.cooccurrence_confidence_min
     rels_created = 0

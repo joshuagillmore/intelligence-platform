@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -597,6 +598,43 @@ class TopicEdit(Base):
 
     __table_args__ = (
         Index("ix_topic_edit_node_project", "node_id", "project_id"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Project members — who may read, write and manage a project
+#
+# Projects live in Neo4j; membership lives here, keyed by the same project_id
+# string the other tables carry. A project with no rows is "open": every
+# authenticated user may use it, which is how every project created before this
+# table behaves. The first member must be an owner, and that closes it. Admins
+# are implicit owners of every project and are not written here. Enforcement is
+# `api.access.require_project_access`; the rules are in backend/CLAUDE.md
+# ("Access control").
+# ---------------------------------------------------------------------------
+
+PROJECT_ROLES = ("owner", "editor", "viewer")
+
+
+class ProjectMember(Base):
+    __tablename__ = "project_members"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[str] = mapped_column(String(64), nullable=False,
+        comment="Neo4j Project id")
+    username: Mapped[str] = mapped_column(String(128), nullable=False, index=True,
+        comment="Neo4j User username")
+    role: Mapped[str] = mapped_column(String(16), nullable=False,
+        comment="owner | editor | viewer")
+    added_by: Mapped[str] = mapped_column(String(128), nullable=False, default="",
+        comment="Username that added this member")
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        # Also the index every access check reads by (project_id leads).
+        UniqueConstraint("project_id", "username", name="uq_project_members_project_username"),
+        CheckConstraint("role IN ('owner', 'editor', 'viewer')", name="ck_project_members_role"),
     )
 
 

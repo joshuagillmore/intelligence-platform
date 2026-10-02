@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, require_project_access, verify_api_key
 from intel_platform.graph.evidence import find_passages
 from intel_platform.graph.merge import copy_edge_verbatim, merge_entity_into, transfer_edge
 from intel_platform.graph.store import GraphStore
@@ -32,7 +32,10 @@ def get_entity_type_hierarchy():
     }
 
 
-@router.get("/entities", response_model=list[EntityProperties], response_model_exclude_unset=True)
+@router.get(
+    "/entities", response_model=list[EntityProperties], response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def search_entities(
     response: Response,
     project_id: str, query: str = "", entity_type: str | None = None,
@@ -60,7 +63,10 @@ def search_entities(
     return results
 
 
-@router.get("/entities/{entity_id}", response_model=EntityDetailResponse, response_model_exclude_unset=True)
+@router.get(
+    "/entities/{entity_id}", response_model=EntityDetailResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_entity(entity_id: str, store: GraphStore = Depends(get_graph_store)):
     entity = store.get_entity(entity_id)
     if not entity:
@@ -95,7 +101,10 @@ class EntityDocumentsResponse(BaseModel):
     total: int
 
 
-@router.get("/entities/{entity_id}/documents", response_model=EntityDocumentsResponse)
+@router.get(
+    "/entities/{entity_id}/documents", response_model=EntityDocumentsResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_entity_documents(
     entity_id: str,
     limit: int = Query(20, ge=1, le=100),
@@ -155,7 +164,10 @@ def _traversal_scope(requested: str | None, *entities: dict | None) -> str | Non
     return None
 
 
-@router.get("/subgraph/{entity_id}", response_model=SubgraphResponse, response_model_exclude_unset=True)
+@router.get(
+    "/subgraph/{entity_id}", response_model=SubgraphResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_subgraph(
     entity_id: str,
     hops: int = Query(1, ge=1, le=4),
@@ -171,7 +183,10 @@ def get_subgraph(
     return store.get_subgraph(entity_id, hops=hops, project_id=scope)
 
 
-@router.get("/paths/{entity_id_1}/{entity_id_2}", response_model=ShortestPathResponse, response_model_exclude_unset=True)
+@router.get(
+    "/paths/{entity_id_1}/{entity_id_2}", response_model=ShortestPathResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def find_shortest_path(
     entity_id_1: str,
     entity_id_2: str,
@@ -197,7 +212,10 @@ _copy_edge_verbatim = copy_edge_verbatim
 _transfer_edge = transfer_edge
 
 
-@router.post("/entities/merge", response_model=EntityMergeResponse)
+@router.post(
+    "/entities/merge", response_model=EntityMergeResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 def merge_entities(req: MergeEntitiesRequest, store: GraphStore = Depends(get_graph_store)):
     """Merge entities into the primary, moving every edge as it was.
 
@@ -254,7 +272,10 @@ class UpdateEntityTypeRequest(BaseModel):
     entity_type: str
 
 
-@router.put("/entities/{entity_id}/type", response_model=EntityTypeChangedResponse)
+@router.put(
+    "/entities/{entity_id}/type", response_model=EntityTypeChangedResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 def update_entity_type(entity_id: str, req: UpdateEntityTypeRequest, store: GraphStore = Depends(get_graph_store)):
     """Update an entity's type (e.g., fix a misclassification)."""
     # SECURITY: validate against known entity types to prevent arbitrary values

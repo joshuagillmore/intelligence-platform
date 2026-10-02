@@ -18,7 +18,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.access import visible_projects
+from intel_platform.api.deps import ProjectAccess, get_graph_store, require_project_access, verify_api_key
 from intel_platform.collection.runner import CollectionRunner
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.responses import (
@@ -143,7 +144,10 @@ def _get_collection_count(store: GraphStore, project_id: str) -> int:
 # Legacy endpoints (backwards-compatible)
 # ---------------------------------------------------------------------------
 
-@router.post("/collections", response_model=LegacyCollectionResponse, response_model_exclude_unset=True)
+@router.post(
+    "/collections", response_model=LegacyCollectionResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 def create_collection(req: CreateCollectionRequest, store: GraphStore = Depends(get_graph_store)):
     """Legacy: create a collection. New code should use POST /collection-plans/from-pir."""
     collection = {
@@ -161,7 +165,10 @@ def create_collection(req: CreateCollectionRequest, store: GraphStore = Depends(
     return collection
 
 
-@router.get("/collections/{task_id}", response_model=LegacyCollectionResponse, response_model_exclude_unset=True)
+@router.get(
+    "/collections/{task_id}", response_model=LegacyCollectionResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_collection(task_id: str, store: GraphStore = Depends(get_graph_store)):
     with store._driver.session() as session:
         result = session.run("MATCH (c:Collection {id: $id}) RETURN properties(c) as props", id=task_id)
@@ -177,7 +184,10 @@ def get_collection(task_id: str, store: GraphStore = Depends(get_graph_store)):
         return props
 
 
-@router.put("/collections/{task_id}", response_model=LegacyCollectionResponse, response_model_exclude_unset=True)
+@router.put(
+    "/collections/{task_id}", response_model=LegacyCollectionResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 def update_collection(task_id: str, req: UpdateCollectionRequest, store: GraphStore = Depends(get_graph_store)):
     with store._driver.session() as session:
         updates = {}
@@ -196,13 +206,19 @@ def update_collection(task_id: str, req: UpdateCollectionRequest, store: GraphSt
     return get_collection(task_id, store)
 
 
-@router.get("/collections/{task_id}/status", response_model=LegacyCollectionStatusResponse)
+@router.get(
+    "/collections/{task_id}/status", response_model=LegacyCollectionStatusResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_collection_status(task_id: str, store: GraphStore = Depends(get_graph_store)):
     coll = get_collection(task_id, store)
     return {"status": coll.get("status"), "progress": coll.get("progress", 0), "documents_acquired": coll.get("documents_acquired", 0)}
 
 
-@router.post("/collections/{task_id}/cancel", response_model=StatusResponse)
+@router.post(
+    "/collections/{task_id}/cancel", response_model=StatusResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 def cancel_collection(task_id: str, store: GraphStore = Depends(get_graph_store)):
     with store._driver.session() as session:
         session.run(
@@ -219,7 +235,10 @@ def parse_plan(data: dict):
     return {"items": items, "count": len(items)}
 
 
-@router.post("/collections/{task_id}/execute", status_code=202, response_model=LegacyCollectionStartedResponse)
+@router.post(
+    "/collections/{task_id}/execute", status_code=202, response_model=LegacyCollectionStartedResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def execute_collection(
     task_id: str,
     background_tasks: BackgroundTasks,
@@ -282,7 +301,10 @@ def _mark_failed(store: GraphStore, task_id: str) -> None:
         )
 
 
-@router.get("/collections/{task_id}/progress", response_model=LegacyCollectionProgressResponse)
+@router.get(
+    "/collections/{task_id}/progress", response_model=LegacyCollectionProgressResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_collection_progress(task_id: str, store: GraphStore = Depends(get_graph_store)):
     """Get detailed collection execution progress."""
     coll = get_collection(task_id, store)
@@ -305,10 +327,22 @@ def get_collection_progress(task_id: str, store: GraphStore = Depends(get_graph_
 
 
 @router.get("/collections", response_model=list[LegacyCollectionResponse], response_model_exclude_unset=True)
-def list_collections(project_id: str | None = None, store: GraphStore = Depends(get_graph_store)):
-    return _load_collections_from_neo4j(store, project_id)
+async def list_collections(
+    project_id: str | None = None,
+    store: GraphStore = Depends(get_graph_store),
+    access: ProjectAccess = Depends(require_project_access("viewer")),
+):
+    collections = await asyncio.to_thread(_load_collections_from_neo4j, store, project_id)
+    if not project_id and not access.is_admin:
+        # Unscoped, this lists every project's collections: keep the readable ones.
+        visible = await visible_projects(access.user, {c.get("project_id") or "" for c in collections})
+        collections = [c for c in collections if (c.get("project_id") or "") in visible]
+    return collections
 
 
-@router.get("/collections/count/{project_id}", response_model=CollectionCountResponse)
+@router.get(
+    "/collections/count/{project_id}", response_model=CollectionCountResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_collection_count_for_project(project_id: str, store: GraphStore = Depends(get_graph_store)):
     return {"project_id": project_id, "count": _get_collection_count(store, project_id)}

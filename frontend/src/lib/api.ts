@@ -81,10 +81,21 @@ function handleUnauthorized(): void {
 }
 
 // Redirect to login on 401
+/** Fired by the client when any call answers the project-access refusal. */
+export const PROJECT_ACCESS_DENIED_EVENT = 'sentinel:project-access-denied';
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) handleUnauthorized();
+    // The backend's one refusal for a project the analyst holds no role on.
+    // Every view can meet it mid-session (an owner removed this analyst), so the
+    // project context listens and drops the active project rather than each
+    // page handling it. The detail string is the backend's exact wording.
+    if (error.response?.status === 403 && error.response?.data?.detail === 'No access to this project'
+        && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(PROJECT_ACCESS_DENIED_EVENT));
+    }
     return Promise.reject(error);
   }
 );
@@ -162,7 +173,28 @@ export const authApi = {
   logout: () => http.post<ResponseOf<'/api/auth/logout', 'post'>>('/auth/logout'),
 };
 
+// ── Project access (plan 2026-10-02, contracts 1 and 3) ──────────────────────
+// Typed from the generated schema: `ProjectResponse` carries `my_role` and
+// `access`; the member routes have their own models.
+
+/** `owner`: everything, including members and deleting the project; `editor`:
+ *  read and write project data; `viewer`: read only. An admin is an implicit
+ *  owner of every project and is never listed as a member. */
+export type ProjectRole = Model<'ProjectMemberItem'>['role'];
+
+/** `open`: the project has no members, so every signed-in analyst can read and
+ *  write it, until the first member (an owner) is added, which restricts it. */
+export type ProjectAccess = Model<'ProjectResponse'>['access'];
+
+/** `my_role` is null when the analyst holds no role (an open project they are
+ *  not a member of). */
 export type Project = Model<'ProjectResponse'>;
+
+/** One row of `GET /projects/{id}/members`. */
+export type ProjectMember = Model<'ProjectMemberItem'>;
+
+/** `GET /projects/{id}/members`. */
+export type ProjectMembers = ResponseOf<'/api/projects/{project_id}/members', 'get'>;
 
 export const projectsApi = {
   list: () => http.get<ResponseOf<'/api/projects', 'get'>>('/projects'),
@@ -172,6 +204,22 @@ export const projectsApi = {
   delete: (id: string) => http.delete<ResponseOf<'/api/projects/{project_id}', 'delete'>>(`/projects/${id}`),
   batchDelete: (projectIds: string[]) => http.post<ResponseOf<'/api/projects/batch-delete', 'post'>>('/projects/batch-delete', { project_ids: projectIds } satisfies BodyOf<'/api/projects/batch-delete', 'post'>),
   activity: (id: string, limit?: number) => http.get<ResponseOf<'/api/projects/{project_id}/activity', 'get'>>(`/projects/${id}/activity`, { params: { limit } satisfies QueryOf<'/api/projects/{project_id}/activity', 'get'> }),
+  /** Who may see the project, whether it is open, and the caller's role. A 403
+   *  means the caller has no access to the project at all. */
+  members: (id: string) => http.get<ResponseOf<'/api/projects/{project_id}/members', 'get'>>(`/projects/${id}/members`),
+  /** Add `username` with `role`, or change their role. Owner only (403); on an
+   *  open project the first member must be an owner. The body is not read:
+   *  re-fetch `members` for the new state. */
+  setMemberRole: (id: string, username: string, role: ProjectRole) =>
+    http.put<ResponseOf<'/api/projects/{project_id}/members/{username}', 'put'>>(
+      `/projects/${id}/members/${encodeURIComponent(username)}`,
+      { role } satisfies BodyOf<'/api/projects/{project_id}/members/{username}', 'put'>,
+    ),
+  /** Owner only (403); 409 when it would remove the last owner. */
+  removeMember: (id: string, username: string) =>
+    http.delete<ResponseOf<'/api/projects/{project_id}/members/{username}', 'delete'>>(
+      `/projects/${id}/members/${encodeURIComponent(username)}`,
+    ),
 };
 
 /** How many rows matched in full, from `X-Total-Count`.
