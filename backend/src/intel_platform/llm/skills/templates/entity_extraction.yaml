@@ -45,10 +45,28 @@ system_prompt: |
   - FUNDED_BY: Entity funded by another
   - SUPPLIED_BY: Equipment or resources supplied by entity
   - DEPLOYED_AT: Forces or equipment deployed at a location
-  - ASSOCIATED_WITH: General association (use only when no specific type fits)
+  - ASSOCIATED_WITH: General association, only under the rule below
   - MENTIONED_IN: Entity mentioned in a document
 
   Do not invent other types ("REPORTED", "OBSERVED", "DOCKED_AT", "CONFIRMS"): a relationship whose type is not in this list is discarded. A vessel in port is LOCATED_AT the port; that a source reported or observed something is not a relationship between entities, so omit it.
+
+  ## Rules for every relationship
+
+  **Both ends must be listed entities.** `source_entity` and `target_entity` must each be the `name` of an entity in your `entities` list, written exactly as you listed it (or one of its listed `aliases`). A relationship naming anything you did not list is discarded: a group or role described rather than named ("the regional militias", "allied naval forces"), a quantity ("40 patrol boats"), an activity or a policy. If the thing is a named entity, list it; if it is not, leave the relationship out.
+
+  **ASSOCIATED_WITH is a last resort.** Emit it only when the same sentence names both entities, states that they are connected, and no type above says how. Do not emit ASSOCIATED_WITH:
+  - between two entities that you have already related with any other type (in either direction);
+  - between entities named in different sentences, or linked only because the text is about both;
+  - for a relation one of the types above names (membership is BELONGS_TO, an attack is TARGETS, a base is LOCATED_AT or DEPLOYED_AT).
+
+  Negative example:
+  ```
+  Text: "Meridian Logistics operates the tanker Sea Lark out of Port Calvera. The Calvera Harbour Board raised berthing fees in May."
+
+  Correct:  Sea Lark BELONGS_TO Meridian Logistics; Sea Lark LOCATED_AT Port Calvera
+  Wrong:    Meridian Logistics ASSOCIATED_WITH Sea Lark (already related as BELONGS_TO)
+  Wrong:    Meridian Logistics ASSOCIATED_WITH Calvera Harbour Board (different sentences; no connection is stated)
+  ```
 
   ## Output Format
 
@@ -157,14 +175,15 @@ system_prompt: |
       {"name": "NATO", "entity_type": "Organization", "aliases": ["North Atlantic Treaty Organization"], "confidence": 0.95, "attributes": {}},
       {"name": "Jens Stoltenberg", "entity_type": "Diplomat", "aliases": ["NATO Secretary General"], "confidence": 0.95, "attributes": {"roles": ["NATO Secretary General"]}},
       {"name": "Brussels", "entity_type": "City", "aliases": [], "confidence": 0.95, "attributes": {"location_type": "city"}},
-      {"name": "15 March 2026", "entity_type": "Date", "aliases": [], "confidence": 0.95, "attributes": {}}
+      {"name": "15 March 2026", "entity_type": "Date", "aliases": [], "confidence": 0.95, "attributes": {}},
+      {"name": "Mozdok deployment", "entity_type": "Event", "aliases": [], "confidence": 0.85, "attributes": {}}
     ],
     "relationships": [
-      {"source_entity": "Valery Gerasimov", "target_entity": "76th Guards Air Assault Division", "relationship_type": "COMMANDED_BY", "confidence": 0.85, "evidence": "General Valery Gerasimov ordered the deployment"},
+      {"source_entity": "76th Guards Air Assault Division", "target_entity": "Valery Gerasimov", "relationship_type": "COMMANDED_BY", "confidence": 0.85, "evidence": "General Valery Gerasimov ordered the deployment of the 76th Guards Air Assault Division"},
       {"source_entity": "76th Guards Air Assault Division", "target_entity": "Mozdok Airbase", "relationship_type": "DEPLOYED_AT", "confidence": 0.90, "evidence": "deployment to the Mozdok Airbase"},
       {"source_entity": "Mozdok Airbase", "target_entity": "North Ossetia", "relationship_type": "LOCATED_AT", "confidence": 0.90, "evidence": "Mozdok Airbase in North Ossetia"},
       {"source_entity": "Jens Stoltenberg", "target_entity": "NATO", "relationship_type": "BELONGS_TO", "confidence": 0.95, "evidence": "NATO Secretary General Jens Stoltenberg"},
-      {"source_entity": "Mozdok deployment", "target_entity": "14 February 2026", "relationship_type": "OCCURRED_ON", "confidence": 0.90, "evidence": "the deployment began on 14 February 2026"}
+      {"source_entity": "Mozdok deployment", "target_entity": "15 March 2026", "relationship_type": "OCCURRED_ON", "confidence": 0.90, "evidence": "On 15 March 2026, General Valery Gerasimov ordered the deployment"}
     ]
   }
   ```
@@ -194,18 +213,18 @@ system_prompt: |
   Use the most precise date the text gives ("March 2026" and "2024" are both
   acceptable when that is all it says). Do not invent a date that is not there.
 
-  **Every name used in a relationship must also appear in `entities`.** Naming an
-  event only in a relationship — `"MV Northern Star strike" OCCURRED_ON "12 March
-  2026"` with no `MV Northern Star strike` entity — makes the relationship
-  unusable and it is discarded. If you assert that an event happened, extract the
-  event as an `Event` entity in the same response.
+  **Every name used in a relationship must also appear in `entities`** (see "Rules
+  for every relationship"). Naming an event only in a relationship — `"MV Northern
+  Star strike" OCCURRED_ON "12 March 2026"` with no `MV Northern Star strike`
+  entity — is the commonest way to break it. If you assert that an event happened,
+  extract the event as an `Event` entity in the same response.
 
   ## Instructions
 
   1. Extract every named entity, including minor ones — but only named ones (see "What is an entity")
   2. Use the most specific entity type available (e.g., "Commander" not "Person", "Airbase" not "Location")
   3. Always include aliases when entities have multiple names
-  4. Extract relationships between entities, not just co-occurrence — identify the nature of the relationship
+  4. Extract relationships between entities, not just co-occurrence — identify the nature of the relationship; both ends must be listed entities, and ASSOCIATED_WITH only within one sentence and only when no other type fits
   5. Provide evidence snippets for each relationship
   5a. Link every Event to its date with OCCURRED_ON when the text gives one
   6. Resolve coreferences — do not create duplicate entities for the same real-world entity

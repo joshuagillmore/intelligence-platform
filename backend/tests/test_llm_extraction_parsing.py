@@ -141,13 +141,18 @@ async def test_prose_with_no_json_at_all_is_a_marked_degradation():
 async def test_a_string_confidence_skips_that_entity_only():
     reply = json.loads(json.dumps(GOOD))
     reply["entities"][1]["confidence"] = "high"
+    reply["relationships"].append({"source_entity": "APT29", "target_entity": "SolarWinds",
+                                   "relationship_type": "TARGETS", "confidence": 0.9})
     result = await _llm(json.dumps(reply))
     ents, rels = result
     assert result.degraded is False and result.method == "llm"
     assert result.skipped_items == 1
     assert _names(ents) >= {"APT29", "SolarWinds"}
     assert "SUNBURST" not in {e["name"] for e in ents if e.get("method") == "llm"}
-    assert rels, "relationships from the same reply must survive"
+    # Relationships from the same reply survive; the one naming the skipped
+    # entity no longer has a listed endpoint, and is counted as such.
+    assert [(r["source_name"], r["rel_type"]) for r in rels] == [("APT29", "TARGETS")]
+    assert result.relationships_dropped_by_reason["unlisted_endpoint"] == 1
 
 
 async def test_a_numeric_string_confidence_is_read_as_a_number():
@@ -242,7 +247,7 @@ async def test_hybrid_lookup_failure_does_not_escape():
 def test_nlp_results_carry_the_record_too():
     result = extraction.extract_entities_nlp(TEXT, "doc-g5")
     assert result.method == "nlp" and result.degraded is False
-    assert set(result.meta) == {"method", "degraded", "reason", "skipped_items"}
+    assert set(result.meta) == {"method", "degraded", "reason", "skipped_items", "relationships_dropped_by_reason"}
 
 
 def test_empty_text_still_compares_equal_to_an_empty_pair():

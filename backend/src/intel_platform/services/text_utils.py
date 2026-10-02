@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n{2,}")
 
@@ -159,3 +163,78 @@ def strip_markup(text: str) -> str:
     out = re.sub(r"[ \t]{2,}", " ", out)
     out = _BLANK_RUN.sub("\n\n", out)
     return out.strip()
+
+
+# ---------------------------------------------------------------------------
+# Countries and their governments (data/governments.yaml)
+# ---------------------------------------------------------------------------
+
+_GOVERNMENTS_YAML = Path(__file__).resolve().parents[1] / "data" / "governments.yaml"
+_POSSESSIVE = re.compile(r"['’]s\b")
+
+
+def country_key(name: str) -> str:
+    """How a country name or government form is compared.
+
+    Case, surrounding space, a leading "the" and a possessive do not matter:
+    "the PRC government", "PRC Government" and "the PRC's government" are one
+    form.
+    """
+    key = _POSSESSIVE.sub("", (name or "").strip().lower())
+    key = re.sub(r"^the\s+", "", key)
+    return re.sub(r"\s+", " ", key).strip()
+
+
+@lru_cache(maxsize=1)
+def _country_table() -> tuple[dict[str, tuple[str, str]], dict[str, list[str]], dict[str, str]]:
+    """(key -> (country, kind), country -> its names in table order, capital -> country).
+
+    ``kind`` is "name" (the country itself), "form" (a government form) or
+    "capital". A name never yields to a form or a capital built from another
+    row: names are entered first.
+    """
+    data = yaml.safe_load(_GOVERNMENTS_YAML.read_text(encoding="utf-8")) or {}
+    templates = data.get("government_templates") or []
+    rows = data.get("countries") or []
+    table: dict[str, tuple[str, str]] = {}
+    names_of: dict[str, list[str]] = {}
+    capitals: dict[str, str] = {}
+    for row in rows:
+        country = row["country"]
+        names = [country, *(n for n in row.get("names") or [] if n != country)]
+        names_of[country] = names
+        for name in names:
+            table.setdefault(country_key(name), (country, "name"))
+    for row in rows:
+        country = row["country"]
+        forms = list(row.get("forms") or [])
+        for template in templates:
+            if "{name}" in template:
+                forms += [template.replace("{name}", n) for n in names_of[country]]
+            if "{adjective}" in template:
+                forms += [template.replace("{adjective}", a) for a in row.get("adjectives") or []]
+        for form in forms:
+            table.setdefault(country_key(form), (country, "form"))
+        if row.get("capital"):
+            table.setdefault(country_key(row["capital"]), (country, "capital"))
+            capitals[row["capital"]] = country
+    return table, names_of, capitals
+
+
+def country_of(name: str) -> tuple[str, str] | None:
+    """(country, kind) when ``name`` is a country, one of its government forms or its capital.
+
+    ``kind`` is "name", "form" or "capital". A capital is only a candidate:
+    whether it stands for the state depends on how the text uses it.
+    """
+    return _country_table()[0].get(country_key(name))
+
+
+def country_names(country: str) -> list[str]:
+    """The names a country goes by, its canonical name first."""
+    return list(_country_table()[1].get(country, [country]))
+
+
+def capital_names() -> dict[str, str]:
+    """Capital as written in the table -> its country."""
+    return dict(_country_table()[2])

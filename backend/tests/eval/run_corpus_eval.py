@@ -188,6 +188,39 @@ def _category(entity_type: str) -> str:
     return get_parent_category(entity_type or "")
 
 
+GENERIC_REL = "ASSOCIATED_WITH"
+DATE_REL = "OCCURRED_ON"
+
+
+def relationship_class(rel: dict, entity_types: dict[str, str]) -> str:
+    """``generic``, ``date_link`` or ``typed``: which relationship figure an edge counts in.
+
+    The gold labels typed relations only. A generic association and a link
+    that dates an event (OCCURRED_ON, or any edge with a Date endpoint) are
+    legitimate output, and the second is what the timeline is built from, but
+    against this gold each one counted as a false positive. ``typed`` scores
+    the rest; ``all`` scores everything, as before.
+    """
+    if rel.get("rel_type") == GENERIC_REL:
+        return "generic"
+    if rel.get("rel_type") == DATE_REL or "Date" in (
+            entity_types.get(rel.get("source_name", "")), entity_types.get(rel.get("target_name", ""))):
+        return "date_link"
+    return "typed"
+
+
+def _match_relationships(rels: list[dict], gold_rels: list[dict], ends) -> set[int]:
+    """Indices of the gold relationships some predicted edge matches (both ends, same type)."""
+    matched: set[int] = set()
+    for r in rels:
+        src, tgt, typ = r.get("source_name", ""), r.get("target_name", ""), r.get("rel_type", "")
+        for k, g in enumerate(gold_rels):
+            if k not in matched and g["rel_type"] == typ and ends(g["source"], src) and ends(g["target"], tgt):
+                matched.add(k)
+                break
+    return matched
+
+
 def score_document(predicted: list[dict], rels: list[dict], gold: dict) -> dict:
     """Entity, typed-entity and relationship counts for one document."""
     from tests.eval.extraction_eval import _entity_matches
@@ -220,21 +253,16 @@ def score_document(predicted: list[dict], rels: list[dict], gold: dict) -> dict:
         ent = by_name.get(ref)
         return _entity_matches(name, ref, ent.get("aliases") if ent else None)
 
-    matched_gold: set[int] = set()
-    rel_tp = 0
+    matched_gold = _match_relationships(rels, gold_rels, ends)
+    rel_tp = len(matched_gold)
+    # The same rule on both sides: gold has no generic or date edge today, and
+    # if it ever gains one, `typed` must not count it as a typed miss.
+    entity_types = {p.get("name", ""): p.get("entity_type", "") for p in predicted}
+    classes = Counter(relationship_class(r, entity_types) for r in rels)
+    typed_rels = [r for r in rels if relationship_class(r, entity_types) == "typed"]
+    typed_gold = [g for g in gold_rels if g["rel_type"] not in (GENERIC_REL, DATE_REL)]
+    rel_typed_tp = len(_match_relationships(typed_rels, typed_gold, ends))
     pair_only = 0
-    for r in rels:
-        src, tgt, typ = r.get("source_name", ""), r.get("target_name", ""), r.get("rel_type", "")
-        hit = None
-        for k, g in enumerate(gold_rels):
-            if k in matched_gold:
-                continue
-            if g["rel_type"] == typ and ends(g["source"], src) and ends(g["target"], tgt):
-                hit = k
-                break
-        if hit is not None:
-            matched_gold.add(hit)
-            rel_tp += 1
     for g in gold_rels:
         if any(
             (ends(g["source"], r.get("source_name", "")) and ends(g["target"], r.get("target_name", "")))
@@ -258,6 +286,8 @@ def score_document(predicted: list[dict], rels: list[dict], gold: dict) -> dict:
         "per_type": {k: dict(v) for k, v in per_type.items()},
         "confusion": dict(confusion),
         "relationships": {"tp": rel_tp, "pred": len(rels), "exp": len(gold_rels), "pair_found": pair_only},
+        "relationships_typed": {"tp": rel_typed_tp, "pred": len(typed_rels), "exp": len(typed_gold)},
+        "relationship_classes": {k: classes.get(k, 0) for k in ("typed", "generic", "date_link")},
         "rel_types_predicted": dict(rel_types),
         "rel_gold_by_type": {k: dict(v) for k, v in gold_by_type.items()},
         "false_positives": sorted(
@@ -285,6 +315,9 @@ def score_document(predicted: list[dict], rels: list[dict], gold: dict) -> dict:
 def aggregate(docs: list[dict]) -> dict:
     ent = Counter()
     rel = Counter()
+    rel_typed = Counter()
+    rel_classes = Counter()
+    dropped = Counter()
     per_type: dict[str, Counter] = defaultdict(Counter)
     confusion: Counter = Counter()
     rel_types: Counter = Counter()
@@ -293,6 +326,9 @@ def aggregate(docs: list[dict]) -> dict:
         s = d["score"]
         ent.update(s["entities"])
         rel.update(s["relationships"])
+        rel_typed.update(s["relationships_typed"])
+        rel_classes.update(s["relationship_classes"])
+        dropped.update(d.get("relationships_dropped_by_reason") or {})
         for t, v in s["per_type"].items():
             per_type[t].update(v)
         confusion.update(s["confusion"])
@@ -311,7 +347,13 @@ def aggregate(docs: list[dict]) -> dict:
             t: _prf(v["tp"], v["pred"], v["exp"]) for t, v in sorted(per_type.items())
         },
         "type_confusion": dict(confusion.most_common()),
+        # Every predicted edge against the gold ("all"), and the typed ones only:
+        # generic associations and date links are left out (see relationship_class).
         "relationship": _prf(rel["tp"], rel["pred"], rel["exp"]),
+        "relationship_typed": _prf(rel_typed["tp"], rel_typed["pred"], rel_typed["exp"]),
+        "relationship_classes_predicted": {k: rel_classes.get(k, 0) for k in ("typed", "generic", "date_link")},
+        # Model edges the extraction itself dropped, by reason (unlisted_endpoint).
+        "relationships_dropped_by_reason": dict(sorted(dropped.items())),
         # Gold pairs some predicted edge connects, in either direction, of any type.
         "relationship_pairs_found": rel["pair_found"],
         "relationship_types_predicted": dict(rel_types.most_common()),
@@ -392,16 +434,20 @@ class ReplyCache:
     change. A changed prompt is a different key, so it is always asked live.
     """
 
-    def __init__(self, path: Path | None, model: str, refresh: bool = False):
+    def __init__(self, path: Path | None, model: str, refresh: bool = False, replay_only: bool = False):
         self.path = path
         self.model = model
         # Ask live even when a reply is recorded, and record the new one.
         self.refresh = refresh
+        # Never ask live: a request with no recorded reply fails (and the
+        # document degrades, which the report lists) instead of being billed.
+        self.replay_only = replay_only
         self.data: dict[str, dict] = {}
         if path and path.is_file():
             self.data = json.loads(path.read_text(encoding="utf-8"))
         self.hits = 0
         self.live = 0
+        self.missed = 0
 
     def key(self, system: str, messages: list[dict]) -> str:
         import hashlib
@@ -410,7 +456,9 @@ class ReplyCache:
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
     def save(self) -> None:
-        if self.path:
+        # Nothing asked live means nothing new to record; rewriting the file
+        # anyway touched it on every replayed run.
+        if self.path and self.live:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps(dict(sorted(self.data.items())), indent=1, ensure_ascii=False) + "\n",
                                  encoding="utf-8", newline="\n")
@@ -434,6 +482,9 @@ class CachingProvider:
             self._cache.hits += 1
             return LLMResponse(content=hit["content"], model=hit.get("model", self._model),
                                input_tokens=0, output_tokens=0)
+        if self._cache.replay_only:
+            self._cache.missed += 1
+            raise LookupError("no recorded reply for this request (--replay-only)")
         resp = await self._inner.generate(messages=messages, system=system, temperature=temperature,
                                           max_tokens=max_tokens)
         self._cache.live += 1
@@ -443,7 +494,8 @@ class CachingProvider:
 
 
 async def run(mode: str, sets: list[str], concurrency: int, retries: int, limit: int | None,
-              build_uri: str | None, cache_path: Path | None = None, refresh: bool = False) -> dict:
+              build_uri: str | None, cache_path: Path | None = None, refresh: bool = False,
+              replay_only: bool = False) -> dict:
     from intel_platform.config import settings
 
     provider_info: dict = {}
@@ -465,7 +517,8 @@ async def run(mode: str, sets: list[str], concurrency: int, retries: int, limit:
         provider_info = {"provider": type(provider).__name__, "model": model}
         # Selection happened above, in providers.py; from here extraction gets
         # the same provider back, behind the reply cache.
-        cache = ReplyCache(cache_path, f"{type(provider).__name__}/{model}", refresh=refresh)
+        cache = ReplyCache(cache_path, f"{type(provider).__name__}/{model}", refresh=refresh,
+                           replay_only=replay_only)
         wrapped = CachingProvider(provider, cache)
 
         async def _selected() -> CachingProvider:
@@ -498,6 +551,7 @@ async def run(mode: str, sets: list[str], concurrency: int, retries: int, limit:
             "degraded": bool(getattr(result, "degraded", False)),
             "reason": getattr(result, "reason", ""),
             "seconds": round(elapsed, 2),
+            "relationships_dropped_by_reason": dict(getattr(result, "relationships_dropped_by_reason", None) or {}),
             "score": score_document(entities, rels, gold),
         }
         if driver is not None:
@@ -512,7 +566,7 @@ async def run(mode: str, sets: list[str], concurrency: int, retries: int, limit:
                 doc["build"] = {k: b.get(k) for k in (
                     "entities_created", "entities_merged", "entities_filtered", "dates_absorbed",
                     "dates_orphaned", "relationships_created", "relationships_retired",
-                    "relationships_dropped", "relationships_dropped_by_type",
+                    "relationships_dropped", "relationships_dropped_by_type", "relationships_dropped_by_reason",
                 )}
         print(f"  {set_name}/{name}: {doc['method']}{' DEGRADED' if doc['degraded'] else ''} "
               f"{doc['seconds']}s", flush=True)
@@ -529,7 +583,8 @@ async def run(mode: str, sets: list[str], concurrency: int, retries: int, limit:
 
     docs = sorted(docs, key=lambda d: (d["set"], d["name"]))
     if cache is not None:
-        provider_info["replies"] = {"live": cache.live, "replayed": cache.hits}
+        provider_info["replies"] = {"live": cache.live, "replayed": cache.hits,
+                                    **({"missed": cache.missed} if cache.replay_only else {})}
     report = {
         "mode": mode,
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
@@ -549,6 +604,7 @@ async def run(mode: str, sets: list[str], concurrency: int, retries: int, limit:
 def _build_totals(docs: list[dict]) -> dict:
     tot: Counter = Counter()
     dropped: Counter = Counter()
+    reasons: Counter = Counter()
     errors = []
     for d in docs:
         b = d.get("build") or {}
@@ -558,8 +614,9 @@ def _build_totals(docs: list[dict]) -> dict:
             if isinstance(v, int):
                 tot[k] += v
         dropped.update(b.get("relationships_dropped_by_type") or {})
+        reasons.update(b.get("relationships_dropped_by_reason") or {})
     return {**dict(sorted(tot.items())), "relationships_dropped_by_type": dict(dropped.most_common()),
-            "errors": errors}
+            "relationships_dropped_by_reason": dict(sorted(reasons.items())), "errors": errors}
 
 
 def _git_head() -> str:
@@ -594,31 +651,42 @@ def markdown(report: dict) -> str:
     else:
         lines += ["No document degraded: every score below is the requested mode's own.", ""]
     lines += [
-        "| Set | Docs | Entity P / R / F1 | Typed F1 | Type acc | Rel P / R / F1 | Rel TP / Pred / Gold |",
-        "|---|---|---|---|---|---|---|",
+        "Relationships are scored twice. **typed** leaves out generic associations (`ASSOCIATED_WITH`) and "
+        "date links (`OCCURRED_ON`, or any edge with a Date endpoint), which the gold does not label; **all** "
+        "scores every edge.",
+        "",
+        "| Set | Docs | Entity P / R / F1 | Typed F1 | Type acc | Rel typed P / R / F1 | Typed TP / Pred / Gold "
+        "| Rel all P / R / F1 | All TP / Pred / Gold |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for label, a in [*report["by_set"].items(), ("**combined**", o)]:
-        en, rl = a["entity"], a["relationship"]
+        en, rl, rt = a["entity"], a["relationship"], a["relationship_typed"]
         lines.append(
             f"| {label} | {a['documents']} | {en['precision']:.3f} / {en['recall']:.3f} / {en['f1']:.3f} "
             f"| {a['entity_typed']['f1']:.3f} | {a['type_accuracy']:.3f} "
+            f"| {rt['precision']:.3f} / {rt['recall']:.3f} / {rt['f1']:.3f} | {rt['tp']} / {rt['predicted']} / {rt['expected']} "
             f"| {rl['precision']:.3f} / {rl['recall']:.3f} / {rl['f1']:.3f} | {rl['tp']} / {rl['predicted']} / {rl['expected']} |"
         )
+    classes = o["relationship_classes_predicted"]
+    dropped = o.get("relationships_dropped_by_reason") or {}
     lines += [
         "",
         "| Combined metric | P | R | F1 | TP | Pred | Gold |",
         "|---|---|---|---|---|---|---|",
         _row("Entities (name)", o["entity"]),
         _row("Entities (name + type)", o["entity_typed"]),
-        _row("Relationships", o["relationship"]),
+        _row("Relationships (typed)", o["relationship_typed"]),
+        _row("Relationships (all)", o["relationship"]),
     ]
     lines += [
         "",
         f"Type accuracy on matched entities: **{o['type_accuracy']:.3f}** "
         f"(parent category: {o['category_accuracy']:.3f}). "
         f"Gold relationship pairs connected by any edge: {o['relationship_pairs_found']} of "
-        f"{o['relationship']['expected']}. ASSOCIATED_WITH share of predicted edges: "
-        f"{o['associated_with_share']:.1%}.",
+        f"{o['relationship']['expected']}. Predicted edges: {classes['typed']} typed, {classes['generic']} "
+        f"generic, {classes['date_link']} date links (ASSOCIATED_WITH share {o['associated_with_share']:.1%}). "
+        "Dropped by the extraction: "
+        + (", ".join(f"{k} {v}" for k, v in dropped.items()) or "none") + ".",
         "",
         "## Per type (name + type must match)",
         "",
@@ -637,7 +705,8 @@ def markdown(report: dict) -> str:
         lines += ["", "## Graph build (real `build_graph_from_extractions`, throwaway projects)", "",
                   f"Relationships created {b.get('relationships_created', 0)}, retired "
                   f"{b.get('relationships_retired', 0)}, dropped {b.get('relationships_dropped', 0)} "
-                  f"{b.get('relationships_dropped_by_type') or ''}; entities created "
+                  f"{b.get('relationships_dropped_by_type') or ''} {b.get('relationships_dropped_by_reason') or ''}; "
+                  f"entities created "
                   f"{b.get('entities_created', 0)}, filtered {b.get('entities_filtered', 0)}, "
                   f"dates orphaned {b.get('dates_orphaned', 0)}."]
         if b.get("errors"):
@@ -691,15 +760,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-cache", action="store_true", help="ask the model for every document; record nothing")
     ap.add_argument("--refresh-cache", action="store_true",
                     help="ask the model for every document and record its replies over any recorded ones")
+    ap.add_argument("--replay-only", action="store_true",
+                    help="never ask the model: a request with no recorded reply degrades the document")
     args = ap.parse_args(argv)
+    if args.replay_only and (args.no_cache or args.refresh_cache):
+        ap.error("--replay-only cannot be combined with --no-cache or --refresh-cache")
 
     if args.mode != "nlp":
         env_path = load_provider_env(args.env_file)
         print(f"provider settings from {env_path or 'the process environment only'}", flush=True)
     _prepare_imports(args.build_neo4j)
     report = asyncio.run(run(
-        args.mode, args.sets, args.concurrency, args.retries, args.limit, args.build_neo4j,
-        cache_path=None if args.no_cache else args.llm_cache, refresh=args.refresh_cache,
+        args.mode, args.sets, args.concurrency, 0 if args.replay_only else args.retries, args.limit,
+        args.build_neo4j, cache_path=None if args.no_cache else args.llm_cache, refresh=args.refresh_cache,
+        replay_only=args.replay_only,
     ))
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -709,7 +783,8 @@ def main(argv: list[str] | None = None) -> int:
     out_md.write_text(markdown(report), encoding="utf-8", newline="\n")
     o = report["overall"]
     print(f"{args.mode}: entity F1 {o['entity']['f1']:.3f}, typed F1 {o['entity_typed']['f1']:.3f}, "
-          f"type acc {o['type_accuracy']:.3f}, relationship F1 {o['relationship']['f1']:.3f}, "
+          f"type acc {o['type_accuracy']:.3f}, relationship F1 typed {o['relationship_typed']['f1']:.3f} "
+          f"/ all {o['relationship']['f1']:.3f}, "
           f"degraded {len(report['degraded_documents'])}")
     print(f"wrote {out_json} and {out_md}")
     return 0

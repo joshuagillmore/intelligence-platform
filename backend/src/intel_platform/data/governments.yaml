@@ -1,0 +1,150 @@
+# A country and its government are one entity.
+#
+# Reporting names a state three ways: the country ("China", "PRC"), its
+# government ("the PRC government", "the Kremlin") and its capital standing
+# for its government ("Tehran asserts ...", "Beijing's insistence"). Extraction
+# made a node for each, so one state appeared under two or three names. This
+# table is what extraction (services/extraction._resolve_countries) and the
+# graph build (services/graph_builder) resolve against: every name and
+# government form below resolves to the country, named `country`, with the
+# form written kept as an alias.
+#
+# - names: what the country itself is called. Matched as written, ignoring
+#   case, a leading "the" and a possessive ("China's government").
+# - adjectives: the demonym, used only inside the government templates.
+# - forms: government forms the templates do not produce.
+# - capital: resolves to the country only when the text uses it as an actor
+#   (the subject of a verb, a possessor, "the regimes in Minsk and Moscow").
+#   A capital used as a place ("talks in Tehran", "flew from Beijing") stays a
+#   Location of its own. The graph build has no text, so there a capital
+#   resolves to the country only when it was typed as an organization.
+#
+# Only Location and Organization entities are resolved; a Person named
+# "Jordan" or an Event named after a country is left alone.
+
+government_templates:
+  - "{name} government"
+  - "government of {name}"
+  - "{name} regime"
+  - "{name} leadership"
+  - "{name} authorities"
+  - "{adjective} government"
+  - "{adjective} regime"
+  - "{adjective} leadership"
+  - "{adjective} authorities"
+
+countries:
+  - country: China
+    names: [China, PRC, "People's Republic of China"]
+    adjectives: [Chinese]
+    capital: Beijing
+  - country: Russia
+    names: [Russia, Russian Federation]
+    adjectives: [Russian]
+    forms: [Kremlin]
+    capital: Moscow
+  - country: Iran
+    names: [Iran, Islamic Republic of Iran]
+    adjectives: [Iranian]
+    capital: Tehran
+  - country: North Korea
+    names: [North Korea, DPRK, "Democratic People's Republic of Korea"]
+    adjectives: [North Korean]
+    capital: Pyongyang
+  - country: South Korea
+    names: [South Korea, Republic of Korea, ROK]
+    adjectives: [South Korean]
+    capital: Seoul
+  - country: United States
+    names: [United States, U.S., US, USA, U.S.A., United States of America]
+    adjectives: [American]
+    capital: Washington
+  - country: United Kingdom
+    names: [United Kingdom, UK, U.K., Britain, Great Britain]
+    adjectives: [British]
+    capital: London
+  - country: Ukraine
+    names: [Ukraine]
+    adjectives: [Ukrainian]
+    capital: Kyiv
+  - country: Belarus
+    names: [Belarus]
+    adjectives: [Belarusian]
+    capital: Minsk
+  - country: Syria
+    names: [Syria, Syrian Arab Republic]
+    adjectives: [Syrian]
+    capital: Damascus
+  - country: Iraq
+    names: [Iraq]
+    adjectives: [Iraqi]
+    capital: Baghdad
+  - country: Israel
+    names: [Israel]
+    adjectives: [Israeli]
+  - country: Saudi Arabia
+    names: [Saudi Arabia, Kingdom of Saudi Arabia]
+    adjectives: [Saudi]
+    capital: Riyadh
+  - country: Yemen
+    names: [Yemen]
+    adjectives: [Yemeni]
+  - country: Turkey
+    names: [Turkey, Türkiye]
+    adjectives: [Turkish]
+    capital: Ankara
+  - country: Japan
+    names: [Japan]
+    adjectives: [Japanese]
+    capital: Tokyo
+  - country: Taiwan
+    names: [Taiwan]
+    adjectives: [Taiwanese]
+    capital: Taipei
+  - country: France
+    names: [France]
+    adjectives: [French]
+    capital: Paris
+  - country: Germany
+    names: [Germany]
+    adjectives: [German]
+    capital: Berlin
+  - country: Poland
+    names: [Poland]
+    adjectives: [Polish]
+    capital: Warsaw
+  - country: India
+    names: [India]
+    adjectives: [Indian]
+    capital: New Delhi
+  - country: Pakistan
+    names: [Pakistan]
+    adjectives: [Pakistani]
+    capital: Islamabad
+  - country: Afghanistan
+    names: [Afghanistan]
+    adjectives: [Afghan]
+    capital: Kabul
+  - country: Venezuela
+    names: [Venezuela]
+    adjectives: [Venezuelan]
+    capital: Caracas
+  - country: Cuba
+    names: [Cuba]
+    adjectives: [Cuban]
+    capital: Havana
+  - country: Qatar
+    names: [Qatar]
+    adjectives: [Qatari]
+    capital: Doha
+  - country: Kuwait
+    names: [Kuwait]
+    adjectives: [Kuwaiti]
+  - country: Egypt
+    names: [Egypt]
+    adjectives: [Egyptian]
+    capital: Cairo
+  - country: Lebanon
+    names: [Lebanon]
+    adjectives: [Lebanese]
+    capital: Beirut
