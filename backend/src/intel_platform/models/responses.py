@@ -1143,3 +1143,49 @@ class MultiAssessmentResponse(BaseModel):
     entities: list[EntityContextItem]
     assessments: list[AssessmentCreatedResponse | AssessmentErrorItem]
     entity_count: int
+
+
+# ---------------------------------------------------------------------------
+# Ingest
+# ---------------------------------------------------------------------------
+
+class GraphBuildStats(BaseModel):
+    """What one graph build did with an extraction's entities and relationships.
+
+    Open-ended (``extra="allow"``): the build's counters are spread into the
+    response as the graph builder reports them, and that set grows as the
+    extraction pipeline learns to count new outcomes.
+    """
+    model_config = ConfigDict(extra="allow")
+
+    entities_created: int = 0
+    entities_merged: int = 0
+    entities_filtered: int = 0
+    dates_absorbed: int = 0
+    dates_orphaned: int = 0
+    relationships_retired: int = 0
+    relationships_created: int = 0
+    relationships_dropped: int = 0
+    relationships_dropped_by_type: dict[str, int] = {}
+    relationships_dropped_by_reason: dict[str, int] = {}
+    dropped_attributes: int = 0
+    mentions_recorded: int = 0
+
+
+class IngestResponse(GraphBuildStats):
+    """One stored document and the graph build over it. Open-ended like ``GraphBuildStats``."""
+    document_id: str
+    document_name: str
+    chunks: int
+    # The document was cut to MAX_DOCUMENT_CHARS for storage and extraction.
+    content_truncated: bool
+    embeddings_stored: int
+    # False when the document is in the graph but not findable by meaning.
+    indexed_for_search: bool
+
+
+class BatchIngestResponse(BaseModel):
+    documents_processed: int
+    total_entities_created: int
+    total_relationships_created: int
+    results: list[IngestResponse]
