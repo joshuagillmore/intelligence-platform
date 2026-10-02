@@ -559,3 +559,68 @@ class TimelineHistogramResponse(BaseModel):
     earliest: str | None = None
     latest: str | None = None
     project_exists: bool
+
+
+# ---------------------------------------------------------------------------
+# Documents
+# ---------------------------------------------------------------------------
+
+class DocumentSummaryItem(BaseModel):
+    id: str
+    name: str | None = None
+    reliability_rating: str
+    content_length: int
+    entity_count: int
+    created_at: str
+    summary_json: str
+
+
+class DocumentListResponse(BaseModel):
+    documents: list[DocumentSummaryItem]
+    count: int
+    total: int
+    truncated: bool
+    project_exists: bool
+
+
+class DocumentEntityItem(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    entity_type: str | None = None
+    relationship: str
+
+
+class DocumentHighlightItem(BaseModel):
+    start: int
+    end: int
+    entity_id: str | None = None
+    entity_name: str
+    entity_type: str | None = None
+
+
+class DocumentDetailResponse(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    reliability_rating: str | None = None
+    content: str
+    entities: list[DocumentEntityItem]
+    highlights: list[DocumentHighlightItem]
+    entity_count: int
+    summary_json: str | None = None
+
+
+class EvidencePassageItem(BaseModel):
+    text: str
+    # Character offset of the mention in the document's content.
+    position: int
+    entity_name: str
+
+
+class DocumentEvidenceResponse(BaseModel):
+    document_id: str
+    document_name: str | None = None
+    entity_name: str
+    passages: list[EvidencePassageItem]
+    count: int
+    total: int
+    truncated: bool

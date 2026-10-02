@@ -2,6 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from intel_platform.api.deps import get_graph_store, project_exists, verify_api_key
 from intel_platform.graph.evidence import find_passages
 from intel_platform.graph.store import GraphStore
+from intel_platform.models.responses import (
+    DocumentDetailResponse,
+    DocumentEvidenceResponse,
+    DocumentListResponse,
+)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -16,7 +21,7 @@ MAX_EVIDENCE_PASSAGES = 50
 # that property by scanning every entity in the project.
 
 
-@router.get("/documents")
+@router.get("/documents", response_model=DocumentListResponse)
 def list_documents(project_id: str, store: GraphStore = Depends(get_graph_store)):
     """List a project's documents with metadata, and how many exist in all."""
     with store._driver.session() as session:
@@ -61,7 +66,7 @@ def list_documents(project_id: str, store: GraphStore = Depends(get_graph_store)
     }
 
 
-@router.get("/documents/{doc_id}")
+@router.get("/documents/{doc_id}", response_model=DocumentDetailResponse)
 def get_document(doc_id: str, store: GraphStore = Depends(get_graph_store)):
     """Get full document with content and extracted entities."""
     doc = store.get_entity(doc_id)
@@ -114,7 +119,7 @@ def get_document(doc_id: str, store: GraphStore = Depends(get_graph_store)):
     }
 
 
-@router.get("/documents/{doc_id}/evidence")
+@router.get("/documents/{doc_id}/evidence", response_model=DocumentEvidenceResponse)
 def get_evidence_for_entity(doc_id: str, entity_name: str, store: GraphStore = Depends(get_graph_store)):
     """Get text passages from a document that mention a specific entity.
 
