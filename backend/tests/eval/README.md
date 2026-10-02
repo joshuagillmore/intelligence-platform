@@ -137,6 +137,29 @@ Scores: entities match on name or alias (exact first, then Jaro-Winkler and
 substring); "typed F1" counts a match only when the type matches too; a
 relationship matches when both endpoints match and the type is equal.
 
+**Relationships are scored twice, `typed` and `all`.** `all` scores every
+predicted edge, as every run before 2026-10-01 did. `typed` leaves out two
+kinds of edge, on the prediction and the gold side alike:
+
+- **generic associations** (`ASSOCIATED_WITH`): an assertion that two things
+  are related without saying how, which the gold conventions do not label;
+- **date links**: `OCCURRED_ON`, or any edge with a `Date` endpoint. These are
+  legitimate: they are how an event gets its `event_datetime`, which is what
+  the timeline sorts by, and the graph build absorbs the date into the event
+  and retires the edge. The gold does not label them either.
+
+Against a gold that labels neither, both kinds counted only as false
+positives: of the model's 722 openrep edges, 230 were generic and 123 date
+links, so relationship precision said more about how often the model dates an
+event than about whether its typed relations are right. `typed` answers that
+question; `all` stays so the noise is still visible. The gold files are
+unchanged (none of the 96 gold edges is of either kind), and recall is the
+same in both figures. Each report also counts predicted edges by class
+(typed / generic / date link) and lists the edges the extraction itself
+dropped, by reason. `--replay-only` refuses to ask the model: a request with
+no recorded reply degrades its document, which the report lists, instead of
+being billed.
+
 ## Results (committed)
 
 `corpus_eval_{nlp,llm,hybrid}.{json,md}`, run at `719b9ca6` with
