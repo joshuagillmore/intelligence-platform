@@ -417,3 +417,49 @@ class WatchedEntityItem(BaseModel):
 class WatchlistResponse(BaseModel):
     watched_entities: list[WatchedEntityItem]
     count: int
+
+
+# ---------------------------------------------------------------------------
+# Snapshots
+# ---------------------------------------------------------------------------
+
+class SnapshotEntityItem(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    entity_type: str | None = None
+
+
+class SnapshotResponse(BaseModel):
+    """A saved subgraph (bin).
+
+    Open-ended (``extra="allow"``): a listed or fetched snapshot is the
+    Snapshot node's stored properties, passed through as stored.
+    """
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    project_id: str | None = None
+    name: str | None = None
+    description: str | None = None
+    entity_ids: list[str] = []
+    entities: list[SnapshotEntityItem] = []
+    entity_count: int | None = None
+    created_at: str | None = None
+
+
+class SnapshotListResponse(BaseModel):
+    snapshots: list[SnapshotResponse]
+    count: int
+
+
+class SnapshotEdgeItem(BaseModel):
+    source_id: str | None = None
+    target_id: str | None = None
+    rel_type: str
+    confidence: float | None = None
+
+
+class SnapshotDetailResponse(SnapshotResponse):
+    """A snapshot with the edges among its entities. Open-ended like ``SnapshotResponse``."""
+    edges: list[SnapshotEdgeItem]
+    edge_count: int
