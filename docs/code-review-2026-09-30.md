@@ -80,7 +80,17 @@ remediation were executed per `docs/design/plans/2026-09-30-post-review-hardenin
 | Cookie sessions | Done | httpOnly `sentinel_session`, `X-Requested-With` CSRF header, `/me`, `/logout`; e2e spec. |
 | Personas / LLM override persistence, `GET /reports/{id}` scope, text ingest naming, OSM basemap, hero PNG | Done | |
 | Found during the final e2e | Fixed | A plan generated with no sources (model unavailable) executed as a clean zero; generation failures are now counted and a run with no requirement elements writes a trail event. The worker logged the status it asked for, not the cancelled one stored. |
-| Still open | | Relationship precision is low in every extraction mode (generic associations and event→date links the gold does not label); one country can appear as a government and a country node; NLP misses some acronyms; multi-user project ownership. |
+| Still open | | Multi-user project ownership. |
+
+## Follow-up round (2026-10-01, branch `feat/extraction-precision-and-response-models`)
+
+| Item | Status | Note |
+|---|---|---|
+| Relationship precision | Done | Scoring now separates `typed` relations from generic associations and date links (which feed the timeline and stay). Generic associations are emitted only for a pair in one sentence with nothing typed between them; a model edge whose endpoint is not a listed entity is dropped and counted (`unlisted_endpoint`), so graph-build drops for unknown endpoints fell 75 → 4. Hybrid combined typed F1 0.244 → 0.277; llm 0.167 → 0.202. The prompt rules alone barely moved the model; the parser enforces them. |
+| Government ↔ country | Done | `data/governments.yaml` (29 countries: name templates, forms such as "the Kremlin", capitals as metonyms) applied in every extraction mode and in graph resolution; a capital joins its country only when parsed as an actor. The largest typed-F1 gain in the model modes (llm 0.707 → 0.735). |
+| NLP gaps | Done | Proper-name acronyms (JCPOA, NDAA, INDOPACOM) are extracted; heading fragments ("Assess Russian") are rejected by a heading-aware filter. |
+| Response models on every operation | Done | 156 of 156 operations declare a model (was 14), proven by `tests/test_response_models.py` (84 tests comparing each declared response with the handler's value). Nine models are open-ended by design and say so. The stronger client types found one real UI bug (the network view's community mapping was always empty) and a dozen dead reads of fields no route sends. |
+| Still open | | Typed relationship precision in the model modes is still low (0.13 to 0.17): the model names plausible edges the gold does not label. Graph Location nodes carry no alias field, so a government form resolves to its country but is not stored as an alias. The cyber IOC "relations" column reads a field `/entities` never sends. Multi-user project ownership. |
 
 ## Check results
 
