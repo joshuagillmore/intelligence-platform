@@ -389,3 +389,31 @@ class NoteResponse(EntityProperties):
     report_type: str | None = None
     note_type: str | None = None
     created_at: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Watchlist
+# ---------------------------------------------------------------------------
+
+class WatchlistAddResponse(BaseModel):
+    entity_id: str
+    entity_name: str | None = None
+    status: str
+    watchlist_size: int
+
+
+class WatchlistRemoveResponse(BaseModel):
+    entity_id: str
+    status: str
+
+
+class WatchedEntityItem(BaseModel):
+    id: str
+    name: str | None = None
+    entity_type: str | None = None
+    relationship_count: int
+
+
+class WatchlistResponse(BaseModel):
+    watched_entities: list[WatchedEntityItem]
+    count: int
