@@ -9,6 +9,9 @@ The world:
 - RESTRICTED: owner alice, editor bob, viewer carol; dave is no member. It
   holds an entity, a document, a PIR, a plan and a file-upload source.
 - OPEN: no members, so every analyst may use it.
+
+Projects created through the API, by an analyst or an admin, start restricted
+with their creator as owner; TestClaim covers an admin claiming an open one.
 """
 from __future__ import annotations
 
@@ -46,6 +49,11 @@ def _user(name: str) -> str:
 
 def headers(name: str) -> dict:
     return {"Authorization": f"Bearer {create_access_token(_user(name), role='analyst')}"}
+
+
+def admin_headers(name: str = "root") -> dict:
+    """An admin who signed in (a JWT), as opposed to the API key."""
+    return {"Authorization": f"Bearer {create_access_token(_user(name), role='admin')}"}
 
 
 async def _create_schema(engine) -> None:
@@ -298,6 +306,9 @@ class TestLists:
         assert ids(headers("carol"))[RESTRICTED]["my_role"] == "viewer"
         admin = ids(ADMIN)
         assert admin[RESTRICTED]["my_role"] == "owner" and admin[RESTRICTED]["access"] == "restricted"
+        # Contract 4: an admin's rows say which projects are open, so the
+        # list can offer to claim them.
+        assert admin[OPEN_PROJECT]["my_role"] == "owner" and admin[OPEN_PROJECT]["access"] == "open"
 
     def test_plans_listed_without_a_project_are_filtered(self, world):
         ids = {p["id"] for p in client.get("/api/collection-plans", headers=headers("dave")).json()}
@@ -425,13 +436,34 @@ class TestCreation:
         assert client.delete(f"/api/projects/{pid}", headers=headers("dave")).status_code == 200
         assert client.get(f"/api/projects/{pid}/members", headers=ADMIN).status_code == 404
 
-    def test_a_project_an_admin_creates_starts_open(self, world):
-        resp = client.post("/api/projects", json={"name": "Admin's"}, headers=ADMIN)
-        assert resp.status_code == 200
+    def test_a_project_an_admin_creates_is_owned_by_them(self, world):
+        """Contract 4: an admin is listed as the owner of what they create, so
+        the project is restricted from birth rather than open to everyone."""
+        resp = client.post("/api/projects", json={"name": "Admin's"}, headers=admin_headers())
+        assert resp.status_code == 200, resp.text
         pid = resp.json()["id"]
         world.created.append(pid)
-        assert (resp.json()["my_role"], resp.json()["access"]) == ("owner", "open")
-        assert _members(pid)["members"] == []
+        assert (resp.json()["my_role"], resp.json()["access"]) == ("owner", "restricted")
+        body = _members(pid)
+        assert body["access"] == "restricted"
+        assert [(m["username"], m["role"], m["added_by"]) for m in body["members"]] == [
+            (_user("root"), "owner", _user("root")),
+        ]
+        # Restricted from birth: an analyst who is not a member is refused,
+        # and the project is not in their list.
+        refused = client.get(f"/api/projects/{pid}", headers=headers("dave"))
+        assert refused.status_code == 403 and refused.json()["detail"] == NO_ACCESS
+        assert pid not in {p["id"] for p in client.get("/api/projects", headers=headers("dave")).json()}
+
+    def test_the_api_key_owns_what_it_creates(self, world):
+        """The API key is an admin too; its identity becomes the owner."""
+        resp = client.post("/api/projects", json={"name": "Scripted"}, headers=ADMIN)
+        assert resp.status_code == 200, resp.text
+        pid = resp.json()["id"]
+        world.created.append(pid)
+        assert resp.json()["access"] == "restricted"
+        assert [(m["username"], m["role"]) for m in _members(pid)["members"]] == [("api_key_user", "owner")]
+        assert client.get(f"/api/projects/{pid}", headers=headers("dave")).status_code == 403
 
     def test_a_failed_owner_write_does_not_leave_an_open_project(self, world, monkeypatch):
         from intel_platform.db import members
@@ -444,6 +476,141 @@ class TestCreation:
         assert resp.status_code == 503
         names = {p["name"] for p in client.get("/api/projects", headers=ADMIN).json()}
         assert tp("orphan") not in names
+
+    def test_a_failed_owner_write_fails_an_admins_creation_too(self, world, monkeypatch):
+        """Without the owner row an admin's project would be open, so it is not kept."""
+        from intel_platform.db import members
+
+        async def down(*args, **kwargs):
+            raise OSError("connection refused")
+
+        monkeypatch.setattr(members, "add_owner", down)
+        resp = client.post("/api/projects", json={"name": tp("admin-orphan")}, headers=admin_headers())
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == "The project could not be created. Try again."
+        names = {p["name"] for p in client.get("/api/projects", headers=ADMIN).json()}
+        assert tp("admin-orphan") not in names
+
+
+def _open_project(name: str) -> str:
+    """A fresh project with no members: open, like every project made before membership."""
+    pid = tp(f"access-{name}-{uuid.uuid4().hex[:6]}")
+    with GraphDatabase.driver(settings.neo4j_uri, auth=(settings.neo4j_user, settings.neo4j_password)) as d:
+        d.execute_query(
+            "CREATE (p:Project:Entity {id: $id, project_id: $id, name: $name, description: '', "
+            "classification_level: 'UNCLASSIFIED', priority: 'medium', status: 'active', "
+            "created_at: '2026-10-01T00:00:00+00:00', updated_at: '2026-10-01T00:00:00+00:00', "
+            "entity_type: 'Project'})",
+            id=pid, name=name,
+        )
+    return pid
+
+
+class TestClaim:
+    """Contract 4: POST /projects/{id}/claim makes the calling admin the owner
+    of an open project, which restricts it."""
+
+    def test_an_admin_claims_an_open_project(self, world):
+        pid = _open_project("claimable")
+        assert client.get(f"/api/projects/{pid}", headers=headers("dave")).status_code == 200
+
+        resp = client.post(f"/api/projects/{pid}/claim", headers=admin_headers())
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert (body["username"], body["role"], body["added_by"]) == (_user("root"), "owner", _user("root"))
+        assert body["added_at"]
+
+        now = _members(pid)
+        assert now["access"] == "restricted"
+        assert [(m["username"], m["role"]) for m in now["members"]] == [(_user("root"), "owner")]
+        refused = client.get(f"/api/projects/{pid}", headers=headers("dave"))
+        assert refused.status_code == 403 and refused.json()["detail"] == NO_ACCESS
+        listed = {p["id"]: p for p in client.get("/api/projects", headers=ADMIN).json()}
+        assert listed[pid]["access"] == "restricted"
+
+    def test_claiming_a_restricted_project_is_409(self, world):
+        resp = client.post(f"/api/projects/{RESTRICTED}/claim", headers=admin_headers())
+        assert resp.status_code == 409
+        assert resp.json()["detail"] == "This project already has members, so it cannot be claimed"
+        assert [m["username"] for m in _members(RESTRICTED)["members"]] == [
+            _user("alice"), _user("bob"), _user("carol"),
+        ]
+
+    def test_claiming_twice_is_409(self, world):
+        pid = _open_project("twice")
+        assert client.post(f"/api/projects/{pid}/claim", headers=admin_headers()).status_code == 200
+        again = client.post(f"/api/projects/{pid}/claim", headers=admin_headers("second-admin"))
+        assert again.status_code == 409
+        assert [m["username"] for m in _members(pid)["members"]] == [_user("root")]
+
+    def test_a_non_admin_may_not_claim(self, world):
+        pid = _open_project("not-yours")
+        resp = client.post(f"/api/projects/{pid}/claim", headers=headers("dave"))
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "Admin access required"
+        assert _members(pid)["access"] == "open"
+        # Not even the owner of a restricted project.
+        owner = client.post(f"/api/projects/{RESTRICTED}/claim", headers=headers("alice"))
+        assert owner.status_code == 403 and owner.json()["detail"] == "Admin access required"
+
+    def test_claiming_a_missing_project_is_404(self, world):
+        from intel_platform.db import members
+
+        resp = client.post(f"/api/projects/{MISSING}/claim", headers=admin_headers())
+        assert resp.status_code == 404
+        assert asyncio.run(members.memberships([MISSING], _user("root"))) == {}
+
+    def test_a_membership_outage_is_503(self, world, monkeypatch):
+        from intel_platform.db import members
+
+        async def down(*args, **kwargs):
+            raise OSError("connection refused")
+
+        pid = _open_project("outage")
+        monkeypatch.setattr(members, "claim_open_project", down)
+        resp = client.post(f"/api/projects/{pid}/claim", headers=admin_headers())
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == "Project access could not be checked"
+
+    def test_two_concurrent_claims_cannot_both_succeed(self, world):
+        """The open check and the insert are one transaction under the
+        project's membership lock, so the second claim sees the first owner."""
+        from intel_platform.db import members
+
+        pid = _open_project("race")
+
+        async def race():
+            return await asyncio.gather(
+                members.claim_open_project(pid, _user("root")),
+                members.claim_open_project(pid, _user("second-admin")),
+                return_exceptions=True,
+            )
+
+        results = asyncio.run(race())
+        won = [r for r in results if not isinstance(r, BaseException)]
+        lost = [r for r in results if isinstance(r, BaseException)]
+        assert len(won) == 1 and len(lost) == 1, results
+        assert isinstance(lost[0], members.MembershipRuleError)
+        assert [(m["username"], m["role"]) for m in _members(pid)["members"]] == [(won[0].username, "owner")]
+
+
+def test_mcp_refuses_a_non_member_on_an_admin_created_project(world):
+    """MCP reads the same grants, so an admin's new project is closed there too."""
+    from intel_platform.mcp import server
+
+    def ctx(user):
+        return SimpleNamespace(request_context=SimpleNamespace(request=SimpleNamespace(scope={"state": {"user": user}})))
+
+    resp = client.post("/api/projects", json={"name": "Admin's MCP"}, headers=admin_headers())
+    assert resp.status_code == 200, resp.text
+    pid = resp.json()["id"]
+    world.created.append(pid)
+
+    with pytest.raises(PermissionError, match=NO_ACCESS):
+        asyncio.run(server._require(ctx({"username": _user("dave"), "role": "analyst"}), pid, "viewer"))
+    # The owner row is an ordinary membership: the same name signed in as an
+    # analyst still holds it.
+    asyncio.run(server._require(ctx({"username": _user("root"), "role": "analyst"}), pid, "editor"))
 
 
 def test_member_rows_go_with_the_project(world):
