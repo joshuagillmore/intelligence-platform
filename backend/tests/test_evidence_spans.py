@@ -372,3 +372,88 @@ def test_every_example_in_the_prompt_quotes_its_input_verbatim():
             assert re.fullmatch(r"[A-Z].*\.", r["evidence"]), r["evidence"]
     dating = re.search(r'Text: "(Houthi forces[^"]*)".*?"evidence": "([^"]*)"', prompt, re.S)
     assert dating and dating.group(2) == dating.group(1)
+
+
+# ── A quote marked as partial; a reply that loops ──────────────────────────
+
+
+def test_an_ellipsis_at_either_end_of_a_quote_is_let_go():
+    """The model marks a partial quote with "..."; what it quotes must still be verbatim."""
+    start, end = _locate_evidence(TEXT, "...inspected the sets at Port Selma...")
+    assert TEXT[start:end] == "inspected the sets at Port Selma"
+    start, end = _locate_evidence(TEXT, "…OSC is a subsidiary of Varn Holdings.")
+    assert TEXT[start:end] == THIRD
+    assert _locate_evidence(TEXT, "...inspected the sets at Port Calvera...") is None
+
+
+async def test_a_relationship_the_reply_repeats_is_one_edge():
+    """A looping reply named one edge 108 times; the graph build merges the
+    repeats into one edge, so the extraction keeps one too."""
+    rel = _rel("Kalvik Coast Guard", "Ostrava Shipping", "SUPPLIED_BY", FIRST)
+    result = await _llm([rel, dict(rel), dict(rel)])
+    assert len([r for r in result[1] if r["rel_type"] == "SUPPLIED_BY"]) == 1
+    assert result.relationships_dropped_by_reason["repeated"] == 2
+
+
+async def test_hybrid_keeps_a_repeated_relationship_once():
+    rel = _rel("Kalvik Coast Guard", "Ostrava Shipping", "SUPPLIED_BY", FIRST)
+    result = await _llm([rel, dict(rel)], mode="hybrid")
+    assert len([r for r in result[1] if r["rel_type"] == "SUPPLIED_BY"]) == 1
+    assert result.relationships_dropped_by_reason["repeated"] == 1
+
+
+async def test_an_assertion_and_a_denial_of_one_edge_are_both_kept():
+    asserted = _rel("Kalvik Coast Guard", "Ostrava Shipping", "SUPPLIED_BY", FIRST)
+    denied = {**asserted, "polarity": "denies"}
+    result = await _llm([asserted, denied])
+    assert sorted(r["polarity"] for r in result[1] if r["rel_type"] == "SUPPLIED_BY") == ["asserts", "denies"]
+
+
+# ── A verbatim fragment is read in its sentence ────────────────────────────
+# The rule is that the sentence containing the evidence names both ends. The
+# model sometimes quotes only part of it ("led by Senate-confirmed U.S. Space
+# Force General Michael A. Guetlein"), leaving the subject out.
+
+GOLDEN = ("Heading line\n"
+          "In May 2025, DOD established the Office of Golden Dome for America, led by Senate-confirmed "
+          "U.S. Space Force General Michael A. Guetlein. The office reports to the Deputy Secretary.\n"
+          "Petra Lund is unrelated.")
+GOLDEN_SENTENCE = ("In May 2025, DOD established the Office of Golden Dome for America, led by Senate-confirmed "
+                   "U.S. Space Force General Michael A. Guetlein.")
+
+
+async def _golden(quote: str):
+    ents = [{"name": "Office of Golden Dome for America", "entity_type": "Organization"},
+            {"name": "Michael A. Guetlein", "entity_type": "Person"},
+            {"name": "Petra Lund", "entity_type": "Person"}]
+    reply = json.dumps({"entities": ents, "relationships": [
+        _rel("Office of Golden Dome for America", "Michael A. Guetlein", "COMMANDED_BY", quote)]})
+    with patch("intel_platform.llm.providers._get_extraction_provider",
+               new=AsyncMock(return_value=_Canned(reply))):
+        return await extract_entities_llm(GOLDEN, "doc-golden")
+
+
+async def test_a_fragment_is_kept_when_its_sentence_names_both_ends():
+    result = await _golden("led by Senate-confirmed U.S. Space Force General Michael A. Guetlein")
+    (edge,) = result[1]
+    assert edge["evidence"] == GOLDEN_SENTENCE
+    assert edge["evidence_offset"] == GOLDEN.index(GOLDEN_SENTENCE)
+
+
+async def test_a_fragment_whose_sentence_does_not_name_both_ends_is_dropped():
+    result = await _golden("The office reports to the Deputy Secretary.")
+    assert result[1] == []
+    assert result.relationships_dropped_by_reason["evidence_missing_endpoint"] == 1
+
+
+async def test_a_fragment_is_never_widened_past_its_line():
+    """A name on another line (a heading, a list item) is not the sentence's."""
+    text = "Office of Golden Dome for America\nIt is led by General Michael A. Guetlein."
+    ents = [{"name": "Office of Golden Dome for America", "entity_type": "Organization"},
+            {"name": "Michael A. Guetlein", "entity_type": "Person"}]
+    reply = json.dumps({"entities": ents, "relationships": [
+        _rel("Office of Golden Dome for America", "Michael A. Guetlein", "COMMANDED_BY", "led by General Michael A. Guetlein")]})
+    with patch("intel_platform.llm.providers._get_extraction_provider",
+               new=AsyncMock(return_value=_Canned(reply))):
+        result = await extract_entities_llm(text, "doc-golden-2")
+    assert result[1] == []

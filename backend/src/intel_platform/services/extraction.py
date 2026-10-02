@@ -40,8 +40,9 @@ class ExtractionResult(tuple):
       is neither a listed entity nor one's alias), ``same_entity`` (both ends
       resolve to one entity), ``generic_on_typed_pair`` (an ASSOCIATED_WITH on
       a pair a typed relation already links), ``evidence_not_verbatim`` (no
-      evidence, or a quote the chunk does not contain) and
-      ``evidence_missing_endpoint`` (a quote that does not name both ends).
+      evidence, or a quote the chunk does not contain),
+      ``evidence_missing_endpoint`` (a quote that does not name both ends) and
+      ``repeated`` (an edge the reply already gave).
       The graph build keeps its own count of what reaches it.
 
     Every relationship carries ``evidence`` (the chunk's own text it was read
@@ -1150,6 +1151,8 @@ _TYPOGRAPHIC = str.maketrans({
 # "The group", "this actor": a threat actor named earlier (_ACTOR_ANAPHORS).
 _ACTOR_ANAPHOR = re.compile(r"\b(?:the|this|that)\s+(?:group|actor|attacker|adversary|operator|intruder)s?\b",
                             re.IGNORECASE)
+# An ellipsis the model puts at either end of a partial quote.
+_EDGE_ELLIPSIS = re.compile(r"^(?:\.\.\.|\u2026)\s*|\s*(?:\.\.\.|\u2026)$")
 # Quotation marks a model wraps a quote in.
 _QUOTE_MARKS = "\"'`‘’“”"
 # NLP evidence longer than this is clipped to the words around the pair.
@@ -1188,8 +1191,9 @@ def _locate_evidence(text: str, quote, folded: tuple[str, list[int]] | None = No
 
     Whitespace-normalised and case-insensitive, typographic quotes and dashes
     read as their plain forms; a quote wrapped in quotation marks is unwrapped,
-    and a closing full stop the text does not have is let go. A paraphrase, an
-    elision ("... stated"), or a sentence from another text is not found.
+    and an ellipsis at either end (a partial quote) and a closing full stop the
+    text does not have are let go. A paraphrase, an elision inside the quote
+    ("Kallas... stated"), or a sentence from another text is not found.
     ``folded`` is ``_folded(text)``, for a caller locating many quotes in one
     text.
     """
@@ -1199,6 +1203,7 @@ def _locate_evidence(text: str, quote, folded: tuple[str, list[int]] | None = No
     candidates = [q]
     if len(q) > 2 and q[0] in _QUOTE_MARKS and q[-1] in _QUOTE_MARKS:
         candidates.append(q[1:-1].strip())
+    candidates += [bare for c in list(candidates) if (bare := _EDGE_ELLIPSIS.sub("", c).strip()) != c]
     candidates += [c[:-1].rstrip() for c in list(candidates) if c.endswith(".")]
     haystack, offsets = folded or _folded(text)
     for candidate in candidates:
@@ -1267,8 +1272,11 @@ def _verify_evidence(
     last one the text named before them, the rule NLP reads them by. A
     date link (OCCURRED_ON, or an edge to a Date) needs only its date named:
     the event is usually a name the model gave it ("Kalvik radar delivery"),
-    which no text contains. A kept edge's ``evidence`` becomes the text's own
-    span and ``evidence_offset`` its offset.
+    which no text contains. A verbatim part of a sentence ("led by General
+    Guetlein") is read in its whole sentence (``_sentences_around``): the
+    rule is that the sentence the evidence is in names both ends. A kept
+    edge's ``evidence`` becomes the text's own span (that sentence, for a
+    fragment) and ``evidence_offset`` its offset.
 
     Returns the kept relationships and the drops by reason:
     ``evidence_not_verbatim`` (no evidence, or none the text contains) and
@@ -1304,6 +1312,7 @@ def _verify_evidence(
                 return True
         return False
 
+    parsed_lines: dict[int, object] = {}
     kept: list[dict] = []
     dropped = {"evidence_not_verbatim": 0, "evidence_missing_endpoint": 0}
     for r in relationships:
@@ -1318,8 +1327,16 @@ def _verify_evidence(
                 for side in ("source_name", "target_name")]
         dates = [end for end in ends if end[1] is not None and end[1].get("entity_type") == "Date"]
         required = dates if dates and (r.get("rel_type") == "OCCURRED_ON" or len(dates) == 1) else ends
-        missing = [name for name, ent in required
-                   if not _quote_names(quote, _endpoint_forms(name, ent)) and not referred_back(ent, span[0], quote)]
+
+        def unnamed(at: int, quote: str) -> list[str]:
+            return [name for name, ent in required
+                    if not _quote_names(quote, _endpoint_forms(name, ent)) and not referred_back(ent, at, quote)]
+
+        missing = unnamed(span[0], quote)
+        if missing:
+            wide = _sentences_around(text, span[0], span[1], parsed_lines)
+            if wide != span and not unnamed(wide[0], text[wide[0]:wide[1]]):
+                span, quote, missing = wide, text[wide[0]:wide[1]], []
         if missing:
             dropped["evidence_missing_endpoint"] += 1
             logger.debug("Dropped %s: its evidence does not name %s: %.160r", label, missing, quote)
@@ -1329,6 +1346,51 @@ def _verify_evidence(
         logger.debug("Kept %d of %d model relationship(s) on their evidence: %s",
                      len(kept), len(relationships), dropped)
     return kept, dropped
+
+
+def _sentences_around(text: str, start: int, end: int, parsed: dict[int, object]) -> tuple[int, int]:
+    """The sentences of ``text`` that ``text[start:end]`` is part of, as (start, end).
+
+    Read within the quote's own lines, so a heading or list item on another
+    line is never taken into the sentence (no eval text wraps a sentence
+    across lines). The lines are parsed once per chunk (``parsed``, by line
+    start); without a parse the quote stays as it is.
+    """
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    line_end = len(text) if line_end == -1 else line_end
+    doc = parsed.get(line_start)
+    if doc is None:
+        try:
+            doc = parsed[line_start] = _get_nlp()(text[line_start:line_end])
+        except Exception:
+            logger.warning("Could not parse a line to find the sentence a quote is in", exc_info=True)
+            return start, end
+    lo, hi = start, end
+    for sent in doc.sents:
+        a, b = line_start + sent.start_char, line_start + sent.end_char
+        if a < end and start < b:
+            lo, hi = min(lo, a), max(hi, b)
+    return _trim_span(text, lo, hi)
+
+
+def _drop_repeated(relationships: list[dict]) -> tuple[list[dict], int]:
+    """One edge per source, type, target and polarity: the first, with its evidence.
+
+    A reply that loops repeats one relationship until the token limit (a live
+    reply named TikTok BELONGS_TO ByteDance 108 times, the quote drifting as it
+    went). The graph build merges the repeats into one edge, so the
+    extraction keeps one too, and the eval no longer counts each repeat as a
+    prediction. Returns the kept relationships and how many repeats went.
+    """
+    seen: set[tuple] = set()
+    kept: list[dict] = []
+    for r in relationships:
+        key = (r.get("source_name"), r.get("rel_type"), r.get("target_name"), r.get("polarity", "asserts"))
+        if key not in seen:
+            seen.add(key)
+            kept.append(r)
+    return kept, len(relationships) - len(kept)
 
 
 def _trim_span(text: str, start: int, end: int) -> tuple[int, int]:
@@ -3146,7 +3208,9 @@ async def _extract_with_llm(
         entities, relationships, same_entity = _resolve_countries(entities, relationships, text)
         dropped["same_entity"] += same_entity
     relationships, generic_dropped = _drop_generic_on_typed_pairs(relationships)
-    return entities, relationships, skipped, {**dropped, "generic_on_typed_pair": generic_dropped}
+    relationships, repeated = _drop_repeated(relationships)
+    return entities, relationships, skipped, {**dropped, "generic_on_typed_pair": generic_dropped,
+                                              "repeated": repeated}
 
 
 async def extract_entities_llm(text: str, doc_id: str) -> ExtractionResult:
@@ -3324,6 +3388,9 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
     # once both halves are in.
     merged_rels, generic_dropped = _drop_generic_on_typed_pairs(merged_rels)
     dropped["generic_on_typed_pair"] = dropped.get("generic_on_typed_pair", 0) + generic_dropped
+    # Names the merge and the country table resolved can repeat an edge.
+    merged_rels, repeated = _drop_repeated(merged_rels)
+    dropped["repeated"] = dropped.get("repeated", 0) + repeated
 
     # Re-resolve event_datetime over the merged set — catches cases where the
     # Event came from one method and its OCCURRED_ON Date from the other.
