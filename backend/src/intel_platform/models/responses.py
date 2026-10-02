@@ -1095,3 +1095,51 @@ class GapAnalysisResponse(BaseModel):
     context_nodes: int
     context_edges: int
     focus_entities: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Assessments
+# ---------------------------------------------------------------------------
+
+class AssessmentCreatedResponse(BaseModel):
+    assessment_id: str
+    entity_id: str
+    entity_name: str
+    judgment: str
+    probability: float
+    probability_label: str
+
+
+class AssessmentErrorItem(BaseModel):
+    """An assessment that could not be made (its entity is gone)."""
+    error: str
+
+
+class GeneratedAssessmentResponse(BaseModel):
+    assessment: str
+    model: str
+    tokens_used: int
+    # The saved Assessment. Null, with `error`, only when the entity vanished
+    # between the read and the save.
+    assessment_id: str | None = None
+    entity_id: str | None = None
+    entity_name: str | None = None
+    judgment: str | None = None
+    probability: float | None = None
+    probability_label: str | None = None
+    error: str | None = None
+    # False when the reply stated no readable probability and the request's
+    # fallback was stored instead.
+    probability_parsed: bool
+
+
+class EntityContextItem(BaseModel):
+    entity: EntityProperties
+    relationships: list[RelationshipItem]
+    relationship_count: int
+
+
+class MultiAssessmentResponse(BaseModel):
+    entities: list[EntityContextItem]
+    assessments: list[AssessmentCreatedResponse | AssessmentErrorItem]
+    entity_count: int
