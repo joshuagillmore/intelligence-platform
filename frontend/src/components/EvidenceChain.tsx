@@ -13,17 +13,19 @@ import HighlightedExcerpt from '@/components/HighlightedExcerpt';
  * corroborated.
  */
 
+/** An edge with its provenance: an entity's relationship, or one a product
+ *  was drawn from. Any field but the type may be missing (null or absent). */
 export interface EvidenceRelationship {
   rel_type: string;
-  source_name?: string;
-  target_name?: string;
-  confidence?: number;
-  evidence?: string;
-  admiralty_rating?: string;
-  corroboration_count?: number;
-  corroboration_agreement?: string;
-  method?: string;
-  source?: string;
+  source_name?: string | null;
+  target_name?: string | null;
+  confidence?: number | null;
+  evidence?: string | null;
+  admiralty_rating?: string | null;
+  corroboration_count?: number | null;
+  corroboration_agreement?: string | null;
+  method?: string | null;
+  source?: string | null;
 }
 
 interface Props {
@@ -53,7 +55,7 @@ function confidenceColour(confidence: number): string {
 }
 
 /** How strongly the sources agree — CONFLICT is the one that must stand out. */
-function agreementStyle(agreement?: string): { label: string; colour: string } | null {
+function agreementStyle(agreement?: string | null): { label: string; colour: string } | null {
   switch ((agreement || '').toUpperCase()) {
     case 'CONFLICT': return { label: 'Sources conflict', colour: '#f87171' };
     case 'PARTIAL': return { label: 'Partial agreement', colour: '#facc15' };

@@ -100,7 +100,7 @@ export default function Sidebar() {
         try {
           const colRes = await collectionsApi.list(activeProject.id);
           const rows = Array.isArray(colRes.data) ? colRes.data : [];
-          const running = rows.filter((c: { status?: string }) => {
+          const running = rows.filter(c => {
             const s = c.status?.toUpperCase();
             return s === 'STARTED' || s === 'PROGRESS' || s === 'RUNNING';
           });

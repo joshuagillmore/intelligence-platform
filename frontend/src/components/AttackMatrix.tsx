@@ -53,8 +53,8 @@ function isTechniqueCovered(t: AttackTechniqueCell): boolean {
   return t.observed_count > 0 || t.subtechniques.some((s) => s.observed_count > 0);
 }
 
-function badgeClass(entityType: string): string {
-  return TYPE_BADGE_CLASS[entityType] || 'bg-gray-900/30 text-gray-400';
+function badgeClass(entityType: string | null | undefined): string {
+  return TYPE_BADGE_CLASS[entityType ?? ''] || 'bg-gray-900/30 text-gray-400';
 }
 
 // A small badge distinguishing an AI (RAG+LLM) mapping from explicit T-code
@@ -65,7 +65,8 @@ function MethodBadge({
   confidence,
   showTcode = false,
 }: {
-  method?: AttackMapMethod;
+  /** An `AttackMapMethod`; the backend sends it as a plain string. */
+  method?: AttackMapMethod | string;
   confidence?: number | null;
   showTcode?: boolean;
 }) {

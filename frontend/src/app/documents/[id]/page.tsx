@@ -3,31 +3,17 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Markdown from '@/components/Markdown';
-import { analysisApi, documentsApi, entitiesApi } from '@/lib/api';
+import { analysisApi, documentsApi, entitiesApi, type DocumentDetail } from '@/lib/api';
 import { TYPE_COLOR_HEX } from '@/lib/entityStyles';
 import { useNotifications } from '@/components/NotificationProvider';
 import { getErrorMessage } from '@/lib/errorMessages';
 
-interface Highlight {
-  start: number;
-  end: number;
-  entity_id: string;
-  entity_name: string;
-  entity_type: string;
-}
+type Highlight = DocumentDetail['highlights'][number];
 
-interface DocData {
-  id: string;
-  name: string;
-  reliability_rating: string;
-  content: string;
-  entities: Array<{ id: string; name: string; entity_type: string }>;
-  highlights: Highlight[];
-  entity_count: number;
-  summary_json?: string;
+type DocData = DocumentDetail & {
   /** Not sent by GET /documents/{id} today; read if a later backend adds it. */
   project_id?: string;
-}
+};
 
 interface DocSummary {
   summary?: string;
@@ -46,7 +32,7 @@ function asStringArray(v: unknown): string[] | undefined {
   return items.length ? items : undefined;
 }
 
-function parseSummary(raw?: string): DocSummary | null {
+function parseSummary(raw?: string | null): DocSummary | null {
   if (!raw || !raw.trim()) return null;
   let obj: unknown;
   try {
@@ -189,12 +175,12 @@ export default function DocumentViewer() {
       <pre className="whitespace-pre-wrap text-sm text-gray-300 leading-relaxed">
         {parts.map((part, i) => {
           if (part.highlight) {
-            const color = typeColor[part.highlight.entity_type] || '#9ca3af';
+            const color = typeColor[part.highlight.entity_type ?? ''] || '#9ca3af';
             const isSelected = selectedEntity === part.highlight.entity_id;
             return (
               <span
                 key={i}
-                onClick={() => setSelectedEntity(part.highlight!.entity_id)}
+                onClick={() => setSelectedEntity(part.highlight!.entity_id ?? null)}
                 className="cursor-pointer rounded px-0.5"
                 style={{
                   backgroundColor: `${color}${isSelected ? '40' : '20'}`,
@@ -316,7 +302,7 @@ export default function DocumentViewer() {
             {doc.entities.map((e) => (
               <div
                 key={e.id}
-                onClick={() => setSelectedEntity(e.id === selectedEntity ? null : e.id)}
+                onClick={() => setSelectedEntity(e.id === selectedEntity ? null : e.id ?? null)}
                 className={`text-xs p-2 rounded cursor-pointer transition-colors ${
                   selectedEntity === e.id ? 'bg-navy-600 border border-accent-blue' : 'bg-navy-700 hover:bg-navy-600'
                 }`}
@@ -326,8 +312,8 @@ export default function DocumentViewer() {
                   <span
                     className="px-1 py-0 rounded text-[10px]"
                     style={{
-                      backgroundColor: `${typeColor[e.entity_type] || '#6b7280'}20`,
-                      color: typeColor[e.entity_type] || '#9ca3af',
+                      backgroundColor: `${typeColor[e.entity_type ?? ''] || '#6b7280'}20`,
+                      color: typeColor[e.entity_type ?? ''] || '#9ca3af',
                     }}
                   >
                     {e.entity_type}

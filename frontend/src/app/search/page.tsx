@@ -66,9 +66,8 @@ function SearchPageContent() {
     documentsApi.list(activeProject.id)
       .then(res => {
         if (cancelled) return;
-        const rows = res.data?.documents || res.data || [];
         const map: Record<string, string> = {};
-        for (const d of rows) map[d.id] = d.name;
+        for (const d of res.data?.documents || []) if (d.name) map[d.id] = d.name;
         setDocNames(map);
       })
       .catch(() => { /* names are a nicety; passages still render without them */ });

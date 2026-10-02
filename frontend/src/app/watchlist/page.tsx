@@ -102,7 +102,7 @@ export default function WatchlistPage() {
             {entities.map((entity) => (
               <div key={entity.id} className="flex items-center justify-between px-5 py-4 hover:bg-navy-700/50 transition-colors">
                 <div className="flex items-center gap-3">
-                  <span className={`w-3 h-3 rounded-full flex-none ${TYPE_COLORS[entity.entity_type] || 'bg-gray-500'}`} />
+                  <span className={`w-3 h-3 rounded-full flex-none ${TYPE_COLORS[entity.entity_type ?? ''] || 'bg-gray-500'}`} />
                   <span className="font-medium text-gray-200">{entity.name}</span>
                   <span className="text-xs px-2 py-0.5 rounded bg-navy-600 text-gray-400">{entity.entity_type}</span>
                   {entity.relationship_count !== undefined && (

@@ -3,14 +3,10 @@ import { useCallback, useRef, useState } from 'react';
 import { snapshotsApi } from '@/lib/api';
 import { createRequestSequencer } from '../graphFilters';
 import type { Entity } from '../types';
+import type { Model } from '@/lib/apiTypes';
 
 /** A saved snapshot as `GET /snapshots` lists it. */
-export interface SnapshotSummary {
-  id: string;
-  name: string;
-  entity_count: number;
-  created_at: string;
-}
+export type SnapshotSummary = Model<'SnapshotResponse'>;
 
 /**
  * Snapshots ("bins"): named sets of entity ids saved from the multi-selection.

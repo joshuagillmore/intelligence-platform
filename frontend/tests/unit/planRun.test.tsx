@@ -18,7 +18,10 @@ const mockCancel = collectionPlansApi.cancel as unknown as ReturnType<typeof vi.
  * `job_status`; POST /cancel stops a live run, and each run carries its own
  * degraded outcomes.
  */
-const run = (over: Partial<PlanExecutionStatus>): PlanExecutionStatus => ({ plan_id: 'p1', status: 'idle', ...over });
+// The fields every status carries, then the case under test.
+const run = (over: Partial<PlanExecutionStatus>): PlanExecutionStatus => ({
+  plan_id: 'p1', status: 'idle', message: '', sources_succeeded: 0, sources_failed: 0, ...over,
+});
 
 describe('runBadge', () => {
   it.each([

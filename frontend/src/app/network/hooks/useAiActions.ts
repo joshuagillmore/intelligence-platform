@@ -133,7 +133,7 @@ export function useAiActions({ activeProject, selectedEntity, multiSelected, sta
         const ragRes = await queryApi.rag(activeProject.id,
           `Provide a comprehensive overview of the following group of entities and their relationships: ${entityNames}`
         );
-        const ragContext = ragRes.data?.response || ragRes.data?.context || '';
+        const ragContext = ragRes.data?.context || '';
 
         const communityPrompt = `Generate a community/group assessment for these ${multiSelected.length} entities:\n${entityNames}\n\n${statsContext}\n\nContext from knowledge graph:\n${ragContext}\n\nProvide:\n1. Community Overview (what binds this group together)\n2. Key Nodes (most influential members based on centrality)\n3. Internal Dynamics (relationship patterns within the group)\n4. External Connections (how this group connects to the broader network)\n5. Intelligence Gaps\n6. Assessment Summary`;
 
@@ -144,7 +144,7 @@ export function useAiActions({ activeProject, selectedEntity, multiSelected, sta
         // model "none" is the route's no-provider reply, whose content is a
         // configuration message rather than an assessment.
         if (llmRes.data?.model !== 'none') {
-          result = llmRes.data?.response || llmRes.data?.content;
+          result = llmRes.data?.content;
         }
       } else {
         // Single entity: use standard assessment

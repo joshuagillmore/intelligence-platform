@@ -256,7 +256,7 @@ export default function CollectionPlansPage() {
     }
   }
 
-  function formatDate(d: string | null) {
+  function formatDate(d: string | null | undefined) {
     if (!d) return '—';
     return new Date(d).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
