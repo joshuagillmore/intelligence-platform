@@ -54,7 +54,7 @@ class TestInfluenceBody:
 
         def fake(store, project_id, seed_ids, steps=3, threshold=0.3):
             calls.append({"project_id": project_id, "seed_ids": seed_ids, "steps": steps, "threshold": threshold})
-            return {"influenced": []}
+            return {"seeds": seed_ids, "steps": [], "total_activated": 0, "reach_ratio": 0}
 
         monkeypatch.setattr(graph_route, "compute_influence_propagation", fake)
         return calls

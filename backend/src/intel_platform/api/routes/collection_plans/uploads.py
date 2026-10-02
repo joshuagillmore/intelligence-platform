@@ -26,6 +26,7 @@ from intel_platform.db.models import (
 )
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import Document
+from intel_platform.models.responses import FileUploadResponse
 from intel_platform.services.extraction import extract_entities_nlp
 from intel_platform.services.graph_builder import build_graph_from_extractions
 from intel_platform.services.ingestion import ingest_text
@@ -66,7 +67,7 @@ async def _read_upload_capped(file: UploadFile, cap: int) -> bytes:
         buf.extend(chunk)
 
 
-@router.post("/collection-plans/{plan_id}/sources/{source_id}/upload")
+@router.post("/collection-plans/{plan_id}/sources/{source_id}/upload", response_model=FileUploadResponse)
 async def upload_file_to_source(
     plan_id: str,
     source_id: str,

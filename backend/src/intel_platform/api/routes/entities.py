@@ -7,13 +7,22 @@ from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.evidence import find_passages
 from intel_platform.graph.merge import copy_edge_verbatim, merge_entity_into, transfer_edge
 from intel_platform.graph.store import GraphStore
+from intel_platform.models.responses import (
+    EntityDetailResponse,
+    EntityMergeResponse,
+    EntityProperties,
+    EntityTypeChangedResponse,
+    EntityTypeHierarchyResponse,
+    ShortestPathResponse,
+    SubgraphResponse,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
-@router.get("/entity-types")
+@router.get("/entity-types", response_model=EntityTypeHierarchyResponse)
 def get_entity_type_hierarchy():
     """Get the entity type hierarchy."""
     from intel_platform.models.type_hierarchy import TYPE_HIERARCHY
@@ -23,7 +32,7 @@ def get_entity_type_hierarchy():
     }
 
 
-@router.get("/entities")
+@router.get("/entities", response_model=list[EntityProperties], response_model_exclude_unset=True)
 def search_entities(
     response: Response,
     project_id: str, query: str = "", entity_type: str | None = None,
@@ -51,7 +60,7 @@ def search_entities(
     return results
 
 
-@router.get("/entities/{entity_id}")
+@router.get("/entities/{entity_id}", response_model=EntityDetailResponse, response_model_exclude_unset=True)
 def get_entity(entity_id: str, store: GraphStore = Depends(get_graph_store)):
     entity = store.get_entity(entity_id)
     if not entity:
@@ -146,7 +155,7 @@ def _traversal_scope(requested: str | None, *entities: dict | None) -> str | Non
     return None
 
 
-@router.get("/subgraph/{entity_id}")
+@router.get("/subgraph/{entity_id}", response_model=SubgraphResponse, response_model_exclude_unset=True)
 def get_subgraph(
     entity_id: str,
     hops: int = Query(1, ge=1, le=4),
@@ -162,7 +171,7 @@ def get_subgraph(
     return store.get_subgraph(entity_id, hops=hops, project_id=scope)
 
 
-@router.get("/paths/{entity_id_1}/{entity_id_2}")
+@router.get("/paths/{entity_id_1}/{entity_id_2}", response_model=ShortestPathResponse, response_model_exclude_unset=True)
 def find_shortest_path(
     entity_id_1: str,
     entity_id_2: str,
@@ -188,7 +197,7 @@ _copy_edge_verbatim = copy_edge_verbatim
 _transfer_edge = transfer_edge
 
 
-@router.post("/entities/merge")
+@router.post("/entities/merge", response_model=EntityMergeResponse)
 def merge_entities(req: MergeEntitiesRequest, store: GraphStore = Depends(get_graph_store)):
     """Merge entities into the primary, moving every edge as it was.
 
@@ -245,7 +254,7 @@ class UpdateEntityTypeRequest(BaseModel):
     entity_type: str
 
 
-@router.put("/entities/{entity_id}/type")
+@router.put("/entities/{entity_id}/type", response_model=EntityTypeChangedResponse)
 def update_entity_type(entity_id: str, req: UpdateEntityTypeRequest, store: GraphStore = Depends(get_graph_store)):
     """Update an entity's type (e.g., fix a misclassification)."""
     # SECURITY: validate against known entity types to prevent arbitrary values

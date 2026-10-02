@@ -18,6 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.db.engine import get_db
 from intel_platform.graph.store import GraphStore
+from intel_platform.models.responses import (
+    GapAnalysisResponse,
+    HypothesesResponse,
+    SourceEvaluationResponse,
+)
 from intel_platform.services.analytic_agents import AnalyticAgentService
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
@@ -56,7 +61,7 @@ class GapAnalysisRequest(BaseModel):
     token_budget: int = Field(8000, ge=500, le=32000)
 
 
-@router.post("/analysis/source-evaluation")
+@router.post("/analysis/source-evaluation", response_model=SourceEvaluationResponse)
 async def evaluate_sources(
     req: SourceEvaluationRequest,
     store: GraphStore = Depends(get_graph_store),
@@ -76,7 +81,7 @@ async def evaluate_sources(
     )
 
 
-@router.post("/analysis/hypotheses")
+@router.post("/analysis/hypotheses", response_model=HypothesesResponse, response_model_exclude_unset=True)
 async def generate_hypotheses(
     req: HypothesesRequest,
     store: GraphStore = Depends(get_graph_store),
@@ -97,7 +102,7 @@ async def generate_hypotheses(
     )
 
 
-@router.post("/analysis/gaps")
+@router.post("/analysis/gaps", response_model=GapAnalysisResponse)
 async def analyze_gaps(
     req: GapAnalysisRequest,
     store: GraphStore = Depends(get_graph_store),

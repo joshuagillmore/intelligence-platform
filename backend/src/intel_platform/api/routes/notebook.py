@@ -6,6 +6,7 @@ from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import Report
 from intel_platform.models.relationships import Relationship
+from intel_platform.models.responses import NoteCreatedResponse, NoteResponse, StatusResponse
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -18,7 +19,7 @@ class NoteRequest(BaseModel):
     note_type: Literal["observation", "hypothesis", "question", "conclusion"] = "observation"
 
 
-@router.post("/notebook")
+@router.post("/notebook", response_model=NoteCreatedResponse)
 def create_note(req: NoteRequest, store: GraphStore = Depends(get_graph_store)):
     note = Report(
         name=req.title,
@@ -61,7 +62,7 @@ def create_note(req: NoteRequest, store: GraphStore = Depends(get_graph_store)):
     }
 
 
-@router.get("/notebook")
+@router.get("/notebook", response_model=list[NoteResponse], response_model_exclude_unset=True)
 def list_notes(project_id: str, store: GraphStore = Depends(get_graph_store)):
     # Filtered in the query. Fetching the first 100 Reports of every kind by
     # name and filtering here showed an empty notebook to any project with
@@ -78,7 +79,7 @@ def list_notes(project_id: str, store: GraphStore = Depends(get_graph_store)):
         return [dict(record["n"]) for record in result]
 
 
-@router.get("/notebook/{note_id}")
+@router.get("/notebook/{note_id}", response_model=NoteResponse, response_model_exclude_unset=True)
 def get_note(note_id: str, store: GraphStore = Depends(get_graph_store)):
     note = store.get_entity(note_id)
     if not note:
@@ -86,7 +87,7 @@ def get_note(note_id: str, store: GraphStore = Depends(get_graph_store)):
     return note
 
 
-@router.delete("/notebook/{note_id}")
+@router.delete("/notebook/{note_id}", response_model=StatusResponse)
 def delete_note(note_id: str, store: GraphStore = Depends(get_graph_store)):
     store.delete_entity(note_id)
     return {"status": "deleted"}

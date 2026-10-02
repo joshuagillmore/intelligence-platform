@@ -2683,6 +2683,35 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AcquisitionLogItem */
+        AcquisitionLogItem: {
+            /** Completed At */
+            completed_at?: string | null;
+            /** Document Id */
+            document_id: string;
+            /** Duration Ms */
+            duration_ms: number;
+            /** Entities Created */
+            entities_created: number;
+            /** Error Message */
+            error_message: string;
+            /** Id */
+            id: string;
+            /** Plan Id */
+            plan_id: string;
+            /** Record Count */
+            record_count: number;
+            /** Relationships Created */
+            relationships_created: number;
+            /** Result */
+            result: string;
+            /** Source Id */
+            source_id: string;
+            /** Source Type */
+            source_type: string;
+            /** Started At */
+            started_at?: string | null;
+        };
         /** AddSourceRequest */
         AddSourceRequest: {
             /** Config */
@@ -2704,12 +2733,50 @@ export interface components {
             /** Source Type */
             source_type: string;
         };
+        /** AdminConfigResponse */
+        AdminConfigResponse: {
+            /** Chunk Overlap */
+            chunk_overlap: number;
+            /** Chunk Size */
+            chunk_size: number;
+            /** Extraction Mode */
+            extraction_mode: string;
+            /** Llm Model */
+            llm_model: string;
+            /** Llm Provider */
+            llm_provider: string;
+            /** Neo4J Uri */
+            neo4j_uri: string;
+            proxy: components["schemas"]["ProxyModeItem"];
+        };
+        /** ApiKeyActivatedResponse */
+        ApiKeyActivatedResponse: {
+            /** Active Key Id */
+            active_key_id: string;
+            /** Status */
+            status: string;
+        };
         /** ApiKeyActivateRequest */
         ApiKeyActivateRequest: {
             /** Key Id */
             key_id: string;
             /** Provider */
             provider: string;
+        };
+        /** ApiKeyCreatedResponse */
+        ApiKeyCreatedResponse: {
+            /** Id */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Key Preview */
+            key_preview: string;
+            /** Label */
+            label: string;
+            /** Provider */
+            provider: string;
+            /** Status */
+            status: string;
         };
         /** ApiKeyCreateRequest */
         ApiKeyCreateRequest: {
@@ -2720,6 +2787,49 @@ export interface components {
             /** Provider */
             provider: string;
         };
+        /** ApiKeyItem */
+        ApiKeyItem: {
+            /** Created At */
+            created_at?: string | null;
+            /** Id */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Key Preview */
+            key_preview: string;
+            /** Label */
+            label: string;
+            /** Provider */
+            provider: string;
+        };
+        /** ApiKeyListResponse */
+        ApiKeyListResponse: {
+            /** Keys */
+            keys: components["schemas"]["ApiKeyItem"][];
+        };
+        /** AssessmentCreatedResponse */
+        AssessmentCreatedResponse: {
+            /** Assessment Id */
+            assessment_id: string;
+            /** Entity Id */
+            entity_id: string;
+            /** Entity Name */
+            entity_name: string;
+            /** Judgment */
+            judgment: string;
+            /** Probability */
+            probability: number;
+            /** Probability Label */
+            probability_label: string;
+        };
+        /**
+         * AssessmentErrorItem
+         * @description An assessment that could not be made (its entity is gone).
+         */
+        AssessmentErrorItem: {
+            /** Error */
+            error: string;
+        };
         /**
          * AssessPirRequest
          * @description Optional inputs for a satisfaction assessment.
@@ -2728,10 +2838,235 @@ export interface components {
             /** Source Limit */
             source_limit?: number | null;
         };
+        /** AttackCountsItem */
+        AttackCountsItem: {
+            /** Groups */
+            groups: number;
+            /** Mitigations */
+            mitigations: number;
+            /** Software */
+            software: number;
+            /** Tactics */
+            tactics: number;
+            /** Techniques */
+            techniques: number;
+        };
+        /** AttackEmbedResponse */
+        AttackEmbedResponse: {
+            /** Detail */
+            detail?: string | null;
+            /** Embedded */
+            embedded: number;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** AttackIngestResponse */
+        AttackIngestResponse: {
+            counts: components["schemas"]["AttackCountsItem"];
+            /** Ingested */
+            ingested: boolean;
+            /** Version */
+            version: string;
+        };
+        /** AttackMappedEntityItem */
+        AttackMappedEntityItem: {
+            /** Confidence */
+            confidence?: number | null;
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Id */
+            id: string;
+            /** Method */
+            method: string;
+            /** Name */
+            name?: string | null;
+        };
+        /** AttackMapResponse */
+        AttackMapResponse: {
+            /** Detail */
+            detail?: string | null;
+            /** Mapped */
+            mapped: number;
+            /** Reason */
+            reason?: string | null;
+            /** Skip Reasons */
+            skip_reasons: {
+                [key: string]: number;
+            };
+            /** Skipped */
+            skipped: number;
+            /** Stale Removed */
+            stale_removed?: number | null;
+        };
+        /** AttackMatrixResponse */
+        AttackMatrixResponse: {
+            /** Ingested */
+            ingested: boolean;
+            /** Tactics */
+            tactics: components["schemas"]["AttackTacticItem"][];
+            /** Version */
+            version?: string | null;
+        };
+        /** AttackRefItem */
+        AttackRefItem: {
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+        };
+        /** AttackReportResponse */
+        AttackReportResponse: {
+            /** Attribution */
+            attribution: components["schemas"]["AttributionSummaryItem"][];
+            /** Cve Enabled */
+            cve_enabled: components["schemas"]["CveEnabledTechniqueItem"][];
+            /** Key Mitigations */
+            key_mitigations: components["schemas"]["KeyMitigationItem"][];
+            /** Markdown */
+            markdown: string;
+            /** Narrative */
+            narrative?: string | null;
+            /** Observed By Tactic */
+            observed_by_tactic: components["schemas"]["ObservedTacticItem"][];
+            /** Project Id */
+            project_id: string;
+        };
+        /** AttackResolveResponse */
+        AttackResolveResponse: {
+            /** Mapped */
+            mapped: number;
+        };
+        /** AttackStatusResponse */
+        AttackStatusResponse: {
+            counts: components["schemas"]["AttackCountsItem"];
+            /** Ingested */
+            ingested: boolean;
+            /** Version */
+            version?: string | null;
+            vuln_chain: components["schemas"]["VulnChainStatusItem"];
+        };
+        /** AttackSubtechniqueItem */
+        AttackSubtechniqueItem: {
+            /** Id */
+            id: string;
+            /** Methods */
+            methods: string[];
+            /** Name */
+            name?: string | null;
+            /** Observed Count */
+            observed_count: number;
+        };
+        /** AttackTacticItem */
+        AttackTacticItem: {
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Shortname */
+            shortname?: string | null;
+            /** Techniques */
+            techniques: components["schemas"]["AttackTechniqueCellItem"][];
+        };
+        /** AttackTacticRefItem */
+        AttackTacticRefItem: {
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Shortname */
+            shortname?: string | null;
+        };
+        /** AttackTechniqueCellItem */
+        AttackTechniqueCellItem: {
+            /** Id */
+            id: string;
+            /** Is Subtechnique */
+            is_subtechnique: boolean;
+            /** Methods */
+            methods: string[];
+            /** Name */
+            name?: string | null;
+            /** Observed Count */
+            observed_count: number;
+            /** Subtechniques */
+            subtechniques: components["schemas"]["AttackSubtechniqueItem"][];
+        };
+        /** AttackTechniqueResponse */
+        AttackTechniqueResponse: {
+            /** Description */
+            description: string;
+            /** Detection */
+            detection: string;
+            /** Enabling Cves */
+            enabling_cves: components["schemas"]["AttackRefItem"][];
+            /** Groups */
+            groups: components["schemas"]["AttackRefItem"][];
+            /** Id */
+            id: string;
+            /** Is Subtechnique */
+            is_subtechnique: boolean;
+            /** Mitigations */
+            mitigations: components["schemas"]["AttackRefItem"][];
+            /** Name */
+            name: string;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Platforms */
+            platforms: string[];
+            /** Related Entities */
+            related_entities: components["schemas"]["AttackMappedEntityItem"][];
+            /** Tactics */
+            tactics: components["schemas"]["AttackTacticRefItem"][];
+        };
+        /** AttributionGroupItem */
+        AttributionGroupItem: {
+            /** Coverage */
+            coverage: number;
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Shared Count */
+            shared_count: number;
+            /** Shared Techniques */
+            shared_techniques: components["schemas"]["AttackRefItem"][];
+        };
+        /**
+         * AttributionResponse
+         * @description Groups ranked by technique overlap: suggestive, never confirmed attribution.
+         */
+        AttributionResponse: {
+            /** Groups */
+            groups: components["schemas"]["AttributionGroupItem"][];
+            /** Observed Total */
+            observed_total: number;
+        };
+        /** AttributionSummaryItem */
+        AttributionSummaryItem: {
+            /** Coverage */
+            coverage: number;
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Shared Count */
+            shared_count: number;
+        };
         /** BatchDeleteRequest */
         BatchDeleteRequest: {
             /** Project Ids */
             project_ids: string[];
+        };
+        /** BatchIngestResponse */
+        BatchIngestResponse: {
+            /** Documents Processed */
+            documents_processed: number;
+            /** Results */
+            results: components["schemas"]["IngestResponse"][];
+            /** Total Entities Created */
+            total_entities_created: number;
+            /** Total Relationships Created */
+            total_relationships_created: number;
         };
         /** Body_ingest_batch_api_ingest_batch_post */
         Body_ingest_batch_api_ingest_batch_post: {
@@ -2780,12 +3115,231 @@ export interface components {
              */
             reliability_rating?: string;
         };
+        /** BoundingBoxItem */
+        BoundingBoxItem: {
+            /** Max Lat */
+            max_lat: number;
+            /** Max Lng */
+            max_lng: number;
+            /** Min Lat */
+            min_lat: number;
+            /** Min Lng */
+            min_lng: number;
+        };
+        /** CachedEnrichmentResponse */
+        CachedEnrichmentResponse: {
+            /** Cached */
+            cached: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /** Entity Id */
+            entity_id: string;
+            /** Observable */
+            observable: string;
+        };
+        /** CatalogPreviewResponse */
+        CatalogPreviewResponse: {
+            /** Offset */
+            offset: number;
+            /** Rows */
+            rows: {
+                [key: string]: unknown;
+            }[];
+            /** Schema */
+            schema: {
+                [key: string]: unknown;
+            };
+            /** Total */
+            total: number;
+        };
+        /** CentralityItem */
+        CentralityItem: {
+            /** Degree */
+            degree: number;
+            /** Entity Type */
+            entity_type: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** ChangePasswordRequest */
         ChangePasswordRequest: {
             /** Current Password */
             current_password: string;
             /** New Password */
             new_password: string;
+        };
+        /** CollectionActivityItem */
+        CollectionActivityItem: {
+            /** Created At */
+            created_at: string;
+            /** Event */
+            event: string;
+            /** Id */
+            id: string;
+            /** Message */
+            message: string;
+            /** Plan Id */
+            plan_id: string;
+            /** Source Id */
+            source_id?: string | null;
+        };
+        /** CollectionCountResponse */
+        CollectionCountResponse: {
+            /** Count */
+            count: number;
+            /** Project Id */
+            project_id: string;
+        };
+        /** CollectionDashboardResponse */
+        CollectionDashboardResponse: {
+            /** Plan Counts */
+            plan_counts: {
+                [key: string]: number;
+            };
+            /** Project Id */
+            project_id: string;
+            /** Recent Acquisitions */
+            recent_acquisitions: components["schemas"]["AcquisitionLogItem"][];
+            source_health: components["schemas"]["SourceHealthItem"];
+            /** Total Plans */
+            total_plans: number;
+            /** Total Records Acquired */
+            total_records_acquired: number;
+        };
+        /** CollectionPlanResponse */
+        CollectionPlanResponse: {
+            /** Assigned To */
+            assigned_to: string;
+            /** Created At */
+            created_at?: string | null;
+            /** Created By */
+            created_by: string;
+            /** Description */
+            description: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Next Run At */
+            next_run_at?: string | null;
+            /** Pir */
+            pir: string;
+            /** Pir Id */
+            pir_id?: string | null;
+            /** Project Id */
+            project_id: string;
+            /** Refined Pir */
+            refined_pir: string;
+            /** Requirement */
+            requirement: string;
+            /** Routing Rules */
+            routing_rules: {
+                [key: string]: unknown;
+            };
+            /** Schedule Cron */
+            schedule_cron: string;
+            /** Source Count */
+            source_count: number;
+            /** Sources */
+            sources: components["schemas"]["CollectionSourceResponse"][];
+            /** Status */
+            status: string;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** CollectionSourceResponse */
+        CollectionSourceResponse: {
+            /** Acquisition Count */
+            acquisition_count: number;
+            /** Collection Status */
+            collection_status: string;
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /** Created At */
+            created_at?: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Id */
+            id: string;
+            /** Last Error */
+            last_error: string;
+            /** Last Failure At */
+            last_failure_at?: string | null;
+            /** Last Success At */
+            last_success_at?: string | null;
+            /** Name */
+            name: string;
+            /** Next Run At */
+            next_run_at?: string | null;
+            /** Plan Id */
+            plan_id: string;
+            /** Schedule Cron */
+            schedule_cron: string;
+            /** Source Type */
+            source_type: string;
+            /** Total Records Acquired */
+            total_records_acquired: number;
+        };
+        /** CommunityItem */
+        CommunityItem: {
+            /** Community Id */
+            community_id: number;
+            /** Members */
+            members: components["schemas"]["GraphMemberItem"][];
+            /** Size */
+            size: number;
+        };
+        /** ConnectorTypeItem */
+        ConnectorTypeItem: {
+            /** Description */
+            description: string;
+            /** Source Type */
+            source_type: string;
+        };
+        /** CoverageItem */
+        CoverageItem: {
+            /** Documents */
+            documents: number;
+            /** Entities */
+            entities: number;
+            /** Entity Type Counts */
+            entity_type_counts: {
+                [key: string]: number;
+            };
+            /** Isolated */
+            isolated: number;
+            /** Isolated Names */
+            isolated_names: string[];
+            /** Locations */
+            locations: number;
+            /** Relationship Type Counts */
+            relationship_type_counts: {
+                [key: string]: number;
+            };
+            /** Relationships */
+            relationships: number;
+            /** Single Link */
+            single_link: number;
+            /** Single Link Names */
+            single_link_names: string[];
+            /** Ungeocoded Locations */
+            ungeocoded_locations: number;
+            /** Ungeocoded Names */
+            ungeocoded_names: string[];
+            /** Unrated Document Names */
+            unrated_document_names: string[];
+            /** Unrated Documents */
+            unrated_documents: number;
+            /** Unsourced */
+            unsourced: number;
+            /** Unsourced Names */
+            unsourced_names: string[];
         };
         /**
          * CreateAssessmentRequest
@@ -2962,10 +3516,322 @@ export interface components {
             /** Project Id */
             project_id: string;
         };
+        /** CveEnabledTechniqueItem */
+        CveEnabledTechniqueItem: {
+            /** Cves */
+            cves: components["schemas"]["AttackRefItem"][];
+            /** Technique Id */
+            technique_id?: string | null;
+            /** Technique Name */
+            technique_name?: string | null;
+        };
+        /** CveResolutionResponse */
+        CveResolutionResponse: {
+            /** Techniques Linked */
+            techniques_linked: number;
+            /** Vulnerabilities */
+            vulnerabilities: number;
+        };
+        /** D3fendCountermeasureItem */
+        D3fendCountermeasureItem: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Name */
+            name?: string | null;
+        };
+        /** D3fendResponse */
+        D3fendResponse: {
+            /** Countermeasures */
+            countermeasures: components["schemas"]["D3fendCountermeasureItem"][];
+            /** Degraded */
+            degraded?: boolean | null;
+        };
+        /** DataCatalogItem */
+        DataCatalogItem: {
+            /** Column Count */
+            column_count: number;
+            /** File Format */
+            file_format: string;
+            /** File Size Bytes */
+            file_size_bytes: number;
+            /** Id */
+            id: string;
+            /** Ingested At */
+            ingested_at?: string | null;
+            /** Name */
+            name: string;
+            /** Original Filename */
+            original_filename: string;
+            /** Plan Id */
+            plan_id: string;
+            /** Preview Rows */
+            preview_rows: {
+                [key: string]: unknown;
+            }[];
+            /** Profiling */
+            profiling: {
+                [key: string]: unknown;
+            };
+            /** Row Count */
+            row_count: number;
+            /** Schema Info */
+            schema_info: {
+                [key: string]: unknown;
+            };
+            /** Source Id */
+            source_id: string;
+        };
+        /** DateCountItem */
+        DateCountItem: {
+            /** Count */
+            count: number;
+            /** Date */
+            date: string;
+        };
+        /** DateRangeItem */
+        DateRangeItem: {
+            /** End */
+            end: string;
+            /** Start */
+            start: string;
+        };
+        /**
+         * DegradedResponse
+         * @description ``{"since": iso8601, <subsystem>: {<reason>: count}}``: degraded outcomes
+         *     since the process started. Only subsystems that degraded at least once appear.
+         */
+        DegradedResponse: {
+            [key: string]: {
+                [key: string]: number;
+            } | string;
+        };
+        /**
+         * DeletedResponse
+         * @description A row removed by id.
+         */
+        DeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Id */
+            id: string;
+        };
+        /** DocumentDetailResponse */
+        DocumentDetailResponse: {
+            /** Content */
+            content: string;
+            /** Entities */
+            entities: components["schemas"]["DocumentEntityItem"][];
+            /** Entity Count */
+            entity_count: number;
+            /** Highlights */
+            highlights: components["schemas"]["DocumentHighlightItem"][];
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Reliability Rating */
+            reliability_rating?: string | null;
+            /** Summary Json */
+            summary_json?: string | null;
+        };
+        /** DocumentEntityItem */
+        DocumentEntityItem: {
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Relationship */
+            relationship: string;
+        };
+        /** DocumentEvidenceResponse */
+        DocumentEvidenceResponse: {
+            /** Count */
+            count: number;
+            /** Document Id */
+            document_id: string;
+            /** Document Name */
+            document_name?: string | null;
+            /** Entity Name */
+            entity_name: string;
+            /** Passages */
+            passages: components["schemas"]["EvidencePassageItem"][];
+            /** Total */
+            total: number;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** DocumentExcerptItem */
+        DocumentExcerptItem: {
+            /** Content */
+            content: string;
+            /** Name */
+            name: string;
+        };
+        /** DocumentHighlightItem */
+        DocumentHighlightItem: {
+            /** End */
+            end: number;
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Entity Name */
+            entity_name: string;
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Start */
+            start: number;
+        };
+        /** DocumentListResponse */
+        DocumentListResponse: {
+            /** Count */
+            count: number;
+            /** Documents */
+            documents: components["schemas"]["DocumentSummaryItem"][];
+            /** Project Exists */
+            project_exists: boolean;
+            /** Total */
+            total: number;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** DocumentSummaryItem */
+        DocumentSummaryItem: {
+            /** Content Length */
+            content_length: number;
+            /** Created At */
+            created_at: string;
+            /** Entity Count */
+            entity_count: number;
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Reliability Rating */
+            reliability_rating: string;
+            /** Summary Json */
+            summary_json: string;
+        };
+        /** EeiAssessmentItem */
+        EeiAssessmentItem: {
+            /** Eei */
+            eei: string;
+            /** Index */
+            index: number;
+            /** Justification */
+            justification: string;
+            /** Verdict */
+            verdict: string;
+        };
+        /** EgoEdgeItem */
+        EgoEdgeItem: {
+            /** Confidence */
+            confidence?: number | null;
+            /** Rel Type */
+            rel_type: string;
+            /** Source Id */
+            source_id: string;
+            /** Target Id */
+            target_id: string;
+            /** Weight */
+            weight?: number | null;
+        };
+        /** EgoNetworkResponse */
+        EgoNetworkResponse: {
+            /** Center */
+            center: string;
+            /** Edge Count */
+            edge_count?: number | null;
+            /** Edges */
+            edges: components["schemas"]["EgoEdgeItem"][];
+            /** Hops */
+            hops: number;
+            /** Node Count */
+            node_count?: number | null;
+            /** Nodes */
+            nodes: components["schemas"]["EgoNodeItem"][];
+        };
+        /** EgoNodeItem */
+        EgoNodeItem: {
+            /** Entity Type */
+            entity_type: string;
+            /** Hop Distance */
+            hop_distance: number;
+            /** Id */
+            id: string;
+            /** Local Betweenness */
+            local_betweenness: number;
+            /** Local Pagerank */
+            local_pagerank: number;
+            /** Name */
+            name: string;
+        };
+        /**
+         * EmptyResponse
+         * @description ``{}``: what a lookup with nothing to return sends.
+         */
+        EmptyResponse: Record<string, never>;
         /** EnrichmentConfigRequest */
         EnrichmentConfigRequest: {
             /** Auto Enabled */
             auto_enabled: boolean;
+        };
+        /** EnrichmentConfigResponse */
+        EnrichmentConfigResponse: {
+            /** Auto Enabled */
+            auto_enabled: boolean;
+        };
+        /** EnrichmentProviderItem */
+        EnrichmentProviderItem: {
+            /** Auto */
+            auto: boolean;
+            /** Has Key */
+            has_key: boolean;
+            /** Name */
+            name: string;
+            /** Requires Key */
+            requires_key: boolean;
+            /** Supported Types */
+            supported_types: string[];
+        };
+        /** EnrichmentProviderListResponse */
+        EnrichmentProviderListResponse: {
+            /** Providers */
+            providers: components["schemas"]["EnrichmentProviderItem"][];
+        };
+        /** EnrichmentRunResponse */
+        EnrichmentRunResponse: {
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Observable */
+            observable?: string | null;
+            /** Providers */
+            providers: {
+                [key: string]: components["schemas"]["ProviderOutcomeItem"];
+            };
+        };
+        /** EntityContextItem */
+        EntityContextItem: {
+            entity: components["schemas"]["EntityProperties"];
+            /** Relationship Count */
+            relationship_count: number;
+            /** Relationships */
+            relationships: components["schemas"]["RelationshipItem"][];
+        };
+        /** EntityCsvExportResponse */
+        EntityCsvExportResponse: {
+            /** Count */
+            count: number;
+            /** Csv */
+            csv: string;
+        };
+        /** EntityDetailResponse */
+        EntityDetailResponse: {
+            entity: components["schemas"]["EntityProperties"];
+            /** Relationships */
+            relationships: components["schemas"]["RelationshipItem"][];
         };
         /** EntityDocumentsResponse */
         EntityDocumentsResponse: {
@@ -2976,10 +3842,138 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** EntityMergeResponse */
+        EntityMergeResponse: {
+            /** Complete */
+            complete: boolean;
+            /** Dropped Edges */
+            dropped_edges: number;
+            /** Entities Merged */
+            entities_merged: number;
+            /** Entities Not Found */
+            entities_not_found: string[];
+            /** Entities Not Merged */
+            entities_not_merged: string[];
+            /** Primary Id */
+            primary_id: string;
+            /** Primary Name */
+            primary_name?: string | null;
+            /** Relationships Transferred */
+            relationships_transferred: number;
+        };
+        /**
+         * EntityProperties
+         * @description An entity node's stored properties, flattened (``dict(node)``).
+         *
+         *     Open-ended (``extra="allow"``): nodes are schemaless, and each entity type,
+         *     extraction pass, enrichment provider and analyst edit adds its own
+         *     properties (``latitude``, ``asn``, ``event_datetime``, ``content`` ...).
+         *     The keys every entity carries are declared; the rest pass through as stored.
+         */
+        EntityProperties: {
+            /** Entity Category */
+            entity_category?: string | null;
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** EntityTimelineEventItem */
+        EntityTimelineEventItem: {
+            /** Date */
+            date: string;
+            /** Label */
+            label: string;
+            /** Type */
+            type: string;
+        };
+        /** EntityTimelineResponse */
+        EntityTimelineResponse: {
+            /** Buckets */
+            buckets: components["schemas"]["DateCountItem"][];
+            date_range?: components["schemas"]["DateRangeItem"] | null;
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Entity Name */
+            entity_name?: string | null;
+            /** Events */
+            events: components["schemas"]["EntityTimelineEventItem"][];
+            /** Total Events */
+            total_events?: number | null;
+        };
+        /** EntityTypeChangedResponse */
+        EntityTypeChangedResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** New Type */
+            new_type: string;
+            /** Old Type */
+            old_type?: string | null;
+        };
+        /** EntityTypeHierarchyResponse */
+        EntityTypeHierarchyResponse: {
+            /** Categories */
+            categories: string[];
+            /** Hierarchy */
+            hierarchy: {
+                [key: string]: string[];
+            };
+        };
+        /**
+         * ErrorMessageResponse
+         * @description A 200 that carries only an error message, e.g. ``{"error": "Entity not found"}``.
+         */
+        ErrorMessageResponse: {
+            /** Error */
+            error: string;
+        };
+        /**
+         * EvidenceEdgeItem
+         * @description A relationship a product was drawn from, with its provenance.
+         */
+        EvidenceEdgeItem: {
+            /** Admiralty Rating */
+            admiralty_rating: string;
+            /** Confidence */
+            confidence?: number | null;
+            /** Corroboration Agreement */
+            corroboration_agreement: string;
+            /** Corroboration Count */
+            corroboration_count: number;
+            /** Evidence */
+            evidence: string;
+            /** Method */
+            method: string;
+            /** Rel Type */
+            rel_type: string;
+            /** Source Doc Id */
+            source_doc_id: string;
+            /** Source Name */
+            source_name?: string | null;
+            /** Target Name */
+            target_name?: string | null;
+        };
         /** EvidencePassage */
         EvidencePassage: {
             /** Offset */
             offset: number;
+            /** Text */
+            text: string;
+        };
+        /** EvidencePassageItem */
+        EvidencePassageItem: {
+            /** Entity Name */
+            entity_name: string;
+            /** Position */
+            position: number;
             /** Text */
             text: string;
         };
@@ -2992,6 +3986,36 @@ export interface components {
             max_results_per_source?: number;
             /** Source Limit */
             source_limit?: number | null;
+        };
+        /** FileUploadResponse */
+        FileUploadResponse: {
+            /** Catalog Id */
+            catalog_id: string;
+            /** Column Count */
+            column_count: number;
+            /** File Format */
+            file_format: string;
+            /** Filename */
+            filename: string;
+            /** Plan Id */
+            plan_id: string;
+            /** Preview Rows */
+            preview_rows: {
+                [key: string]: unknown;
+            }[];
+            /** Profiling */
+            profiling: {
+                [key: string]: unknown;
+            };
+            /** Record Count */
+            record_count: number;
+            routing_results: components["schemas"]["UploadRoutingItem"];
+            /** Schema Info */
+            schema_info: {
+                [key: string]: unknown;
+            };
+            /** Source Id */
+            source_id: string;
         };
         /** GapAnalysisRequest */
         GapAnalysisRequest: {
@@ -3014,6 +4038,28 @@ export interface components {
              * @default 8000
              */
             token_budget?: number;
+        };
+        /** GapAnalysisResponse */
+        GapAnalysisResponse: {
+            /** Analysis */
+            analysis: string;
+            /** Context Edges */
+            context_edges: number;
+            /** Context Nodes */
+            context_nodes: number;
+            coverage: components["schemas"]["CoverageItem"];
+            /** Focus Entities */
+            focus_entities: string[];
+            /** Model */
+            model: string;
+            /** Retrieval Mode */
+            retrieval_mode: string;
+            /** Skill Applied */
+            skill_applied: string;
+            /** Structural Gaps */
+            structural_gaps: components["schemas"]["StructuralGapItem"][];
+            /** Tokens Used */
+            tokens_used: number;
         };
         /**
          * GenerateAssessmentRequest
@@ -3052,6 +4098,54 @@ export interface components {
             probability?: number;
             /** Project Id */
             project_id: string;
+        };
+        /** GeneratedAssessmentResponse */
+        GeneratedAssessmentResponse: {
+            /** Assessment */
+            assessment: string;
+            /** Assessment Id */
+            assessment_id?: string | null;
+            /** Entity Id */
+            entity_id?: string | null;
+            /** Entity Name */
+            entity_name?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Judgment */
+            judgment?: string | null;
+            /** Model */
+            model: string;
+            /** Probability */
+            probability?: number | null;
+            /** Probability Label */
+            probability_label?: string | null;
+            /** Probability Parsed */
+            probability_parsed: boolean;
+            /** Tokens Used */
+            tokens_used: number;
+        };
+        /** GeneratedReportResponse */
+        GeneratedReportResponse: {
+            /** Content */
+            content: string;
+            /** Context Edges */
+            context_edges: number;
+            /** Context Nodes */
+            context_nodes: number;
+            /** Evidence */
+            evidence: components["schemas"]["EvidenceEdgeItem"][];
+            /** Model */
+            model: string;
+            /** Probability */
+            probability?: number | null;
+            /** Probability Parsed */
+            probability_parsed?: boolean | null;
+            /** Retrieval Mode */
+            retrieval_mode: string;
+            /** Skill Applied */
+            skill_applied: string;
+            /** Tokens Used */
+            tokens_used: number;
         };
         /** GenerateReportRequest */
         GenerateReportRequest: {
@@ -3106,6 +4200,263 @@ export interface components {
             use_vector?: boolean;
         };
         /**
+         * GeoEdgeItem
+         * @description Two places joined through the entities they share.
+         */
+        GeoEdgeItem: {
+            /** Shared Entities */
+            shared_entities: (string | null)[];
+            /** Source Coords */
+            source_coords?: number[] | null;
+            /** Source Id */
+            source_id: string;
+            /** Source Name */
+            source_name: string;
+            /** Target Coords */
+            target_coords?: number[] | null;
+            /** Target Id */
+            target_id: string;
+            /** Target Name */
+            target_name: string;
+            /** Weight */
+            weight: number;
+        };
+        /** GeoLocationItem */
+        GeoLocationItem: {
+            /** Connection Count */
+            connection_count?: number | null;
+            /** Entity Type */
+            entity_type: string;
+            /** Geo Confidence */
+            geo_confidence: string;
+            /** Geo Source */
+            geo_source: string;
+            /** Geocoded */
+            geocoded: boolean;
+            /** Id */
+            id: string;
+            /** Latitude */
+            latitude?: number | null;
+            /** Location Type */
+            location_type: string;
+            /** Longitude */
+            longitude?: number | null;
+            /** Mgrs */
+            mgrs: string;
+            /** Name */
+            name: string;
+            /** Properties */
+            properties: {
+                [key: string]: unknown;
+            };
+            /** Relationships */
+            relationships?: components["schemas"]["GeoRelationshipItem"][] | null;
+        };
+        /** GeoLocationsResponse */
+        GeoLocationsResponse: {
+            /** Edge Count */
+            edge_count: number;
+            /** Edges */
+            edges: components["schemas"]["GeoEdgeItem"][];
+            /** Geocoded */
+            geocoded: number;
+            /** Locations */
+            locations: components["schemas"]["GeoLocationItem"][];
+            /** Total */
+            total: number;
+        };
+        /** GeoPointItem */
+        GeoPointItem: {
+            /** Lat */
+            lat: number;
+            /** Lng */
+            lng: number;
+        };
+        /** GeoRelationshipItem */
+        GeoRelationshipItem: {
+            /** Confidence */
+            confidence?: number | null;
+            /** Direction */
+            direction: string;
+            /** Rel Type */
+            rel_type?: string | null;
+            /** Target Id */
+            target_id?: string | null;
+            /** Target Name */
+            target_name?: string | null;
+        };
+        /** GeoWithinResponse */
+        GeoWithinResponse: {
+            bbox: components["schemas"]["BoundingBoxItem"];
+            /** Count */
+            count: number;
+            /** Entities */
+            entities: components["schemas"]["GeoLocationItem"][];
+        };
+        /**
+         * GraphEdgeProperties
+         * @description One edge with its stored properties spread flat beside its endpoints.
+         *
+         *     Open-ended (``extra="allow"``): every stored edge property (confidence,
+         *     evidence, method, polarity, first_seen ...) is passed through as stored.
+         */
+        GraphEdgeProperties: {
+            /** Rel Type */
+            rel_type: string;
+            /** Source Id */
+            source_id?: string | null;
+            /** Target Id */
+            target_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * GraphExportResponse
+         * @description The project graph as stored: node and edge property maps.
+         */
+        GraphExportResponse: {
+            /** Edge Count */
+            edge_count: number;
+            /** Edges */
+            edges: components["schemas"]["GraphEdgeProperties"][];
+            /** Node Count */
+            node_count: number;
+            /** Nodes */
+            nodes: components["schemas"]["GraphNodeProperties"][];
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** GraphMemberItem */
+        GraphMemberItem: {
+            /** Entity Type */
+            entity_type: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * GraphNodeProperties
+         * @description Any graph node's stored properties (``properties(n)``) on a traversal.
+         *
+         *     Open-ended (``extra="allow"``) for the same reason as ``EntityProperties``,
+         *     and looser still: a walk may end on a shared catalog node (an ATT&CK
+         *     technique, a CWE), which is keyed and named differently.
+         */
+        GraphNodeProperties: {
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** GraphRagQueryResponse */
+        GraphRagQueryResponse: {
+            /** Answer */
+            answer: string;
+            /** Context */
+            context: string;
+            /** Context Edges */
+            context_edges: number;
+            /** Context Nodes */
+            context_nodes: number;
+            /** Llm Error */
+            llm_error?: string | null;
+            /** Model */
+            model: string;
+            /** Query */
+            query: string;
+            /** Retrieval Mode */
+            retrieval_mode: string;
+            /** Tokens Used */
+            tokens_used: number;
+            /** Vector Results */
+            vector_results?: number | null;
+        };
+        /** GraphStatisticsResponse */
+        GraphStatisticsResponse: {
+            /** Components */
+            components: number;
+            /** Density */
+            density: number;
+            /** Edges */
+            edges: number;
+            /** Entities */
+            entities: components["schemas"]["NodeStatisticsItem"][];
+            /** Nodes */
+            nodes: number;
+            /** Project Exists */
+            project_exists: boolean;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** GraphViewEdgeItem */
+        GraphViewEdgeItem: {
+            /** Confidence */
+            confidence: number;
+            /** Evidence */
+            evidence: string;
+            /** First Seen */
+            first_seen?: string | null;
+            /** Last Seen */
+            last_seen?: string | null;
+            /** Method */
+            method: string;
+            /** Polarity */
+            polarity: string;
+            /** Rel Type */
+            rel_type: string;
+            /** Source Doc Id */
+            source_doc_id: string;
+            /** Source Id */
+            source_id: string;
+            /** Target Id */
+            target_id: string;
+        };
+        /** GraphViewNodeItem */
+        GraphViewNodeItem: {
+            /** Community Id */
+            community_id: number;
+            /** Date Precision */
+            date_precision: string;
+            /** Date Text */
+            date_text: string;
+            /** Degree */
+            degree: number;
+            /** Entity Category */
+            entity_category: string;
+            /** Entity Type */
+            entity_type: string;
+            /** Event Datetime */
+            event_datetime: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Pagerank */
+            pagerank: number;
+        };
+        /** GraphViewResponse */
+        GraphViewResponse: {
+            /** Edge Count */
+            edge_count: number;
+            /** Edges */
+            edges: components["schemas"]["GraphViewEdgeItem"][];
+            /** Node Count */
+            node_count: number;
+            /** Nodes */
+            nodes: components["schemas"]["GraphViewNodeItem"][];
+            /** Project Exists */
+            project_exists: boolean;
+            /** Total Nodes */
+            total_nodes: number;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /**
          * HealthStatus
          * @description HealthResponse plus the degraded-outcome totals (contract 1).
          */
@@ -3133,6 +4484,17 @@ export interface components {
              * @default 0.1.0
              */
             version?: string;
+        };
+        /** HistogramBinItem */
+        HistogramBinItem: {
+            /** By Type */
+            by_type: {
+                [key: string]: number;
+            };
+            /** Count */
+            count: number;
+            /** Key */
+            key: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -3173,6 +4535,48 @@ export interface components {
              */
             use_vector?: boolean;
         };
+        /** HypothesesResponse */
+        HypothesesResponse: {
+            /** Analysis */
+            analysis: string;
+            /** Assessment Id */
+            assessment_id?: string | null;
+            /** Context Edges */
+            context_edges: number;
+            /** Context Nodes */
+            context_nodes: number;
+            /** Focus Entities */
+            focus_entities: string[];
+            /** Hypotheses */
+            hypotheses: components["schemas"]["HypothesisItem"][];
+            /** Model */
+            model: string;
+            /** Probability */
+            probability?: number | null;
+            /** Probability Label */
+            probability_label?: string | null;
+            /** Question */
+            question: string;
+            /** Retrieval Mode */
+            retrieval_mode: string;
+            /** Skill Applied */
+            skill_applied: string;
+            /** Tokens Used */
+            tokens_used: number;
+            /** Vector Hits */
+            vector_hits: number;
+        };
+        /** HypothesisItem */
+        HypothesisItem: {
+            /** Id */
+            id: string;
+            /** Probability */
+            probability: number;
+            /** Probability Label */
+            probability_label: string;
+            /** Statement */
+            statement: string;
+        };
         /**
          * InfluenceRequest
          * @description Typed so a malformed body is a 422 rather than a failure inside the walk.
@@ -3193,6 +4597,186 @@ export interface components {
              */
             threshold?: number;
         };
+        /** InfluenceResponse */
+        InfluenceResponse: {
+            /** Reach Ratio */
+            reach_ratio: number;
+            /** Seeds */
+            seeds: string[];
+            /** Steps */
+            steps: components["schemas"]["InfluenceStepItem"][];
+            /** Total Activated */
+            total_activated: number;
+            /** Total Nodes */
+            total_nodes?: number | null;
+        };
+        /** InfluenceStepItem */
+        InfluenceStepItem: {
+            /** Cumulative Count */
+            cumulative_count: number;
+            /** Newly Activated */
+            newly_activated: components["schemas"]["GraphMemberItem"][];
+            /** Step */
+            step: number;
+        };
+        /**
+         * IngestResponse
+         * @description One stored document and the graph build over it. Open-ended like ``GraphBuildStats``.
+         */
+        IngestResponse: {
+            /** Chunks */
+            chunks: number;
+            /** Content Truncated */
+            content_truncated: boolean;
+            /**
+             * Dates Absorbed
+             * @default 0
+             */
+            dates_absorbed?: number;
+            /**
+             * Dates Orphaned
+             * @default 0
+             */
+            dates_orphaned?: number;
+            /** Document Id */
+            document_id: string;
+            /** Document Name */
+            document_name: string;
+            /**
+             * Dropped Attributes
+             * @default 0
+             */
+            dropped_attributes?: number;
+            /** Embeddings Stored */
+            embeddings_stored: number;
+            /**
+             * Entities Created
+             * @default 0
+             */
+            entities_created?: number;
+            /**
+             * Entities Filtered
+             * @default 0
+             */
+            entities_filtered?: number;
+            /**
+             * Entities Merged
+             * @default 0
+             */
+            entities_merged?: number;
+            /** Indexed For Search */
+            indexed_for_search: boolean;
+            /**
+             * Mentions Recorded
+             * @default 0
+             */
+            mentions_recorded?: number;
+            /**
+             * Relationships Created
+             * @default 0
+             */
+            relationships_created?: number;
+            /**
+             * Relationships Dropped
+             * @default 0
+             */
+            relationships_dropped?: number;
+            /**
+             * Relationships Dropped By Reason
+             * @default {}
+             */
+            relationships_dropped_by_reason?: {
+                [key: string]: number;
+            };
+            /**
+             * Relationships Dropped By Type
+             * @default {}
+             */
+            relationships_dropped_by_type?: {
+                [key: string]: number;
+            };
+            /**
+             * Relationships Retired
+             * @default 0
+             */
+            relationships_retired?: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** KeyMitigationItem */
+        KeyMitigationItem: {
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Technique Count */
+            technique_count: number;
+        };
+        /** LegacyCollectionProgressResponse */
+        LegacyCollectionProgressResponse: {
+            /** Collection Id */
+            collection_id: string;
+            /** Documents Acquired */
+            documents_acquired: number;
+            /** Documents In Graph */
+            documents_in_graph: number;
+            /** Progress */
+            progress: number;
+            /** Status */
+            status: string;
+        };
+        /**
+         * LegacyCollectionResponse
+         * @description A legacy collection: the Collection node's stored properties, with its
+         *     plan decoded from ``plan_json``.
+         *
+         *     Open-ended (``extra="allow"``): the node's properties are passed through as
+         *     stored, and the runner adds its own (``progress``, ``updated_at``).
+         */
+        LegacyCollectionResponse: {
+            /** Created At */
+            created_at?: string | null;
+            /** Documents Acquired */
+            documents_acquired?: number | null;
+            /** Id */
+            id: string;
+            /** Pir */
+            pir?: string | null;
+            /** Plan */
+            plan: {
+                [key: string]: unknown;
+            }[];
+            /** Progress */
+            progress?: number | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** Refined Pir */
+            refined_pir?: string | null;
+            /** Refinement */
+            refinement?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** LegacyCollectionStartedResponse */
+        LegacyCollectionStartedResponse: {
+            /** Collection Id */
+            collection_id: string;
+            /** Status */
+            status: string;
+        };
+        /** LegacyCollectionStatusResponse */
+        LegacyCollectionStatusResponse: {
+            /** Documents Acquired */
+            documents_acquired: number;
+            /** Progress */
+            progress: number;
+            /** Status */
+            status?: string | null;
+        };
         /** LLMConfigRequest */
         LLMConfigRequest: {
             /**
@@ -3202,6 +4786,30 @@ export interface components {
             model?: string;
             /** Provider */
             provider: string;
+        };
+        /** LlmModelItem */
+        LlmModelItem: {
+            /** Configured */
+            configured: boolean;
+            /** Model */
+            model: string;
+            /** Params */
+            params?: string | null;
+            /** Provider */
+            provider: string;
+            /** Quantization */
+            quantization?: string | null;
+            /** Size Gb */
+            size_gb: number;
+        };
+        /** LlmModelListResponse */
+        LlmModelListResponse: {
+            /** Active Model */
+            active_model: string;
+            /** Active Provider */
+            active_provider: string;
+            /** Models */
+            models: components["schemas"]["LlmModelItem"][];
         };
         /** LLMQueryRequest */
         LLMQueryRequest: {
@@ -3236,6 +4844,39 @@ export interface components {
              */
             temperature?: number;
         };
+        /** LlmQueryResponse */
+        LlmQueryResponse: {
+            /** Content */
+            content: string;
+            /** Model */
+            model: string;
+            /** Probability */
+            probability?: number | null;
+            /** Skill Applied */
+            skill_applied?: string | null;
+            /** Tokens Used */
+            tokens_used: number;
+        };
+        /** LlmRequirementsItem */
+        LlmRequirementsItem: {
+            /** Configuration */
+            configuration: string;
+            /** Message */
+            message: string;
+            /** Minimum Capability */
+            minimum_capability: string;
+            /** Supported Providers */
+            supported_providers: string[];
+        };
+        /** LlmSelectionResponse */
+        LlmSelectionResponse: {
+            /** Active Model */
+            active_model: string;
+            /** Active Provider */
+            active_provider: string;
+            /** Status */
+            status: string;
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Password */
@@ -3267,6 +4908,13 @@ export interface components {
             /** Project Id */
             project_id: string;
         };
+        /** MindmapTextExportResponse */
+        MindmapTextExportResponse: {
+            /** Content */
+            content: string;
+            /** Format */
+            format: string;
+        };
         /** MultiAssessmentRequest */
         MultiAssessmentRequest: {
             /**
@@ -3294,6 +4942,127 @@ export interface components {
             /** Project Id */
             project_id: string;
         };
+        /** MultiAssessmentResponse */
+        MultiAssessmentResponse: {
+            /** Assessments */
+            assessments: (components["schemas"]["AssessmentCreatedResponse"] | components["schemas"]["AssessmentErrorItem"])[];
+            /** Entities */
+            entities: components["schemas"]["EntityContextItem"][];
+            /** Entity Count */
+            entity_count: number;
+        };
+        /** NavigatorGradientItem */
+        NavigatorGradientItem: {
+            /** Colors */
+            colors: string[];
+            /** Maxvalue */
+            maxValue: number;
+            /** Minvalue */
+            minValue: number;
+        };
+        /**
+         * NavigatorLayerResponse
+         * @description A MITRE ATT&CK Navigator layer (v4.5), served as a download.
+         */
+        NavigatorLayerResponse: {
+            /** Description */
+            description: string;
+            /** Domain */
+            domain: string;
+            gradient: components["schemas"]["NavigatorGradientItem"];
+            /** Hidedisabled */
+            hideDisabled: boolean;
+            /** Legenditems */
+            legendItems: unknown[];
+            /** Name */
+            name: string;
+            /** Showtacticrowbackground */
+            showTacticRowBackground: boolean;
+            /** Techniques */
+            techniques: components["schemas"]["NavigatorTechniqueItem"][];
+            /** Versions */
+            versions: {
+                [key: string]: string;
+            };
+        };
+        /** NavigatorTechniqueItem */
+        NavigatorTechniqueItem: {
+            /** Color */
+            color: string;
+            /** Comment */
+            comment: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Score */
+            score: number;
+            /** Tactic */
+            tactic?: string | null;
+            /** Techniqueid */
+            techniqueID: string;
+        };
+        /** NearbyFeatureItem */
+        NearbyFeatureItem: {
+            /** Category */
+            category: string;
+            /** Lat */
+            lat: number;
+            /** Lon */
+            lon: number;
+            /** Name */
+            name: string;
+            /** Tags */
+            tags: {
+                [key: string]: unknown;
+            };
+        };
+        /** NearbyFeaturesResponse */
+        NearbyFeaturesResponse: {
+            center?: components["schemas"]["GeoPointItem"] | null;
+            /** Count */
+            count: number;
+            /** Error */
+            error?: string | null;
+            /** Features */
+            features: components["schemas"]["NearbyFeatureItem"][];
+            /** Radius */
+            radius?: number | null;
+        };
+        /** NodeStatisticsItem */
+        NodeStatisticsItem: {
+            /** Betweenness */
+            betweenness: number;
+            /** Closeness */
+            closeness: number;
+            /** Degree */
+            degree: number;
+            /** Eigenvector */
+            eigenvector: number;
+            /** Entity Type */
+            entity_type: string;
+            /** Id */
+            id: string;
+            /** In Degree */
+            in_degree: number;
+            /** Name */
+            name: string;
+            /** Out Degree */
+            out_degree: number;
+            /** Pagerank */
+            pagerank: number;
+        };
+        /** NoteCreatedResponse */
+        NoteCreatedResponse: {
+            /** Linked Entities */
+            linked_entities: number;
+            /** Note Id */
+            note_id: string;
+            /** Note Type */
+            note_type: string;
+            /** Title */
+            title: string;
+            /** Unlinked Entity Ids */
+            unlinked_entity_ids: string[];
+        };
         /** NoteRequest */
         NoteRequest: {
             /** Content */
@@ -3314,6 +5083,94 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * NoteResponse
+         * @description A notebook entry: a Report node with ``report_type`` "notebook_entry".
+         *
+         *     Open-ended (``extra="allow"``) as every ``EntityProperties`` is; the fields
+         *     the notebook reads are declared.
+         */
+        NoteResponse: {
+            /** Content */
+            content?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Entity Category */
+            entity_category?: string | null;
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Note Type */
+            note_type?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** Report Type */
+            report_type?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ObservedTacticItem */
+        ObservedTacticItem: {
+            /** Tactic Id */
+            tactic_id: string;
+            /** Tactic Name */
+            tactic_name?: string | null;
+            /** Techniques */
+            techniques: components["schemas"]["ObservedTechniqueItem"][];
+        };
+        /** ObservedTechniqueItem */
+        ObservedTechniqueItem: {
+            /** Id */
+            id: string;
+            /** Methods */
+            methods: string[];
+            /** Name */
+            name?: string | null;
+            /** Observed Count */
+            observed_count: number;
+        };
+        /** ParsedPlanItem */
+        ParsedPlanItem: {
+            /** Approved */
+            approved: boolean;
+            /** Description */
+            description: string;
+            /** Id */
+            id: number;
+            /** Source Type */
+            source_type: string;
+            /** Status */
+            status: string;
+        };
+        /** ParsedPlanResponse */
+        ParsedPlanResponse: {
+            /** Count */
+            count: number;
+            /** Items */
+            items: components["schemas"]["ParsedPlanItem"][];
+        };
+        /** PasswordChangedResponse */
+        PasswordChangedResponse: {
+            /** Status */
+            status: string;
+            /** Username */
+            username: string;
+        };
+        /** PersonaActivatedResponse */
+        PersonaActivatedResponse: {
+            /** Active Persona */
+            active_persona: string;
+        };
+        /** PersonaListResponse */
+        PersonaListResponse: {
+            /** Active Persona */
+            active_persona: string;
+            /** Personas */
+            personas: components["schemas"]["PersonaResponse"][];
+        };
         /** PersonaRequest */
         PersonaRequest: {
             /** Description */
@@ -3329,6 +5186,89 @@ export interface components {
              * @default 0.3
              */
             temperature?: number;
+        };
+        /** PersonaResponse */
+        PersonaResponse: {
+            /** Active */
+            active: boolean;
+            /** Description */
+            description: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Skills */
+            skills: string[];
+            /** Temperature */
+            temperature: number;
+        };
+        /** PirAssessmentResponse */
+        PirAssessmentResponse: {
+            /** Assessed Status */
+            assessed_status?: string | null;
+            /** Assessments */
+            assessments: components["schemas"]["EeiAssessmentItem"][];
+            /** Eeis Satisfied */
+            eeis_satisfied: number;
+            /** Eeis Total */
+            eeis_total: number;
+            /** Entities Considered */
+            entities_considered: number;
+            /** Entities Total */
+            entities_total: number;
+            evidence: components["schemas"]["PirEvidenceItem"];
+            /** Model */
+            model: string;
+            /** Narrative */
+            narrative: string;
+            /** Pir Id */
+            pir_id: string;
+            /** Recommendation */
+            recommendation: string;
+            /** Source Limit */
+            source_limit?: number | null;
+            /** Sources Configured */
+            sources_configured: number;
+            /** Sources Used */
+            sources_used: number;
+            /** Sources Used All Plans */
+            sources_used_all_plans: number;
+            /** Status */
+            status: string;
+            /** Stopped On Source Limit */
+            stopped_on_source_limit: boolean;
+            /** Unmet Criteria */
+            unmet_criteria: components["schemas"]["UnmetCriterionItem"][];
+        };
+        /**
+         * PirEvidenceItem
+         * @description What the verdicts were judged from.
+         */
+        PirEvidenceItem: {
+            /** Budget Starved Elements */
+            budget_starved_elements: number[];
+            /** Dated Entities */
+            dated_entities: number;
+            /** Elements With Passages */
+            elements_with_passages: number[];
+            /** Elements Without Passages */
+            elements_without_passages: number[];
+            /** Embedding Dim Mismatch */
+            embedding_dim_mismatch: boolean;
+            /** Embedding Failed */
+            embedding_failed: boolean;
+            /** Embedding Fallback */
+            embedding_fallback: boolean;
+            /** Passages Retrieved */
+            passages_retrieved: number;
+            /** Retrieval Degraded */
+            retrieval_degraded: boolean;
+            /** Retrieval Failed For */
+            retrieval_failed_for: number[];
+            /** Retrieval Unavailable */
+            retrieval_unavailable: boolean;
+            /** Substrate */
+            substrate: string;
         };
         /**
          * PirPlanLink
@@ -3356,6 +5296,21 @@ export interface components {
             source_count?: number;
             /** Status */
             status: string;
+        };
+        /** PirRequirementsResponse */
+        PirRequirementsResponse: {
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Elements */
+            elements: components["schemas"]["RequirementElementItem"][];
+            /** Pir Id */
+            pir_id: string;
+            /** Project Id */
+            project_id: string;
+            /** Total */
+            total: number;
         };
         /** PirResponse */
         PirResponse: {
@@ -3419,6 +5374,220 @@ export interface components {
              */
             updated_at?: string;
         };
+        /** PlanCancelResponse */
+        PlanCancelResponse: {
+            /** Job Id */
+            job_id: string;
+            /** Message */
+            message: string;
+            /** Plan Id */
+            plan_id: string;
+            /** Previous Status */
+            previous_status: string;
+            /** Status */
+            status: string;
+            /** Stopping */
+            stopping: boolean;
+        };
+        /**
+         * PlanExecutionStartedResponse
+         * @description ``POST /execute`` (202): the plan, and how its run started.
+         */
+        PlanExecutionStartedResponse: {
+            /** Assigned To */
+            assigned_to: string;
+            /** Created At */
+            created_at?: string | null;
+            /** Created By */
+            created_by: string;
+            /** Description */
+            description: string;
+            /** Execution Status */
+            execution_status: string;
+            /** Id */
+            id: string;
+            /** Job Id */
+            job_id?: string | null;
+            /** Message */
+            message: string;
+            /** Name */
+            name: string;
+            /** Next Run At */
+            next_run_at?: string | null;
+            /** Pir */
+            pir: string;
+            /** Pir Id */
+            pir_id?: string | null;
+            /** Project Id */
+            project_id: string;
+            /** Refined Pir */
+            refined_pir: string;
+            /** Requirement */
+            requirement: string;
+            /** Routing Rules */
+            routing_rules: {
+                [key: string]: unknown;
+            };
+            /** Schedule Cron */
+            schedule_cron: string;
+            /** Source Count */
+            source_count: number;
+            /** Source Limit */
+            source_limit?: number | null;
+            /** Sources */
+            sources: components["schemas"]["CollectionSourceResponse"][];
+            /** Sources Manual */
+            sources_manual: number;
+            /** Sources Missing Config */
+            sources_missing_config: number;
+            /** Sources Over Budget */
+            sources_over_budget: number;
+            /** Sources Queued */
+            sources_queued: number;
+            /** Status */
+            status: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Warnings */
+            warnings: string[];
+            /** Worker Mode */
+            worker_mode: string;
+        };
+        /**
+         * PlanExecutionStatusResponse
+         * @description Whether a run is in flight and how it is going, from the job table and the
+         *     activity trail. Keys about the trail are absent before it has any events, and
+         *     keys about the job row are absent before the plan's first run.
+         */
+        PlanExecutionStatusResponse: {
+            /** Degraded */
+            degraded?: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            } | null;
+            /** Error */
+            error?: string | null;
+            /** Heartbeat At */
+            heartbeat_at?: string | null;
+            /** Job Id */
+            job_id?: string | null;
+            /** Job Status */
+            job_status?: string | null;
+            /** Last Event */
+            last_event?: string | null;
+            /** Message */
+            message: string;
+            /** Plan Id */
+            plan_id: string;
+            /** Seconds Since Heartbeat */
+            seconds_since_heartbeat?: number | null;
+            /** Seconds Since Last Event */
+            seconds_since_last_event?: number | null;
+            /** Sources Failed */
+            sources_failed: number;
+            /** Sources Succeeded */
+            sources_succeeded: number;
+            /** Status */
+            status: string;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /**
+         * PlanFromPirResponse
+         * @description A plan generated from a PIR, with how the generation went.
+         */
+        PlanFromPirResponse: {
+            /** Assigned To */
+            assigned_to: string;
+            /** Created At */
+            created_at?: string | null;
+            /** Created By */
+            created_by: string;
+            /** Description */
+            description: string;
+            /** Eeis Captured */
+            eeis_captured: number;
+            /** Generation Failures */
+            generation_failures: string[];
+            /** Id */
+            id: string;
+            /** Llm Available */
+            llm_available: boolean;
+            /** Llm Plan Text */
+            llm_plan_text: string;
+            llm_requirements?: components["schemas"]["LlmRequirementsItem"] | null;
+            /** Llm Status */
+            llm_status: string;
+            /** Name */
+            name: string;
+            /** Next Run At */
+            next_run_at?: string | null;
+            /** Pir */
+            pir: string;
+            /** Pir Id */
+            pir_id?: string | null;
+            /** Project Id */
+            project_id: string;
+            /** Refined Pir */
+            refined_pir: string;
+            /** Requirement */
+            requirement: string;
+            /** Routing Rules */
+            routing_rules: {
+                [key: string]: unknown;
+            };
+            /** Schedule Cron */
+            schedule_cron: string;
+            /** Source Count */
+            source_count: number;
+            /** Sources */
+            sources: components["schemas"]["CollectionSourceResponse"][];
+            /** Status */
+            status: string;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** ProjectActivityItem */
+        ProjectActivityItem: {
+            /** Action */
+            action: string;
+            /** Entity Name */
+            entity_name: string;
+            /** Entity Type */
+            entity_type: string;
+            /** Id */
+            id: string;
+            /** Timestamp */
+            timestamp: string;
+        };
+        /** ProjectActivityResponse */
+        ProjectActivityResponse: {
+            /** Activity */
+            activity: components["schemas"]["ProjectActivityItem"][];
+            /** Count */
+            count: number;
+        };
+        /** ProjectBatchDeleteResponse */
+        ProjectBatchDeleteResponse: {
+            /** Deleted */
+            deleted: number;
+            /** Relational Rows Removed */
+            relational_rows_removed: {
+                [key: string]: number;
+            };
+        };
+        /** ProjectDeleteResponse */
+        ProjectDeleteResponse: {
+            /** Entities Removed */
+            entities_removed: number;
+            /** Relational Rows Removed */
+            relational_rows_removed: {
+                [key: string]: number;
+            };
+            /** Status */
+            status: string;
+        };
         /** ProjectResponse */
         ProjectResponse: {
             /** Classification Level */
@@ -3464,6 +5633,19 @@ export interface components {
              */
             updated_at?: string;
         };
+        /** ProviderOutcomeItem */
+        ProviderOutcomeItem: {
+            /** Properties */
+            properties?: {
+                [key: string]: unknown;
+            } | null;
+            /** Reason */
+            reason?: string | null;
+            /** Related */
+            related?: number | null;
+            /** Status */
+            status: string;
+        };
         /** ProxyConfigRequest */
         ProxyConfigRequest: {
             /**
@@ -3481,6 +5663,20 @@ export interface components {
              * @default 9050
              */
             tor_port?: number;
+        };
+        /** ProxyConfigResponse */
+        ProxyConfigResponse: {
+            /** Mode */
+            mode: string;
+            /** Tor Socks Proxy */
+            tor_socks_proxy: string;
+            /** Vpn Http Proxy */
+            vpn_http_proxy: string;
+        };
+        /** ProxyModeItem */
+        ProxyModeItem: {
+            /** Mode */
+            mode: string;
         };
         /** QueryRequest */
         QueryRequest: {
@@ -3516,6 +5712,145 @@ export interface components {
             /** Username */
             username: string;
         };
+        /**
+         * RelationshipItem
+         * @description One edge touching an entity, its stored properties spread flat.
+         *
+         *     Open-ended (``extra="allow"``): the edge's own properties are spread onto
+         *     the item as stored. The ones every extracted edge carries (the
+         *     ``Relationship`` model's) are declared; an edge written by another path
+         *     (an ATT&CK mapping, a CVE chain) adds its own. ``direction`` is relative to
+         *     the entity asked about; ``neighbor_*`` is the other end whichever way the
+         *     edge points.
+         */
+        RelationshipItem: {
+            /** Admiralty Rating */
+            admiralty_rating?: string | null;
+            /** Confidence */
+            confidence?: number | null;
+            /** Corroboration Agreement */
+            corroboration_agreement?: string | null;
+            /** Corroboration Count */
+            corroboration_count?: number | null;
+            /** Corroboration Sources */
+            corroboration_sources?: string[] | null;
+            /** Direction */
+            direction: string;
+            /** Evidence */
+            evidence?: string | null;
+            /** First Seen */
+            first_seen?: string | null;
+            /** Id */
+            id?: string | null;
+            /** Last Seen */
+            last_seen?: string | null;
+            /** Method */
+            method?: string | null;
+            /** Neighbor Id */
+            neighbor_id?: string | null;
+            /** Neighbor Name */
+            neighbor_name?: string | null;
+            /** Polarity */
+            polarity?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** Rel Type */
+            rel_type: string;
+            /** Source */
+            source?: string | null;
+            /** Source Doc Id */
+            source_doc_id?: string | null;
+            /** Source Id */
+            source_id?: string | null;
+            /** Source Name */
+            source_name?: string | null;
+            /** Target Id */
+            target_id?: string | null;
+            /** Target Name */
+            target_name?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * RelevantExcerptItem
+         * @description A sentence that mentions a topic cluster's keywords.
+         */
+        RelevantExcerptItem: {
+            /** Matched Keywords */
+            matched_keywords: string[];
+            /** Score */
+            score: number;
+            /** Text */
+            text: string;
+        };
+        /** ReportExportResponse */
+        ReportExportResponse: {
+            /** Content */
+            content: string;
+            /** Report Type */
+            report_type: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * ReportResponse
+         * @description A saved report: a Report node's stored properties.
+         *
+         *     Open-ended (``extra="allow"``) as every ``EntityProperties`` is; the fields
+         *     the products view reads are declared.
+         */
+        ReportResponse: {
+            /** Content */
+            content?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Entity Category */
+            entity_category?: string | null;
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** Report Type */
+            report_type?: string | null;
+            /** Status */
+            status?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ReportSavedResponse */
+        ReportSavedResponse: {
+            /** Content Length */
+            content_length: number;
+            /** Linked Entities */
+            linked_entities: number;
+            /** Report Id */
+            report_id: string;
+            /** Report Type */
+            report_type: string;
+            /** Title */
+            title: string;
+        };
+        /** RequirementElementItem */
+        RequirementElementItem: {
+            /** Attempts */
+            attempts: number;
+            /** Confidence */
+            confidence: string;
+            /** Missing */
+            missing: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Queries Tried */
+            queries_tried: string[];
+            /** Status */
+            status: string;
+            /** Text */
+            text: string;
+        };
         /** SaveReportRequest */
         SaveReportRequest: {
             /**
@@ -3540,6 +5875,53 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** SearchResponse */
+        SearchResponse: {
+            /** Count */
+            count: number;
+            /** Documents */
+            documents: components["schemas"]["SearchResultItem"][];
+            /** Entities */
+            entities: components["schemas"]["SearchResultItem"][];
+            /** Reports */
+            reports: components["schemas"]["SearchResultItem"][];
+            /** Results */
+            results: components["schemas"]["SearchResultItem"][];
+            /** Total */
+            total: number;
+            /** Truncated */
+            truncated: boolean;
+        };
+        /** SearchResultItem */
+        SearchResultItem: {
+            /** Entity Type */
+            entity_type: string;
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Preview */
+            preview?: string | null;
+            /** Reliability */
+            reliability?: string | null;
+            /** Report Type */
+            report_type?: string | null;
+        };
+        /** SemanticSearchHit */
+        SemanticSearchHit: {
+            /** Chunk Index */
+            chunk_index: number;
+            /** Chunk Text */
+            chunk_text: string;
+            /** Document Id */
+            document_id: string;
+            /** Metadata */
+            metadata: {
+                [key: string]: unknown;
+            };
+            /** Similarity */
+            similarity: number;
+        };
         /** SemanticSearchRequest */
         SemanticSearchRequest: {
             /**
@@ -3557,6 +5939,13 @@ export interface components {
             /** Query */
             query: string;
         };
+        /** SemanticSearchResponse */
+        SemanticSearchResponse: {
+            /** Results */
+            results: components["schemas"]["SemanticSearchHit"][];
+            /** Total */
+            total: number;
+        };
         /**
          * SessionUser
          * @description Who a session belongs to. Login answers with it (the token itself is in
@@ -3568,12 +5957,132 @@ export interface components {
             /** Username */
             username: string;
         };
+        /** ShortestPathResponse */
+        ShortestPathResponse: {
+            /** Edges */
+            edges: components["schemas"]["TraversalEdgeItem"][];
+            /** Found */
+            found: boolean;
+            /** Nodes */
+            nodes: components["schemas"]["GraphNodeProperties"][];
+            /** Path Length */
+            path_length: number;
+        };
         /** SkillListResponse */
         SkillListResponse: {
             /** Skills */
             skills: {
                 [key: string]: unknown;
             }[];
+        };
+        /**
+         * SnapshotDetailResponse
+         * @description A snapshot with the edges among its entities. Open-ended like ``SnapshotResponse``.
+         */
+        SnapshotDetailResponse: {
+            /** Created At */
+            created_at?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Edge Count */
+            edge_count: number;
+            /** Edges */
+            edges: components["schemas"]["SnapshotEdgeItem"][];
+            /**
+             * Entities
+             * @default []
+             */
+            entities?: components["schemas"]["SnapshotEntityItem"][];
+            /** Entity Count */
+            entity_count?: number | null;
+            /**
+             * Entity Ids
+             * @default []
+             */
+            entity_ids?: string[];
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** SnapshotEdgeItem */
+        SnapshotEdgeItem: {
+            /** Confidence */
+            confidence?: number | null;
+            /** Rel Type */
+            rel_type: string;
+            /** Source Id */
+            source_id?: string | null;
+            /** Target Id */
+            target_id?: string | null;
+        };
+        /** SnapshotEntityItem */
+        SnapshotEntityItem: {
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name?: string | null;
+        };
+        /** SnapshotListResponse */
+        SnapshotListResponse: {
+            /** Count */
+            count: number;
+            /** Snapshots */
+            snapshots: components["schemas"]["SnapshotResponse"][];
+        };
+        /**
+         * SnapshotResponse
+         * @description A saved subgraph (bin).
+         *
+         *     Open-ended (``extra="allow"``): a listed or fetched snapshot is the
+         *     Snapshot node's stored properties, passed through as stored.
+         */
+        SnapshotResponse: {
+            /** Created At */
+            created_at?: string | null;
+            /** Description */
+            description?: string | null;
+            /**
+             * Entities
+             * @default []
+             */
+            entities?: components["schemas"]["SnapshotEntityItem"][];
+            /** Entity Count */
+            entity_count?: number | null;
+            /**
+             * Entity Ids
+             * @default []
+             */
+            entity_ids?: string[];
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** SourceEvaluationItem */
+        SourceEvaluationItem: {
+            /** Admiralty Rating */
+            admiralty_rating: string;
+            /** Corroborating Documents */
+            corroborating_documents: number;
+            /** Current Rating */
+            current_rating: string;
+            /** Document Id */
+            document_id: string;
+            /** Entity Count */
+            entity_count: number;
+            /** Name */
+            name?: string | null;
         };
         /** SourceEvaluationRequest */
         SourceEvaluationRequest: {
@@ -3591,6 +6100,130 @@ export interface components {
             limit?: number;
             /** Project Id */
             project_id: string;
+        };
+        /** SourceEvaluationResponse */
+        SourceEvaluationResponse: {
+            /** Analysis */
+            analysis: string;
+            /** Documents Evaluated */
+            documents_evaluated: number;
+            /** Evaluations */
+            evaluations: components["schemas"]["SourceEvaluationItem"][];
+            /** Metrics */
+            metrics: components["schemas"]["SourceMetricItem"][];
+            /** Model */
+            model: string;
+            /** Ratings Applied */
+            ratings_applied: number;
+            /** Retrieval Mode */
+            retrieval_mode: string;
+            /** Skill Applied */
+            skill_applied: string;
+            /** Tokens Used */
+            tokens_used: number;
+        };
+        /** SourceHealthItem */
+        SourceHealthItem: {
+            /** Disabled */
+            disabled: number;
+            /** Healthy */
+            healthy: number;
+            /** Total */
+            total: number;
+            /** Unhealthy */
+            unhealthy: number;
+        };
+        /** SourceMetricItem */
+        SourceMetricItem: {
+            /** Content Length */
+            content_length: number;
+            /** Corroborating Documents */
+            corroborating_documents: number;
+            /** Created At */
+            created_at: string;
+            /** Current Rating */
+            current_rating: string;
+            /** Document Id */
+            document_id: string;
+            /** Entity Count */
+            entity_count: number;
+            /** Entity Names */
+            entity_names: string[];
+            /** Name */
+            name?: string | null;
+            /** Url */
+            url: string;
+        };
+        /**
+         * StatusResponse
+         * @description A bare outcome: ``{"status": "deleted"}``, ``"ok"``, ``"logged_out"`` and the like.
+         */
+        StatusResponse: {
+            /** Status */
+            status: string;
+        };
+        /**
+         * StixBundleResponse
+         * @description A STIX 2.1 bundle; ``objects`` are STIX objects of mixed types.
+         */
+        StixBundleResponse: {
+            /** Id */
+            id: string;
+            /** Objects */
+            objects: {
+                [key: string]: unknown;
+            }[];
+            /** Type */
+            type: string;
+            /** X Sentinel Omitted Entity Types */
+            x_sentinel_omitted_entity_types?: {
+                [key: string]: number;
+            } | null;
+        };
+        /** StructuralGapItem */
+        StructuralGapItem: {
+            /** Count */
+            count: number;
+            /** Detail */
+            detail: string;
+            /** Examples */
+            examples: string[];
+            /** Kind */
+            kind: string;
+            /** Priority */
+            priority: string;
+            /** Title */
+            title: string;
+        };
+        /** StructuralHoleItem */
+        StructuralHoleItem: {
+            /** Constraint */
+            constraint: number;
+            /** Degree */
+            degree: number;
+            /** Effective Size */
+            effective_size: number;
+            /** Entity Type */
+            entity_type: string;
+            /** Id */
+            id: string;
+            /** Is Broker */
+            is_broker: boolean;
+            /** Name */
+            name: string;
+        };
+        /** SubgraphResponse */
+        SubgraphResponse: {
+            /** Edge Count */
+            edge_count: number;
+            /** Edges */
+            edges: components["schemas"]["TraversalEdgeItem"][];
+            /** Node Count */
+            node_count: number;
+            /** Nodes */
+            nodes: components["schemas"]["GraphNodeProperties"][];
+            /** Truncated */
+            truncated?: boolean | null;
         };
         /**
          * SubmitPIRRequest
@@ -3631,6 +6264,57 @@ export interface components {
             /** Project Id */
             project_id: string;
         };
+        /** TimelineEventItem */
+        TimelineEventItem: {
+            /** Date Precision */
+            date_precision?: string | null;
+            /** Date Text */
+            date_text?: string | null;
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Event Type */
+            event_type: string;
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Timestamp */
+            timestamp: string;
+        };
+        /** TimelineHistogramResponse */
+        TimelineHistogramResponse: {
+            /** Bins */
+            bins: components["schemas"]["HistogramBinItem"][];
+            /** Bucket */
+            bucket: string;
+            /** Dated */
+            dated: number;
+            /** Earliest */
+            earliest?: string | null;
+            /** Latest */
+            latest?: string | null;
+            /** Project Exists */
+            project_exists: boolean;
+            /** Undated */
+            undated: number;
+        };
+        /** TimelineResponse */
+        TimelineResponse: {
+            /** Count */
+            count: number;
+            /** Events */
+            events: components["schemas"]["TimelineEventItem"][];
+            /** Offset */
+            offset: number;
+            /** Project Exists */
+            project_exists: boolean;
+            /** Total */
+            total: number;
+            /** Truncated */
+            truncated: boolean;
+            /** Types Present */
+            types_present: string[];
+        };
         /** TokenResponse */
         TokenResponse: {
             /** Access Token */
@@ -3645,6 +6329,55 @@ export interface components {
             /** Username */
             username: string;
         };
+        /** TopicChildCreatedResponse */
+        TopicChildCreatedResponse: {
+            /** Name */
+            name: string;
+            /** Node Id */
+            node_id: string;
+            /** Parent Id */
+            parent_id: string;
+        };
+        /** TopicConnectedEntityItem */
+        TopicConnectedEntityItem: {
+            /** Confidence */
+            confidence?: number | null;
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Rel Type */
+            rel_type?: string | null;
+        };
+        /** TopicContextEntityItem */
+        TopicContextEntityItem: {
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name?: string | null;
+        };
+        /** TopicContextResponse */
+        TopicContextResponse: {
+            /** Connected Entities */
+            connected_entities: components["schemas"]["TopicConnectedEntityItem"][];
+            /** Document Count */
+            document_count: number;
+            /** Document Excerpts */
+            document_excerpts: components["schemas"]["DocumentExcerptItem"][];
+            /** Documents */
+            documents: components["schemas"]["TopicDocumentItem"][];
+            entity: components["schemas"]["TopicContextEntityItem"];
+            /** Keywords */
+            keywords: string[];
+            /** Relationship Count */
+            relationship_count?: number | null;
+            /** Source Documents */
+            source_documents: components["schemas"]["TopicDocumentItem"][];
+        };
         /** TopicCreateRequest */
         TopicCreateRequest: {
             /**
@@ -3657,6 +6390,37 @@ export interface components {
             /** Project Id */
             project_id: string;
         };
+        /**
+         * TopicCrossReferenceItem
+         * @description A document that sits in more than one topic cluster.
+         */
+        TopicCrossReferenceItem: {
+            /** Doc Id */
+            doc_id: string;
+            /** Doc Name */
+            doc_name: string;
+            /** Topic Ids */
+            topic_ids: string[];
+        };
+        /** TopicDocumentItem */
+        TopicDocumentItem: {
+            /** Content Preview */
+            content_preview: string;
+            /** Id */
+            id?: string | null;
+            /** Keyword Matches */
+            keyword_matches?: {
+                [key: string]: number;
+            } | null;
+            /** Name */
+            name?: string | null;
+            /** Relevance Score */
+            relevance_score?: number | null;
+            /** Relevant Excerpts */
+            relevant_excerpts?: components["schemas"]["RelevantExcerptItem"][] | null;
+            /** Reliability Rating */
+            reliability_rating?: string | null;
+        };
         /** TopicEditRequest */
         TopicEditRequest: {
             /** Description */
@@ -3667,6 +6431,103 @@ export interface components {
             parent_id?: string | null;
             /** Project Id */
             project_id: string;
+        };
+        /** TopicNodeDeletedResponse */
+        TopicNodeDeletedResponse: {
+            /** Deleted */
+            deleted: boolean;
+            /** Node Id */
+            node_id: string;
+        };
+        /**
+         * TopicNodeItem
+         * @description One node of the topic tree: a branch, a topic cluster, a category, a
+         *     document or an entity leaf.
+         *
+         *     Open-ended (``extra="allow"``): each kind of node carries its own keys
+         *     (``keywords`` and ``doc_ids`` on clusters, ``reliability`` on documents,
+         *     ``connections`` on actors, ``user_created``/``edited`` after an analyst's
+         *     edit ...). A leaf has only ``id``, ``name`` and ``entity_type``.
+         */
+        TopicNodeItem: {
+            /** Children */
+            children?: components["schemas"]["TopicNodeItem"][] | null;
+            /** Count */
+            count?: number | null;
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** TopicNodeUpdatedResponse */
+        TopicNodeUpdatedResponse: {
+            /** Node Id */
+            node_id: string;
+            /** Updated */
+            updated: boolean;
+        };
+        /** TopicTreeResponse */
+        TopicTreeResponse: {
+            /** Children */
+            children: components["schemas"]["TopicNodeItem"][];
+            /** Cross References */
+            cross_references?: components["schemas"]["TopicCrossReferenceItem"][] | null;
+            /** Description */
+            description?: string | null;
+            /** Document Count */
+            document_count: number;
+            /** Edited */
+            edited?: boolean | null;
+            /** Edits Applied */
+            edits_applied?: number | null;
+            /** Edits Overlay */
+            edits_overlay?: string | null;
+            /** Edits Unmatched */
+            edits_unmatched?: number | null;
+            /** Entity Count */
+            entity_count: number;
+            /** Id */
+            id: string;
+            /** Label Source */
+            label_source?: string | null;
+            /** Labels Failed */
+            labels_failed?: number | null;
+            /** Labels Refined */
+            labels_refined?: number | null;
+            /** Name */
+            name: string;
+        };
+        /**
+         * TraversalEdgeItem
+         * @description One edge of a traversal, its stored properties nested under ``props``.
+         */
+        TraversalEdgeItem: {
+            /**
+             * Props
+             * @default {}
+             */
+            props?: {
+                [key: string]: unknown;
+            };
+            /** Rel Type */
+            rel_type: string;
+            /** Source Id */
+            source_id?: string | null;
+            /** Target Id */
+            target_id?: string | null;
+        };
+        /** UnmetCriterionItem */
+        UnmetCriterionItem: {
+            /** Eei */
+            eei: string;
+            /** Verdict */
+            verdict: string;
+            /** Why */
+            why: string;
         };
         /** UpdateCollectionRequest */
         UpdateCollectionRequest: {
@@ -3752,6 +6613,15 @@ export interface components {
             /** Schedule Cron */
             schedule_cron?: string | null;
         };
+        /** UploadRoutingItem */
+        UploadRoutingItem: {
+            /** Document Id */
+            document_id: string;
+            /** Entities Created */
+            entities_created: number;
+            /** Relationships Created */
+            relationships_created: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -3773,12 +6643,94 @@ export interface components {
              */
             action?: string;
         };
+        /** VpnActionResponse */
+        VpnActionResponse: {
+            /** Ok */
+            ok: boolean;
+            /** Outcome */
+            outcome?: string | null;
+            /** Reachable */
+            reachable: boolean;
+        };
+        /**
+         * VpnStatusResponse
+         * @description The VPN sidecar's state. When it cannot be reached only ``reachable`` and
+         *     ``running`` (both false) are known, and the rest are null.
+         */
+        VpnStatusResponse: {
+            /** City */
+            city?: string | null;
+            /** Country */
+            country?: string | null;
+            /** Mode */
+            mode?: string | null;
+            /** Public Ip */
+            public_ip?: string | null;
+            /** Reachable */
+            reachable: boolean;
+            /** Region */
+            region?: string | null;
+            /** Running */
+            running: boolean;
+            /** Status */
+            status?: string | null;
+        };
+        /** VulnChainIngestResponse */
+        VulnChainIngestResponse: {
+            /** Cwes */
+            cwes: number;
+            /** Edges */
+            edges: number;
+        };
+        /** VulnChainStatusItem */
+        VulnChainStatusItem: {
+            /** Cwes */
+            cwes: number;
+            /** Ingested */
+            ingested: boolean;
+        };
+        /** WatchedEntityItem */
+        WatchedEntityItem: {
+            /** Entity Type */
+            entity_type?: string | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name?: string | null;
+            /** Relationship Count */
+            relationship_count: number;
+        };
+        /** WatchlistAddResponse */
+        WatchlistAddResponse: {
+            /** Entity Id */
+            entity_id: string;
+            /** Entity Name */
+            entity_name?: string | null;
+            /** Status */
+            status: string;
+            /** Watchlist Size */
+            watchlist_size: number;
+        };
+        /** WatchlistRemoveResponse */
+        WatchlistRemoveResponse: {
+            /** Entity Id */
+            entity_id: string;
+            /** Status */
+            status: string;
+        };
         /** WatchlistRequest */
         WatchlistRequest: {
             /** Entity Id */
             entity_id: string;
             /** Project Id */
             project_id: string;
+        };
+        /** WatchlistResponse */
+        WatchlistResponse: {
+            /** Count */
+            count: number;
+            /** Watched Entities */
+            watched_entities: components["schemas"]["WatchedEntityItem"][];
         };
     };
     responses: never;
@@ -3804,7 +6756,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyListResponse"];
                 };
             };
         };
@@ -3828,7 +6780,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyCreatedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3859,7 +6811,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["StatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3892,7 +6844,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ApiKeyActivatedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3921,7 +6873,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AdminConfigResponse"];
                 };
             };
         };
@@ -3941,7 +6893,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DegradedResponse"];
                 };
             };
         };
@@ -3961,7 +6913,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EnrichmentConfigResponse"];
                 };
             };
         };
@@ -3985,7 +6937,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EnrichmentConfigResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4014,7 +6966,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["LlmModelListResponse"];
                 };
             };
         };
@@ -4038,7 +6990,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["LlmSelectionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4067,7 +7019,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ProxyConfigResponse"];
                 };
             };
         };
@@ -4091,7 +7043,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ProxyConfigResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4120,7 +7072,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["VpnStatusResponse"];
                 };
             };
         };
@@ -4144,7 +7096,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["VpnActionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4177,7 +7129,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GapAnalysisResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4210,7 +7162,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["HypothesesResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4243,7 +7195,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SourceEvaluationResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4276,7 +7228,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeneratedAssessmentResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4309,7 +7261,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["MultiAssessmentResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4340,7 +7292,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AttributionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4369,7 +7321,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AttackEmbedResponse"];
                 };
             };
         };
@@ -4389,7 +7341,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AttackIngestResponse"];
                 };
             };
         };
@@ -4409,7 +7361,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["VulnChainIngestResponse"];
                 };
             };
         };
@@ -4433,7 +7385,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AttackMapResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4464,7 +7416,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AttackMatrixResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4495,7 +7447,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NavigatorLayerResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4526,7 +7478,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AttackReportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4557,7 +7509,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AttackResolveResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4588,7 +7540,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CveResolutionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4617,7 +7569,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AttackStatusResponse"];
                 };
             };
         };
@@ -4641,7 +7593,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AttackTechniqueResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4672,7 +7624,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["D3fendResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4705,7 +7657,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PasswordChangedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4767,7 +7719,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["StatusResponse"];
                 };
             };
         };
@@ -4842,7 +7794,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionDashboardResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4874,7 +7826,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionPlanResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -4907,7 +7859,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionPlanResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4938,7 +7890,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionPlanResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4973,7 +7925,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionPlanResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5004,7 +7956,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5037,7 +7989,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AcquisitionLogItem"][];
                 };
             };
             /** @description Validation Error */
@@ -5068,7 +8020,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionPlanResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5102,7 +8054,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionActivityItem"][];
                 };
             };
             /** @description Validation Error */
@@ -5133,7 +8085,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionPlanResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5164,7 +8116,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PlanCancelResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5195,7 +8147,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DataCatalogItem"][];
                 };
             };
             /** @description Validation Error */
@@ -5226,7 +8178,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionPlanResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5261,7 +8213,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PlanExecutionStartedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5292,7 +8244,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PlanExecutionStatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5323,7 +8275,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionPlanResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5354,7 +8306,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionSourceResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -5389,7 +8341,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionSourceResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5425,7 +8377,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionSourceResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5457,7 +8409,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5491,7 +8443,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AcquisitionLogItem"][];
                 };
             };
             /** @description Validation Error */
@@ -5527,7 +8479,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["FileUploadResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5560,7 +8512,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PlanFromPirResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5591,7 +8543,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["LegacyCollectionResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -5624,7 +8576,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["LegacyCollectionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5655,7 +8607,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["LegacyCollectionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5690,7 +8642,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["LegacyCollectionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5721,7 +8673,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["StatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5754,7 +8706,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["LegacyCollectionStartedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5785,7 +8737,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["LegacyCollectionProgressResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5816,7 +8768,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["LegacyCollectionStatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5847,7 +8799,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CollectionCountResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5882,7 +8834,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ParsedPlanResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5913,7 +8865,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CommunityItem"][];
                 };
             };
             /** @description Validation Error */
@@ -5942,7 +8894,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ConnectorTypeItem"][];
                 };
             };
         };
@@ -5964,7 +8916,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DataCatalogItem"];
                 };
             };
             /** @description Validation Error */
@@ -5998,7 +8950,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CatalogPreviewResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6029,7 +8981,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DocumentListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6060,7 +9012,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DocumentDetailResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6093,7 +9045,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DocumentEvidenceResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6124,7 +9076,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CachedEnrichmentResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6155,7 +9107,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EnrichmentRunResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6189,7 +9141,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EnrichmentRunResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6218,7 +9170,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EnrichmentProviderListResponse"];
                 };
             };
         };
@@ -6244,7 +9196,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EntityProperties"][];
                 };
             };
             /** @description Validation Error */
@@ -6275,7 +9227,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EntityDetailResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6310,7 +9262,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["AssessmentCreatedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6379,7 +9331,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EntityTypeChangedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6412,7 +9364,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EntityMergeResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6441,7 +9393,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EntityTypeHierarchyResponse"];
                 };
             };
         };
@@ -6463,7 +9415,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EntityCsvExportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6494,7 +9446,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GraphExportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6526,7 +9478,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TopicTreeResponse"] | components["schemas"]["MindmapTextExportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6557,7 +9509,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ReportExportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6588,7 +9540,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["StixBundleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6620,7 +9572,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EntityTimelineResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6651,7 +9603,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeoLocationsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6684,7 +9636,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NearbyFeaturesResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6719,7 +9671,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeoWithinResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6752,7 +9704,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GraphViewResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6783,7 +9735,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["CentralityItem"][];
                 };
             };
             /** @description Validation Error */
@@ -6817,7 +9769,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["EgoNetworkResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6850,7 +9802,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["InfluenceResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6881,7 +9833,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GraphStatisticsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6913,7 +9865,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["StructuralHoleItem"][];
                 };
             };
             /** @description Validation Error */
@@ -6946,7 +9898,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["IngestResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6979,7 +9931,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["BatchIngestResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7012,7 +9964,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["LlmQueryResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7063,7 +10015,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NoteResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -7096,7 +10048,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NoteCreatedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7127,7 +10079,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["NoteResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7158,7 +10110,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["StatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7192,7 +10144,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ShortestPathResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7221,7 +10173,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PersonaListResponse"];
                 };
             };
         };
@@ -7245,7 +10197,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PersonaResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7276,7 +10228,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["StatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7307,7 +10259,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PersonaActivatedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7336,7 +10288,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PersonaResponse"] | components["schemas"]["EmptyResponse"];
                 };
             };
         };
@@ -7489,7 +10441,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7524,7 +10476,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PirAssessmentResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7555,9 +10507,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PirRequirementsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7586,7 +10536,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ProjectResponse"][];
                 };
             };
         };
@@ -7707,7 +10657,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ProjectDeleteResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7740,7 +10690,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ProjectActivityResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7773,7 +10723,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ProjectBatchDeleteResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7806,7 +10756,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GraphRagQueryResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7837,7 +10787,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ReportResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -7870,7 +10820,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ReportSavedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7903,7 +10853,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ReportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7936,7 +10886,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["StatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7969,7 +10919,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["GeneratedReportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8002,7 +10952,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SearchResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8035,7 +10985,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SemanticSearchResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8066,7 +11016,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SnapshotListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8099,7 +11049,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SnapshotResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8130,7 +11080,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SnapshotDetailResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8161,7 +11111,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["StatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8195,7 +11145,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SubgraphResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8228,7 +11178,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TimelineResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8261,7 +11211,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TimelineHistogramResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8294,7 +11244,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TopicTreeResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8327,7 +11277,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TopicContextResponse"] | components["schemas"]["ErrorMessageResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8356,13 +11306,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description Server-sent events: `data: {"text": ...}` frames, then `data: [DONE]`; a failure is one `data: {"error": ...}` frame. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "text/event-stream": string;
                 };
             };
             /** @description Validation Error */
@@ -8397,7 +11347,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TopicNodeUpdatedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8430,7 +11380,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TopicNodeDeletedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8465,7 +11415,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["TopicChildCreatedResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8496,7 +11446,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WatchlistResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8529,7 +11479,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WatchlistAddResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8562,7 +11512,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["WatchlistRemoveResponse"];
                 };
             };
             /** @description Validation Error */

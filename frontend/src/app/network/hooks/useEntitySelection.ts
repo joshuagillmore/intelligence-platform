@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { documentsApi, entitiesApi, readEntityDocuments, watchlistApi, type EntityDocument } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { createRequestSequencer } from '../graphFilters';
-import { EVIDENCE_DOC_LIMIT, type Entity, type Relationship } from '../types';
+import { EVIDENCE_DOC_LIMIT, entityFromRecord, type Entity, type Relationship } from '../types';
 
 /** A source document in the evidence chain, with its reliability grade. */
 export type EvidenceDocument = EntityDocument & { reliability_rating: string };
@@ -81,7 +81,7 @@ export function useEntitySelection(activeProject: { id: string } | null, onSelec
       if (!isCurrent()) return;
       setEntityRelationships(res.data.relationships || []);
       if (res.data.entity) {
-        setSelectedEntity(res.data.entity);
+        setSelectedEntity(entityFromRecord(res.data.entity));
       }
     } catch (e) {
       if (!isCurrent()) return;
@@ -121,7 +121,7 @@ export function useEntitySelection(activeProject: { id: string } | null, onSelec
     try {
       const res = await entitiesApi.get(entityId);
       if (selectedEntityIdRef.current !== entityId) return;
-      if (res.data.entity) setSelectedEntity(res.data.entity);
+      if (res.data.entity) setSelectedEntity(entityFromRecord(res.data.entity));
       setEntityRelationships(res.data.relationships || []);
       setRelationshipsError(null);
     } catch (e) {

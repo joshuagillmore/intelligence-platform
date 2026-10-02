@@ -29,6 +29,21 @@ from intel_platform.services.attack import mapping as attack_mapping
 from intel_platform.services.attack import report as attack_report
 from intel_platform.services.attack import vuln_chain
 from intel_platform.services.attack.ingest import fetch_and_ingest
+from intel_platform.models.responses import (
+    AttackEmbedResponse,
+    AttackIngestResponse,
+    AttackMapResponse,
+    AttackMatrixResponse,
+    AttackReportResponse,
+    AttackResolveResponse,
+    AttackStatusResponse,
+    AttackTechniqueResponse,
+    AttributionResponse,
+    CveResolutionResponse,
+    D3fendResponse,
+    NavigatorLayerResponse,
+    VulnChainIngestResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +60,13 @@ _embed_lock = asyncio.Lock()
 _vuln_lock = asyncio.Lock()
 
 
-@router.get("/attack/status")
+@router.get("/attack/status", response_model=AttackStatusResponse)
 async def get_status(driver: Driver = Depends(get_neo4j_driver)):
     """Whether ATT&CK is ingested, at what version, with node counts."""
     return await asyncio.to_thread(graph_ops.attack_status, driver)
 
 
-@router.post("/attack/ingest", dependencies=[Depends(require_admin)])
+@router.post("/attack/ingest", response_model=AttackIngestResponse, dependencies=[Depends(require_admin)])
 async def ingest(driver: Driver = Depends(get_neo4j_driver)):
     """(Admin) Fetch + parse + load the pinned ATT&CK bundle. Idempotent."""
     try:
@@ -64,7 +79,10 @@ async def ingest(driver: Driver = Depends(get_neo4j_driver)):
     return {"ingested": True, "version": result["version"], "counts": result["counts"]}
 
 
-@router.post("/attack/ingest-vuln-chain", dependencies=[Depends(require_admin)])
+@router.post(
+    "/attack/ingest-vuln-chain", response_model=VulnChainIngestResponse,
+    dependencies=[Depends(require_admin)],
+)
 async def ingest_vuln_chain(driver: Driver = Depends(get_neo4j_driver)):
     """(Admin) Fetch CWE + CAPEC, load ``(:Cwe)-[:ENABLES]->(:AttackTechnique)``.
 
@@ -81,7 +99,7 @@ async def ingest_vuln_chain(driver: Driver = Depends(get_neo4j_driver)):
     return {"cwes": result["cwes"], "edges": result["edges"]}
 
 
-@router.post("/attack/resolve-cve")
+@router.post("/attack/resolve-cve", response_model=CveResolutionResponse)
 async def resolve_cve(
     project_id: str = Query(...),
     driver: Driver = Depends(get_neo4j_driver),
@@ -115,7 +133,10 @@ _EMBED_REASONS = {
 }
 
 
-@router.post("/attack/embed", dependencies=[Depends(require_admin)])
+@router.post(
+    "/attack/embed", response_model=AttackEmbedResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_admin)],
+)
 async def embed(
     driver: Driver = Depends(get_neo4j_driver),
     db: AsyncSession = Depends(get_db),
@@ -144,7 +165,7 @@ async def embed(
     return {"embedded": embedded}
 
 
-@router.post("/attack/map")
+@router.post("/attack/map", response_model=AttackMapResponse, response_model_exclude_unset=True)
 async def map_ttps(
     project_id: str = Query(...),
     remap: bool = Query(False, description="Also re-examine TTPs the LLM mapped before"),
@@ -169,7 +190,7 @@ async def map_ttps(
     return result
 
 
-@router.get("/attack/attribution")
+@router.get("/attack/attribution", response_model=AttributionResponse)
 async def get_attribution(
     project_id: str = Query(...),
     driver: Driver = Depends(get_neo4j_driver),
@@ -181,7 +202,7 @@ async def get_attribution(
     return await asyncio.to_thread(graph_ops.get_attribution, driver, project_id)
 
 
-@router.post("/attack/resolve")
+@router.post("/attack/resolve", response_model=AttackResolveResponse)
 async def resolve(
     project_id: str = Query(...),
     driver: Driver = Depends(get_neo4j_driver),
@@ -190,7 +211,7 @@ async def resolve(
     return await asyncio.to_thread(graph_ops.resolve_ttps, driver, project_id)
 
 
-@router.get("/attack/matrix")
+@router.get("/attack/matrix", response_model=AttackMatrixResponse)
 async def get_matrix(
     project_id: str = Query(...),
     driver: Driver = Depends(get_neo4j_driver),
@@ -199,7 +220,7 @@ async def get_matrix(
     return await asyncio.to_thread(graph_ops.get_matrix, driver, project_id)
 
 
-@router.get("/attack/technique/{tid}")
+@router.get("/attack/technique/{tid}", response_model=AttackTechniqueResponse)
 async def get_technique(
     tid: str,
     project_id: str = Query(...),
@@ -213,7 +234,7 @@ async def get_technique(
     return detail
 
 
-@router.get("/attack/technique/{tid}/d3fend")
+@router.get("/attack/technique/{tid}/d3fend", response_model=D3fendResponse, response_model_exclude_unset=True)
 async def get_d3fend(
     tid: str = Path(..., pattern=attack_d3fend.TECHNIQUE_ID_PATTERN),
     db: AsyncSession = Depends(get_db),
@@ -228,7 +249,7 @@ async def get_d3fend(
     return await attack_d3fend.get_countermeasures(db, tid)
 
 
-@router.get("/attack/report")
+@router.get("/attack/report", response_model=AttackReportResponse)
 async def get_report(
     project_id: str = Query(...),
     driver: Driver = Depends(get_neo4j_driver),
@@ -246,7 +267,7 @@ async def get_report(
         raise HTTPException(status_code=500, detail="Failed to assemble the ATT&CK report")
 
 
-@router.get("/attack/navigator-layer")
+@router.get("/attack/navigator-layer", response_model=NavigatorLayerResponse)
 async def get_navigator_layer(
     project_id: str = Query(...),
     driver: Driver = Depends(get_neo4j_driver),

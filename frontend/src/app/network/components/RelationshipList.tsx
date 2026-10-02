@@ -48,7 +48,7 @@ export default function RelationshipList({
                 return (srcId === selectedEntity.id && tgtId === otherId) || (tgtId === selectedEntity.id && srcId === otherId);
               }).length;
               const conf = rel.confidence;
-              const confDotColor = conf !== undefined
+              const confDotColor = conf != null
                 ? conf >= 0.8 ? 'bg-green-500'
                 : conf >= 0.5 ? 'bg-accent-blue'
                 : conf >= 0.3 ? 'bg-yellow-500'
@@ -58,7 +58,7 @@ export default function RelationshipList({
               <div key={i} className="text-xs bg-navy-700 rounded p-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-accent-blue truncate">{formatRelType(rel.rel_type)}{edgeWeight > 1 ? ` (${edgeWeight})` : ''}</span>
-                  {conf !== undefined && (
+                  {conf != null && (
                     <span className="inline-flex items-center gap-1 text-gray-500 flex-none">
                       <span className={`w-1.5 h-1.5 rounded-full ${confDotColor}`} />
                       {(conf * 100).toFixed(0)}%

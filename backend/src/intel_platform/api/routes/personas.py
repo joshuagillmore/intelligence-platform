@@ -5,6 +5,13 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from intel_platform.api.deps import require_admin, verify_api_key
+from intel_platform.models.responses import (
+    EmptyResponse,
+    PersonaActivatedResponse,
+    PersonaListResponse,
+    PersonaResponse,
+    StatusResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +185,7 @@ async def _persist(values: dict[str, str]) -> None:
 # Routes
 # ---------------------------------------------------------------------------
 
-@router.get("/personas")
+@router.get("/personas", response_model=PersonaListResponse)
 def list_personas():
     return {
         "personas": list(_personas.values()),
@@ -191,7 +198,7 @@ def list_personas():
 # them is not.
 
 
-@router.post("/personas", dependencies=[Depends(require_admin)])
+@router.post("/personas", response_model=PersonaResponse, dependencies=[Depends(require_admin)])
 async def create_persona(req: PersonaRequest):
     """Create a persona, or update a custom one. Built-ins cannot be overwritten."""
     if req.id in _BUILTIN_PERSONA_IDS:
@@ -210,7 +217,10 @@ async def create_persona(req: PersonaRequest):
     return _personas[req.id]
 
 
-@router.post("/personas/{persona_id}/activate", dependencies=[Depends(require_admin)])
+@router.post(
+    "/personas/{persona_id}/activate", response_model=PersonaActivatedResponse,
+    dependencies=[Depends(require_admin)],
+)
 async def activate_persona(persona_id: str):
     global _active_persona
     if persona_id not in _personas:
@@ -223,7 +233,7 @@ async def activate_persona(persona_id: str):
     return {"active_persona": persona_id}
 
 
-@router.delete("/personas/{persona_id}", dependencies=[Depends(require_admin)])
+@router.delete("/personas/{persona_id}", response_model=StatusResponse, dependencies=[Depends(require_admin)])
 async def delete_persona(persona_id: str):
     if persona_id not in _personas:
         raise HTTPException(status_code=404, detail="Persona not found")
@@ -235,6 +245,7 @@ async def delete_persona(persona_id: str):
     return {"status": "deleted"}
 
 
-@router.get("/personas/active")
+# `{}` once the active persona is a custom one that has been deleted.
+@router.get("/personas/active", response_model=PersonaResponse | EmptyResponse)
 def get_active_persona():
     return _personas.get(_active_persona, {})

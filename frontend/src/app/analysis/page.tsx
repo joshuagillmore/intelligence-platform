@@ -14,7 +14,7 @@ import { useNotifications } from '@/components/NotificationProvider';
 import { getErrorMessage } from '@/lib/errorMessages';
 import {
   analysisApi, entitiesApi, documentsApi, reportsApi,
-  type Hypothesis, type StructuralGap, type SourceEvaluationItem,
+  type DocumentSummary, type EntityRecord, type Hypothesis, type StructuralGap, type SourceEvaluationItem,
 } from '@/lib/api';
 
 type Technique = 'gaps' | 'hypotheses' | 'sources';
@@ -52,8 +52,8 @@ const PRIORITY_STYLE: Record<string, string> = {
   low: 'bg-threat-low/15 text-threat-low border-threat-low/30',
 };
 
-interface EntityOption { id: string; name: string; entity_type: string }
-interface DocOption { id: string; name: string; reliability_rating: string }
+type EntityOption = Pick<EntityRecord, 'id' | 'name' | 'entity_type'>;
+type DocOption = Pick<DocumentSummary, 'id' | 'name' | 'reliability_rating'>;
 
 export default function AnalysisPage() {
   const { activeProject } = useProject();

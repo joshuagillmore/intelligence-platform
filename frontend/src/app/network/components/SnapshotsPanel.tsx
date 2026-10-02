@@ -111,7 +111,7 @@ export default function SnapshotsPanel({
               <div className="flex-1 min-w-0" onClick={() => onView(snap.id)}>
                 <div className="truncate font-medium">{snap.name}</div>
                 <div className="text-[10px] text-gray-500">
-                  {snap.entity_count} entities &middot; {new Date(snap.created_at).toLocaleDateString()}
+                  {snap.entity_count} entities &middot; {new Date(snap.created_at ?? '').toLocaleDateString()}
                 </div>
               </div>
               <button onClick={(e) => { e.stopPropagation(); onDelete(snap.id); }}

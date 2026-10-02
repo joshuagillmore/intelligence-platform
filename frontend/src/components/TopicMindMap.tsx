@@ -3,15 +3,17 @@
 import { useEffect, useRef, useCallback } from 'react';
 import * as d3 from 'd3';
 
-export interface TreeNode {
-  name: string;
+/** A topic-tree node as `GET /topics` sends it: a node may lack a name (it
+ *  is drawn "Unnamed"), a type or a count, and a leaf has no children. */
+export type TreeNode = {
+  name?: string | null;
   id: string;
-  entity_type?: string;
-  count?: number;
+  entity_type?: string | null;
+  count?: number | null;
   summary?: string;
-  children?: TreeNode[];
+  children?: TreeNode[] | null;
   _children?: TreeNode[];
-}
+};
 
 export type LayoutMode = 'radial' | 'horizontal';
 

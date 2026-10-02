@@ -6,7 +6,10 @@ import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import GraphVisualization from '@/components/GraphVisualization';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { entitiesApi, graphApi, assessApi, entityFields, entityPropertyEntries, totalFrom } from '@/lib/api';
+import {
+  entitiesApi, graphApi, assessApi, entityFields, entityPropertyEntries, totalFrom,
+  type EntityRecord, type EntityRelationship,
+} from '@/lib/api';
 import { TYPE_BADGE_CLASS as TYPE_BADGE_STYLES } from '@/lib/entityStyles';
 import { getErrorMessage } from '@/lib/errorMessages';
 import EnrichmentPanel from '@/components/EnrichmentPanel';
@@ -15,23 +18,11 @@ import AttackAttribution from '@/components/AttackAttribution';
 import Markdown from '@/components/Markdown';
 import { useNotifications } from '@/components/NotificationProvider';
 
-interface IOCEntity {
-  id: string;
-  name: string;
-  entity_type: string;
-  properties?: Record<string, unknown>;
-  relationship_count?: number;
-}
+/** An indicator or actor row from `/entities`. That route sends no
+ *  `relationship_count`, so the column reading it shows "--". */
+type IOCEntity = EntityRecord & { relationship_count?: number };
 
-interface Relationship {
-  rel_type: string;
-  source_id: string;
-  target_id: string;
-  confidence?: number;
-  source_name?: string;
-  target_name?: string;
-  evidence?: string;
-}
+type Relationship = EntityRelationship;
 
 interface GraphNode {
   id: string;
@@ -179,19 +170,12 @@ export default function CyberPage() {
     try {
       const res = await graphApi.full(activeProject.id);
       const data = res.data;
-      const nodes: GraphNode[] = (data.nodes || []).filter((n: GraphNode) =>
-        IOC_TYPES.includes(n.entity_type)
-      );
+      const nodes: GraphNode[] = data.nodes.filter(n => IOC_TYPES.includes(n.entity_type));
       const nodeIds = new Set(nodes.map(n => n.id));
-      const edges: GraphEdge[] = (data.edges || data.relationships || []).filter((e: GraphEdge) => {
-        const srcId = typeof e.source === 'string' ? e.source : e.source_id;
-        const tgtId = typeof e.target === 'string' ? e.target : e.target_id;
-        return nodeIds.has(srcId) && nodeIds.has(tgtId);
-      }).map((e: GraphEdge) => ({
-        ...e,
-        source: typeof e.source === 'string' ? e.source : e.source_id,
-        target: typeof e.target === 'string' ? e.target : e.target_id,
-      }));
+      // /graph names an edge's ends by id; the canvas also wants them as source/target.
+      const edges: GraphEdge[] = data.edges
+        .filter(e => nodeIds.has(e.source_id) && nodeIds.has(e.target_id))
+        .map(e => ({ ...e, source: e.source_id, target: e.target_id }));
       setGraphNodes(nodes);
       setGraphEdges(edges);
     } catch (e) {
@@ -353,8 +337,8 @@ export default function CyberPage() {
     setGeneratingProfile(null);
   }
 
-  function getBadgeStyle(entityType: string): string {
-    return TYPE_BADGE_STYLES[entityType] || 'bg-gray-900/30 text-gray-400';
+  function getBadgeStyle(entityType: string | null | undefined): string {
+    return TYPE_BADGE_STYLES[entityType ?? ''] || 'bg-gray-900/30 text-gray-400';
   }
 
   function handleGraphNodeClick(node: GraphNode) {
@@ -538,7 +522,7 @@ export default function CyberPage() {
                                             <div key={i} className="text-xs rounded p-2" style={{ backgroundColor: '#1a1f2e' }}>
                                               <div className="flex items-center gap-2">
                                                 <span className="font-medium" style={{ color: '#adc6ff' }}>{r.rel_type}</span>
-                                                {r.confidence !== undefined && (
+                                                {r.confidence != null && (
                                                   <span className="text-gray-500">({(r.confidence * 100).toFixed(0)}%)</span>
                                                 )}
                                                 <span className="text-gray-400 ml-auto truncate">
@@ -582,7 +566,7 @@ export default function CyberPage() {
                                       <EnrichmentPanel
                                         key={ioc.id}
                                         entityId={ioc.id}
-                                        entityType={ioc.entity_type}
+                                        entityType={ioc.entity_type ?? ''}
                                         properties={entityFields(entity)}
                                         onEnriched={() => { refetchIoc(ioc.id); loadIOCs(); loadGraph(); }}
                                       />
@@ -724,7 +708,7 @@ export default function CyberPage() {
                                     <div key={i} className="text-xs rounded p-2" style={{ backgroundColor: '#313849' }}>
                                       <div className="flex items-center gap-2">
                                         <span className="font-medium" style={{ color: '#adc6ff' }}>{r.rel_type}</span>
-                                        {r.confidence !== undefined && (
+                                        {r.confidence != null && (
                                           <span className="text-gray-500">({(r.confidence * 100).toFixed(0)}%)</span>
                                         )}
                                         <span className="text-gray-400 ml-auto truncate">

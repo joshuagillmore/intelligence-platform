@@ -3,7 +3,10 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import DegradedCard from '@/components/DegradedCard';
-import { healthApi, projectsApi, adminApi, exportApi, isAdminSession, type Project } from '@/lib/api';
+import {
+  healthApi, projectsApi, adminApi, exportApi, isAdminSession,
+  type AdminConfig, type LlmModel, type Project, type StoredApiKey, type VpnStatus,
+} from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 
 interface HealthData {
@@ -13,45 +16,10 @@ interface HealthData {
   [key: string]: unknown;
 }
 
-interface AdminConfig {
-  llm_provider: string;
-  llm_model: string;
-  extraction_mode: string;
-  chunk_size: number;
-  chunk_overlap: number;
-  neo4j_uri: string;
-}
-
+/** The egress mode the card edits. `GET /admin/proxy` only ever stores one of
+ *  these three (anything else reads back as direct). */
 interface ProxyConfig {
   mode: 'direct' | 'vpn' | 'tor';
-  proxy_url?: string;
-  tor_port?: number;
-}
-
-interface VpnStatus {
-  running: boolean;
-  reachable: boolean;
-  public_ip?: string;
-  country?: string;
-  mode?: string;
-}
-
-interface ModelInfo {
-  provider: string;
-  model: string;
-  params: string;
-  quantization: string;
-  size_gb: number;
-  configured?: boolean;
-}
-
-interface StoredApiKey {
-  id: string;
-  provider: string;
-  label: string;
-  key_preview: string;
-  is_active: boolean;
-  created_at: string | null;
 }
 
 const PROVIDERS = [
@@ -95,7 +63,7 @@ export default function AdminPage() {
   const [enrichProviders, setEnrichProviders] = useState<Array<{
     name: string; supported_types: string[]; requires_key: boolean; has_key: boolean; auto: boolean;
   }>>([]);
-  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [models, setModels] = useState<LlmModel[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelSwitching, setModelSwitching] = useState(false);
 
@@ -150,7 +118,7 @@ export default function AdminPage() {
     try {
       const res = await adminApi.getProxy();
       if (!res.data?.mode) throw new Error('The backend did not report an egress mode.');
-      setProxy(res.data);
+      setProxy({ mode: res.data.mode as ProxyConfig['mode'] });
       setProxyLoaded(true);
       setCardError('proxy', null);
     } catch (e) {

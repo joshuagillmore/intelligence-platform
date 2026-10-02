@@ -8,6 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.db.engine import get_db
 from intel_platform.graph.store import GraphStore
+from intel_platform.models.responses import (
+    GraphRagQueryResponse,
+)
 from intel_platform.services.graph_rag import GraphRAGPipeline
 
 logger = logging.getLogger(__name__)
@@ -42,7 +45,7 @@ class QueryRequest(BaseModel):
     use_vector: bool = True
 
 
-@router.post("/query")
+@router.post("/query", response_model=GraphRagQueryResponse, response_model_exclude_unset=True)
 async def graph_rag_query(
     req: QueryRequest,
     store: GraphStore = Depends(get_graph_store),

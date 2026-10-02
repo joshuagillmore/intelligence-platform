@@ -75,7 +75,7 @@ async def test_store_reads_and_clustering_run_off_the_loop(monkeypatch):
 
 def _tree():
     return {
-        "id": "root", "name": "Knowledge Base", "children": [
+        "id": "root", "name": "Knowledge Base", "entity_count": 3, "document_count": 2, "children": [
             {"id": "branch-themes", "name": "Topics", "children": [
                 {"id": "topic-0", "name": "apt29, phishing", "children": [], "count": 3},
                 {"id": "topic-1", "name": "cable, baltic", "children": [

@@ -37,11 +37,12 @@ export function useShortestPath() {
     setHighlightedEdgeKeys(new Set());
     try {
       const res = await entitiesApi.shortestPath(selectedEntities[0].id, selectedEntities[1].id);
-      const path = res.data.path || res.data.nodes || [];
-      const length = res.data.length ?? res.data.path_length ?? path.length - 1;
-      setPathResult({ path, length });
+      // The path's nodes in order; `path_length` is -1 when there is none.
+      const nodeIds = new Set<string>(
+        res.data.nodes.map(n => n.id).filter((id): id is string => typeof id === 'string'),
+      );
+      setPathResult({ path: Array.from(nodeIds), length: res.data.path_length });
       // Highlight path nodes
-      const nodeIds = new Set<string>(path.map((p: string | { id: string }) => typeof p === 'string' ? p : p.id));
       setHighlightedNodeIds(nodeIds);
       // Highlight path edges
       const edgeKeys = new Set<string>();

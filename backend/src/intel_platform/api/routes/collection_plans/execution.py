@@ -21,6 +21,12 @@ from intel_platform.db import jobs
 from intel_platform.db.engine import get_db
 from intel_platform.db.models import CollectionActivity, CollectionPlan, PlanStatus
 from intel_platform.graph.store import GraphStore
+from intel_platform.models.responses import (
+    CollectionActivityItem,
+    PlanCancelResponse,
+    PlanExecutionStartedResponse,
+    PlanExecutionStatusResponse,
+)
 from intel_platform.services.plan_runs import (
     TERMINAL_EVENTS,
     current_run_events,
@@ -43,7 +49,7 @@ class ExecuteRequest(BaseModel):
     source_limit: int | None = Field(default=None, ge=1)
 
 
-@router.post("/collection-plans/{plan_id}/execute", status_code=202)
+@router.post("/collection-plans/{plan_id}/execute", status_code=202, response_model=PlanExecutionStartedResponse)
 async def execute_plan_endpoint(
     plan_id: str,
     body: ExecuteRequest | None = None,
@@ -167,7 +173,10 @@ async def _start_execution(
     }
 
 
-@router.get("/collection-plans/{plan_id}/execution-status")
+@router.get(
+    "/collection-plans/{plan_id}/execution-status", response_model=PlanExecutionStatusResponse,
+    response_model_exclude_unset=True,
+)
 async def get_execution_status(plan_id: str, db: AsyncSession = Depends(get_db)):
     """Poll the execution progress of a collection plan's latest run.
 
@@ -254,7 +263,7 @@ def _job_message(state: str, job) -> str:
     return "Collection run complete"
 
 
-@router.post("/collection-plans/{plan_id}/cancel", status_code=202)
+@router.post("/collection-plans/{plan_id}/cancel", status_code=202, response_model=PlanCancelResponse)
 async def cancel_plan_run(plan_id: str, db: AsyncSession = Depends(get_db)):
     """Cancel the plan's live run (queued, running, or stalled).
 
@@ -303,7 +312,7 @@ async def cancel_plan_run(plan_id: str, db: AsyncSession = Depends(get_db)):
 # Activity log
 # ---------------------------------------------------------------------------
 
-@router.get("/collection-plans/{plan_id}/activity")
+@router.get("/collection-plans/{plan_id}/activity", response_model=list[CollectionActivityItem])
 async def get_activity(
     plan_id: str,
     since: str | None = None,

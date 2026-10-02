@@ -36,7 +36,8 @@ def graph_only_pipeline(monkeypatch):
 
     async def fake_query(self, query, project_id, max_hops=2, token_budget=8000):
         seen.append(max_hops)
-        return {"query": query, "answer": "", "model": "none", "context": ""}
+        return {"query": query, "answer": "", "model": "none", "context": "",
+                "context_nodes": 0, "context_edges": 0}
 
     monkeypatch.setattr(graph_rag.GraphRAGPipeline, "query", fake_query)
     return seen
@@ -172,7 +173,8 @@ class TestDegradedAnswerGraphOnly:
 
     @pytest.mark.parametrize("fallback", [CONTEXT, "LLM generation failed. Using raw graph context as fallback."])
     def test_the_pipelines_fallback_text_is_not_an_answer(self, pipeline, fallback):
-        pipeline({"query": "q", "answer": fallback, "model": "none", "tokens_used": 0, "context": CONTEXT})
+        pipeline({"query": "q", "answer": fallback, "model": "none", "tokens_used": 0, "context": CONTEXT,
+                  "context_nodes": 2, "context_edges": 1})
         data = _ask(use_vector=False)
         assert data["answer"] == ""
         assert data["model"] == "none"
@@ -181,13 +183,15 @@ class TestDegradedAnswerGraphOnly:
 
     def test_a_model_that_returned_nothing_is_degraded(self, pipeline):
         """The pipeline substitutes the context for an empty reply."""
-        pipeline({"query": "q", "answer": CONTEXT, "model": "test-model", "tokens_used": 3, "context": CONTEXT})
+        pipeline({"query": "q", "answer": CONTEXT, "model": "test-model", "tokens_used": 3, "context": CONTEXT,
+                  "context_nodes": 2, "context_edges": 1})
         data = _ask(use_vector=False)
         assert data["answer"] == ""
         assert data["llm_error"]
 
     def test_a_real_answer_passes_through(self, pipeline):
-        pipeline({"query": "q", "answer": "An answer.", "model": "test-model", "tokens_used": 3, "context": CONTEXT})
+        pipeline({"query": "q", "answer": "An answer.", "model": "test-model", "tokens_used": 3, "context": CONTEXT,
+                  "context_nodes": 2, "context_edges": 1})
         data = _ask(use_vector=False)
         assert data["answer"] == "An answer."
         assert data["model"] == "test-model"

@@ -12,6 +12,12 @@ from intel_platform.services.llm_output import labelled_probability_parsed
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.db.engine import get_db
 from intel_platform.graph.store import GraphStore
+from intel_platform.models.responses import (
+    GeneratedReportResponse,
+    ReportResponse,
+    ReportSavedResponse,
+    StatusResponse,
+)
 from intel_platform.services.graph_rag import GraphRAGPipeline
 from intel_platform.services.reports import ReportService
 from intel_platform.services.telemetry import record_degraded
@@ -89,7 +95,7 @@ class GenerateReportRequest(BaseModel):
     use_vector: bool = True
 
 
-@router.post("/reports")
+@router.post("/reports", response_model=ReportSavedResponse)
 def save_report(req: SaveReportRequest, store: GraphStore = Depends(get_graph_store)):
     svc = ReportService(store)
     return svc.save_report(
@@ -98,13 +104,13 @@ def save_report(req: SaveReportRequest, store: GraphStore = Depends(get_graph_st
     )
 
 
-@router.get("/reports")
+@router.get("/reports", response_model=list[ReportResponse], response_model_exclude_unset=True)
 def list_reports(project_id: str, store: GraphStore = Depends(get_graph_store)):
     svc = ReportService(store)
     return svc.list_reports(project_id)
 
 
-@router.post("/reports/generate")
+@router.post("/reports/generate", response_model=GeneratedReportResponse, response_model_exclude_unset=True)
 async def generate_report(
     req: GenerateReportRequest,
     store: GraphStore = Depends(get_graph_store),
@@ -305,7 +311,7 @@ async def generate_report(
     return response
 
 
-@router.get("/reports/{report_id}")
+@router.get("/reports/{report_id}", response_model=ReportResponse, response_model_exclude_unset=True)
 def get_report(
     report_id: str,
     project_id: str | None = None,
@@ -327,7 +333,7 @@ def get_report(
     return report
 
 
-@router.delete("/reports/{report_id}")
+@router.delete("/reports/{report_id}", response_model=StatusResponse)
 def delete_report(
     report_id: str,
     project_id: str | None = None,

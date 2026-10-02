@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import { useProject } from '@/lib/ProjectContext';
-import { entitiesApi, reportsApi, exportApi, pirsApi, type Pir } from '@/lib/api';
+import { entitiesApi, reportsApi, exportApi, pirsApi, type Pir, type SavedReportRecord } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { useNotifications } from '@/components/NotificationProvider';
 import Markdown from '@/components/Markdown';
@@ -58,21 +58,20 @@ interface ReportHistoryItem {
   timestamp: Date;
 }
 
-interface SavedReport {
-  id: string;
-  title: string;
-  content: string;
-  report_type: string;
-  created_at?: string;
-  entity_ids?: string[];
-  status?: string;
-}
+/** A saved report with the title the panel shows (the node stores it as `name`). */
+type SavedReport = SavedReportRecord & { title: string };
 
 /**
  * Dissemination metadata for whichever report is currently on screen — a fresh
  * draft, a session-history item, or a saved report being viewed. Exports read
  * this so they describe the *selected* product, not the last generation.
  */
+/** The entity ids a saved report lists, if it carries any. Report nodes are
+ *  written without them today; the panel reads them when present. */
+function reportEntityIds(report: SavedReport): string[] {
+  return Array.isArray(report.entity_ids) ? report.entity_ids.filter((id): id is string => typeof id === 'string') : [];
+}
+
 interface ProductContext {
   /** Identifies the report this context belongs to, so async updates can't land on a different one. */
   sourceId: string;
@@ -150,7 +149,10 @@ function ProductsPageContent() {
     setSearching(true);
     try {
       const res = await entitiesApi.search(activeProject.id, query);
-      setSearchResults((res.data || []).slice(0, 10));
+      // Text where the node has none, as the picker and the product show it.
+      setSearchResults((res.data || []).slice(0, 10).map(e => ({
+        ...e, name: e.name ?? '', entity_type: e.entity_type ?? '',
+      })));
     } catch {
       setSearchResults([]);
     } finally {
@@ -163,14 +165,14 @@ function ProductsPageContent() {
     setSavedReportsLoading(true);
     try {
       const res = await reportsApi.list(activeProject.id);
-      const rows = Array.isArray(res.data) ? res.data : res.data.reports || [];
+      const rows = res.data;
       // Reports are Neo4j entities, so the API returns the title as `name`.
       // Normalise once here — everything downstream (panel header, export
       // filename and front matter, error messages) reads `.title`.
       setSavedReports(
-        rows.map((r: SavedReport & { name?: string }) => ({
+        rows.map(r => ({
           ...r,
-          title: r.title || r.name || r.report_type || 'Untitled report',
+          title: (typeof r.title === 'string' && r.title) || r.name || r.report_type || 'Untitled report',
         })),
       );
     } catch {
@@ -437,9 +439,9 @@ function ProductsPageContent() {
     setProductContext({
       sourceId,
       title: report.title,
-      reportTypeLabel: getReportTypeLabel(report.report_type),
-      reportTypeValue: report.report_type,
-      entityIds: report.entity_ids || [],
+      reportTypeLabel: getReportTypeLabel(report.report_type ?? ''),
+      reportTypeValue: report.report_type ?? '',
+      entityIds: reportEntityIds(report),
       entities: [],
       generatedAt: report.created_at ? new Date(report.created_at) : new Date(),
     });
@@ -469,7 +471,7 @@ function ProductsPageContent() {
         return;
       }
     }
-    const names = await resolveEntityNames(report.entity_ids || []);
+    const names = await resolveEntityNames(reportEntityIds(report));
     if (names.length > 0) {
       setProductContext(prev => (prev && prev.sourceId === sourceId ? { ...prev, entities: names } : prev));
     }
@@ -903,11 +905,11 @@ function ProductsPageContent() {
                           <div className="min-w-0 flex-1">
                             <div className="font-medium text-gray-200 truncate">{report.title}</div>
                             <div className="text-gray-500 mt-0.5 flex items-center gap-2">
-                              <span>{getReportTypeLabel(report.report_type)}</span>
-                              {report.entity_ids && report.entity_ids.length > 0 && (
+                              <span>{getReportTypeLabel(report.report_type ?? '')}</span>
+                              {reportEntityIds(report).length > 0 && (
                                 <span className="inline-flex items-center gap-0.5 text-gray-500">
                                   <span className="material-symbols-outlined text-[11px]">group</span>
-                                  {report.entity_ids.length}
+                                  {reportEntityIds(report).length}
                                 </span>
                               )}
                             </div>

@@ -6,7 +6,10 @@ import Sidebar from '@/components/Sidebar';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { geoApi, entitiesApi, assessApi, analysisApi, geoApiExtra, entityFields } from '@/lib/api';
+import {
+  geoApi, entitiesApi, assessApi, analysisApi, geoApiExtra, entityFields,
+  type EntityRecord, type EntityRelationship, type GeoEdge,
+} from '@/lib/api';
 import { useAssistant } from '@/lib/AssistantContext';
 
 const GeoMap = dynamic(() => import('@/components/GeoMap'), { ssr: false });
@@ -26,20 +29,13 @@ interface GeoLocation {
   /** What the API actually sends. The page read `connections`, which no
    *  response has ever carried, so the header counted 0 while the map drew
    *  the connections in front of it. */
-  connection_count?: number;
+  connection_count?: number | null;
   connections?: number;
   entity_type?: string;
   properties?: Record<string, unknown>;
 }
 
-interface LocationRelationship {
-  source_name?: string;
-  target_name?: string;
-  source_id: string;
-  target_id: string;
-  rel_type: string;
-  evidence?: string;
-}
+type LocationRelationship = EntityRelationship;
 
 /* ── color tokens (inline styles for custom palette) ── */
 const C = {
@@ -66,12 +62,7 @@ export default function GeoPage() {
   // Answers and intel-op output render in the shared, app-wide AssistantPanel
   // instead of a map overlay this page owns (see components/AssistantPanel).
   const { ask: askAssistant, runTask: runAssistantTask, busy: assistantBusy } = useAssistant();
-  const [geoEdges, setGeoEdges] = useState<Array<{
-    source_id?: string; target_id?: string;
-    source_coords?: number[]; target_coords?: number[];
-    source_name: string; target_name: string;
-    weight: number; shared_entities: string[];
-  }>>([]);
+  const [geoEdges, setGeoEdges] = useState<GeoEdge[]>([]);
   // Place-to-place links as the API counts them (`edge_count`); null when unknown.
   const [edgeCount, setEdgeCount] = useState<number | null>(null);
 
@@ -183,13 +174,13 @@ export default function GeoPage() {
         const entities = res.data || [];
         // /entities flattens node fields onto the entity; entityFields reads
         // either shape (e.properties was undefined here, so nothing plotted).
-        setLocations(entities.map((e: { id: string; name: string }) => {
+        setLocations(entities.map((e: EntityRecord) => {
           const f = entityFields(e);
           const lat = typeof f.latitude === 'number' ? f.latitude : undefined;
           const lng = typeof f.longitude === 'number' ? f.longitude : undefined;
           return {
             id: e.id,
-            name: e.name,
+            name: e.name ?? '',
             latitude: lat,
             longitude: lng,
             geocoded: lat != null && lng != null,
@@ -260,7 +251,7 @@ export default function GeoPage() {
           // A failure (503, or an older backend's 200 {error}) must fail the
           // task, never render as the assessment.
           if (d?.error) throw new Error(d.error);
-          const text = d.assessment || d.judgment || d.analysis || d.content;
+          const text = d.assessment || d.judgment;
           if (!text) throw new Error('No assessment returned.');
           return { content: text };
         }
@@ -294,8 +285,8 @@ export default function GeoPage() {
   const relatedLocations = selectedRels.reduce<{ name: string; count: number }[]>((acc, rel) => {
     const name =
       rel.source_name === selectedLocation?.name
-        ? (rel.target_name || rel.target_id)
-        : (rel.source_name || rel.source_id);
+        ? (rel.target_name || rel.target_id || '')
+        : (rel.source_name || rel.source_id || '');
     const existing = acc.find(r => r.name === name);
     if (existing) existing.count++;
     else acc.push({ name, count: 1 });
