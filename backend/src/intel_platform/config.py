@@ -103,6 +103,11 @@ class Settings(BaseSettings):
     # A running job whose heartbeat is older than this is reported `stalled`
     # and no longer blocks a new run (contract 3).
     collection_stall_seconds: int = 120
+    # Tests only: one connection per checkout, none kept across event loops.
+    # The sync TestClient runs every request on a fresh loop, and a pooled
+    # asyncpg connection created on a closed loop fails with "cannot rollback"
+    # or "Event loop is closed" whichever route happens to reuse it next.
+    postgres_null_pool: bool = False
     # Route Chromium's crawl traffic through the local egress proxy, which
     # resolves each host once through url_guard and connects only to the
     # address it vetted (contract 5). Leave on.
