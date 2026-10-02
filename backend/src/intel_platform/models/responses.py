@@ -675,3 +675,129 @@ class EntityTypeChangedResponse(BaseModel):
     name: str | None = None
     old_type: str | None = None
     new_type: str
+
+
+# ---------------------------------------------------------------------------
+# Graph analytics
+# ---------------------------------------------------------------------------
+
+class GraphViewNodeItem(BaseModel):
+    id: str
+    name: str
+    entity_type: str
+    entity_category: str
+    # Louvain community, -1 when the node was not partitioned.
+    community_id: int
+    pagerank: float
+    degree: int
+    # When the thing happened ("" when undated), not when it was ingested.
+    event_datetime: str
+    date_precision: str
+    date_text: str
+
+
+class GraphViewEdgeItem(BaseModel):
+    source_id: str
+    target_id: str
+    rel_type: str
+    confidence: float
+    evidence: str
+    method: str
+    source_doc_id: str
+    polarity: str
+    first_seen: str | None = None
+    last_seen: str | None = None
+
+
+class GraphViewResponse(BaseModel):
+    project_exists: bool
+    nodes: list[GraphViewNodeItem]
+    edges: list[GraphViewEdgeItem]
+    node_count: int
+    edge_count: int
+    # How many entities the project holds in all; `node_count` is this view.
+    total_nodes: int
+    truncated: bool
+
+
+class GraphMemberItem(BaseModel):
+    id: str
+    name: str
+    entity_type: str
+
+
+class CommunityItem(BaseModel):
+    community_id: int
+    members: list[GraphMemberItem]
+    size: int
+
+
+class CentralityItem(GraphMemberItem):
+    degree: int
+
+
+class NodeStatisticsItem(GraphMemberItem):
+    degree: int
+    in_degree: int
+    out_degree: int
+    betweenness: float
+    eigenvector: float
+    pagerank: float
+    closeness: float
+
+
+class GraphStatisticsResponse(BaseModel):
+    nodes: int
+    edges: int
+    density: float
+    components: int
+    # True when the metrics were computed over the budgeted sample.
+    truncated: bool
+    entities: list[NodeStatisticsItem]
+    project_exists: bool
+
+
+class StructuralHoleItem(GraphMemberItem):
+    constraint: float
+    effective_size: float
+    degree: int
+    is_broker: bool
+
+
+class EgoNodeItem(GraphMemberItem):
+    hop_distance: int
+    local_pagerank: float
+    local_betweenness: float
+
+
+class EgoEdgeItem(BaseModel):
+    source_id: str
+    target_id: str
+    rel_type: str
+    confidence: float | None = None
+    weight: float | None = None
+
+
+class EgoNetworkResponse(BaseModel):
+    center: str
+    hops: int
+    # Null when the entity is not in the project's graph.
+    node_count: int | None = None
+    edge_count: int | None = None
+    nodes: list[EgoNodeItem]
+    edges: list[EgoEdgeItem]
+
+
+class InfluenceStepItem(BaseModel):
+    step: int
+    newly_activated: list[GraphMemberItem]
+    cumulative_count: int
+
+
+class InfluenceResponse(BaseModel):
+    seeds: list[str]
+    steps: list[InfluenceStepItem]
+    total_activated: int
+    reach_ratio: float
+    # Null when no seed was in the graph.
+    total_nodes: int | None = None
