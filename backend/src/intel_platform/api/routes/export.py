@@ -8,6 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
+from intel_platform.models.responses import (
+    EntityCsvExportResponse,
+    GraphExportResponse,
+    MindmapTextExportResponse,
+    ReportExportResponse,
+    StixBundleResponse,
+    TopicTreeResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +111,7 @@ def _to_stix_object(entity: dict) -> dict | None:
     return obj
 
 
-@router.get("/export/graph")
+@router.get("/export/graph", response_model=GraphExportResponse)
 def export_graph_json(project_id: str, store: GraphStore = Depends(get_graph_store)):
     """Export the full graph as JSON (nodes + edges)."""
     data = store.get_full_graph(project_id=project_id, limit=10000)
@@ -125,7 +133,7 @@ def _csv_cell(value) -> str:
     return "'" + text if text.startswith(_FORMULA_PREFIXES) else text
 
 
-@router.get("/export/entities")
+@router.get("/export/entities", response_model=EntityCsvExportResponse)
 def export_entities_csv(project_id: str, store: GraphStore = Depends(get_graph_store)):
     """Export all entities as CSV."""
     entities = store.search_entities(project_id=project_id, limit=10000)
@@ -145,7 +153,7 @@ def export_entities_csv(project_id: str, store: GraphStore = Depends(get_graph_s
     )
 
 
-@router.get("/export/report/{report_id}")
+@router.get("/export/report/{report_id}", response_model=ReportExportResponse)
 def export_report(report_id: str, store: GraphStore = Depends(get_graph_store)):
     """Export a specific report."""
     report = store.get_entity(report_id)
@@ -158,7 +166,8 @@ def export_report(report_id: str, store: GraphStore = Depends(get_graph_store)):
     }
 
 
-@router.get("/export/mindmap")
+# The tree as JSON, or {format, content} for markdown and mermaid.
+@router.get("/export/mindmap", response_model=TopicTreeResponse | MindmapTextExportResponse)
 async def export_mindmap(
     project_id: str,
     format: str = "json",
@@ -193,7 +202,7 @@ async def export_mindmap(
         )
 
 
-@router.get("/export/stix")
+@router.get("/export/stix", response_model=StixBundleResponse)
 def export_stix(project_id: str, store: GraphStore = Depends(get_graph_store)):
     """Export the knowledge graph as a STIX 2.1 bundle."""
     entities = store.search_entities(project_id=project_id, limit=10000)

@@ -921,6 +921,46 @@ class EntityTimelineResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+
+class GraphExportResponse(BaseModel):
+    """The project graph as stored: node and edge property maps."""
+    nodes: list[GraphNodeProperties]
+    edges: list[GraphEdgeProperties]
+    node_count: int
+    edge_count: int
+    truncated: bool
+
+
+class EntityCsvExportResponse(BaseModel):
+    # id,name,entity_type rows; formula-leading cells are quoted literal.
+    csv: str
+    count: int
+
+
+class ReportExportResponse(BaseModel):
+    title: str
+    content: str
+    report_type: str
+
+
+class MindmapTextExportResponse(BaseModel):
+    # "markdown" or "mermaid"
+    format: str
+    content: str
+
+
+class StixBundleResponse(BaseModel):
+    """A STIX 2.1 bundle; ``objects`` are STIX objects of mixed types."""
+    type: str
+    id: str
+    objects: list[dict[str, Any]]
+    # Entity types left out because STIX has no faithful equivalent, with counts.
+    x_sentinel_omitted_entity_types: dict[str, int] | None = None
+
+
+# ---------------------------------------------------------------------------
 # Reports
 # ---------------------------------------------------------------------------
 
