@@ -333,3 +333,42 @@ async def test_the_group_is_only_a_threat_actor():
     result = await _actor([_rel("Kalvik Coast Guard", "netsh", "USES", "The group relies on netsh and wmic.")],
                           text=text)
     assert result[1] == []
+
+
+# ── The prompt asks for what the parser checks ─────────────────────────────
+
+
+def _prompt() -> str:
+    from intel_platform.llm.skills.loader import SkillsLoader
+
+    return SkillsLoader().get_system_prompt("entity_extraction") or ""
+
+
+def test_the_prompt_asks_for_the_verbatim_sentence_and_to_omit_what_it_cannot_quote():
+    prompt = _prompt()
+    assert "the exact sentence (verbatim, copied from the text) that states this relationship" in prompt
+    assert "omit the relationship" in prompt
+    assert "Omit a relationship you cannot quote" in prompt
+    assert "brief quote or paraphrase" not in prompt
+
+
+def test_every_example_in_the_prompt_quotes_its_input_verbatim():
+    """An example whose evidence the parser would drop teaches the model to
+    write evidence that is dropped."""
+    import re
+
+    from intel_platform.services.extraction import _llm_entity, _llm_relationship, _verify_evidence
+
+    prompt = _prompt()
+    examples = re.findall(r'Input: "(.*?)"\s*\n\s*Output:\s*\n\s*```json\n(\{.*?\})\n\s*```', prompt, re.S)
+    assert len(examples) >= 2
+    for text, block in examples:
+        data = json.loads(block)
+        entities = [_llm_entity(e, "prompt") for e in data["entities"]]
+        rels = [_llm_relationship(r, "prompt") for r in data["relationships"]]
+        kept, dropped = _verify_evidence(entities, rels, text)
+        assert len(kept) == len(rels), (dropped, text)
+        for r in kept:
+            assert re.fullmatch(r"[A-Z].*\.", r["evidence"]), r["evidence"]
+    dating = re.search(r'Text: "(Houthi forces[^"]*)".*?"evidence": "([^"]*)"', prompt, re.S)
+    assert dating and dating.group(2) == dating.group(1)
