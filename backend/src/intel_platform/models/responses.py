@@ -1456,3 +1456,235 @@ class TopicChildCreatedResponse(BaseModel):
 class TopicNodeDeletedResponse(BaseModel):
     node_id: str
     deleted: bool
+
+
+# ---------------------------------------------------------------------------
+# MITRE ATT&CK
+# ---------------------------------------------------------------------------
+
+class AttackCountsItem(BaseModel):
+    tactics: int
+    techniques: int
+    groups: int
+    software: int
+    mitigations: int
+
+
+class VulnChainStatusItem(BaseModel):
+    ingested: bool
+    cwes: int
+
+
+class AttackStatusResponse(BaseModel):
+    ingested: bool
+    version: str | None = None
+    counts: AttackCountsItem
+    vuln_chain: VulnChainStatusItem
+
+
+class AttackIngestResponse(BaseModel):
+    ingested: bool
+    version: str
+    counts: AttackCountsItem
+
+
+class VulnChainIngestResponse(BaseModel):
+    cwes: int
+    edges: int
+
+
+class CveResolutionResponse(BaseModel):
+    vulnerabilities: int
+    techniques_linked: int
+
+
+class AttackEmbedResponse(BaseModel):
+    embedded: int
+    # When nothing was embedded: a machine reason and a sentence for the analyst.
+    reason: str | None = None
+    detail: str | None = None
+
+
+class AttackMapResponse(BaseModel):
+    mapped: int
+    skipped: int
+    # Reason -> how many TTPs were skipped for it.
+    skip_reasons: dict[str, int]
+    # With `remap` only: earlier model mappings the model no longer confirms.
+    stale_removed: int | None = None
+    # When the whole batch could not run.
+    reason: str | None = None
+    detail: str | None = None
+
+
+class AttackResolveResponse(BaseModel):
+    mapped: int
+
+
+class AttackRefItem(BaseModel):
+    id: str
+    name: str | None = None
+
+
+class AttributionGroupItem(BaseModel):
+    id: str
+    name: str | None = None
+    shared_count: int
+    # shared / observed_total, 0..1.
+    coverage: float
+    shared_techniques: list[AttackRefItem]
+
+
+class AttributionResponse(BaseModel):
+    """Groups ranked by technique overlap: suggestive, never confirmed attribution."""
+    observed_total: int
+    groups: list[AttributionGroupItem]
+
+
+class AttackSubtechniqueItem(BaseModel):
+    id: str
+    name: str | None = None
+    observed_count: int
+    # How the project's entities were mapped to it: "tcode" and/or "llm".
+    methods: list[str]
+
+
+class AttackTechniqueCellItem(BaseModel):
+    id: str
+    name: str | None = None
+    is_subtechnique: bool
+    # Includes the sub-techniques' counts.
+    observed_count: int
+    methods: list[str]
+    subtechniques: list[AttackSubtechniqueItem]
+
+
+class AttackTacticItem(BaseModel):
+    id: str
+    name: str | None = None
+    shortname: str | None = None
+    techniques: list[AttackTechniqueCellItem]
+
+
+class AttackMatrixResponse(BaseModel):
+    version: str | None = None
+    ingested: bool
+    tactics: list[AttackTacticItem]
+
+
+class AttackTacticRefItem(BaseModel):
+    id: str
+    name: str | None = None
+    shortname: str | None = None
+
+
+class AttackMappedEntityItem(BaseModel):
+    id: str
+    name: str | None = None
+    entity_type: str | None = None
+    # "tcode" (an explicit T-code, confidence 1.0) or "llm" (the model's confidence).
+    method: str
+    confidence: float | None = None
+
+
+class AttackTechniqueResponse(BaseModel):
+    # The technique's ATT&CK id (the one asked for).
+    id: str
+    name: str
+    description: str
+    is_subtechnique: bool
+    parent_id: str | None = None
+    tactics: list[AttackTacticRefItem]
+    platforms: list[str]
+    detection: str
+    mitigations: list[AttackRefItem]
+    groups: list[AttackRefItem]
+    related_entities: list[AttackMappedEntityItem]
+    # Project CVEs whose weaknesses could enable the technique (not observed use).
+    enabling_cves: list[AttackRefItem]
+
+
+class D3fendCountermeasureItem(BaseModel):
+    # D3FEND code, e.g. "D3-DI".
+    id: str
+    label: str
+    # The d3f: local name, e.g. "DataInventory".
+    name: str | None = None
+
+
+class D3fendResponse(BaseModel):
+    countermeasures: list[D3fendCountermeasureItem]
+    # The live lookup failed, so an empty list means "unknown", not "none".
+    degraded: bool | None = None
+
+
+class ObservedTechniqueItem(BaseModel):
+    id: str
+    name: str | None = None
+    observed_count: int
+    methods: list[str]
+
+
+class ObservedTacticItem(BaseModel):
+    tactic_id: str
+    tactic_name: str | None = None
+    techniques: list[ObservedTechniqueItem]
+
+
+class AttributionSummaryItem(BaseModel):
+    id: str
+    name: str | None = None
+    shared_count: int
+    coverage: float
+
+
+class KeyMitigationItem(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    technique_count: int
+
+
+class CveEnabledTechniqueItem(BaseModel):
+    technique_id: str | None = None
+    technique_name: str | None = None
+    cves: list[AttackRefItem]
+
+
+class AttackReportResponse(BaseModel):
+    project_id: str
+    observed_by_tactic: list[ObservedTacticItem]
+    attribution: list[AttributionSummaryItem]
+    key_mitigations: list[KeyMitigationItem]
+    cve_enabled: list[CveEnabledTechniqueItem]
+    # A short model-written summary; null when no model was reachable.
+    narrative: str | None = None
+    markdown: str
+
+
+class NavigatorTechniqueItem(BaseModel):
+    techniqueID: str
+    score: int
+    color: str
+    comment: str
+    enabled: bool
+    # The tactic shortname; absent when the technique has none.
+    tactic: str | None = None
+
+
+class NavigatorGradientItem(BaseModel):
+    colors: list[str]
+    minValue: int
+    maxValue: int
+
+
+class NavigatorLayerResponse(BaseModel):
+    """A MITRE ATT&CK Navigator layer (v4.5), served as a download."""
+    name: str
+    versions: dict[str, str]
+    domain: str
+    description: str
+    techniques: list[NavigatorTechniqueItem]
+    gradient: NavigatorGradientItem
+    legendItems: list[Any]
+    showTacticRowBackground: bool
+    hideDisabled: bool
