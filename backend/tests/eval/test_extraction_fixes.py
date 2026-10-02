@@ -7,6 +7,8 @@ in the default suite: NLP only, no model, no database.
 
 from __future__ import annotations
 
+import json
+
 from intel_platform.services.extraction import extract_entities_nlp
 
 DOC_2 = (
@@ -180,7 +182,7 @@ async def test_the_llm_path_keeps_the_synonym_and_drops_the_off_vocabulary_edge(
         ],
         "relationships": [
             {"source_entity": "Ostravik", "target_entity": "Torvik", "relationship_type": "BERTHS_AT",
-             "confidence": 0.9},
+             "confidence": 0.9, "evidence": "Ostravik berths at Torvik."},
             {"source_entity": "Source", "target_entity": "Ostravik", "relationship_type": "REPORTED",
              "confidence": 0.8},
         ],
@@ -435,11 +437,16 @@ async def test_a_defanged_indicator_from_the_model_leaves_extraction_refanged():
     from intel_platform.llm.base import LLMResponse
     from intel_platform.services import extraction
 
+    # DOC_1 never names the actor and the domain in one sentence, so the
+    # edge would rightly go for want of evidence; this sentence states it,
+    # defanged as the model quotes it.
+    sentence = "Volt Typhoon routed command and control traffic through evil-c2[.]com."
     reply = {
         "entities": [{"name": "Volt Typhoon", "entity_type": "ThreatActor", "confidence": 0.9},
                      {"name": "evil-c2[.]com", "entity_type": "Domain", "confidence": 0.9}],
         "relationships": [{"source_entity": "Volt Typhoon", "target_entity": "evil-c2[.]com",
-                           "relationship_type": "COMMUNICATES_WITH", "confidence": 0.8}],
+                           "relationship_type": "COMMUNICATES_WITH", "confidence": 0.8,
+                           "evidence": sentence}],
     }
 
     class _Reply:
@@ -447,7 +454,7 @@ async def test_a_defanged_indicator_from_the_model_leaves_extraction_refanged():
             return LLMResponse(content=json.dumps(reply), model="fake")
 
     with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
-        ents, rels = await extraction.extract_entities_llm(DOC_1, "doc-fix")
+        ents, rels = await extraction.extract_entities_llm(f"{DOC_1} {sentence}", "doc-fix")
     domain = next(e for e in ents if e["entity_type"] == "Domain")
     assert domain["name"] == "evil-c2.com"
     assert "evil-c2[.]com" in domain["aliases"]
@@ -488,7 +495,8 @@ async def test_a_reply_that_repeats_its_keys_keeps_what_it_extracted():
     content = (
         '{"entities": [{"name": "Burkina Faso", "entity_type": "Country"}, {"name": "Russia", "entity_type": '
         '"Country"}], "relationships": [{"source_entity": "Burkina Faso", "target_entity": "Russia", '
-        '"relationship_type": "SUPPLIED_BY"}], "relationships": [], "entities": []}'
+        '"relationship_type": "SUPPLIED_BY", "evidence": "Russia supplied weapons to Burkina Faso."}], '
+        '"relationships": [], "entities": []}'
     )
     result = await _llm_reply(content)
     assert result.degraded is False
@@ -893,13 +901,17 @@ async def test_the_models_generic_edge_on_a_pair_nlp_reads_as_typed_is_dropped()
 async def test_the_models_generic_edge_beside_its_own_typed_edge_is_dropped():
     # openrep OPENREP-SUPINTREP-0042: Iran TARGETS, USES and ASSOCIATED_WITH
     # the Strait of Hormuz, all from the model.
-    reply = (
-        '{"entities": [{"name": "Iran", "entity_type": "Country"}, {"name": "Strait of Hormuz", "entity_type": '
-        '"Strait"}], "relationships": [{"source_entity": "Iran", "target_entity": "Strait of Hormuz", '
-        '"relationship_type": "TARGETS"}, {"source_entity": "Strait of Hormuz", "target_entity": "Iran", '
-        '"relationship_type": "ASSOCIATED_WITH"}]}'
-    )
-    result = await _llm_reply(reply, "Iran has sought to formalise its de facto control over the Strait of Hormuz.")
+    text = "Iran has sought to formalise its de facto control over the Strait of Hormuz."
+    reply = json.dumps({
+        "entities": [{"name": "Iran", "entity_type": "Country"}, {"name": "Strait of Hormuz", "entity_type": "Strait"}],
+        "relationships": [
+            {"source_entity": "Iran", "target_entity": "Strait of Hormuz", "relationship_type": "TARGETS",
+             "evidence": text},
+            {"source_entity": "Strait of Hormuz", "target_entity": "Iran", "relationship_type": "ASSOCIATED_WITH",
+             "evidence": text},
+        ],
+    })
+    result = await _llm_reply(reply, text)
     assert [(r["source_name"], r["rel_type"]) for r in result[1]] == [("Iran", "TARGETS")]
 
 
@@ -916,12 +928,17 @@ CRS_IN12534 = (
 
 
 async def test_an_edge_naming_an_unlisted_endpoint_is_dropped_and_counted():
-    reply = (
-        '{"entities": [{"name": "Russia", "entity_type": "Country"}, {"name": "2026", "entity_type": "Date"}], '
-        '"relationships": [{"source_entity": "Ukrainian forces", "target_entity": "Russian oil facilities", '
-        '"relationship_type": "TARGETS"}, {"source_entity": "Ukrainian forces", "target_entity": "Russia", '
-        '"relationship_type": "TARGETS"}]}'
-    )
+    # Both quote the sentence, which names every end: the endpoint rule, not
+    # the evidence rule, is what drops them.
+    reply = json.dumps({
+        "entities": [{"name": "Russia", "entity_type": "Country"}, {"name": "2026", "entity_type": "Date"}],
+        "relationships": [
+            {"source_entity": "Ukrainian forces", "target_entity": "Russian oil facilities",
+             "relationship_type": "TARGETS", "evidence": CRS_IN12534},
+            {"source_entity": "Ukrainian forces", "target_entity": "Russia", "relationship_type": "TARGETS",
+             "evidence": CRS_IN12534},
+        ],
+    })
     result = await _llm_reply(reply, CRS_IN12534)
     assert result[1] == []
     assert result.relationships_dropped_by_reason["unlisted_endpoint"] == 2
@@ -936,12 +953,12 @@ async def test_an_endpoint_named_by_an_alias_resolves_to_the_listed_entity():
         "Company and Kuwait Gulf Oil Company, issued tenders related to project management for the development of "
         "the Dorra Gas field."
     )
-    reply = (
-        '{"entities": [{"name": "Khafji Joint Operations Company", "entity_type": "Company"}, '
-        '{"name": "Dorra/Arash gas field", "entity_type": "Facility", "aliases": ["Dorra Gas field"]}], '
-        '"relationships": [{"source_entity": "khafji joint operations company", "target_entity": "Dorra Gas field", '
-        '"relationship_type": "LOCATED_AT"}]}'
-    )
+    reply = json.dumps({
+        "entities": [{"name": "Khafji Joint Operations Company", "entity_type": "Company"},
+                     {"name": "Dorra/Arash gas field", "entity_type": "Facility", "aliases": ["Dorra Gas field"]}],
+        "relationships": [{"source_entity": "khafji joint operations company", "target_entity": "Dorra Gas field",
+                           "relationship_type": "LOCATED_AT", "evidence": text}],
+    })
     result = await _llm_reply(reply, text)
     assert [(r["source_name"], r["target_name"]) for r in result[1]] == [
         ("Khafji Joint Operations Company", "Dorra/Arash gas field")]
@@ -953,7 +970,8 @@ async def test_an_event_named_only_in_its_date_link_is_still_recovered():
     # (see _link_event_dates), so its edge has a listed endpoint.
     reply = (
         '{"entities": [{"name": "July 2025", "entity_type": "Date"}], "relationships": [{"source_entity": '
-        '"Copper tariff", "target_entity": "July 2025", "relationship_type": "OCCURRED_ON"}]}'
+        '"Copper tariff", "target_entity": "July 2025", "relationship_type": "OCCURRED_ON", '
+        '"evidence": "The copper tariff took effect in July 2025."}]}'
     )
     result = await _llm_reply(reply, "The copper tariff took effect in July 2025.")
     assert [(r["source_name"], r["rel_type"]) for r in result[1]] == [("Copper tariff", "OCCURRED_ON")]
@@ -971,10 +989,12 @@ async def test_hybrid_resolves_a_model_endpoint_to_the_entity_nlp_extracted():
 
     text = ("NATO has responded by reorienting its strategic focus and defense posture, increasing its military "
             "presence in Europe, and institutionalizing long-term support for Ukraine.")
+    # "defense posture" is in the sentence but listed by neither half.
     reply = {"entities": [{"name": "NATO", "entity_type": "Organization"}, {"name": "Ukraine", "entity_type": "Country"}],
-             "relationships": [{"source_entity": "NATO", "target_entity": "Europe", "relationship_type": "DEPLOYED_AT"},
-                               {"source_entity": "NATO", "target_entity": "Allied capitals",
-                                "relationship_type": "LOCATED_AT"}]}
+             "relationships": [{"source_entity": "NATO", "target_entity": "Europe", "relationship_type": "DEPLOYED_AT",
+                                "evidence": text},
+                               {"source_entity": "NATO", "target_entity": "defense posture",
+                                "relationship_type": "LOCATED_AT", "evidence": text}]}
 
     class _Reply:
         async def generate(self, **_kw):
@@ -1012,15 +1032,18 @@ async def test_the_prc_government_and_china_are_one_entity():
     # openrep crs-IF12640_5.
     from intel_platform.services import extraction
 
-    text = ("The PRC government is also an indirect shareholder in some firms. China's anti-espionage, "
+    # ByteDance is added to the first sentence: an edge to a company the
+    # text never names would now go for want of evidence.
+    first = "The PRC government is also an indirect shareholder in some firms, ByteDance among them."
+    text = (first + " China's anti-espionage, "
             "cybersecurity, and data security laws compel firms to support PRC state security authorities.")
     reply = {"entities": [{"name": "PRC government", "entity_type": "GovernmentAgency"},
                           {"name": "China", "entity_type": "Country"},
                           {"name": "ByteDance", "entity_type": "Company"}],
              "relationships": [{"source_entity": "ByteDance", "target_entity": "PRC government",
-                                "relationship_type": "FUNDED_BY"},
+                                "relationship_type": "FUNDED_BY", "evidence": first},
                                {"source_entity": "PRC government", "target_entity": "China",
-                                "relationship_type": "BELONGS_TO"}]}
+                                "relationship_type": "BELONGS_TO", "evidence": text}]}
     with _llm_returning(reply):
         result = await extraction.extract_entities_hybrid(text, "doc-fix")
     ents, rels = result

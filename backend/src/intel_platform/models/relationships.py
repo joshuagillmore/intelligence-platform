@@ -29,6 +29,11 @@ class Relationship(BaseModel):
     # The source sentence(s) that assert this relationship — the in-context
     # reference surfaced by "Show Evidence". Empty when no span was captured.
     evidence: str = ""
+    # Where `evidence` starts in the chunk it was extracted from, so the
+    # chunk's text[evidence_offset:evidence_offset + len(evidence)] is the
+    # evidence. -1 when unknown: no evidence, an edge written before offsets
+    # were recorded, or a span the original text does not contain as written.
+    evidence_offset: int = -1
     # The document the evidence came from, so a claim can be traced back to its
     # origin rather than stopping at a floating quotation. Empty for edges built
     # before this was carried through, and for edges with no single source.

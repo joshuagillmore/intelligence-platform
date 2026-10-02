@@ -99,18 +99,29 @@ COHERE_THREAT_ACTOR_RESPONSE = LLMResponse(
             {"name": "CVE-2020-10148", "entity_type": "Vulnerability", "confidence": 0.96},
             {"name": "T1195.002", "entity_type": "TTP", "confidence": 0.93},
         ],
+        # Each edge quotes the line of the JSON report it is read from, as
+        # the prompt asks: an edge whose quote the chunk does not contain,
+        # or that does not name both ends, is not kept.
         "relationships": [
             {"source_entity": "APT29", "target_entity": "SUNBURST",
              "relationship_type": "USES", "confidence": 0.92,
-             "evidence": "APT29 deployed SUNBURST malware in the SolarWinds attack"},
+             "evidence": "actor: APT29. aliases: Cozy Bear, The Dukes. origin: Russia. "
+                         "target: SolarWinds Orion Platform. malware: SUNBURST backdoor."},
             {"source_entity": "APT29", "target_entity": "SolarWinds",
-             "relationship_type": "TARGETS", "confidence": 0.90},
+             "relationship_type": "TARGETS", "confidence": 0.90,
+             "evidence": "actor: APT29. aliases: Cozy Bear, The Dukes. origin: Russia. "
+                         "target: SolarWinds Orion Platform."},
             {"source_entity": "APT29", "target_entity": "Russia",
-             "relationship_type": "ATTRIBUTED_TO", "confidence": 0.85},
+             "relationship_type": "ATTRIBUTED_TO", "confidence": 0.85,
+             "evidence": "actor: APT29. aliases: Cozy Bear, The Dukes. origin: Russia."},
             {"source_entity": "SUNBURST", "target_entity": "CVE-2020-10148",
-             "relationship_type": "EXPLOITS", "confidence": 0.88},
+             "relationship_type": "EXPLOITS", "confidence": 0.88,
+             "evidence": "malware: SUNBURST backdoor. vulnerability: CVE-2020-10148."},
             {"source_entity": "APT29", "target_entity": "T1195.002",
-             "relationship_type": "USES", "confidence": 0.91},
+             "relationship_type": "USES", "confidence": 0.91,
+             "evidence": "actor: APT29. aliases: Cozy Bear, The Dukes. origin: Russia. "
+                         "target: SolarWinds Orion Platform. malware: SUNBURST backdoor. "
+                         "vulnerability: CVE-2020-10148. technique: T1195.002 Supply Chain Compromise."},
         ],
     }),
     model="command-a-03-2025",
@@ -241,9 +252,9 @@ class TestCohereCSVPipeline:
         assert entity_types["CVE-2024-1234"] == "Vulnerability"
         assert entity_types["T1059.001"] == "TTP"
 
-        # Verify relationships
-        rel_pairs = {(r["source_name"], r["target_name"]) for r in all_rels}
-        assert ("192.168.1.100", "evil-domain.com") in rel_pairs
+        # The canned edges cite no sentence, and no line of the CSV names two
+        # indicators: the text states no relationship, so none is kept.
+        assert all_rels == []
 
         # Verify method attribution
         assert all(e["method"] == "llm" for e in all_entities)
@@ -366,7 +377,8 @@ class TestCohereExcelPipeline:
         response = await mock_provider.generate(
             messages=[{"role": "user", "content": f"Extract entities:\n\n{text}"}],
         )
-        entities, rels = await _parse_llm_response(response.content, "test-doc-003", text)
+        result = await _parse_llm_response(response.content, "test-doc-003", text)
+        entities, rels = result
 
         # Verify entity types
         entity_types = {e["entity_type"] for e in entities}
@@ -378,7 +390,10 @@ class TestCohereExcelPipeline:
 
         # Verify the full entity count
         assert len(entities) == 8
-        assert len(rels) == 5
+        # The reply quotes the JSON report, which the sheet does not contain:
+        # a reply about another text keeps none of its relationships.
+        assert rels == []
+        assert result.relationships_dropped_by_reason["evidence_not_verbatim"] == 5
 
 
 # ---------------------------------------------------------------------------
@@ -445,8 +460,10 @@ class TestCohereFailureHandling:
                  "evidence": "A and B signed a partnership agreement in Q1 2024"},
             ],
         })
-        entities, rels = await _parse_llm_response(content, "test-doc")
+        text = "Report. A and B signed a partnership agreement in Q1 2024."
+        entities, rels = await _parse_llm_response(content, "test-doc", text)
         assert rels[0]["evidence"] == "A and B signed a partnership agreement in Q1 2024"
+        assert rels[0]["evidence_offset"] == text.index("A and B")
         # A type the graph does not accept collapses, as it does in production;
         # the copied parser passed PARTNERS_WITH through untouched.
         assert rels[0]["rel_type"] == "ASSOCIATED_WITH"

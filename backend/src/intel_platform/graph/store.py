@@ -751,6 +751,11 @@ class GraphStore:
             # disagree, where the prior confidence no longer stands alone.
             "confidence": min(prior_conf, new_conf) if agreement == "CONFLICT" else max(prior_conf, new_conf),
             "evidence": current.get("evidence") or (new_evidence if agrees else ""),
+            # The offset belongs to the evidence it locates.
+            "evidence_offset": (
+                current.get("evidence_offset", -1) if current.get("evidence")
+                else (props.get("evidence_offset", -1) if agrees and new_evidence else -1)
+            ),
             "evidence_all": evidence_all,
             "contradicting_evidence": contradicting_evidence,
             "source_doc_id": current.get("source_doc_id") or (new_doc if agrees else ""),
