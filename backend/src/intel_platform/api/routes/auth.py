@@ -16,6 +16,7 @@ from intel_platform.api.auth import (
     set_password,
     set_session_cookie,
 )
+from intel_platform.models.responses import PasswordChangedResponse, StatusResponse
 
 router = APIRouter()
 
@@ -107,7 +108,7 @@ def login(req: LoginRequest, request: Request, response: Response):
     return SessionUser(username=user["username"], role=user["role"])
 
 
-@router.post("/auth/logout")
+@router.post("/auth/logout", response_model=StatusResponse)
 def logout(request: Request, response: Response):
     """Clear the session cookie.
 
@@ -137,7 +138,7 @@ def register(req: RegisterRequest, admin: dict = Depends(require_admin)):
     )
 
 
-@router.post("/auth/change-password")
+@router.post("/auth/change-password", response_model=PasswordChangedResponse)
 def change_password(
     req: ChangePasswordRequest,
     request: Request,
