@@ -412,13 +412,16 @@ def test_the_prompt_examples_are_not_taken_from_the_eval_corpus():
     prompt = _extraction_prompt()
     fixtures = Path(__file__).resolve().parents[1] / "fixtures"
     names = set()
-    for d in ("extraction_corpus", "extraction_corpus_cyber"):
+    for d in ("extraction_corpus", "extraction_corpus_cyber", "extraction_corpus_openrep"):
         for f in (fixtures / d).glob("*_expected.json"):
             for e in json.loads(f.read_text(encoding="utf-8"))["entities"]:
                 names.update(n for n in [e["name"], *e.get("aliases", [])] if len(n) > 4)
     # Names the prompt already used before the corpus existed (its cyber
-    # example's C2 address is also the one the live-run documents reused).
-    names -= {"China", "NATO", "Brussels", "T1059.001", "185.220.101.42"}
+    # example's C2 address is also the one the live-run documents reused; its
+    # polarity and coreference examples name the Houthis and Putin, and its
+    # geopolitical example a March 2026 date, before openrep was a set).
+    names -= {"China", "NATO", "Brussels", "T1059.001", "185.220.101.42",
+              "Ansar Allah", "Houthi", "Putin", "Vladimir Putin", "Russia", "March 2026", "February 2026"}
     leaked = sorted(n for n in names if n in prompt)
     assert not leaked, leaked
 
@@ -985,3 +988,36 @@ async def test_hybrid_resolves_a_model_endpoint_to_the_entity_nlp_extracted():
     assert "Europe" in names
     assert all(r["source_name"] in names and r["target_name"] in names for r in rels)
     assert result.relationships_dropped_by_reason["unlisted_endpoint"] == 1
+
+
+# ── What the prompt asks of relationships ─────────────────────────────────────
+
+def test_the_prompt_requires_both_ends_of_a_relationship_to_be_listed_entities():
+    prompt = _extraction_prompt()
+    assert "must each be the `name` of an entity in your `entities` list" in prompt
+
+
+def test_the_prompt_allows_a_generic_association_only_within_a_sentence_and_shows_one_it_must_not_make():
+    prompt = _extraction_prompt()
+    assert "same sentence names both entities" in prompt
+    assert "Do not emit ASSOCIATED_WITH" in prompt
+    assert "Negative example" in prompt
+
+
+def test_the_prompts_own_examples_follow_its_relationship_rules():
+    """Example 2 dated an event it never listed, on a date its text does not
+    give, and pointed COMMANDED_BY from the person to the unit."""
+    import json
+    import re
+
+    prompt = _extraction_prompt()
+    blocks = [json.loads(b) for b in re.findall(r"```json\n(\{.*?\})\n\s*```", prompt, re.S)
+              if '"source_entity": "string' not in b]
+    assert len(blocks) >= 2
+    for block in blocks:
+        names = {e["name"] for e in block["entities"]}
+        for r in block["relationships"]:
+            assert {r["source_entity"], r["target_entity"]} <= names, r
+            if r["relationship_type"] == "COMMANDED_BY":
+                commander = next(e for e in block["entities"] if e["name"] == r["target_entity"])
+                assert commander["entity_type"] in ("Person", "Commander"), r
