@@ -186,6 +186,11 @@ class Location(Entity):
     latitude: float | None = None
     longitude: float | None = None
     location_type: str = ""
+    # Other names the place goes by. On a country: the government forms and
+    # names that data/governments.yaml resolved to it as they were written
+    # ("the Kremlin", "PRC government", "Tehran" acting for Iran). Search and
+    # resolution match them; the store adds to them and never replaces them.
+    aliases: list[str] = Field(default_factory=list)
 
 
 class Event(Entity):
