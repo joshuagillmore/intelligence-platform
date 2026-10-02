@@ -517,3 +517,45 @@ class SemanticSearchHit(BaseModel):
 class SemanticSearchResponse(BaseModel):
     results: list[SemanticSearchHit]
     total: int
+
+
+# ---------------------------------------------------------------------------
+# Timeline
+# ---------------------------------------------------------------------------
+
+class TimelineEventItem(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    entity_type: str | None = None
+    # The real event date when extraction found one, else ingestion time.
+    timestamp: str
+    # "event" (event_datetime) or "entity_created" (created_at).
+    event_type: str
+    date_precision: str | None = None
+    date_text: str | None = None
+
+
+class TimelineResponse(BaseModel):
+    events: list[TimelineEventItem]
+    count: int
+    total: int
+    truncated: bool
+    types_present: list[str]
+    offset: int
+    project_exists: bool
+
+
+class HistogramBinItem(BaseModel):
+    key: str
+    count: int
+    by_type: dict[str, int]
+
+
+class TimelineHistogramResponse(BaseModel):
+    bucket: str
+    bins: list[HistogramBinItem]
+    dated: int
+    undated: int
+    earliest: str | None = None
+    latest: str | None = None
+    project_exists: bool
