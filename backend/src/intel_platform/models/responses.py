@@ -918,3 +918,56 @@ class EntityTimelineResponse(BaseModel):
     buckets: list[DateCountItem]
     date_range: DateRangeItem | None = None
     total_events: int | None = None
+
+
+# ---------------------------------------------------------------------------
+# Reports
+# ---------------------------------------------------------------------------
+
+class ReportSavedResponse(BaseModel):
+    report_id: str
+    title: str
+    report_type: str
+    content_length: int
+    linked_entities: int
+
+
+class ReportResponse(EntityProperties):
+    """A saved report: a Report node's stored properties.
+
+    Open-ended (``extra="allow"``) as every ``EntityProperties`` is; the fields
+    the products view reads are declared.
+    """
+    content: str | None = None
+    report_type: str | None = None
+    status: str | None = None
+    created_at: str | None = None
+
+
+class EvidenceEdgeItem(BaseModel):
+    """A relationship a product was drawn from, with its provenance."""
+    source_name: str | None = None
+    target_name: str | None = None
+    rel_type: str
+    confidence: float | None = None
+    evidence: str
+    source_doc_id: str
+    admiralty_rating: str
+    corroboration_count: int
+    corroboration_agreement: str
+    method: str
+
+
+class GeneratedReportResponse(BaseModel):
+    content: str
+    model: str
+    tokens_used: int
+    skill_applied: str
+    # "grounded" when graph or document evidence was retrieved, else "ungrounded".
+    retrieval_mode: str
+    context_nodes: int
+    context_edges: int
+    evidence: list[EvidenceEdgeItem]
+    # Assessment skills only: the stated probability, and whether one was stated.
+    probability: float | None = None
+    probability_parsed: bool | None = None
