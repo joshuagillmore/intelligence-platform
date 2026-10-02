@@ -25,6 +25,12 @@ x-backend: &backend
     - OLLAMA_BASE_URL=http://ollama:11434
     # The API only enqueues collection runs; the `worker` service runs them.
     - COLLECTION_WORKER_MODE=worker
+    # Local development runs on the dev credentials, so the fail-closed boot
+    # check is off here, explicitly: the production image (root Dockerfile)
+    # turns it on. A stack exposed beyond localhost sets REQUIRE_SECURE_AUTH=true
+    # in .env (it is read from there for this substitution) along with real
+    # secrets; see SECURITY.md.
+    - REQUIRE_SECURE_AUTH=${REQUIRE_SECURE_AUTH:-false}
   depends_on:
     neo4j:
       condition: service_healthy

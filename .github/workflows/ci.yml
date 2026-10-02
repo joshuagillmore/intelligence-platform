@@ -300,9 +300,28 @@ jobs:
           asyncio.run(main())
           PY
 
-      - name: Boot the image and serve API + UI through start.sh
+      - name: With no secrets the image refuses to start (fails closed)
+        # The image sets REQUIRE_SECURE_AUTH=true, so a deploy that forgot its
+        # secrets must exit non-zero at boot, with the refusal in its log,
+        # instead of serving on the development defaults. Datastore settings
+        # are given (Settings needs NEO4J_URI to load at all); secrets are not.
         run: |
-          docker run -d --name app --network host \
+          docker run -d --name app-insecure --network host \
+            -e NEO4J_URI=bolt://localhost:7687 -e NEO4J_USER=neo4j -e NEO4J_PASSWORD=changeme \
+            -e POSTGRES_URL=postgresql+asyncpg://intel:changeme@localhost:5432/intel_platform \
+            intel-platform:ci
+          for i in $(seq 1 60); do [ "$(docker inspect -f '{{.State.Running}}' app-insecure)" = false ] && break; sleep 1; done
+          running=$(docker inspect -f '{{.State.Running}}' app-insecure)
+          code=$(docker inspect -f '{{.State.ExitCode}}' app-insecure)
+          echo "still running: $running; container exit code: $code"
+          docker logs app-insecure 2>&1 | grep "REQUIRE_SECURE_AUTH=true but insecure settings are in use"
+          [ "$running" = false ] && [ "$code" -ne 0 ]
+
+      - name: Boot the image and serve API + UI through start.sh
+        # The checks from here on run the image on the development defaults,
+        # so they opt out of the fail-closed default explicitly.
+        run: |
+          docker run -d --name app --network host -e REQUIRE_SECURE_AUTH=false \
             -e NEO4J_URI=bolt://localhost:7687 -e NEO4J_USER=neo4j -e NEO4J_PASSWORD=changeme \
             -e POSTGRES_URL=postgresql+asyncpg://intel:changeme@localhost:5432/intel_platform \
             intel-platform:ci
@@ -334,7 +353,7 @@ jobs:
 
       - name: start.sh exits non-zero when the collection worker dies
         run: |
-          docker run -d --name app-worker --network host \
+          docker run -d --name app-worker --network host -e REQUIRE_SECURE_AUTH=false \
             -e NEO4J_URI=bolt://localhost:7687 -e NEO4J_USER=neo4j -e NEO4J_PASSWORD=changeme \
             -e POSTGRES_URL=postgresql+asyncpg://intel:changeme@localhost:5432/intel_platform \
             intel-platform:ci
@@ -350,5 +369,6 @@ jobs:
       - name: Container logs
         if: always()
         run: |
+          docker logs app-insecure 2>&1 | tail -30 || true
           docker logs app 2>&1 | tail -100 || true
           docker logs app-worker 2>&1 | tail -50 || true
