@@ -1,29 +1,29 @@
 {
   "mode": "nlp",
-  "generated_at": "2026-10-01T12:18:59+00:00",
-  "git_commit": "719b9ca6",
+  "generated_at": "2026-10-02T01:10:18+00:00",
+  "git_commit": "26704091",
   "spacy_model": "en_core_web_sm",
   "degraded_documents": [],
   "overall": {
     "documents": 83,
     "entity": {
-      "precision": 0.693,
-      "recall": 0.9424,
-      "f1": 0.7987,
-      "tp": 605,
-      "predicted": 873,
+      "precision": 0.7129,
+      "recall": 0.9439,
+      "f1": 0.8123,
+      "tp": 606,
+      "predicted": 850,
       "expected": 642
     },
     "entity_typed": {
-      "precision": 0.6208,
-      "recall": 0.8442,
-      "f1": 0.7155,
-      "tp": 542,
-      "predicted": 873,
+      "precision": 0.6412,
+      "recall": 0.8489,
+      "f1": 0.7306,
+      "tp": 545,
+      "predicted": 850,
       "expected": 642
     },
-    "type_accuracy": 0.8959,
-    "category_accuracy": 0.8975,
+    "type_accuracy": 0.8993,
+    "category_accuracy": 0.901,
     "per_type": {
       "Date": {
         "precision": 0.6492,
@@ -34,11 +34,11 @@
         "expected": 126
       },
       "Document": {
-        "precision": 0.7143,
-        "recall": 0.5882,
-        "f1": 0.6452,
-        "tp": 20,
-        "predicted": 28,
+        "precision": 0.7419,
+        "recall": 0.6765,
+        "f1": 0.7077,
+        "tp": 23,
+        "predicted": 31,
         "expected": 34
       },
       "Domain": {
@@ -90,27 +90,27 @@
         "expected": 2
       },
       "Location": {
-        "precision": 0.8182,
+        "precision": 0.8804,
         "recall": 0.8757,
-        "f1": 0.846,
+        "f1": 0.878,
         "tp": 162,
-        "predicted": 198,
+        "predicted": 184,
         "expected": 185
       },
       "Organization": {
-        "precision": 0.4967,
+        "precision": 0.5119,
         "recall": 0.8671,
-        "f1": 0.6316,
+        "f1": 0.6438,
         "tp": 150,
-        "predicted": 302,
+        "predicted": 293,
         "expected": 173
       },
       "Person": {
-        "precision": 0.4493,
+        "precision": 0.4559,
         "recall": 0.9118,
-        "f1": 0.6019,
+        "f1": 0.6078,
         "tp": 31,
-        "predicted": 69,
+        "predicted": 68,
         "expected": 34
       },
       "Product": {
@@ -118,7 +118,7 @@
         "recall": 0.0,
         "f1": 0.0,
         "tp": 0,
-        "predicted": 5,
+        "predicted": 3,
         "expected": 0
       },
       "Quantity": {
@@ -186,9 +186,9 @@
       "Location -> Person": 3,
       "Document -> Organization": 3,
       "Event -> Location": 3,
-      "Ship -> Location": 2,
       "Document -> Location": 2,
       "Weapon -> Organization": 2,
+      "Ship -> Location": 1,
       "Organization -> Location": 1,
       "Drone -> Weapon": 1,
       "Person -> Organization": 1,
@@ -198,21 +198,36 @@
       "Technology -> Location": 1,
       "Organization -> Document": 1,
       "Person -> Location": 1,
-      "Ship -> Product": 1,
-      "Ship -> Organization": 1
+      "Ship -> Product": 1
     },
     "relationship": {
-      "precision": 0.0617,
+      "precision": 0.0667,
       "recall": 0.4896,
-      "f1": 0.1096,
+      "f1": 0.1174,
       "tp": 47,
-      "predicted": 762,
+      "predicted": 705,
       "expected": 96
+    },
+    "relationship_typed": {
+      "precision": 0.7015,
+      "recall": 0.4896,
+      "f1": 0.5767,
+      "tp": 47,
+      "predicted": 67,
+      "expected": 96
+    },
+    "relationship_classes_predicted": {
+      "typed": 67,
+      "generic": 635,
+      "date_link": 3
+    },
+    "relationships_dropped_by_reason": {
+      "same_entity": 7
     },
     "relationship_pairs_found": 77,
     "relationship_types_predicted": {
-      "ASSOCIATED_WITH": 691,
-      "BELONGS_TO": 31,
+      "ASSOCIATED_WITH": 635,
+      "BELONGS_TO": 30,
       "TARGETS": 13,
       "SUPPLIED_BY": 8,
       "USES": 7,
@@ -224,7 +239,7 @@
       "LOCATED_AT": 1,
       "FUNDED_BY": 1
     },
-    "associated_with_share": 0.9068,
+    "associated_with_share": 0.9007,
     "relationship_recall_by_type": {
       "ATTRIBUTED_TO": {
         "tp": 1,
@@ -272,23 +287,23 @@
     "openrep": {
       "documents": 40,
       "entity": {
-        "precision": 0.6518,
-        "recall": 0.9471,
-        "f1": 0.7722,
-        "tp": 483,
-        "predicted": 741,
+        "precision": 0.6741,
+        "recall": 0.949,
+        "f1": 0.7883,
+        "tp": 484,
+        "predicted": 718,
         "expected": 510
       },
       "entity_typed": {
-        "precision": 0.5992,
-        "recall": 0.8706,
-        "f1": 0.7098,
-        "tp": 444,
-        "predicted": 741,
+        "precision": 0.6226,
+        "recall": 0.8765,
+        "f1": 0.728,
+        "tp": 447,
+        "predicted": 718,
         "expected": 510
       },
-      "type_accuracy": 0.9193,
-      "category_accuracy": 0.9213,
+      "type_accuracy": 0.9236,
+      "category_accuracy": 0.9256,
       "per_type": {
         "Date": {
           "precision": 0.6455,
@@ -299,11 +314,11 @@
           "expected": 123
         },
         "Document": {
-          "precision": 0.7143,
-          "recall": 0.6061,
-          "f1": 0.6557,
-          "tp": 20,
-          "predicted": 28,
+          "precision": 0.7419,
+          "recall": 0.697,
+          "f1": 0.7188,
+          "tp": 23,
+          "predicted": 31,
           "expected": 33
         },
         "Domain": {
@@ -339,27 +354,27 @@
           "expected": 0
         },
         "Location": {
-          "precision": 0.7989,
+          "precision": 0.8688,
           "recall": 0.9145,
-          "f1": 0.8528,
+          "f1": 0.891,
           "tp": 139,
-          "predicted": 174,
+          "predicted": 160,
           "expected": 152
         },
         "Organization": {
-          "precision": 0.457,
+          "precision": 0.4737,
           "recall": 0.8864,
-          "f1": 0.6031,
+          "f1": 0.6174,
           "tp": 117,
-          "predicted": 256,
+          "predicted": 247,
           "expected": 132
         },
         "Person": {
-          "precision": 0.5849,
+          "precision": 0.5962,
           "recall": 0.9118,
-          "f1": 0.7126,
+          "f1": 0.7209,
           "tp": 31,
-          "predicted": 53,
+          "predicted": 52,
           "expected": 34
         },
         "Product": {
@@ -367,7 +382,7 @@
           "recall": 0.0,
           "f1": 0.0,
           "tp": 0,
-          "predicted": 5,
+          "predicted": 3,
           "expected": 0
         },
         "Quantity": {
@@ -421,22 +436,36 @@
         "Technology -> Location": 1,
         "Organization -> Document": 1,
         "Person -> Location": 1,
-        "Ship -> Location": 1,
-        "Ship -> Product": 1,
-        "Ship -> Organization": 1
+        "Ship -> Product": 1
       },
       "relationship": {
-        "precision": 0.055,
+        "precision": 0.06,
         "recall": 0.5068,
-        "f1": 0.0992,
+        "f1": 0.1072,
         "tp": 37,
-        "predicted": 673,
+        "predicted": 617,
         "expected": 73
+      },
+      "relationship_typed": {
+        "precision": 0.6491,
+        "recall": 0.5068,
+        "f1": 0.5692,
+        "tp": 37,
+        "predicted": 57,
+        "expected": 73
+      },
+      "relationship_classes_predicted": {
+        "typed": 57,
+        "generic": 557,
+        "date_link": 3
+      },
+      "relationships_dropped_by_reason": {
+        "same_entity": 7
       },
       "relationship_pairs_found": 58,
       "relationship_types_predicted": {
-        "ASSOCIATED_WITH": 612,
-        "BELONGS_TO": 30,
+        "ASSOCIATED_WITH": 557,
+        "BELONGS_TO": 29,
         "TARGETS": 11,
         "SUPPLIED_BY": 8,
         "COMMANDED_BY": 3,
@@ -445,7 +474,7 @@
         "DEPLOYED_AT": 2,
         "FUNDED_BY": 1
       },
-      "associated_with_share": 0.9094,
+      "associated_with_share": 0.9028,
       "relationship_recall_by_type": {
         "BELONGS_TO": {
           "tp": 20,
@@ -566,20 +595,34 @@
         "Location -> Person": 1
       },
       "relationship": {
-        "precision": 0.0392,
+        "precision": 0.04,
         "recall": 0.2,
-        "f1": 0.0656,
+        "f1": 0.0667,
         "tp": 2,
-        "predicted": 51,
+        "predicted": 50,
         "expected": 10
       },
+      "relationship_typed": {
+        "precision": 1.0,
+        "recall": 0.2,
+        "f1": 0.3333,
+        "tp": 2,
+        "predicted": 2,
+        "expected": 10
+      },
+      "relationship_classes_predicted": {
+        "typed": 2,
+        "generic": 48,
+        "date_link": 0
+      },
+      "relationships_dropped_by_reason": {},
       "relationship_pairs_found": 6,
       "relationship_types_predicted": {
-        "ASSOCIATED_WITH": 49,
+        "ASSOCIATED_WITH": 48,
         "LOCATED_AT": 1,
         "BELONGS_TO": 1
       },
-      "associated_with_share": 0.9608,
+      "associated_with_share": 0.96,
       "relationship_recall_by_type": {
         "BELONGS_TO": {
           "tp": 1,
@@ -702,6 +745,20 @@
         "predicted": 38,
         "expected": 13
       },
+      "relationship_typed": {
+        "precision": 1.0,
+        "recall": 0.6154,
+        "f1": 0.7619,
+        "tp": 8,
+        "predicted": 8,
+        "expected": 13
+      },
+      "relationship_classes_predicted": {
+        "typed": 8,
+        "generic": 30,
+        "date_link": 0
+      },
+      "relationships_dropped_by_reason": {},
       "relationship_pairs_found": 13,
       "relationship_types_predicted": {
         "ASSOCIATED_WITH": 30,
@@ -743,6 +800,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.03,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 11,
@@ -795,11 +853,21 @@
           "exp": 3,
           "pair_found": 3
         },
+        "relationships_typed": {
+          "tp": 3,
+          "pred": 3,
+          "exp": 3
+        },
+        "relationship_classes": {
+          "typed": 3,
+          "generic": 5,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ATTRIBUTED_TO": 1,
           "TARGETS": 1,
-          "ASSOCIATED_WITH": 5,
-          "EXPLOITS": 1
+          "EXPLOITS": 1,
+          "ASSOCIATED_WITH": 5
         },
         "rel_gold_by_type": {
           "ATTRIBUTED_TO": {
@@ -840,8 +908,14 @@
         "dates_orphaned": 2,
         "relationships_created": 3,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 5,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 5
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 5
+        }
       }
     },
     {
@@ -851,6 +925,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.03,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 12,
@@ -903,10 +978,20 @@
           "exp": 6,
           "pair_found": 6
         },
+        "relationships_typed": {
+          "tp": 4,
+          "pred": 4,
+          "exp": 6
+        },
+        "relationship_classes": {
+          "typed": 4,
+          "generic": 11,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "TARGETS": 1,
-          "ASSOCIATED_WITH": 11,
-          "USES": 3
+          "USES": 3,
+          "ASSOCIATED_WITH": 11
         },
         "rel_gold_by_type": {
           "ATTRIBUTED_TO": {
@@ -958,8 +1043,14 @@
         "dates_orphaned": 0,
         "relationships_created": 4,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 11,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 11
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 11
+        }
       }
     },
     {
@@ -968,7 +1059,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.03,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 13,
@@ -1016,9 +1108,19 @@
           "exp": 4,
           "pair_found": 4
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 1,
+          "exp": 4
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 14,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 14,
-          "USES": 1
+          "USES": 1,
+          "ASSOCIATED_WITH": 14
         },
         "rel_gold_by_type": {
           "TARGETS": {
@@ -1068,8 +1170,14 @@
         "dates_orphaned": 0,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 14,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 14
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 14
+        }
       }
     },
     {
@@ -1078,7 +1186,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.12,
+      "seconds": 0.07,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 4,
@@ -1113,6 +1222,16 @@
           "exp": 2,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 2
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 4,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 4
         },
@@ -1146,8 +1265,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 4,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 4
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 4
+        }
       }
     },
     {
@@ -1156,7 +1281,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 4,
@@ -1191,6 +1317,16 @@
           "exp": 2,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 2
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 4,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 4
         },
@@ -1224,8 +1360,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 4,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 4
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 4
+        }
       }
     },
     {
@@ -1234,7 +1376,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.08,
+      "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 4,
@@ -1269,6 +1412,16 @@
           "exp": 2,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 2
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 4,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 4
         },
@@ -1302,8 +1455,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 4,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 4
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 4
+        }
       }
     },
     {
@@ -1312,7 +1471,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -1335,6 +1495,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -1355,8 +1525,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -1365,7 +1541,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.1,
+      "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 4,
@@ -1400,6 +1577,16 @@
           "exp": 1,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 1,
+          "exp": 1
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 2,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "LOCATED_AT": 1,
           "ASSOCIATED_WITH": 2
@@ -1433,8 +1620,14 @@
         "dates_orphaned": 0,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 2,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 2
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 2
+        }
       }
     },
     {
@@ -1443,7 +1636,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.12,
+      "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 5,
@@ -1478,6 +1672,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 5,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 5
         },
@@ -1504,8 +1708,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 5,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 5
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 5
+        }
       }
     },
     {
@@ -1514,7 +1724,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.09,
+      "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 4,
@@ -1547,6 +1758,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 5,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 5
         },
@@ -1574,8 +1795,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 5,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 5
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 5
+        }
       }
     },
     {
@@ -1584,7 +1811,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -1617,6 +1845,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -1640,8 +1878,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -1650,7 +1894,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.09,
+      "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 3,
@@ -1683,6 +1928,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 5,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 5
         },
@@ -1709,8 +1964,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 5,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 5
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 5
+        }
       }
     },
     {
@@ -1719,7 +1980,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.08,
+      "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -1754,6 +2016,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -1776,8 +2048,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -1786,7 +2064,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.07,
+      "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 1,
@@ -1809,6 +2088,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -1826,7 +2115,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -1835,7 +2128,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.08,
+      "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -1863,6 +2157,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -1883,8 +2187,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -1893,7 +2203,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.08,
+      "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -1921,6 +2232,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -1941,8 +2262,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -1951,7 +2278,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 3,
@@ -1997,6 +2325,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -2022,8 +2360,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -2032,7 +2376,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.07,
+      "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -2060,6 +2405,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -2077,7 +2432,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -2086,7 +2445,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -2116,6 +2476,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -2139,8 +2509,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -2149,7 +2525,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.07,
+      "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -2177,6 +2554,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -2199,8 +2586,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -2209,7 +2602,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -2244,6 +2638,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -2266,8 +2670,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -2276,7 +2686,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 1,
@@ -2299,6 +2710,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -2316,7 +2737,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -2326,6 +2751,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -2353,6 +2779,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -2373,8 +2809,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -2384,6 +2826,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.03,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -2413,6 +2856,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -2438,8 +2891,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -2448,7 +2907,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -2493,6 +2953,16 @@
           "exp": 1,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 1
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -2525,8 +2995,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -2536,6 +3012,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 1,
@@ -2558,6 +3035,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -2575,7 +3062,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -2585,6 +3076,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 1,
@@ -2607,6 +3099,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -2624,7 +3126,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -2634,6 +3140,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 3,
@@ -2668,6 +3175,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -2691,8 +3208,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -2702,6 +3225,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 1,
@@ -2724,6 +3248,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -2743,7 +3277,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -2753,6 +3291,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.03,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 1,
@@ -2782,6 +3321,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -2801,7 +3350,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -2811,6 +3364,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -2840,6 +3394,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -2859,7 +3423,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -2869,6 +3437,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.03,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 0,
@@ -2891,6 +3460,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -2910,7 +3489,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -2920,6 +3503,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 1,
@@ -2942,6 +3526,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -2959,7 +3553,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -2969,6 +3567,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -3001,6 +3600,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [
@@ -3020,7 +3629,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -3030,6 +3643,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 3,
@@ -3064,6 +3678,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -3087,8 +3711,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -3098,6 +3728,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -3127,6 +3758,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -3150,8 +3791,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -3160,7 +3807,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.04,
+      "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
@@ -3188,6 +3836,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -3207,7 +3865,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -3217,6 +3879,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.05,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 1,
@@ -3244,6 +3907,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -3263,7 +3936,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -3273,6 +3950,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 3,
@@ -3300,6 +3978,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 3,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 3
         },
@@ -3322,8 +4010,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 3,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 3
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 3
+        }
       }
     },
     {
@@ -3332,7 +4026,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 1,
@@ -3355,6 +4050,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -3372,7 +4077,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -3382,6 +4091,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 1,
@@ -3409,6 +4119,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -3428,7 +4148,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -3437,7 +4161,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.05,
+      "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 3,
@@ -3473,13 +4198,23 @@
         },
         "relationships": {
           "tp": 1,
-          "pred": 3,
+          "pred": 2,
           "exp": 2,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 1,
+          "exp": 2
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 2,
-          "BELONGS_TO": 1
+          "BELONGS_TO": 1,
+          "ASSOCIATED_WITH": 1
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -3501,7 +4236,6 @@
         ],
         "relationships_predicted": [
           "2nd Naval Auxiliary Group -ASSOCIATED_WITH-> Nyhavn",
-          "2nd Naval Auxiliary Group -ASSOCIATED_WITH-> Torvald",
           "Torvald -BELONGS_TO-> 2nd Naval Auxiliary Group"
         ]
       },
@@ -3513,8 +4247,14 @@
         "dates_orphaned": 0,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -3523,7 +4263,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.04,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 1,
@@ -3546,6 +4287,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 0,
+          "date_link": 0
+        },
         "rel_types_predicted": {},
         "rel_gold_by_type": {},
         "false_positives": [],
@@ -3563,7 +4314,11 @@
         "relationships_created": 0,
         "relationships_retired": 0,
         "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped_by_type": {},
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 0
+        }
       }
     },
     {
@@ -3572,21 +4327,17 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 2.51,
+      "seconds": 1.17,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 6,
-          "pred": 10,
+          "pred": 9,
           "exp": 6,
           "typed_tp": 5,
           "category_tp": 5
         },
         "per_type": {
-          "Product": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
-          },
           "Organization": {
             "tp": 2,
             "pred": 4,
@@ -3612,6 +4363,16 @@
           "exp": 1,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 1,
+          "exp": 1
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 6,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "DEPLOYED_AT": 1,
           "ASSOCIATED_WITH": 6
@@ -3623,7 +4384,6 @@
           }
         },
         "false_positives": [
-          "Assess Arctic [Product]",
           "H2 [Organization]",
           "Joint NATO-Nordic [Event]",
           "crs-IN12602 [Organization]"
@@ -3644,15 +4404,21 @@
         ]
       },
       "build": {
-        "entities_created": 10,
+        "entities_created": 9,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 0,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 6,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 6
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 6
+        }
       }
     },
     {
@@ -3661,11 +4427,12 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.16,
+      "seconds": 0.21,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 17,
-          "pred": 23,
+          "pred": 22,
           "exp": 17,
           "typed_tp": 17,
           "category_tp": 17
@@ -3675,11 +4442,6 @@
             "tp": 4,
             "pred": 4,
             "exp": 4
-          },
-          "Product": {
-            "tp": 0,
-            "pred": 1,
-            "exp": 0
           },
           "Organization": {
             "tp": 4,
@@ -3700,15 +4462,25 @@
         "confusion": {},
         "relationships": {
           "tp": 4,
-          "pred": 31,
+          "pred": 29,
           "exp": 6,
           "pair_found": 6
         },
+        "relationships_typed": {
+          "tp": 4,
+          "pred": 5,
+          "exp": 6
+        },
+        "relationship_classes": {
+          "typed": 5,
+          "generic": 24,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "TARGETS": 2,
-          "ASSOCIATED_WITH": 26,
           "BELONGS_TO": 2,
-          "COMMANDED_BY": 1
+          "COMMANDED_BY": 1,
+          "ASSOCIATED_WITH": 24
         },
         "rel_gold_by_type": {
           "TARGETS": {
@@ -3729,7 +4501,6 @@
           }
         },
         "false_positives": [
-          "Assess Russian [Product]",
           "Baltics [Location]",
           "Foreign Affairs [Organization]",
           "Leyen [Location]",
@@ -3744,8 +4515,6 @@
         ],
         "relationships_predicted": [
           "Alexus G. Grynkewich -ASSOCIATED_WITH-> NATO Supreme Allied",
-          "Assess Russian -ASSOCIATED_WITH-> Baltic",
-          "Assess Russian -ASSOCIATED_WITH-> NATO",
           "Baltic -ASSOCIATED_WITH-> Russia",
           "Baltics -ASSOCIATED_WITH-> Poland",
           "Europe -ASSOCIATED_WITH-> Ukraine",
@@ -3777,15 +4546,21 @@
         ]
       },
       "build": {
-        "entities_created": 18,
+        "entities_created": 17,
         "entities_merged": 1,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 4,
         "relationships_created": 5,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 24,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 24
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 24
+        }
       }
     },
     {
@@ -3794,7 +4569,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.14,
+      "seconds": 0.18,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 11,
@@ -3832,10 +4608,20 @@
           "exp": 5,
           "pair_found": 3
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 2,
+          "exp": 5
+        },
+        "relationship_classes": {
+          "typed": 2,
+          "generic": 12,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 12,
           "TARGETS": 1,
-          "BELONGS_TO": 1
+          "BELONGS_TO": 1,
+          "ASSOCIATED_WITH": 12
         },
         "rel_gold_by_type": {
           "TARGETS": {
@@ -3889,8 +4675,14 @@
         "dates_orphaned": 2,
         "relationships_created": 2,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 12,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 12
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 12
+        }
       }
     },
     {
@@ -3899,7 +4691,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.15,
+      "seconds": 0.2,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 6,
@@ -3933,12 +4726,22 @@
         "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 2,
+          "pred": 1,
           "exp": 1,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 1
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 2
+          "ASSOCIATED_WITH": 1
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -3958,7 +4761,6 @@
           "Army -BELONGS_TO-> DOD"
         ],
         "relationships_predicted": [
-          "Department -ASSOCIATED_WITH-> United States",
           "U.S. Department of Justice -ASSOCIATED_WITH-> U.S. Department of Homeland Security"
         ]
       },
@@ -3970,8 +4772,14 @@
         "dates_orphaned": 1,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -3980,25 +4788,26 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.1,
+      "seconds": 0.13,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 5,
-          "pred": 7,
+          "pred": 6,
           "exp": 5,
           "typed_tp": 5,
           "category_tp": 5
         },
         "per_type": {
-          "Organization": {
-            "tp": 1,
-            "pred": 2,
-            "exp": 1
-          },
           "Location": {
             "tp": 4,
             "pred": 4,
             "exp": 4
+          },
+          "Organization": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
           },
           "Date": {
             "tp": 0,
@@ -4009,13 +4818,23 @@
         "confusion": {},
         "relationships": {
           "tp": 1,
-          "pred": 8,
+          "pred": 6,
           "exp": 3,
           "pair_found": 2
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 1,
+          "exp": 3
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 5,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 7,
-          "TARGETS": 1
+          "TARGETS": 1,
+          "ASSOCIATED_WITH": 5
         },
         "rel_gold_by_type": {
           "TARGETS": {
@@ -4028,8 +4847,7 @@
           }
         },
         "false_positives": [
-          "2022 [Date]",
-          "Assess [Organization]"
+          "2022 [Date]"
         ],
         "false_negatives": [],
         "mistyped": [],
@@ -4038,26 +4856,30 @@
           "Russia -TARGETS-> Ukraine"
         ],
         "relationships_predicted": [
-          "Assess -ASSOCIATED_WITH-> Ukraine",
           "Europe -ASSOCIATED_WITH-> Ukraine",
           "NATO -ASSOCIATED_WITH-> Baltic",
           "NATO -ASSOCIATED_WITH-> Europe",
           "NATO -ASSOCIATED_WITH-> Ukraine",
-          "Russia -ASSOCIATED_WITH-> Baltic",
           "Russia -ASSOCIATED_WITH-> NATO",
           "Russia -TARGETS-> Baltic"
         ]
       },
       "build": {
-        "entities_created": 6,
+        "entities_created": 5,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 1,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 5,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 5
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 5
+        }
       }
     },
     {
@@ -4066,11 +4888,14 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.15,
+      "seconds": 0.17,
+      "relationships_dropped_by_reason": {
+        "same_entity": 1
+      },
       "score": {
         "entities": {
           "tp": 7,
-          "pred": 10,
+          "pred": 8,
           "exp": 7,
           "typed_tp": 7,
           "category_tp": 7
@@ -4078,7 +4903,7 @@
         "per_type": {
           "Location": {
             "tp": 6,
-            "pred": 8,
+            "pred": 6,
             "exp": 6
           },
           "Organization": {
@@ -4095,13 +4920,23 @@
         "confusion": {},
         "relationships": {
           "tp": 1,
-          "pred": 13,
+          "pred": 12,
           "exp": 2,
           "pair_found": 2
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 1,
+          "exp": 2
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 11,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 12,
-          "BELONGS_TO": 1
+          "BELONGS_TO": 1,
+          "ASSOCIATED_WITH": 11
         },
         "rel_gold_by_type": {
           "TARGETS": {
@@ -4114,8 +4949,6 @@
           }
         },
         "false_positives": [
-          "Beijing [Location]",
-          "Taipei [Location]",
           "crs-IF12481 [Organization]"
         ],
         "false_negatives": [],
@@ -4126,13 +4959,12 @@
         "relationships_predicted": [
           "PRC -ASSOCIATED_WITH-> Eurasia",
           "PRC -ASSOCIATED_WITH-> South China Sea",
-          "PRC -ASSOCIATED_WITH-> Taipei",
+          "PRC -ASSOCIATED_WITH-> Taiwan",
           "PRC -ASSOCIATED_WITH-> Taiwan",
           "PRC -ASSOCIATED_WITH-> United States",
           "South China Sea -ASSOCIATED_WITH-> Taiwan",
-          "Taipei -ASSOCIATED_WITH-> Beijing",
-          "Taiwan -ASSOCIATED_WITH-> Beijing",
-          "Taiwan -ASSOCIATED_WITH-> Taipei",
+          "Taiwan -ASSOCIATED_WITH-> PRC",
+          "Taiwan -ASSOCIATED_WITH-> PRC",
           "Taiwan -ASSOCIATED_WITH-> United States",
           "Taiwan Strait -ASSOCIATED_WITH-> PRC",
           "Xi -ASSOCIATED_WITH-> Taiwan",
@@ -4140,15 +4972,21 @@
         ]
       },
       "build": {
-        "entities_created": 10,
+        "entities_created": 8,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 0,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 11,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 11
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 11
+        }
       }
     },
     {
@@ -4157,11 +4995,12 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.14,
+      "seconds": 0.18,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 7,
-          "pred": 14,
+          "pred": 13,
           "exp": 8,
           "typed_tp": 7,
           "category_tp": 7
@@ -4174,7 +5013,7 @@
           },
           "Location": {
             "tp": 1,
-            "pred": 2,
+            "pred": 1,
             "exp": 1
           },
           "Organization": {
@@ -4195,6 +5034,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 3,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 3
         },
@@ -4205,8 +5054,7 @@
           "HEU [Organization]",
           "National Security Strategy 2026 [Organization]",
           "National Security Strategy National Defense [Organization]",
-          "National Security [Organization]",
-          "Tehran [Location]"
+          "National Security [Organization]"
         ],
         "false_negatives": [
           "National Defense Strategy [Document]"
@@ -4220,15 +5068,21 @@
         ]
       },
       "build": {
-        "entities_created": 8,
+        "entities_created": 7,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 6,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 3,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 3
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 3
+        }
       }
     },
     {
@@ -4237,7 +5091,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.1,
+      "seconds": 0.11,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 3,
@@ -4264,6 +5119,16 @@
           "pred": 3,
           "exp": 1,
           "pair_found": 0
+        },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 1
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 3,
+          "date_link": 0
         },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 3
@@ -4298,8 +5163,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 3,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 3
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 3
+        }
       }
     },
     {
@@ -4309,6 +5180,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.15,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 8,
@@ -4348,10 +5220,20 @@
           "exp": 2,
           "pair_found": 2
         },
+        "relationships_typed": {
+          "tp": 2,
+          "pred": 2,
+          "exp": 2
+        },
+        "relationship_classes": {
+          "typed": 2,
+          "generic": 9,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 9,
           "TARGETS": 1,
-          "FUNDED_BY": 1
+          "FUNDED_BY": 1,
+          "ASSOCIATED_WITH": 9
         },
         "rel_gold_by_type": {
           "FUNDED_BY": {
@@ -4394,8 +5276,14 @@
         "dates_orphaned": 0,
         "relationships_created": 2,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 9,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 9
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 9
+        }
       }
     },
     {
@@ -4404,7 +5292,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.09,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 4,
@@ -4438,6 +5327,16 @@
           "pred": 3,
           "exp": 1,
           "pair_found": 0
+        },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 1
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 3,
+          "date_link": 0
         },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 3
@@ -4473,8 +5372,14 @@
         "dates_orphaned": 2,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 3,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 3
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 3
+        }
       }
     },
     {
@@ -4483,7 +5388,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.15,
+      "seconds": 0.16,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 6,
@@ -4512,14 +5418,24 @@
         "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 9,
+          "pred": 8,
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 2,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 2,
+          "generic": 6,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "USES": 1,
-          "ASSOCIATED_WITH": 7,
-          "TARGETS": 1
+          "TARGETS": 1,
+          "ASSOCIATED_WITH": 6
         },
         "rel_gold_by_type": {},
         "false_positives": [
@@ -4532,7 +5448,6 @@
         "relationships_predicted": [
           "GCC -ASSOCIATED_WITH-> Strait of Hormuz",
           "Iran -ASSOCIATED_WITH-> Israel",
-          "Iran -ASSOCIATED_WITH-> Strait of Hormuz",
           "Iran -ASSOCIATED_WITH-> United States",
           "Iran -TARGETS-> Strait of Hormuz",
           "Iran -USES-> Strait",
@@ -4549,8 +5464,14 @@
         "dates_orphaned": 1,
         "relationships_created": 2,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 6,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 6
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 6
+        }
       }
     },
     {
@@ -4560,6 +5481,7 @@
       "degraded": false,
       "reason": "",
       "seconds": 0.17,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 14,
@@ -4620,11 +5542,21 @@
           "exp": 5,
           "pair_found": 5
         },
+        "relationships_typed": {
+          "tp": 3,
+          "pred": 4,
+          "exp": 5
+        },
+        "relationship_classes": {
+          "typed": 4,
+          "generic": 18,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 18,
           "USES": 1,
           "SUPPLIED_BY": 2,
-          "COMMANDED_BY": 1
+          "COMMANDED_BY": 1,
+          "ASSOCIATED_WITH": 18
         },
         "rel_gold_by_type": {
           "SUPPLIED_BY": {
@@ -4695,8 +5627,14 @@
         "dates_orphaned": 6,
         "relationships_created": 4,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 18,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 18
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 18
+        }
       }
     },
     {
@@ -4705,7 +5643,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.09,
+      "seconds": 0.1,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 5,
@@ -4735,6 +5674,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 4,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 4
         },
@@ -4760,8 +5709,14 @@
         "dates_orphaned": 0,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 4,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 4
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 4
+        }
       }
     },
     {
@@ -4770,7 +5725,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.07,
+      "seconds": 0.1,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 8,
@@ -4805,6 +5761,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 5,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 5
         },
@@ -4838,8 +5804,14 @@
         "dates_orphaned": 4,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 5,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 5
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 5
+        }
       }
     },
     {
@@ -4848,7 +5820,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.06,
+      "seconds": 0.08,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 9,
@@ -4901,6 +5874,16 @@
           "exp": 1,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 1
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 10,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 10
         },
@@ -4945,8 +5928,14 @@
         "dates_orphaned": 3,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 10,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 10
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 10
+        }
       }
     },
     {
@@ -4955,11 +5944,12 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.11,
+      "seconds": 0.13,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 11,
-          "pred": 23,
+          "pred": 21,
           "exp": 11,
           "typed_tp": 11,
           "category_tp": 11
@@ -4970,12 +5960,12 @@
             "pred": 3,
             "exp": 3
           },
-          "Person": {
+          "Location": {
             "tp": 4,
-            "pred": 6,
+            "pred": 4,
             "exp": 4
           },
-          "Location": {
+          "Person": {
             "tp": 4,
             "pred": 5,
             "exp": 4
@@ -4999,13 +5989,23 @@
         "confusion": {},
         "relationships": {
           "tp": 2,
-          "pred": 31,
+          "pred": 29,
           "exp": 2,
           "pair_found": 2
         },
+        "relationships_typed": {
+          "tp": 2,
+          "pred": 2,
+          "exp": 2
+        },
+        "relationship_classes": {
+          "typed": 2,
+          "generic": 27,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 29,
-          "BELONGS_TO": 2
+          "BELONGS_TO": 2,
+          "ASSOCIATED_WITH": 27
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -5019,12 +6019,10 @@
           "9,500 miles [Quantity]",
           "Administration [Organization]",
           "Air Force One [Organization]",
-          "China [Location]",
           "Focus IF12481 [Organization]",
           "Fox News [Organization]",
           "National Security [Organization]",
           "State [Organization]",
-          "Toward Taiwan [Person]",
           "Xi [Person]"
         ],
         "false_negatives": [],
@@ -5054,8 +6052,6 @@
           "Taiwan -ASSOCIATED_WITH-> Administration",
           "Taiwan -ASSOCIATED_WITH-> Donald J. Trump",
           "Taiwan -ASSOCIATED_WITH-> United States",
-          "Toward Taiwan -ASSOCIATED_WITH-> Donald J. Trump",
-          "Toward Taiwan -ASSOCIATED_WITH-> Taiwan",
           "United States -ASSOCIATED_WITH-> Air Force One",
           "United States -ASSOCIATED_WITH-> Beijing",
           "Xi -ASSOCIATED_WITH-> Taiwan",
@@ -5065,15 +6061,21 @@
         ]
       },
       "build": {
-        "entities_created": 19,
+        "entities_created": 17,
         "entities_merged": 1,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 3,
         "relationships_created": 2,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 27,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 27
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 27
+        }
       }
     },
     {
@@ -5082,11 +6084,14 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.09,
+      "seconds": 0.1,
+      "relationships_dropped_by_reason": {
+        "same_entity": 1
+      },
       "score": {
         "entities": {
           "tp": 17,
-          "pred": 22,
+          "pred": 21,
           "exp": 17,
           "typed_tp": 12,
           "category_tp": 12
@@ -5104,7 +6109,7 @@
           },
           "Location": {
             "tp": 4,
-            "pred": 6,
+            "pred": 5,
             "exp": 6
           },
           "Person": {
@@ -5127,14 +6132,24 @@
         },
         "relationships": {
           "tp": 1,
-          "pred": 22,
+          "pred": 21,
           "exp": 4,
           "pair_found": 3
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 4,
+          "exp": 4
+        },
+        "relationship_classes": {
+          "typed": 4,
+          "generic": 17,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 18,
           "SUPPLIED_BY": 1,
-          "BELONGS_TO": 3
+          "BELONGS_TO": 3,
+          "ASSOCIATED_WITH": 17
         },
         "rel_gold_by_type": {
           "SUPPLIED_BY": {
@@ -5152,7 +6167,6 @@
         },
         "false_positives": [
           "Burkina [Location]",
-          "Moscow [Location]",
           "Putin [Person]",
           "late 2023 [Date]",
           "pro-Kremlin [Organization]"
@@ -5176,19 +6190,18 @@
           "Burkina -ASSOCIATED_WITH-> Mali",
           "Burkina -ASSOCIATED_WITH-> Niger",
           "Burkina Faso -SUPPLIED_BY-> Russia",
-          "Mali -ASSOCIATED_WITH-> Moscow",
           "Mali -ASSOCIATED_WITH-> Niger",
+          "Mali -ASSOCIATED_WITH-> Russia",
           "Mali -ASSOCIATED_WITH-> Ukraine",
           "Mali -ASSOCIATED_WITH-> Wagner Group",
-          "Moscow -ASSOCIATED_WITH-> Wagner Group",
           "Niger -ASSOCIATED_WITH-> Ukraine",
           "Nordgold -BELONGS_TO-> Russia",
           "Russia -ASSOCIATED_WITH-> Alliance of Sahel States",
           "Russia -ASSOCIATED_WITH-> Mali",
-          "Russia -ASSOCIATED_WITH-> Moscow",
           "Russia -ASSOCIATED_WITH-> Ouagadougou",
           "Russia -ASSOCIATED_WITH-> Putin",
           "Russia -ASSOCIATED_WITH-> Ukraine",
+          "Russia -ASSOCIATED_WITH-> Wagner Group",
           "Traoré -ASSOCIATED_WITH-> Africa Summit",
           "Traoré -ASSOCIATED_WITH-> Russia",
           "Vladimir Putin -ASSOCIATED_WITH-> Ukraine",
@@ -5196,15 +6209,21 @@
         ]
       },
       "build": {
-        "entities_created": 16,
+        "entities_created": 15,
         "entities_merged": 1,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 5,
         "relationships_created": 4,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 17,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 17
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 17
+        }
       }
     },
     {
@@ -5213,7 +6232,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.15,
+      "seconds": 0.12,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 16,
@@ -5228,15 +6248,15 @@
             "pred": 8,
             "exp": 7
           },
-          "Location": {
-            "tp": 1,
-            "pred": 1,
-            "exp": 1
-          },
           "Organization": {
             "tp": 5,
             "pred": 12,
             "exp": 5
+          },
+          "Location": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
           },
           "Person": {
             "tp": 1,
@@ -5263,9 +6283,19 @@
           "exp": 1,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 1,
+          "exp": 1
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 10,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 10,
-          "BELONGS_TO": 1
+          "BELONGS_TO": 1,
+          "ASSOCIATED_WITH": 10
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -5311,8 +6341,14 @@
         "dates_orphaned": 8,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 10,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 10
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 10
+        }
       }
     },
     {
@@ -5321,14 +6357,17 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.13,
+      "seconds": 0.12,
+      "relationships_dropped_by_reason": {
+        "same_entity": 1
+      },
       "score": {
         "entities": {
-          "tp": 14,
+          "tp": 15,
           "pred": 25,
           "exp": 16,
-          "typed_tp": 14,
-          "category_tp": 14
+          "typed_tp": 15,
+          "category_tp": 15
         },
         "per_type": {
           "Date": {
@@ -5336,32 +6375,42 @@
             "pred": 8,
             "exp": 6
           },
+          "Document": {
+            "tp": 2,
+            "pred": 2,
+            "exp": 2
+          },
           "Organization": {
             "tp": 2,
             "pred": 10,
             "exp": 3
           },
-          "Document": {
-            "tp": 1,
-            "pred": 1,
-            "exp": 2
-          },
           "Location": {
             "tp": 5,
-            "pred": 6,
+            "pred": 5,
             "exp": 5
           }
         },
         "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 25,
+          "pred": 24,
           "exp": 3,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 2,
+          "exp": 3
+        },
+        "relationship_classes": {
+          "typed": 2,
+          "generic": 22,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "BELONGS_TO": 2,
-          "ASSOCIATED_WITH": 23
+          "ASSOCIATED_WITH": 22
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -5379,12 +6428,10 @@
           "Focus IF12106 [Organization]",
           "Nuclear Program [Organization]",
           "Security Council [Organization]",
-          "Tehran [Location]",
           "UN [Organization]"
         ],
         "false_negatives": [
-          "E3 [Organization]",
-          "JCPOA [Document]"
+          "E3 [Organization]"
         ],
         "mistyped": [],
         "relationships_missed": [
@@ -5397,7 +6444,7 @@
           "CRS -ASSOCIATED_WITH-> Iran",
           "CRS Report -ASSOCIATED_WITH-> Iran",
           "CRS Report -ASSOCIATED_WITH-> Nuclear Program",
-          "Compliance with International Obligations -BELONGS_TO-> Tehran",
+          "Compliance with International Obligations -BELONGS_TO-> Iran",
           "Focus IF12106 -ASSOCIATED_WITH-> Iran",
           "France -ASSOCIATED_WITH-> Germany",
           "France -ASSOCIATED_WITH-> United Kingdom",
@@ -5405,9 +6452,8 @@
           "Germany -ASSOCIATED_WITH-> United Kingdom",
           "International Atomic Energy Agency -ASSOCIATED_WITH-> Iran",
           "Iran -ASSOCIATED_WITH-> Security Council",
-          "Iran -ASSOCIATED_WITH-> Tehran",
           "Nuclear Program -ASSOCIATED_WITH-> Compliance with International Obligations",
-          "Nuclear Program -ASSOCIATED_WITH-> Tehran",
+          "Nuclear Program -ASSOCIATED_WITH-> Iran",
           "Nuclear Program -BELONGS_TO-> Iran",
           "Resolution 2231 -ASSOCIATED_WITH-> Iran",
           "Security Council -ASSOCIATED_WITH-> Resolution 2231",
@@ -5428,8 +6474,14 @@
         "dates_orphaned": 8,
         "relationships_created": 2,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 22,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 22
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 22
+        }
       }
     },
     {
@@ -5438,11 +6490,12 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.14,
+      "seconds": 0.13,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 5,
-          "pred": 19,
+          "pred": 18,
           "exp": 5,
           "typed_tp": 5,
           "category_tp": 5
@@ -5460,19 +6513,29 @@
           },
           "Organization": {
             "tp": 4,
-            "pred": 14,
+            "pred": 13,
             "exp": 4
           }
         },
         "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 15,
+          "pred": 14,
           "exp": 1,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 1
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 14,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 15
+          "ASSOCIATED_WITH": 14
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -5490,7 +6553,6 @@
           "June 2025 [Date]",
           "Littoral Operations [Organization]",
           "NGLS [Organization]",
-          "Navy Notional TAOL Design Concept\n\nSource [Organization]",
           "Next-Generation Medium Logistics Ship [Organization]",
           "Research, Development, Test & Evaluation [Organization]",
           "Surface Action Group [Organization]",
@@ -5512,7 +6574,6 @@
           "NGLS -ASSOCIATED_WITH-> Next-Generation Medium Logistics Ship",
           "NGLS -ASSOCIATED_WITH-> Surface Action Group",
           "Navy -ASSOCIATED_WITH-> Research, Development, Test & Evaluation",
-          "Navy Notional TAOL Design Concept\n\nSource -ASSOCIATED_WITH-> U.S. Navy",
           "Next-Generation Medium Logistics Ship -ASSOCIATED_WITH-> Navy",
           "TAOL -ASSOCIATED_WITH-> NGLS",
           "TAOL -ASSOCIATED_WITH-> Next-Generation Medium Logistics Ship",
@@ -5522,14 +6583,18 @@
       "build": {
         "entities_created": 14,
         "entities_merged": 0,
-        "entities_filtered": 1,
+        "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 4,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 1,
+        "relationships_dropped": 14,
         "relationships_dropped_by_type": {
-          "ASSOCIATED_WITH": 1
+          "ASSOCIATED_WITH": 14
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 14
         }
       }
     },
@@ -5539,11 +6604,12 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.21,
+      "seconds": 0.16,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 8,
-          "pred": 25,
+          "pred": 24,
           "exp": 9,
           "typed_tp": 8,
           "category_tp": 8
@@ -5554,15 +6620,15 @@
             "pred": 8,
             "exp": 1
           },
-          "Organization": {
-            "tp": 4,
-            "pred": 9,
-            "exp": 5
-          },
           "Location": {
             "tp": 2,
             "pred": 2,
             "exp": 2
+          },
+          "Organization": {
+            "tp": 4,
+            "pred": 8,
+            "exp": 5
           },
           "Financial": {
             "tp": 0,
@@ -5578,13 +6644,23 @@
         "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 21,
+          "pred": 20,
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 1,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 19,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 20,
-          "COMMANDED_BY": 1
+          "COMMANDED_BY": 1,
+          "ASSOCIATED_WITH": 19
         },
         "rel_gold_by_type": {},
         "false_positives": [
@@ -5601,7 +6677,6 @@
           "March 31, 2026 [Date]",
           "May 2025 [Date]",
           "May 2026 [Date]",
-          "Second Trump Administration\n\nThe Trump Administration [Organization]",
           "USAI [Organization]",
           "about $2.2 billion [Financial]",
           "more than $3 billion [Financial]"
@@ -5625,7 +6700,6 @@
           "Foreign Military Sales -ASSOCIATED_WITH-> more than $3 billion",
           "NATO -ASSOCIATED_WITH-> Iran",
           "NATO -ASSOCIATED_WITH-> Ukraine",
-          "Second Trump Administration\n\nThe Trump Administration -ASSOCIATED_WITH-> Ukraine",
           "Ukraine -ASSOCIATED_WITH-> $19.21 billion",
           "Ukraine -ASSOCIATED_WITH-> FMF",
           "Ukraine -ASSOCIATED_WITH-> more than $3 billion",
@@ -5638,14 +6712,18 @@
       "build": {
         "entities_created": 16,
         "entities_merged": 0,
-        "entities_filtered": 1,
+        "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 8,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 1,
+        "relationships_dropped": 19,
         "relationships_dropped_by_type": {
-          "ASSOCIATED_WITH": 1
+          "ASSOCIATED_WITH": 19
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 19
         }
       }
     },
@@ -5655,11 +6733,14 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.18,
+      "seconds": 0.12,
+      "relationships_dropped_by_reason": {
+        "same_entity": 1
+      },
       "score": {
         "entities": {
           "tp": 28,
-          "pred": 33,
+          "pred": 32,
           "exp": 29,
           "typed_tp": 26,
           "category_tp": 26
@@ -5677,7 +6758,7 @@
           },
           "Location": {
             "tp": 7,
-            "pred": 9,
+            "pred": 8,
             "exp": 8
           },
           "Event": {
@@ -5702,13 +6783,23 @@
         },
         "relationships": {
           "tp": 1,
-          "pred": 39,
+          "pred": 38,
           "exp": 2,
           "pair_found": 2
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 2,
+          "exp": 2
+        },
+        "relationship_classes": {
+          "typed": 2,
+          "generic": 36,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "BELONGS_TO": 2,
-          "ASSOCIATED_WITH": 37
+          "ASSOCIATED_WITH": 36
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -5717,7 +6808,6 @@
           }
         },
         "false_positives": [
-          "China [Location]",
           "General Assembly [Organization]",
           "National Security [Organization]",
           "Nixon [Person]",
@@ -5735,13 +6825,10 @@
         ],
         "relationships_predicted": [
           "Chiang Kai-shek -ASSOCIATED_WITH-> ROC",
-          "China -ASSOCIATED_WITH-> Chiang Kai-shek",
-          "China -ASSOCIATED_WITH-> UN",
-          "China -ASSOCIATED_WITH-> United Nations",
           "Congress -ASSOCIATED_WITH-> Penghu",
           "Congress -ASSOCIATED_WITH-> Taiwan",
           "Formosa -ASSOCIATED_WITH-> Taiwan",
-          "General Assembly -ASSOCIATED_WITH-> China",
+          "General Assembly -ASSOCIATED_WITH-> PRC",
           "General Assembly -ASSOCIATED_WITH-> Security Council",
           "Harry S. Truman -ASSOCIATED_WITH-> PRC",
           "Harry S. Truman -BELONGS_TO-> United States",
@@ -5751,22 +6838,24 @@
           "National Security -ASSOCIATED_WITH-> Henry Kissinger",
           "Nixon -ASSOCIATED_WITH-> Henry Kissinger",
           "Nixon -ASSOCIATED_WITH-> National Security",
-          "PRC -ASSOCIATED_WITH-> China",
+          "PRC -ASSOCIATED_WITH-> Chiang Kai-shek",
           "PRC -ASSOCIATED_WITH-> General Assembly",
           "PRC -ASSOCIATED_WITH-> ROC",
           "PRC -ASSOCIATED_WITH-> Soviet Union",
           "PRC -ASSOCIATED_WITH-> Taiwan",
+          "PRC -ASSOCIATED_WITH-> UN",
+          "PRC -ASSOCIATED_WITH-> United Nations",
           "PRC -ASSOCIATED_WITH-> United Nations",
           "ROC -ASSOCIATED_WITH-> General Assembly",
           "ROC -ASSOCIATED_WITH-> Security Council",
           "Richard M. Nixon -ASSOCIATED_WITH-> PRC",
-          "Security Council -ASSOCIATED_WITH-> China",
+          "Security Council -ASSOCIATED_WITH-> PRC",
           "Security Council -ASSOCIATED_WITH-> UN",
           "Seventh Fleet -ASSOCIATED_WITH-> Formosa",
           "Seventh Fleet -ASSOCIATED_WITH-> Taiwan",
           "Seventh Fleet -BELONGS_TO-> U.S. Navy",
           "Taiwan -ASSOCIATED_WITH-> Penghu",
-          "UN General Assembly -ASSOCIATED_WITH-> China",
+          "UN General Assembly -ASSOCIATED_WITH-> PRC",
           "UN General Assembly -ASSOCIATED_WITH-> PRC",
           "United Nations -ASSOCIATED_WITH-> Chiang Kai-shek",
           "United Nations -ASSOCIATED_WITH-> ROC",
@@ -5776,15 +6865,21 @@
         ]
       },
       "build": {
-        "entities_created": 22,
+        "entities_created": 21,
         "entities_merged": 3,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 8,
         "relationships_created": 2,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 36,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 36
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 36
+        }
       }
     },
     {
@@ -5793,11 +6888,14 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.16,
+      "seconds": 0.14,
+      "relationships_dropped_by_reason": {
+        "same_entity": 1
+      },
       "score": {
         "entities": {
           "tp": 17,
-          "pred": 29,
+          "pred": 27,
           "exp": 19,
           "typed_tp": 16,
           "category_tp": 16
@@ -5820,12 +6918,12 @@
           },
           "Organization": {
             "tp": 6,
-            "pred": 14,
+            "pred": 13,
             "exp": 9
           },
           "Location": {
             "tp": 1,
-            "pred": 3,
+            "pred": 2,
             "exp": 1
           }
         },
@@ -5834,12 +6932,22 @@
         },
         "relationships": {
           "tp": 0,
-          "pred": 21,
+          "pred": 18,
           "exp": 2,
           "pair_found": 2
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 2
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 18,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 21
+          "ASSOCIATED_WITH": 18
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -5849,13 +6957,11 @@
         },
         "false_positives": [
           "2019 [Date]",
-          "China [Location]",
           "Committee on Foreign Investment [Organization]",
           "February 2021 [Date]",
           "Key U.S. Government Actions [Organization]",
           "Musical.ly/TikTok under [Organization]",
           "Order [Organization]",
-          "PRC Influence and [Organization]",
           "Party [Organization]",
           "Presidential Order [Organization]",
           "Restrict Certain [Organization]",
@@ -5874,17 +6980,14 @@
         ],
         "relationships_predicted": [
           "CPC -ASSOCIATED_WITH-> Party",
-          "China -ASSOCIATED_WITH-> PRC",
           "Committee on Foreign Investment -ASSOCIATED_WITH-> United States",
-          "Douyin Information Services Co., Ltd -ASSOCIATED_WITH-> China",
+          "Douyin Information Services Co., Ltd -ASSOCIATED_WITH-> PRC",
           "Douyin Information Services Co., Ltd -ASSOCIATED_WITH-> TikTok",
           "E.O. 13942 -ASSOCIATED_WITH-> E.O. 13943",
           "E.O. 13942 -ASSOCIATED_WITH-> TikTok",
           "E.O. 13943 -ASSOCIATED_WITH-> TikTok",
           "E.O. 13971 -ASSOCIATED_WITH-> PRC",
           "Key U.S. Government Actions -ASSOCIATED_WITH-> Restrict Certain",
-          "PRC Influence and -ASSOCIATED_WITH-> CPC",
-          "PRC Influence and -ASSOCIATED_WITH-> Party",
           "Presidential Order -ASSOCIATED_WITH-> Shiji Technology",
           "Presidential Order -ASSOCIATED_WITH-> Stayntouch",
           "Presidential Order required ByteDance -ASSOCIATED_WITH-> Musical.ly/TikTok under",
@@ -5892,20 +6995,26 @@
           "Shiji Technology -ASSOCIATED_WITH-> Stayntouch",
           "Stayntouch -ASSOCIATED_WITH-> Committee on Foreign Investment",
           "Stayntouch -ASSOCIATED_WITH-> United States",
-          "TikTok -ASSOCIATED_WITH-> China",
-          "TikTok -ASSOCIATED_WITH-> Order"
+          "TikTok -ASSOCIATED_WITH-> Order",
+          "TikTok -ASSOCIATED_WITH-> PRC"
         ]
       },
       "build": {
-        "entities_created": 20,
+        "entities_created": 18,
         "entities_merged": 2,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 7,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 18,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 18
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 18
+        }
       }
     },
     {
@@ -5914,11 +7023,12 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.2,
+      "seconds": 0.17,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 12,
-          "pred": 16,
+          "pred": 15,
           "exp": 12,
           "typed_tp": 11,
           "category_tp": 11
@@ -5936,7 +7046,7 @@
           },
           "Location": {
             "tp": 2,
-            "pred": 3,
+            "pred": 2,
             "exp": 2
           },
           "Person": {
@@ -5954,6 +7064,16 @@
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 1,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "ASSOCIATED_WITH": 1
         },
@@ -5961,7 +7081,6 @@
         "false_positives": [
           "1862 [Date]",
           "2025-2026 [Date]",
-          "China [Location]",
           "Section 232 [Document]"
         ],
         "false_negatives": [],
@@ -5974,15 +7093,21 @@
         ]
       },
       "build": {
-        "entities_created": 5,
+        "entities_created": 4,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 11,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 1,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 1
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 1
+        }
       }
     },
     {
@@ -5991,11 +7116,12 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.17,
+      "seconds": 0.15,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 27,
-          "pred": 30,
+          "pred": 29,
           "exp": 29,
           "typed_tp": 27,
           "category_tp": 27
@@ -6011,15 +7137,15 @@
             "pred": 9,
             "exp": 9
           },
-          "Organization": {
-            "tp": 4,
-            "pred": 5,
-            "exp": 5
-          },
           "Person": {
             "tp": 3,
             "pred": 3,
             "exp": 3
+          },
+          "Organization": {
+            "tp": 4,
+            "pred": 4,
+            "exp": 5
           },
           "Weapon": {
             "tp": 2,
@@ -6030,15 +7156,25 @@
         "confusion": {},
         "relationships": {
           "tp": 6,
-          "pred": 22,
+          "pred": 20,
           "exp": 9,
           "pair_found": 8
         },
+        "relationships_typed": {
+          "tp": 6,
+          "pred": 6,
+          "exp": 9
+        },
+        "relationship_classes": {
+          "typed": 6,
+          "generic": 14,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "BELONGS_TO": 4,
-          "ASSOCIATED_WITH": 15,
+          "BELONGS_TO": 3,
           "SUPPLIED_BY": 1,
-          "TARGETS": 2
+          "TARGETS": 2,
+          "ASSOCIATED_WITH": 14
         },
         "rel_gold_by_type": {
           "SUPPLIED_BY": {
@@ -6060,8 +7196,7 @@
         },
         "false_positives": [
           "2024 [Date]",
-          "April and October 2024 [Date]",
-          "Foreign and Defense Policies\n\nAlong [Organization]"
+          "April and October 2024 [Date]"
         ],
         "false_negatives": [
           "Houthis [Organization]",
@@ -6078,8 +7213,6 @@
           "Bashar Al Asad -BELONGS_TO-> Syria",
           "Benjamin Netanyahu -BELONGS_TO-> Israel",
           "DIA -ASSOCIATED_WITH-> Yemen",
-          "Foreign and Defense Policies\n\nAlong -ASSOCIATED_WITH-> Middle East",
-          "Foreign and Defense Policies\n\nAlong -BELONGS_TO-> Iran",
           "Hassan Nasrallah -ASSOCIATED_WITH-> Fateh-110 SRBMs",
           "Hassan Nasrallah -BELONGS_TO-> Hezbollah",
           "Iran -ASSOCIATED_WITH-> Benjamin Netanyahu",
@@ -6101,15 +7234,18 @@
       "build": {
         "entities_created": 18,
         "entities_merged": 0,
-        "entities_filtered": 1,
+        "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 11,
         "relationships_created": 6,
         "relationships_retired": 0,
-        "relationships_dropped": 2,
+        "relationships_dropped": 14,
         "relationships_dropped_by_type": {
-          "BELONGS_TO": 1,
-          "ASSOCIATED_WITH": 1
+          "ASSOCIATED_WITH": 14
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 14
         }
       }
     },
@@ -6119,7 +7255,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.24,
+      "seconds": 0.13,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 18,
@@ -6175,9 +7312,19 @@
           "exp": 2,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 1,
+          "exp": 2
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 19,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 19,
-          "BELONGS_TO": 1
+          "BELONGS_TO": 1,
+          "ASSOCIATED_WITH": 19
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -6233,8 +7380,14 @@
         "dates_orphaned": 5,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 19,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 19
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 19
+        }
       }
     },
     {
@@ -6243,7 +7396,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.19,
+      "seconds": 0.13,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 17,
@@ -6299,9 +7453,19 @@
           "exp": 3,
           "pair_found": 2
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 1,
+          "exp": 3
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 16,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 16,
-          "BELONGS_TO": 1
+          "BELONGS_TO": 1,
+          "ASSOCIATED_WITH": 16
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -6364,8 +7528,14 @@
         "dates_orphaned": 6,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 16,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 16
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 16
+        }
       }
     },
     {
@@ -6374,11 +7544,12 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.17,
+      "seconds": 0.14,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 2,
-          "pred": 10,
+          "pred": 9,
           "exp": 2,
           "typed_tp": 2,
           "category_tp": 2
@@ -6391,7 +7562,7 @@
           },
           "Organization": {
             "tp": 1,
-            "pred": 8,
+            "pred": 7,
             "exp": 1
           },
           "Document": {
@@ -6403,12 +7574,22 @@
         "confusion": {},
         "relationships": {
           "tp": 0,
-          "pred": 4,
+          "pred": 3,
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 3,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 4
+          "ASSOCIATED_WITH": 3
         },
         "rel_gold_by_type": {},
         "false_positives": [
@@ -6417,7 +7598,6 @@
           "Certification [Organization]",
           "First Amendment [Document]",
           "IFR [Organization]",
-          "Implementation\n\nC-UAS Operations Plan and Coordination [Organization]",
           "NCUTC [Organization]",
           "SLTT [Organization]"
         ],
@@ -6425,7 +7605,6 @@
         "mistyped": [],
         "relationships_missed": [],
         "relationships_predicted": [
-          "Certification -ASSOCIATED_WITH-> Implementation\n\nC-UAS Operations Plan and Coordination",
           "IFR -ASSOCIATED_WITH-> First Amendment",
           "SLTT -ASSOCIATED_WITH-> Federal Aviation Administration",
           "SLTT -ASSOCIATED_WITH-> NCUTC"
@@ -6434,14 +7613,18 @@
       "build": {
         "entities_created": 8,
         "entities_merged": 0,
-        "entities_filtered": 1,
+        "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 1,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 1,
+        "relationships_dropped": 3,
         "relationships_dropped_by_type": {
-          "ASSOCIATED_WITH": 1
+          "ASSOCIATED_WITH": 3
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 3
         }
       }
     },
@@ -6451,7 +7634,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.22,
+      "seconds": 0.14,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 17,
@@ -6499,11 +7683,21 @@
           "exp": 3,
           "pair_found": 3
         },
+        "relationships_typed": {
+          "tp": 2,
+          "pred": 3,
+          "exp": 3
+        },
+        "relationship_classes": {
+          "typed": 3,
+          "generic": 13,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "TARGETS": 1,
-          "ASSOCIATED_WITH": 13,
           "SUPPLIED_BY": 1,
-          "BELONGS_TO": 1
+          "BELONGS_TO": 1,
+          "ASSOCIATED_WITH": 13
         },
         "rel_gold_by_type": {
           "TARGETS": {
@@ -6555,8 +7749,14 @@
         "dates_orphaned": 7,
         "relationships_created": 3,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 13,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 13
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 13
+        }
       }
     },
     {
@@ -6565,7 +7765,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.19,
+      "seconds": 0.14,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 6,
@@ -6603,9 +7804,19 @@
           "exp": 1,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 1,
+          "exp": 1
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 11,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 11,
-          "BELONGS_TO": 1
+          "BELONGS_TO": 1,
+          "ASSOCIATED_WITH": 11
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -6648,8 +7859,14 @@
         "dates_orphaned": 1,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 11,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 11
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 11
+        }
       }
     },
     {
@@ -6658,14 +7875,17 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.19,
+      "seconds": 0.14,
+      "relationships_dropped_by_reason": {
+        "same_entity": 1
+      },
       "score": {
         "entities": {
-          "tp": 15,
+          "tp": 16,
           "pred": 22,
           "exp": 16,
-          "typed_tp": 13,
-          "category_tp": 13
+          "typed_tp": 14,
+          "category_tp": 14
         },
         "per_type": {
           "Date": {
@@ -6673,9 +7893,14 @@
             "pred": 8,
             "exp": 6
           },
+          "Document": {
+            "tp": 1,
+            "pred": 1,
+            "exp": 1
+          },
           "Location": {
             "tp": 2,
-            "pred": 5,
+            "pred": 4,
             "exp": 3
           },
           "Organization": {
@@ -6687,11 +7912,6 @@
             "tp": 2,
             "pred": 4,
             "exp": 3
-          },
-          "Document": {
-            "tp": 0,
-            "pred": 0,
-            "exp": 1
           }
         },
         "confusion": {
@@ -6700,13 +7920,23 @@
         },
         "relationships": {
           "tp": 2,
-          "pred": 23,
+          "pred": 18,
           "exp": 2,
           "pair_found": 2
         },
+        "relationships_typed": {
+          "tp": 2,
+          "pred": 3,
+          "exp": 2
+        },
+        "relationship_classes": {
+          "typed": 3,
+          "generic": 15,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 20,
-          "BELONGS_TO": 3
+          "BELONGS_TO": 3,
+          "ASSOCIATED_WITH": 15
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -6720,12 +7950,9 @@
           "February 23, 2021 [Date]",
           "Gharibabadi [Person]",
           "Karaj [Location]",
-          "September [Date]",
-          "Tehran [Location]"
+          "September [Date]"
         ],
-        "false_negatives": [
-          "JCPOA [Document]"
-        ],
+        "false_negatives": [],
         "mistyped": [
           "Grossi: Person -> Location",
           "Tessa Karaj Complex: Location -> Person"
@@ -6733,26 +7960,21 @@
         "relationships_missed": [],
         "relationships_predicted": [
           "Agency -ASSOCIATED_WITH-> Grossi",
-          "Complex -ASSOCIATED_WITH-> Gharibabadi",
           "Grossi -ASSOCIATED_WITH-> Kazem Gharibabadi",
           "IAEA -ASSOCIATED_WITH-> Karaj",
           "IAEA -ASSOCIATED_WITH-> Mohammad Eslami",
-          "IAEA -BELONGS_TO-> Tehran",
+          "IAEA -BELONGS_TO-> Iran",
           "IAEA Board of Governors -ASSOCIATED_WITH-> IAEA",
-          "IAEA Board of Governors -ASSOCIATED_WITH-> Tehran",
+          "IAEA Board of Governors -ASSOCIATED_WITH-> Iran",
           "Iran -ASSOCIATED_WITH-> Agency",
           "Iran -ASSOCIATED_WITH-> Atomic Energy Organization of Iran",
           "Iran -ASSOCIATED_WITH-> IAEA",
           "Iran -ASSOCIATED_WITH-> Mohammad Eslami",
-          "Karaj -ASSOCIATED_WITH-> Iran",
-          "Kazem Gharibabadi -ASSOCIATED_WITH-> Tehran",
+          "Iran -ASSOCIATED_WITH-> Tessa Karaj Complex",
+          "Iran -ASSOCIATED_WITH-> Vienna",
           "Kazem Gharibabadi -BELONGS_TO-> Iran",
           "Mohammad Eslami -BELONGS_TO-> Atomic Energy Organization of Iran",
-          "Tehran -ASSOCIATED_WITH-> Iran",
-          "Tehran -ASSOCIATED_WITH-> Tessa Karaj Complex",
-          "Tehran -ASSOCIATED_WITH-> Vienna",
           "Tessa Karaj Complex -ASSOCIATED_WITH-> Complex",
-          "Tessa Karaj Complex -ASSOCIATED_WITH-> Gharibabadi",
           "Vienna -ASSOCIATED_WITH-> Complex",
           "Vienna -ASSOCIATED_WITH-> Tessa Karaj Complex"
         ]
@@ -6765,8 +7987,14 @@
         "dates_orphaned": 8,
         "relationships_created": 3,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 15,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 15
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 15
+        }
       }
     },
     {
@@ -6775,11 +8003,14 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.2,
+      "seconds": 0.13,
+      "relationships_dropped_by_reason": {
+        "same_entity": 1
+      },
       "score": {
         "entities": {
           "tp": 21,
-          "pred": 29,
+          "pred": 28,
           "exp": 22,
           "typed_tp": 21,
           "category_tp": 21
@@ -6797,7 +8028,7 @@
           },
           "Location": {
             "tp": 9,
-            "pred": 11,
+            "pred": 10,
             "exp": 10
           },
           "Person": {
@@ -6809,13 +8040,23 @@
         "confusion": {},
         "relationships": {
           "tp": 1,
-          "pred": 28,
+          "pred": 27,
           "exp": 1,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 1,
+          "exp": 1
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 26,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 27,
-          "BELONGS_TO": 1
+          "BELONGS_TO": 1,
+          "ASSOCIATED_WITH": 26
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -6828,7 +8069,6 @@
           "Council [Organization]",
           "May [Date]",
           "May and June 2023 [Date]",
-          "Moscow [Location]",
           "October 2023 [Date]",
           "October 2023.130 [Date]",
           "mid-June [Date]"
@@ -6855,7 +8095,7 @@
           "Finland -ASSOCIATED_WITH-> Iceland",
           "Iceland -ASSOCIATED_WITH-> Norway",
           "Iceland -ASSOCIATED_WITH-> Sweden",
-          "Nikolai Korchunov -ASSOCIATED_WITH-> Moscow",
+          "Nikolai Korchunov -ASSOCIATED_WITH-> Russia",
           "Nikolai Korchunov -BELONGS_TO-> Russia",
           "Nordic Council of Ministers -ASSOCIATED_WITH-> Belarus,128",
           "Nordic Council of Ministers -ASSOCIATED_WITH-> Russia",
@@ -6864,21 +8104,26 @@
           "Russia -ASSOCIATED_WITH-> Belarus,128",
           "Russia -ASSOCIATED_WITH-> Council",
           "Russia -ASSOCIATED_WITH-> Finland",
-          "Russia -ASSOCIATED_WITH-> Moscow",
           "Sweden -ASSOCIATED_WITH-> Barents Euro-Arctic Council",
           "Sweden -ASSOCIATED_WITH-> EU"
         ]
       },
       "build": {
-        "entities_created": 17,
+        "entities_created": 16,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 12,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 26,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 26
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 26
+        }
       }
     },
     {
@@ -6887,19 +8132,20 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.22,
+      "seconds": 0.13,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
-          "tp": 16,
-          "pred": 20,
+          "tp": 17,
+          "pred": 21,
           "exp": 17,
-          "typed_tp": 15,
-          "category_tp": 15
+          "typed_tp": 16,
+          "category_tp": 16
         },
         "per_type": {
           "Document": {
-            "tp": 1,
-            "pred": 1,
+            "tp": 2,
+            "pred": 2,
             "exp": 3
           },
           "Date": {
@@ -6923,13 +8169,23 @@
         },
         "relationships": {
           "tp": 2,
-          "pred": 17,
+          "pred": 10,
           "exp": 2,
           "pair_found": 2
         },
+        "relationships_typed": {
+          "tp": 2,
+          "pred": 2,
+          "exp": 2
+        },
+        "relationship_classes": {
+          "typed": 2,
+          "generic": 8,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "BELONGS_TO": 2,
-          "ASSOCIATED_WITH": 15
+          "ASSOCIATED_WITH": 8
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -6943,43 +8199,40 @@
           "Trump Administration [Organization]",
           "U.S. Sanctions [Organization]"
         ],
-        "false_negatives": [
-          "JCPOA [Document]"
-        ],
+        "false_negatives": [],
         "mistyped": [
           "General License H: Document -> Organization"
         ],
         "relationships_missed": [],
         "relationships_predicted": [
-          "Central Bank of Iran.7 -ASSOCIATED_WITH-> United States",
           "Congress -ASSOCIATED_WITH-> Iranians",
-          "Congress -ASSOCIATED_WITH-> Trump Administration",
-          "Foreign Terrorist Organization -ASSOCIATED_WITH-> E.O. 13871",
           "Iran -ASSOCIATED_WITH-> General License H",
-          "Iran -ASSOCIATED_WITH-> State Department",
-          "Iran -ASSOCIATED_WITH-> United States",
-          "Iranians -ASSOCIATED_WITH-> Trump Administration",
           "Islamic Revolutionary Guards Corps -ASSOCIATED_WITH-> Foreign Terrorist Organization",
           "Islamic Revolutionary Guards Corps -BELONGS_TO-> Iran",
           "Office of Foreign Assets Control -BELONGS_TO-> Department of the Treasury",
           "State Department -ASSOCIATED_WITH-> Congress",
           "State Department -ASSOCIATED_WITH-> Iranians",
           "U.S. Sanctions -ASSOCIATED_WITH-> Iran",
-          "U.S. Sanctions -ASSOCIATED_WITH-> United States",
           "United States -ASSOCIATED_WITH-> Congress",
           "United States -ASSOCIATED_WITH-> State Department"
         ]
       },
       "build": {
-        "entities_created": 14,
+        "entities_created": 15,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 6,
         "relationships_created": 2,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 8,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 8
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 8
+        }
       }
     },
     {
@@ -6988,7 +8241,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.26,
+      "seconds": 0.13,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 9,
@@ -7029,13 +8283,23 @@
         },
         "relationships": {
           "tp": 0,
-          "pred": 18,
+          "pred": 15,
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 1,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 14,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 17,
-          "BELONGS_TO": 1
+          "BELONGS_TO": 1,
+          "ASSOCIATED_WITH": 14
         },
         "rel_gold_by_type": {},
         "false_positives": [
@@ -7055,8 +8319,6 @@
         ],
         "relationships_missed": [],
         "relationships_predicted": [
-          "Amphibious Ships -ASSOCIATED_WITH-> LHA",
-          "Amphibious Ships -ASSOCIATED_WITH-> Navy",
           "Battle Force Ship Assessment and Requirement -ASSOCIATED_WITH-> LHD",
           "Battle Force Ship Assessment and Requirement -BELONGS_TO-> Navy",
           "CRS -ASSOCIATED_WITH-> Light Amphibious Warship",
@@ -7071,8 +8333,7 @@
           "Navy -ASSOCIATED_WITH-> LHA",
           "Navy -ASSOCIATED_WITH-> LHD",
           "Navy -ASSOCIATED_WITH-> NDAA",
-          "U.S. Navy -ASSOCIATED_WITH-> Amphibious Ships",
-          "U.S. Navy -ASSOCIATED_WITH-> Navy"
+          "U.S. Navy -ASSOCIATED_WITH-> Amphibious Ships"
         ]
       },
       "build": {
@@ -7083,8 +8344,14 @@
         "dates_orphaned": 4,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 14,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 14
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 14
+        }
       }
     },
     {
@@ -7093,11 +8360,12 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.26,
+      "seconds": 0.13,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
-          "tp": 13,
-          "pred": 33,
+          "tp": 12,
+          "pred": 32,
           "exp": 15,
           "typed_tp": 11,
           "category_tp": 11
@@ -7128,17 +8396,17 @@
             "pred": 1,
             "exp": 0
           },
-          "Location": {
-            "tp": 0,
-            "pred": 2,
-            "exp": 0
-          },
           "Person": {
             "tp": 0,
             "pred": 2,
             "exp": 0
           },
           "Document": {
+            "tp": 0,
+            "pred": 1,
+            "exp": 0
+          },
+          "Location": {
             "tp": 0,
             "pred": 1,
             "exp": 0
@@ -7150,19 +8418,28 @@
           }
         },
         "confusion": {
-          "Weapon -> Organization": 1,
-          "Ship -> Location": 1
+          "Weapon -> Organization": 1
         },
         "relationships": {
           "tp": 1,
-          "pred": 29,
+          "pred": 24,
           "exp": 1,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 1,
+          "pred": 2,
+          "exp": 1
+        },
+        "relationship_classes": {
+          "typed": 2,
+          "generic": 22,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 27,
           "USES": 1,
-          "SUPPLIED_BY": 1
+          "SUPPLIED_BY": 1,
+          "ASSOCIATED_WITH": 22
         },
         "rel_gold_by_type": {
           "USES": {
@@ -7194,11 +8471,11 @@
         ],
         "false_negatives": [
           "2019 [Date]",
-          "SSL Technology Maturation [Technology]"
+          "SSL Technology Maturation [Technology]",
+          "USS Ponce [Ship]"
         ],
         "mistyped": [
-          "Laser Weapons System Demonstrator: Weapon -> Organization",
-          "USS Ponce\n\nSource: Ship -> Location"
+          "Laser Weapons System Demonstrator: Weapon -> Organization"
         ],
         "relationships_missed": [],
         "relationships_predicted": [
@@ -7211,10 +8488,7 @@
           "Historic Leap: -ASSOCIATED_WITH-> Arabian Gulf",
           "Historic Leap: -ASSOCIATED_WITH-> Shipboard Laser Operates",
           "Innovation, Technology Missions -ASSOCIATED_WITH-> Test and Evaluation Division",
-          "LaWS -ASSOCIATED_WITH-> Navy",
-          "LaWS -ASSOCIATED_WITH-> USS Ponce\n\nSource",
           "Laser Weapon System -ASSOCIATED_WITH-> LaWS",
-          "Laser Weapon System -ASSOCIATED_WITH-> USS Ponce\n\nSource",
           "N94 -ASSOCIATED_WITH-> Innovation, Technology Missions",
           "N94 -ASSOCIATED_WITH-> Test and Evaluation Division",
           "N96 -ASSOCIATED_WITH-> Office of Chief of Naval Operations",
@@ -7222,28 +8496,30 @@
           "Navy -ASSOCIATED_WITH-> David Smalley",
           "Navy -ASSOCIATED_WITH-> Navy Office of Legislative Affairs",
           "Navy -ASSOCIATED_WITH-> Portland",
-          "Navy Laser Weapon Development Approach -ASSOCIATED_WITH-> Navy",
           "Navy Office of Legislative Affairs -ASSOCIATED_WITH-> CRS",
           "Northrop Grumman -ASSOCIATED_WITH-> Raytheon",
           "Portland -USES-> Laser Weapons System Demonstrator",
           "Raytheon -ASSOCIATED_WITH-> DOD",
           "Shipboard Laser Operates -ASSOCIATED_WITH-> Arabian Gulf",
           "Shipboard Laser Operates -ASSOCIATED_WITH-> Navy News Service",
-          "Surface Warfare Division -ASSOCIATED_WITH-> Office of Chief of Naval Operations",
-          "USS Ponce\n\nSource -ASSOCIATED_WITH-> Navy"
+          "Surface Warfare Division -ASSOCIATED_WITH-> Office of Chief of Naval Operations"
         ]
       },
       "build": {
         "entities_created": 23,
         "entities_merged": 0,
-        "entities_filtered": 1,
+        "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 9,
         "relationships_created": 2,
         "relationships_retired": 0,
-        "relationships_dropped": 3,
+        "relationships_dropped": 22,
         "relationships_dropped_by_type": {
-          "ASSOCIATED_WITH": 3
+          "ASSOCIATED_WITH": 22
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 22
         }
       }
     },
@@ -7253,11 +8529,12 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.23,
+      "seconds": 0.12,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
-          "tp": 9,
-          "pred": 20,
+          "tp": 8,
+          "pred": 19,
           "exp": 9,
           "typed_tp": 4,
           "category_tp": 4
@@ -7270,7 +8547,7 @@
           },
           "Organization": {
             "tp": 2,
-            "pred": 9,
+            "pred": 8,
             "exp": 4
           },
           "Ship": {
@@ -7302,18 +8579,27 @@
         "confusion": {
           "Organization -> Person": 2,
           "Ship -> Product": 1,
-          "Event -> Location": 1,
-          "Ship -> Organization": 1
+          "Event -> Location": 1
         },
         "relationships": {
           "tp": 0,
-          "pred": 21,
+          "pred": 17,
           "exp": 1,
           "pair_found": 1
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 2,
+          "exp": 1
+        },
+        "relationship_classes": {
+          "typed": 2,
+          "generic": 15,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 19,
-          "SUPPLIED_BY": 2
+          "SUPPLIED_BY": 2,
+          "ASSOCIATED_WITH": 15
         },
         "rel_gold_by_type": {
           "SUPPLIED_BY": {
@@ -7334,10 +8620,11 @@
           "Navy [Organization]",
           "Smith [Organization]"
         ],
-        "false_negatives": [],
+        "false_negatives": [
+          "FREMM [Ship]"
+        ],
         "mistyped": [
           "Constellation: Ship -> Product",
-          "Design Compared to FREMM Design\n\nSource: Ship -> Organization",
           "Fincantieri Marinette Marine: Organization -> Person",
           "Fincantieri: Organization -> Person",
           "Sea Air Space: Event -> Location"
@@ -7353,16 +8640,12 @@
           "Congressional Budget Office -SUPPLIED_BY-> Navy",
           "Constellation -ASSOCIATED_WITH-> Naval Surface Warfare Center Carderock",
           "Constellation -ASSOCIATED_WITH-> Sea Air Space",
-          "Design Compared to FREMM Design\n\nSource -ASSOCIATED_WITH-> CRS",
-          "Design Compared to FREMM Design\n\nSource -ASSOCIATED_WITH-> Congressional Budget Office",
-          "Fincantieri -ASSOCIATED_WITH-> Constellation",
           "Fincantieri Marinette Marine -ASSOCIATED_WITH-> Constellation",
           "Fincantieri Marinette Marine -ASSOCIATED_WITH-> Naval Surface Warfare Center Carderock",
           "Italians -ASSOCIATED_WITH-> Constellation",
           "Italians -ASSOCIATED_WITH-> Kevin Smith",
           "Kevin Smith -ASSOCIATED_WITH-> Constellation",
           "Kevin Smith -ASSOCIATED_WITH-> Sea Air Space",
-          "Navy -ASSOCIATED_WITH-> Design Compared to FREMM Design\n\nSource",
           "Navy -ASSOCIATED_WITH-> Fincantieri",
           "Smith -ASSOCIATED_WITH-> Constellation",
           "Smith -ASSOCIATED_WITH-> Fincantieri Marinette Marine",
@@ -7372,14 +8655,18 @@
       "build": {
         "entities_created": 12,
         "entities_merged": 2,
-        "entities_filtered": 1,
+        "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 5,
         "relationships_created": 2,
         "relationships_retired": 0,
-        "relationships_dropped": 3,
+        "relationships_dropped": 15,
         "relationships_dropped_by_type": {
-          "ASSOCIATED_WITH": 3
+          "ASSOCIATED_WITH": 15
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 15
         }
       }
     },
@@ -7389,11 +8676,12 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.24,
+      "seconds": 0.13,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 17,
-          "pred": 26,
+          "pred": 24,
           "exp": 20,
           "typed_tp": 17,
           "category_tp": 17
@@ -7406,7 +8694,7 @@
           },
           "Location": {
             "tp": 9,
-            "pred": 11,
+            "pred": 9,
             "exp": 11
           },
           "Organization": {
@@ -7432,6 +8720,16 @@
           "exp": 2,
           "pair_found": 2
         },
+        "relationships_typed": {
+          "tp": 2,
+          "pred": 3,
+          "exp": 2
+        },
+        "relationship_classes": {
+          "typed": 3,
+          "generic": 31,
+          "date_link": 0
+        },
         "rel_types_predicted": {
           "BELONGS_TO": 1,
           "TARGETS": 1,
@@ -7452,8 +8750,6 @@
           "2021 [Date]",
           "2023 [Date]",
           "Belarussians [Organization]",
-          "Minsk [Location]",
-          "Moscow [Location]",
           "Poles [Organization]",
           "Russians [Organization]",
           "Ukraine.64 Since [Organization]",
@@ -7471,17 +8767,17 @@
           "Africa -ASSOCIATED_WITH-> Russia",
           "Belarus -ASSOCIATED_WITH-> EU",
           "Belarus -ASSOCIATED_WITH-> Poland",
+          "Belarus -ASSOCIATED_WITH-> Russia",
           "Belarussians -ASSOCIATED_WITH-> Poles",
           "Belarussians -ASSOCIATED_WITH-> Ukrainians",
           "EU -ASSOCIATED_WITH-> Lithuania",
           "EU -ASSOCIATED_WITH-> Poland",
           "Internal Security Agency -ASSOCIATED_WITH-> Russia",
           "Internal Security Agency -BELONGS_TO-> Poland",
-          "Lithuania -ASSOCIATED_WITH-> Minsk",
+          "Lithuania -ASSOCIATED_WITH-> Belarus",
           "Lithuania -ASSOCIATED_WITH-> Tusk",
           "Middle East -ASSOCIATED_WITH-> Africa",
           "Middle East -ASSOCIATED_WITH-> Russia",
-          "Minsk -ASSOCIATED_WITH-> Moscow",
           "NATO -DEPLOYED_AT-> Baltic Sea",
           "Poland -ASSOCIATED_WITH-> Lithuania",
           "Poland -ASSOCIATED_WITH-> Russia",
@@ -7493,8 +8789,8 @@
           "Russia -TARGETS-> Ukraine",
           "Russians -ASSOCIATED_WITH-> Belarussians",
           "Russians -ASSOCIATED_WITH-> Ukrainians",
-          "Tusk -ASSOCIATED_WITH-> Minsk",
-          "Tusk -ASSOCIATED_WITH-> Moscow",
+          "Tusk -ASSOCIATED_WITH-> Belarus",
+          "Tusk -ASSOCIATED_WITH-> Russia",
           "Ukraine -ASSOCIATED_WITH-> Belarussians",
           "Ukraine -ASSOCIATED_WITH-> Russians",
           "Ukraine.64 Since -ASSOCIATED_WITH-> Baltic Sea",
@@ -7504,15 +8800,21 @@
         ]
       },
       "build": {
-        "entities_created": 20,
+        "entities_created": 18,
         "entities_merged": 0,
         "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 6,
         "relationships_created": 3,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 31,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 31
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 31
+        }
       }
     },
     {
@@ -7521,7 +8823,8 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.18,
+      "seconds": 0.11,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 16,
@@ -7562,12 +8865,22 @@
         },
         "relationships": {
           "tp": 0,
-          "pred": 22,
+          "pred": 17,
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 17,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 22
+          "ASSOCIATED_WITH": 17
         },
         "rel_gold_by_type": {},
         "false_positives": [
@@ -7586,8 +8899,6 @@
         ],
         "relationships_missed": [],
         "relationships_predicted": [
-          "China -ASSOCIATED_WITH-> Mach",
-          "China -ASSOCIATED_WITH-> South Korea",
           "DOD -ASSOCIATED_WITH-> Japan",
           "DOD -ASSOCIATED_WITH-> United States",
           "Iran -ASSOCIATED_WITH-> Brazil",
@@ -7596,7 +8907,6 @@
           "Janes -ASSOCIATED_WITH-> North Korea",
           "Janes -ASSOCIATED_WITH-> South Korea",
           "Japan -ASSOCIATED_WITH-> Hyper Velocity Gliding Projectile",
-          "Japan -ASSOCIATED_WITH-> Iran",
           "Japan -ASSOCIATED_WITH-> United States",
           "Japan Aerospace Exploration Agency -ASSOCIATED_WITH-> Mitsubishi Heavy Industries",
           "Japan Aerospace Exploration Agency -ASSOCIATED_WITH-> University of Tokyo",
@@ -7605,9 +8915,7 @@
           "North Korea -ASSOCIATED_WITH-> Mach",
           "South Korea -ASSOCIATED_WITH-> Hycore",
           "South Korea -ASSOCIATED_WITH-> Mach",
-          "South Korea -ASSOCIATED_WITH-> North Korea",
-          "United States -ASSOCIATED_WITH-> Iran",
-          "United States -ASSOCIATED_WITH-> Israel"
+          "South Korea -ASSOCIATED_WITH-> North Korea"
         ]
       },
       "build": {
@@ -7618,8 +8926,14 @@
         "dates_orphaned": 5,
         "relationships_created": 0,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 17,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 17
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 17
+        }
       }
     },
     {
@@ -7628,11 +8942,12 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.23,
+      "seconds": 0.12,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 20,
-          "pred": 26,
+          "pred": 25,
           "exp": 20,
           "typed_tp": 19,
           "category_tp": 19
@@ -7650,7 +8965,7 @@
           },
           "Organization": {
             "tp": 5,
-            "pred": 7,
+            "pred": 6,
             "exp": 5
           },
           "Document": {
@@ -7664,13 +8979,23 @@
         },
         "relationships": {
           "tp": 0,
-          "pred": 29,
+          "pred": 25,
           "exp": 3,
           "pair_found": 2
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 1,
+          "exp": 3
+        },
+        "relationship_classes": {
+          "typed": 1,
+          "generic": 24,
+          "date_link": 0
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 28,
-          "TARGETS": 1
+          "TARGETS": 1,
+          "ASSOCIATED_WITH": 24
         },
         "rel_gold_by_type": {
           "BELONGS_TO": {
@@ -7687,7 +9012,6 @@
           "2017 [Date]",
           "2021 [Date]",
           "Kuwaiti [Location]",
-          "Neighbors\n\nKuwait [Organization]",
           "shared.50 [Document]"
         ],
         "false_negatives": [],
@@ -7702,7 +9026,6 @@
         "relationships_predicted": [
           "Dorra/Arash -ASSOCIATED_WITH-> Saudi Arabia",
           "Gulf Cooperation Council -ASSOCIATED_WITH-> Yemen",
-          "Houthi -ASSOCIATED_WITH-> Iran",
           "Houthi -ASSOCIATED_WITH-> Saudi Arabia",
           "Iran -ASSOCIATED_WITH-> Persian Gulf",
           "Iran -ASSOCIATED_WITH-> shared.50",
@@ -7713,11 +9036,9 @@
           "Kuwait -ASSOCIATED_WITH-> Houthi",
           "Kuwait -ASSOCIATED_WITH-> Iran",
           "Kuwait -ASSOCIATED_WITH-> Kuwaiti",
-          "Kuwait -ASSOCIATED_WITH-> Middle East",
           "Kuwait -ASSOCIATED_WITH-> Persian Gulf",
           "Kuwait -ASSOCIATED_WITH-> Qatar",
           "Kuwait -ASSOCIATED_WITH-> Saudi Arabia",
-          "Kuwait Gulf Oil Company -ASSOCIATED_WITH-> Israel",
           "Kuwaiti -ASSOCIATED_WITH-> Dorra/Arash",
           "Kuwaiti -ASSOCIATED_WITH-> Iran",
           "Kuwaiti -ASSOCIATED_WITH-> Qatar",
@@ -7726,7 +9047,6 @@
           "Qatar -ASSOCIATED_WITH-> United Arab Emirates",
           "Saudi Arabia -ASSOCIATED_WITH-> Iran",
           "Saudi Arabia -ASSOCIATED_WITH-> United Arab Emirates",
-          "Saudi Aramco Gulf Operations Company -ASSOCIATED_WITH-> Israel",
           "Saudi Aramco Gulf Operations Company -ASSOCIATED_WITH-> Kuwait Gulf Oil Company",
           "shared.50 -ASSOCIATED_WITH-> Khafji Joint Operations Company"
         ]
@@ -7734,13 +9054,19 @@
       "build": {
         "entities_created": 16,
         "entities_merged": 1,
-        "entities_filtered": 1,
+        "entities_filtered": 0,
         "dates_absorbed": 0,
         "dates_orphaned": 8,
         "relationships_created": 1,
         "relationships_retired": 0,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 24,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 24
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 24
+        }
       }
     },
     {
@@ -7749,11 +9075,12 @@
       "method": "nlp",
       "degraded": false,
       "reason": "",
-      "seconds": 0.18,
+      "seconds": 0.14,
+      "relationships_dropped_by_reason": {},
       "score": {
         "entities": {
           "tp": 16,
-          "pred": 21,
+          "pred": 20,
           "exp": 16,
           "typed_tp": 12,
           "category_tp": 12
@@ -7771,7 +9098,7 @@
           },
           "Organization": {
             "tp": 5,
-            "pred": 11,
+            "pred": 10,
             "exp": 5
           },
           "Location": {
@@ -7792,17 +9119,26 @@
         },
         "relationships": {
           "tp": 0,
-          "pred": 30,
+          "pred": 28,
           "exp": 0,
           "pair_found": 0
         },
+        "relationships_typed": {
+          "tp": 0,
+          "pred": 0,
+          "exp": 0
+        },
+        "relationship_classes": {
+          "typed": 0,
+          "generic": 25,
+          "date_link": 3
+        },
         "rel_types_predicted": {
-          "ASSOCIATED_WITH": 27,
-          "OCCURRED_ON": 3
+          "OCCURRED_ON": 3,
+          "ASSOCIATED_WITH": 25
         },
         "rel_gold_by_type": {},
         "false_positives": [
-          "DOD Counter-UAS Policies and Organizations\n\nMilitary [Organization]",
           "Department [Organization]",
           "Readiness [Organization]",
           "Section 925 [Document]",
@@ -7838,10 +9174,8 @@
           "Operation Hard Kill -OCCURRED_ON-> August 2024",
           "Operation Hard Kill -OCCURRED_ON-> October 2024",
           "Readiness -ASSOCIATED_WITH-> Operation Hard Kill",
-          "Sands -ASSOCIATED_WITH-> FY2025 NDAA",
           "Section 925 -ASSOCIATED_WITH-> Congress",
           "Section 925 -ASSOCIATED_WITH-> Department",
-          "U.S.-Saudi Arabia -ASSOCIATED_WITH-> FY2025 NDAA",
           "U.S.-Saudi Arabia -ASSOCIATED_WITH-> Sands",
           "United States -ASSOCIATED_WITH-> Sands",
           "United States -ASSOCIATED_WITH-> U.S.-Saudi Arabia",
@@ -7852,28 +9186,37 @@
       "build": {
         "entities_created": 17,
         "entities_merged": 0,
-        "entities_filtered": 1,
+        "entities_filtered": 0,
         "dates_absorbed": 1,
         "dates_orphaned": 2,
         "relationships_created": 0,
         "relationships_retired": 3,
-        "relationships_dropped": 0,
-        "relationships_dropped_by_type": {}
+        "relationships_dropped": 25,
+        "relationships_dropped_by_type": {
+          "ASSOCIATED_WITH": 25
+        },
+        "relationships_dropped_by_reason": {
+          "unknown_endpoint": 0,
+          "below_cooccurrence_min": 25
+        }
       }
     }
   ],
   "build": {
     "dates_absorbed": 1,
     "dates_orphaned": 190,
-    "entities_created": 657,
-    "entities_filtered": 8,
+    "entities_created": 642,
+    "entities_filtered": 0,
     "entities_merged": 17,
     "relationships_created": 67,
-    "relationships_dropped": 11,
+    "relationships_dropped": 635,
     "relationships_retired": 3,
     "relationships_dropped_by_type": {
-      "ASSOCIATED_WITH": 10,
-      "BELONGS_TO": 1
+      "ASSOCIATED_WITH": 635
+    },
+    "relationships_dropped_by_reason": {
+      "below_cooccurrence_min": 635,
+      "unknown_endpoint": 0
     },
     "errors": []
   }
