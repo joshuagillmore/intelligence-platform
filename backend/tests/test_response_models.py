@@ -99,6 +99,7 @@ GET_PATHS = _plain_get_paths()
 # The routes that read Postgres; they skip when none is exported.
 POSTGRES_PATHS = {
     "/api/admin/api-keys",
+    "/api/admin/llm/models",  # lists stored provider keys, so it reads Postgres too
     "/api/attack/technique/{tid}/d3fend",
     "/api/collection-dashboard",
     "/api/collection-plans",
