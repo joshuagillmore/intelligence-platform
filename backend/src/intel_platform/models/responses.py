@@ -463,3 +463,17 @@ class SnapshotDetailResponse(SnapshotResponse):
     """A snapshot with the edges among its entities. Open-ended like ``SnapshotResponse``."""
     edges: list[SnapshotEdgeItem]
     edge_count: int
+
+
+# ---------------------------------------------------------------------------
+# LLM
+# ---------------------------------------------------------------------------
+
+class LlmQueryResponse(BaseModel):
+    content: str
+    skill_applied: str | None = None
+    # "none" when no provider is configured (``content`` then says so).
+    model: str
+    tokens_used: int
+    # Stated by the model; present only for assessment skills that state one.
+    probability: float | None = None
