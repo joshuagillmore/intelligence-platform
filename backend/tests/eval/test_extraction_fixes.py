@@ -990,6 +990,96 @@ async def test_hybrid_resolves_a_model_endpoint_to_the_entity_nlp_extracted():
     assert result.relationships_dropped_by_reason["unlisted_endpoint"] == 1
 
 
+# ── A country and its government are one entity ───────────────────────────────
+# openrep: the model named "PRC government" and NLP "China" and "PRC"; a
+# capital standing for the state ("Tehran asserts ...") was a city node. The
+# gold makes one node per state with the other names as aliases.
+
+def _llm_returning(reply: dict):
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    return patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply()))
+
+
+async def test_the_prc_government_and_china_are_one_entity():
+    # openrep crs-IF12640_5.
+    from intel_platform.services import extraction
+
+    text = ("The PRC government is also an indirect shareholder in some firms. China's anti-espionage, "
+            "cybersecurity, and data security laws compel firms to support PRC state security authorities.")
+    reply = {"entities": [{"name": "PRC government", "entity_type": "GovernmentAgency"},
+                          {"name": "China", "entity_type": "Country"},
+                          {"name": "ByteDance", "entity_type": "Company"}],
+             "relationships": [{"source_entity": "ByteDance", "target_entity": "PRC government",
+                                "relationship_type": "FUNDED_BY"},
+                               {"source_entity": "PRC government", "target_entity": "China",
+                                "relationship_type": "BELONGS_TO"}]}
+    with _llm_returning(reply):
+        result = await extraction.extract_entities_hybrid(text, "doc-fix")
+    ents, rels = result
+    states = [e for e in ents if e["name"] in ("China", "PRC", "PRC government")]
+    assert [e["name"] for e in states] == ["China"], [e["name"] for e in ents]
+    assert states[0]["entity_type"] == "Location"
+    assert "PRC government" in states[0]["aliases"]
+    assert [(r["source_name"], r["rel_type"], r["target_name"]) for r in rels] == [
+        ("ByteDance", "FUNDED_BY", "China")]
+    assert result.relationships_dropped_by_reason["same_entity"] == 1
+
+
+async def test_the_kremlin_is_russia():
+    # No corpus sentence names the Kremlin as an actor ("pro-Kremlin" is the
+    # only form in openrep); the form is the plan's example.
+    from intel_platform.services import extraction
+
+    text = "The Kremlin denied that Russia had supplied the drones to the militia."
+    reply = {"entities": [{"name": "the Kremlin", "entity_type": "GovernmentAgency"},
+                          {"name": "Russia", "entity_type": "Country"}], "relationships": []}
+    with _llm_returning(reply):
+        ents, _ = await extraction.extract_entities_llm(text, "doc-fix")
+    assert [(e["name"], e["entity_type"]) for e in ents] == [("Russia", "Location")]
+    assert "the Kremlin" in ents[0]["aliases"]
+
+
+def test_a_capital_acting_for_the_state_is_the_country():
+    # openrep OPENREP-SUPINTREP-0037: "Tehran asserts ..." is Iran asserting.
+    text = ("Highly likely that Iran halted its nuclear weapons program in late 2003 and has not reauthorized the "
+            "development of nuclear weapons. Tehran asserts its enrichment program is only meant to produce fuel for "
+            "peaceful nuclear applications.")
+    entities, _ = extract_entities_nlp(text, "doc-fix")
+    by_name = {e["name"]: e for e in entities}
+    assert "Tehran" not in by_name
+    assert by_name["Iran"]["entity_type"] == "Location"
+    assert "Tehran" in by_name["Iran"].get("aliases", [])
+
+
+def test_a_capital_used_as_a_place_stays_a_location():
+    # openrep crs-R40094_15.
+    text = ("Iran has not allowed the agency to service the cameras. [D]uring the discussions in Tehran as well as in "
+            "Vienna, it was clearly indicated that since that Tessa Karaj Complex is still under security and judicial "
+            "investigations, the equipment related to this Complex are not included for servicing.")
+    entities, _ = extract_entities_nlp(text, "doc-fix")
+    by_name = {e["name"]: e for e in entities}
+    assert by_name["Tehran"]["entity_type"] == "Location"
+    assert "Tehran" not in (by_name["Iran"].get("aliases") or [])
+
+
+def test_the_regimes_in_two_capitals_are_their_states():
+    # openrep crs-R45784_21: "the regimes in Minsk and Moscow".
+    from intel_platform.services.extraction import _capital_metonyms
+
+    text = ('Prime Minister Tusk has described these migration flows as "state-led operations involving the regimes '
+            'in Minsk and Moscow."')
+    assert _capital_metonyms(text) == {"Minsk", "Moscow"}
+    assert _capital_metonyms("Kissinger made two secret visits to Beijing in 1971.") == set()
+
+
 # ── What the prompt asks of relationships ─────────────────────────────────────
 
 def test_the_prompt_requires_both_ends_of_a_relationship_to_be_listed_entities():

@@ -914,6 +914,194 @@ def _resolve_endpoints(
     return kept, dropped, added
 
 
+# ── A country and its government are one entity ─────────────────────────────
+# data/governments.yaml lists each country's names, its government forms and
+# its capital. A capital stands for the state only where the text uses it as
+# an actor; these are the dependency positions that say which.
+
+# Nouns that make a capital in a phrase with them the state: "the regimes in
+# Minsk and Moscow", "the Tehran government".
+_GOVERNMENT_NOUNS = frozenset({
+    "government", "regime", "leadership", "authority", "official", "administration", "embassy",
+})
+# Nouns that make a capital possessing them a place: "Tehran's streets".
+_PLACE_NOUNS = frozenset({
+    "street", "airport", "resident", "population", "mayor", "outskirt", "suburb", "centre", "center",
+    "university", "bazaar", "district", "neighborhood", "neighbourhood", "metro", "skyline", "province",
+    "hotel", "port", "harbour", "harbor", "square", "skies", "sky", "residents",
+})
+# Prepositions whose object is somewhere ("talks in Tehran", "flew from
+# Beijing", "visits to Beijing") or someone ("talks with Tehran").
+_PLACE_PREPOSITIONS = frozenset({
+    "in", "at", "near", "from", "to", "into", "inside", "outside", "around", "across", "throughout", "via",
+    "through", "over", "within", "toward", "towards",
+})
+_ACTOR_PREPOSITIONS = frozenset({"with", "against", "between"})
+# Verbs whose object is a place: "visited Beijing", "struck Kyiv".
+_PLACE_VERBS = frozenset({
+    "visit", "leave", "reach", "enter", "tour", "flee", "evacuate", "arrive", "return", "fly", "travel",
+    "bomb", "strike", "shell", "capture", "besiege", "surround", "approach", "host",
+})
+
+
+def _capital_use(token, depth: int = 0) -> str:
+    """"actor", "place" or "" for one mention of a capital, from its parse."""
+    dep = token.dep_
+    head = token.head
+    if dep in ("nsubj", "nsubjpass", "agent", "csubj"):
+        return "actor"
+    if dep == "poss":
+        return "place" if head.lemma_.lower() in _PLACE_NOUNS else "actor"
+    if dep == "compound":
+        return "actor" if head.lemma_.lower() in _GOVERNMENT_NOUNS else "place"
+    if dep == "pobj":
+        prep = head.lower_
+        if head.head.lemma_.lower() in _GOVERNMENT_NOUNS:
+            return "actor"
+        if prep in _ACTOR_PREPOSITIONS:
+            return "actor"
+        if prep in _PLACE_PREPOSITIONS:
+            return "place"
+        return ""
+    if dep == "dobj":
+        return "place" if head.lemma_.lower() in _PLACE_VERBS else "actor"
+    if dep in ("conj", "appos") and depth < 3 and head is not token:
+        # "the regimes in Minsk and Moscow": Moscow is used as Minsk is.
+        return _capital_use(head, depth + 1)
+    return ""
+
+
+def _capital_metonyms(text: str, doc=None) -> set[str]:
+    """The table's capitals this text uses for their state more often than as a place.
+
+    "Tehran asserts its enrichment program ...", "Beijing's insistence on
+    unification" and "the regimes in Minsk and Moscow" are the state;
+    "discussions in Tehran" and "two secret visits to Beijing" are the city.
+    Counted over every mention, so a text that does both resolves to the use
+    it makes most; a tie stays a place. Parses the text when the caller has no
+    parse of it, and only when it names a capital.
+    """
+    from intel_platform.services.text_utils import capital_names
+
+    capitals = [c for c in capital_names() if re.search(r"(?<!\w)" + re.escape(c) + r"(?!\w)", text or "")]
+    if not capitals:
+        return set()
+    try:
+        if doc is None:
+            doc = _get_nlp()(text)
+    except Exception:
+        # Without a parse the capital stays a place: the safe reading.
+        logger.warning("Could not parse the text to read how it uses a capital", exc_info=True)
+        return set()
+    found: set[str] = set()
+    for capital in capitals:
+        uses = {"actor": 0, "place": 0}
+        for m in re.finditer(r"(?<!\w)" + re.escape(capital) + r"(?!\w)", doc.text):
+            span = doc.char_span(m.start(), m.end(), alignment_mode="expand")
+            use = _capital_use(span.root) if span is not None else ""
+            if use:
+                uses[use] += 1
+        if uses["actor"] > uses["place"]:
+            found.add(capital)
+    return found
+
+
+def _country_name_in_text(country: str, text: str) -> str:
+    """The name the text itself gives the country, else the table's."""
+    from intel_platform.services.text_utils import country_names
+
+    for name in country_names(country):
+        if re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", text or ""):
+            return name
+    return country
+
+
+def _add_alias(entity: dict, alias: str) -> None:
+    if not alias or alias == entity.get("name"):
+        return
+    aliases = list(entity.get("aliases") or [])
+    if alias not in aliases:
+        aliases.append(alias)
+    entity["aliases"] = aliases
+
+
+def _resolve_countries(
+    entities: list[dict], relationships: list[dict], text: str, doc=None,
+) -> tuple[list[dict], list[dict], int]:
+    """One entity per state: its names, its government forms and a capital acting for it.
+
+    The model named "PRC government" where NLP named "China" and "PRC"; the
+    graph got a node for each, and the gold makes them one. Every Location or
+    Organization entity the table resolves to a country joins that country's
+    entity: the first one named as the country itself, or, when only a form
+    is named, the first form, renamed to the country as the text names it.
+    The others become its aliases, the entity is a Location (as the gold
+    types countries), and edges follow it. A capital joins only when the text
+    uses it as the state (``_capital_metonyms``).
+
+    Returns the entities, the relationships, and how many edges were dropped
+    because both ends became the one entity.
+    """
+    from intel_platform.services.text_utils import country_of
+
+    metonyms: set[str] | None = None
+    groups: dict[str, list[tuple[dict, str]]] = {}
+    for e in entities:
+        _, parent = normalize_entity_type(e.get("entity_type") or "")
+        if parent not in ("Location", "Organization"):
+            continue
+        hit = country_of(e.get("name") or "")
+        if hit is None:
+            continue
+        country, kind = hit
+        if kind == "capital":
+            if metonyms is None:
+                metonyms = {c.lower() for c in _capital_metonyms(text, doc)}
+            if (e.get("name") or "").strip().lower() not in metonyms:
+                continue
+        groups.setdefault(country, []).append((e, kind))
+    if not groups:
+        return entities, relationships, 0
+
+    renamed: dict[str, str] = {}
+    gone: set[int] = set()
+    for country, members in groups.items():
+        named = [e for e, kind in members if kind == "name"]
+        keep = named[0] if named else members[0][0]
+        if not named:
+            written = keep["name"]
+            keep["name"] = _country_name_in_text(country, text)
+            _add_alias(keep, written)
+            renamed[written] = keep["name"]
+        keep["entity_type"] = "Location"
+        for e, _ in members:
+            if e is keep:
+                continue
+            for alias in [e.get("name", ""), *(e.get("aliases") or [])]:
+                if isinstance(alias, str):
+                    _add_alias(keep, alias)
+            keep["confidence"] = max(keep.get("confidence", 0) or 0, e.get("confidence", 0) or 0)
+            _merge_attributes(keep, e)
+            renamed[e.get("name", "")] = keep["name"]
+            gone.add(id(e))
+    if gone:
+        logger.debug("Resolved %d government form(s) and name(s) to their country", len(gone))
+    entities = [e for e in entities if id(e) not in gone]
+
+    kept: list[dict] = []
+    same = 0
+    for r in relationships:
+        src = renamed.get(r.get("source_name"), r.get("source_name"))
+        tgt = renamed.get(r.get("target_name"), r.get("target_name"))
+        if src == tgt:
+            same += 1
+            continue
+        if (src, tgt) != (r.get("source_name"), r.get("target_name")):
+            r = {**r, "source_name": src, "target_name": tgt}
+        kept.append(r)
+    return entities, kept, same
+
+
 def _drop_generic_on_typed_pairs(relationships: list[dict]) -> tuple[list[dict], int]:
     """Drop each ASSOCIATED_WITH on a pair that an asserted typed relation links.
 
@@ -2353,10 +2541,13 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         if frozenset((a_name, b_name)) not in linked_pairs:
             _add_rel(a_name, b_name, "ASSOCIATED_WITH", 0.5, sentence)
 
+    entities, relationships, same_entity = _resolve_countries(entities, relationships, text, doc)
+
     # Resolve event_datetime on Event entities from their OCCURRED_ON Date links
     _link_event_dates(entities, relationships)
 
-    return ExtractionResult(entities, relationships, method="nlp")
+    return ExtractionResult(entities, relationships, method="nlp",
+                            relationships_dropped_by_reason={"same_entity": same_entity} if same_entity else None)
 
 
 # A blank line: the end of a paragraph or a heading, which no sentence crosses.
@@ -2434,8 +2625,8 @@ async def _extract_with_llm(
 
     Raises ``_LLMExtractionFailed`` with a reason when the model produced
     nothing usable. The callers decide what the fallback is. Hybrid passes
-    ``resolve_endpoints=False`` and resolves them after the merge, when the
-    NLP entities can resolve an endpoint too.
+    ``resolve_endpoints=False`` and resolves endpoints (and countries) after
+    the merge, when the NLP entities can resolve an endpoint too.
     """
     # Use the extraction-specific provider selection (routes to local Ollama
     # when extraction_llm_provider=ollama; respects runtime overrides otherwise).
@@ -2537,6 +2728,8 @@ async def _extract_with_llm(
     dropped = {"unlisted_endpoint": 0, "same_entity": 0}
     if resolve_endpoints:
         relationships, dropped, _ = _resolve_endpoints(entities, relationships)
+        entities, relationships, same_entity = _resolve_countries(entities, relationships, text)
+        dropped["same_entity"] += same_entity
     relationships, generic_dropped = _drop_generic_on_typed_pairs(relationships)
     return entities, relationships, skipped, {**dropped, "generic_on_typed_pair": generic_dropped}
 
@@ -2706,6 +2899,11 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
                 if end_key not in kept_nlp_keys and end_key not in llm_by_key and end in nlp_by_name:
                     merged_entities.append(nlp_by_name[end])
                     kept_nlp_keys.add(end_key)
+
+    # One entity per state, over both halves: the model's "PRC government"
+    # and NLP's "China" are the same node.
+    merged_entities, merged_rels, same_entity = _resolve_countries(merged_entities, merged_rels, text)
+    dropped["same_entity"] = dropped.get("same_entity", 0) + same_entity
 
     # A model association on a pair NLP read a typed relation for goes here,
     # once both halves are in.

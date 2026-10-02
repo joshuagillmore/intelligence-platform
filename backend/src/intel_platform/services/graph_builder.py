@@ -16,6 +16,7 @@ from intel_platform.models.entities import (
 )
 from intel_platform.models.relationships import Relationship
 from intel_platform.models.type_hierarchy import normalize_entity_type
+from intel_platform.services.text_utils import country_of
 
 logger = logging.getLogger(__name__)
 
@@ -317,6 +318,28 @@ def _clean_entity_name(name: str) -> str:
     return cleaned.strip().strip('"').strip("*_ ").strip()
 
 
+def _country_node(name: str, entity_type: str) -> str | None:
+    """The country a Location or Organization entity is, by data/governments.yaml, or None.
+
+    A country name ("PRC", "Russian Federation") or a government form ("PRC
+    government", "the Kremlin") is the country, under the table's canonical
+    name, so every document's mention of one state lands on one node. A
+    capital is the state only when it arrives typed as an organization: the
+    build has no text to read, and extraction has already judged how the text
+    used it (a capital it read as the state comes here renamed).
+    """
+    hit = country_of(name)
+    if hit is None:
+        return None
+    country, kind = hit
+    _, parent = normalize_entity_type(entity_type or "")
+    if parent not in ("Location", "Organization"):
+        return None
+    if kind == "capital" and parent != "Organization":
+        return None
+    return country
+
+
 def _type_from_name(name: str, current: str) -> str:
     """Re-type an entity whose name follows an unambiguous naming convention.
 
@@ -463,6 +486,18 @@ def build_graph_from_extractions(
             entities_filtered += 1
             continue
 
+        # A government or a country written another way resolves to the
+        # country's node; edges naming the form as written still find it.
+        written_name = name
+        country = _country_node(name, raw_type)
+        if country is not None:
+            name, raw_type = country, "Location"
+            ent_data = {**ent_data, "name": name, "entity_type": raw_type}
+
+        def _bind(entity_id: str) -> None:
+            name_to_id[name] = entity_id
+            name_to_id[written_name] = entity_id
+
         # Dates are properties, not nodes. A date has no agency — it cannot act,
         # be targeted or be attributed — so as a node it only dilutes centrality
         # and returns useless Graph-RAG context, while as a property it is
@@ -488,7 +523,7 @@ def build_graph_from_extractions(
         if cache_key in _resolution_cache:
             cached = _resolution_cache[cache_key]
             if cached:
-                name_to_id[name] = cached
+                _bind(cached)
                 _merged_into(cached, entity_doc_id)
                 merged += 1
                 continue
@@ -499,28 +534,36 @@ def build_graph_from_extractions(
             entity_type=raw_type, existing_types=batch_name_to_type,
         )
         if match:
-            name_to_id[name] = batch_name_to_id[match]
+            _bind(batch_name_to_id[match])
             _resolution_cache[cache_key] = batch_name_to_id[match]
             _merged_into(batch_name_to_id[match], entity_doc_id)
             merged += 1
             continue
 
-        # Use indexed lookup against the graph (instead of loading all entities)
-        candidates = store.search_entity_by_name(project_id, name, limit=20)
-        if candidates:
+        # Use indexed lookup against the graph (instead of loading all entities).
+        # A country is looked up under its canonical name, then as written, so
+        # a node an earlier build made under the written name ("U.S.") is found.
+        found_in_graph = None
+        for lookup_name in dict.fromkeys((name, written_name)):
+            candidates = store.search_entity_by_name(project_id, lookup_name, limit=20)
+            if not candidates:
+                continue
             candidate_names = [c["name"] for c in candidates]
             candidate_name_to_id = {c["name"]: c["id"] for c in candidates}
             candidate_name_to_type = {c["name"]: c.get("entity_type", "") for c in candidates}
             match = resolve_entity_name(
-                name, candidate_names, threshold=resolution_threshold,
+                lookup_name, candidate_names, threshold=resolution_threshold,
                 entity_type=raw_type, existing_types=candidate_name_to_type,
             )
             if match:
-                name_to_id[name] = candidate_name_to_id[match]
-                _resolution_cache[cache_key] = candidate_name_to_id[match]
-                _merged_into(candidate_name_to_id[match], entity_doc_id)
-                merged += 1
-                continue
+                found_in_graph = candidate_name_to_id[match]
+                break
+        if found_in_graph:
+            _bind(found_in_graph)
+            _resolution_cache[cache_key] = found_in_graph
+            _merged_into(found_in_graph, entity_doc_id)
+            merged += 1
+            continue
 
         _resolution_cache[cache_key] = None
 
@@ -572,7 +615,7 @@ def build_graph_from_extractions(
         # match — the store returns that node, and this mention merges into it.
         node = store.create_entity(entity)
         entity_id = (node.get("id") if isinstance(node, dict) else None) or entity.id
-        name_to_id[name] = entity_id
+        _bind(entity_id)
         batch_names.append(name)
         batch_name_to_id[name] = entity_id
         batch_name_to_type[name] = raw_type
