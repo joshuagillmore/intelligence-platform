@@ -1080,6 +1080,77 @@ def test_the_regimes_in_two_capitals_are_their_states():
     assert _capital_metonyms("Kissinger made two secret visits to Beijing in 1971.") == set()
 
 
+# ── Acronyms that are proper names; names cut out of headings ─────────────────
+# openrep NLP missed JCPOA in all three documents that name it (spaCy tags it
+# nothing), and cut "Assess Russian", "Assess Arctic", "Toward Taiwan" and "PRC
+# Influence and" out of headings, and names across a heading and the line under
+# it ("Neighbors\n\nKuwait").
+
+def test_a_proper_name_acronym_is_extracted_wherever_it_is_written():
+    # openrep crs-R43311_4 and crs-IF11583_0.
+    types = _types('On November 5, 2018, "the United States fully re-imposed the sanctions on Iran that had been lifted '
+                   'or waived under the JCPOA."')
+    assert types.get("JCPOA") == "Document"
+    entities, _ = extract_entities_nlp(
+        "On July 20, 2015, the UN Security Council adopted Resolution 2231 (2015) to implement the Joint "
+        "Comprehensive Plan of Action (JCPOA) and other provisions concerning Iran's nuclear program.", "doc-fix")
+    jcpoa = next(e for e in entities if e["name"] == "JCPOA")
+    assert "Joint Comprehensive Plan of Action" in jcpoa.get("aliases", [])
+    # openrep crs-R48477_18; INDOPACOM is in no corpus text, and spaCy tags it
+    # a place in one sentence and a plural noun in the next.
+    assert _types("The NDAA requires the Secretary of Defense to report on counter-UAS training.").get("NDAA") \
+        == "Document"
+    for text in ("INDOPACOM conducted the exercise with Japan.",
+                 "Admiral Paparo, commander of INDOPACOM, testified before Congress."):
+        assert _types(text).get("INDOPACOM") == "Organization", text
+
+
+def test_an_acronym_inside_a_longer_token_is_not_extracted():
+    types = _types("The JCPOA-era sanctions relief and the NDAAs of earlier years were debated in INDOPACOMS.")
+    assert "INDOPACOM" not in types
+
+
+def test_an_acronym_already_inside_an_extracted_name_is_not_extracted_again():
+    # openrep crs-IN12661_3: "the FY2026 NDAA" is the document; a second
+    # "NDAA" entity was an extra.
+    types = _types("Congress granted SLTT law enforcement and correctional agencies authority through the FY2026 NDAA "
+                   "to engage in actions to mitigate drone threats.")
+    assert types.get("FY2026 NDAA") == "Document"
+    assert "NDAA" not in types
+
+
+def test_no_name_is_cut_from_an_imperative_heading():
+    types = _types("Assess Russian hybrid warfare against European states\n\nRussia has expanded its campaign.")
+    assert "Assess Russian" not in types and "Assess" not in types
+    assert types.get("Russia") == "Location"
+    # As the openrep products write it: a run-in title after a dash.
+    types = _types("Prior product OPENREP-SUPINTREP-0006 — Assess Russian hybrid warfare against European states "
+                   "and the NATO response in the Baltic.")
+    assert not [n for n in types if n.startswith("Assess")]
+    assert "NATO" in types
+
+
+def test_no_fragment_is_cut_from_a_title_case_heading():
+    # openrep crs-IF12640_5 and crs-IF10275_4.
+    types = _types("PRC Influence and Control\n\nThe CPC requires all firms to house a Party committee that is "
+                   "empowered to attend board meetings and be part of decisionmaking.")
+    assert "PRC Influence and" not in types
+    assert "CPC" in types
+    types = _types("U.S. Policy Toward Taiwan\n\nWith some of his statements and actions related to Taiwan, "
+                   "President Donald J. Trump has fed longstanding anxieties in Taiwan about the durability of U.S. "
+                   "support.")
+    assert "Toward Taiwan" not in types
+    assert types.get("Taiwan") == "Location"
+
+
+def test_a_name_does_not_span_a_heading_and_the_line_under_it():
+    # openrep crs-R47390_22: spaCy tagged "Neighbors\n\nKuwait".
+    types = _types("Kuwait and its Neighbors\n\nKuwait's preference for multilateralism and diplomatic outreach has "
+                   "been evident in its officials' mediation efforts in the Middle East region and beyond since 2015.")
+    assert not [n for n in types if "\n" in n], types
+    assert "Kuwait" in types
+
+
 # ── What the prompt asks of relationships ─────────────────────────────────────
 
 def test_the_prompt_requires_both_ends_of_a_relationship_to_be_listed_entities():

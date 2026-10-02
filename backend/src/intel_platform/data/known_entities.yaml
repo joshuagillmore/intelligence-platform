@@ -146,6 +146,39 @@ acronyms:
   - "NGA"
   - "GCHQ"
 
+# Acronyms that are proper names: a treaty, an act, a command. spaCy tags them
+# inconsistently or not at all (JCPOA never, INDOPACOM a place in one sentence
+# and a plural noun in the next), so extraction takes them wherever the text
+# writes one as a word, with the type given here. Where the text defines one
+# ("Joint Comprehensive Plan of Action (JCPOA)") the definition is its alias.
+proper_name_acronyms:
+  Document:
+    - "JCPOA"
+    - "NDAA"
+    - "AUMF"
+    - "CAATSA"
+    - "NPT"
+    - "CTBT"
+    - "ITAR"
+    - "FISA"
+    - "UNCLOS"
+  Organization:
+    - "INDOPACOM"
+    - "EUCOM"
+    - "CENTCOM"
+    - "AFRICOM"
+    - "NORTHCOM"
+    - "SOUTHCOM"
+    - "SPACECOM"
+    - "CYBERCOM"
+    - "SOCOM"
+    - "TRANSCOM"
+    - "STRATCOM"
+    - "NORAD"
+    - "CFIUS"
+    - "OPCW"
+    - "MTCR"
+
 noise_words:
   - "NETWORK"
   - "INFRASTRUCTURE"

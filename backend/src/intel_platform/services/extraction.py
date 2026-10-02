@@ -4,6 +4,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from pathlib import Path
 
 import spacy
 
@@ -2077,6 +2078,132 @@ def _phrase_relations(sent, spans, entities_by_name, resolve_anaphor) -> list[tu
             if s is not t and s["name"] != t["name"] and "Date" not in (s.get("entity_type"), t.get("entity_type"))]
 
 
+# ── Acronyms that are proper names ───────────────────────────────────────────
+
+@lru_cache(maxsize=1)
+def _proper_name_acronyms() -> dict[str, str]:
+    """Acronym -> entity type, from known_entities.yaml ``proper_name_acronyms``."""
+    import yaml
+
+    path = Path(__file__).resolve().parents[1] / "data" / "known_entities.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return {
+        str(acronym): entity_type
+        for entity_type, acronyms in (data.get("proper_name_acronyms") or {}).items()
+        for acronym in acronyms or []
+    }
+
+
+# The defined name right before "(ACR)": capitalised words and the small words
+# inside a name ("Joint Comprehensive Plan of Action (JCPOA)").
+_DEFINITION_WORD = r"(?:[A-Z][\w'’.&-]*|of|and|for|on|in|the|to)"
+
+
+def _acronym_definition(acronym: str, text: str) -> str:
+    """The name the text defines ``acronym`` as, or ""."""
+    m = re.search(rf"((?:{_DEFINITION_WORD}\s+)*{_DEFINITION_WORD})\s*\({re.escape(acronym)}\)", text)
+    if not m:
+        return ""
+    words = m.group(1).split()
+    # A definition starts and ends on a name word, not "the" or "of".
+    while words and not words[0][:1].isupper():
+        words.pop(0)
+    while words and not words[-1][:1].isupper():
+        words.pop()
+    return " ".join(words) if len(words) > 1 else ""
+
+
+def _extract_proper_acronyms(text: str, doc_id: str, seen: set[str]) -> list[dict]:
+    """The proper-name acronyms the text writes as a word, typed from the list.
+
+    spaCy never tags JCPOA (three openrep documents name it), and tags
+    INDOPACOM a place in one sentence and a plural noun in the next. Not
+    ``method: regex``: a definition spaCy did find ("Indo-Pacific Command
+    (INDOPACOM)") absorbs the acronym as its alias, as any bracketed acronym.
+    """
+    found = []
+    for acronym, entity_type in _proper_name_acronyms().items():
+        as_word = re.compile(rf"(?<![\w-]){re.escape(acronym)}(?![\w-])")
+        # "the FY2026 NDAA" is already the document; NDAA is not a second one.
+        if not as_word.search(text) or any(as_word.search(name) for name in seen):
+            continue
+        entity = {"name": acronym, "entity_type": entity_type, "source": doc_id, "method": "nlp",
+                  "confidence": 0.85}
+        definition = _acronym_definition(acronym, text)
+        if definition:
+            entity["aliases"] = [definition]
+        found.append(entity)
+    return found
+
+
+# ── Headings ─────────────────────────────────────────────────────────────────
+# spaCy reads a heading as a run of proper nouns and cuts names out of it:
+# "Assess Russian" from "Assess Russian hybrid warfare against European
+# states", "PRC Influence and" from "PRC Influence and Control", "Toward
+# Taiwan" from "U.S. Policy Toward Taiwan". A heading is a line written all in
+# title case without a closing full stop, or one (or the run-in title after a
+# dash or colon, "Prior product ... — Assess ...") that opens with an
+# imperative.
+
+_IMPERATIVES = frozenset({
+    "assess", "evaluate", "identify", "determine", "describe", "explain", "examine", "analyze", "analyse",
+    "estimate", "characterize", "characterise", "compare", "outline", "review", "summarize", "summarise",
+    "monitor", "track", "list", "provide", "consider", "discuss", "forecast", "investigate",
+})
+# Words a name never begins or ends with. Determiners are left to the
+# determiner strip ("The Hague").
+_EDGE_WORDS = frozenset({
+    "and", "or", "of", "in", "on", "for", "to", "with", "at", "by", "from", "toward", "towards", "during",
+    "against", "into", "under", "over", "between", "among", "after", "before", "via", "versus", "vs",
+})
+_TITLE_SMALL_WORDS = _EDGE_WORDS | {"a", "an", "the", "its", "their", "his", "her"}
+_RUN_IN_TITLE = re.compile(r"\s[—–:-]\s+")
+
+
+def _is_title_case(line: str) -> bool:
+    words = re.findall(r"[A-Za-z][\w'’.&-]*", line)
+    return bool(words) and all(w[0].isupper() or w.lower() in _TITLE_SMALL_WORDS for w in words)
+
+
+def _heading_segments(text: str) -> list[tuple[int, int, bool]]:
+    """(start, end, opens_with_imperative) for each heading or run-in title in the text."""
+    segments: list[tuple[int, int, bool]] = []
+    for line in re.finditer(r"[^\n]+", text or ""):
+        body = line.group().rstrip()
+        stripped = body.strip()
+        if not stripped:
+            continue
+        start = line.start() + (len(body) - len(body.lstrip()))
+        end = line.start() + len(body)
+        first = re.match(r"[A-Za-z]+", stripped)
+        imperative = bool(first) and first.group().lower() in _IMPERATIVES
+        if stripped[-1] not in ".!?" and (imperative or _is_title_case(stripped)):
+            segments.append((start, end, imperative))
+            continue
+        # A run-in title: "Prior product OPENREP-SUPINTREP-0006 — Assess ...".
+        for sep in _RUN_IN_TITLE.finditer(body):
+            rest = body[sep.end():]
+            word = re.match(r"[A-Za-z]+", rest)
+            if word and word.group().lower() in _IMPERATIVES:
+                segments.append((line.start() + sep.end(), end, True))
+                break
+    return segments
+
+
+def _cut_from_heading(start: int, end: int, name: str, segments: list[tuple[int, int, bool]]) -> bool:
+    """Whether the span [start, end) naming ``name`` is a fragment cut out of a heading."""
+    for seg_start, seg_end, imperative in segments:
+        if not (seg_start <= start < seg_end):
+            continue
+        words = name.split()
+        if not words:
+            return True
+        if imperative and start == seg_start:
+            return True  # "Assess Russian": the heading's verb is not a name
+        return words[0].lower() in _EDGE_WORDS or words[-1].lower() in _EDGE_WORDS | {"the", "a", "an"}
+    return False
+
+
 def _postprocess_entities(entities: list[dict]) -> list[dict]:
     """Fix common spaCy misclassifications for intelligence documents."""
     # Load from YAML (with fallback to hardcoded module constants)
@@ -2284,6 +2411,11 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
                 seen_names[name] = ent
                 entities.append(ent)
 
+    # Acronyms that are proper names, typed from the list rather than by spaCy.
+    for ent in _extract_proper_acronyms(text, doc_id, set(seen_names)):
+        seen_names[ent["name"]] = ent
+        entities.append(ent)
+
     # 2. Count entity mention frequency for confidence scoring
     name_freq: dict[str, int] = {}
     for ent in doc.ents:
@@ -2300,6 +2432,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
     _all_known = known_locs | known_orgs | known_pers
 
     hull_numbers = {hull for _, hull in _hull_numbers(text)}
+    headings = _heading_segments(text)
 
     # 3. Extract NLP entities with context-aware confidence
     for ent in doc.ents:
@@ -2308,6 +2441,11 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             continue
         name = ent.text.strip().strip("'\"")
         if not name or len(name) < 2:
+            continue
+        # A name does not run across a line break: "Neighbors\n\nKuwait" is
+        # a heading glued to the line under it. Nor is it a fragment of a
+        # heading ("Assess Russian", "Toward Taiwan", "PRC Influence and").
+        if "\n" in name or _cut_from_heading(ent.start_char, ent.end_char, name, headings):
             continue
         if name in noise:
             continue
