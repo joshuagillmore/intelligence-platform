@@ -162,16 +162,69 @@ export const authApi = {
   logout: () => http.post<ResponseOf<'/api/auth/logout', 'post'>>('/auth/logout'),
 };
 
-export type Project = Model<'ProjectResponse'>;
+// ── Project access (plan 2026-10-02, contracts 1 and 3) ──────────────────────
+// HAND-WRITTEN TYPES, pending the backend's member routes (WP-P). The
+// generated schema has neither `my_role`/`access` nor `/projects/{id}/members`
+// yet. At integration, run `npm run gen:api`, then:
+//   - `Project` → `Model<'ProjectResponse'>` (narrow `my_role`/`access` with
+//     `Omit<…> &` as `Pir` does for `status`, if the schema says `str`);
+//   - `projectsApi.list` / `.get` → `ResponseOf<'/api/projects', 'get'>` /
+//     `ResponseOf<'/api/projects/{project_id}', 'get'>`;
+//   - `ProjectMember` / `ProjectMembers` → `Model<…>` / `ResponseOf<…/members>`;
+//   - `setMemberRole` body → `satisfies BodyOf<…/members/{username}, 'put'>`;
+// and delete this note. Until then the member URLs type-check only because
+// the `${string}` in `/projects/${string}` also matches `…/members/…`.
+
+/** `owner`: everything, including members and deleting the project; `editor`:
+ *  read and write project data; `viewer`: read only. An admin is an implicit
+ *  owner of every project and is never listed as a member. */
+export type ProjectRole = 'owner' | 'editor' | 'viewer';
+
+/** `open`: the project has no members, so every signed-in analyst can read and
+ *  write it, until the first member (an owner) is added, which restricts it. */
+export type ProjectAccess = 'open' | 'restricted';
+
+/** `my_role` is null when the analyst holds no role (an open project they are
+ *  not a member of). Optional until the backend sends them. */
+export type Project = Model<'ProjectResponse'> & {
+  my_role?: ProjectRole | null;
+  access?: ProjectAccess | null;
+};
+
+/** One row of `GET /projects/{id}/members`. */
+export type ProjectMember = {
+  username: string;
+  role: ProjectRole;
+  added_by?: string | null;
+  added_at?: string | null;
+};
+
+/** `GET /projects/{id}/members`. */
+export type ProjectMembers = {
+  members: ProjectMember[];
+  access: ProjectAccess;
+  my_role?: ProjectRole | null;
+};
 
 export const projectsApi = {
-  list: () => http.get<ResponseOf<'/api/projects', 'get'>>('/projects'),
+  list: () => http.get<Project[]>('/projects'),
   create: (data: BodyOf<'/api/projects', 'post'>) =>
     http.post<ResponseOf<'/api/projects', 'post'>>('/projects', data),
-  get: (id: string) => http.get<ResponseOf<'/api/projects/{project_id}', 'get'>>(`/projects/${id}`),
+  get: (id: string) => http.get<Project>(`/projects/${id}`),
   delete: (id: string) => http.delete<ResponseOf<'/api/projects/{project_id}', 'delete'>>(`/projects/${id}`),
   batchDelete: (projectIds: string[]) => http.post<ResponseOf<'/api/projects/batch-delete', 'post'>>('/projects/batch-delete', { project_ids: projectIds } satisfies BodyOf<'/api/projects/batch-delete', 'post'>),
   activity: (id: string, limit?: number) => http.get<ResponseOf<'/api/projects/{project_id}/activity', 'get'>>(`/projects/${id}/activity`, { params: { limit } satisfies QueryOf<'/api/projects/{project_id}/activity', 'get'> }),
+  /** Who may see the project, whether it is open, and the caller's role. A 403
+   *  means the caller has no access to the project at all. */
+  members: (id: string) => http.get<ProjectMembers>(`/projects/${id}/members`),
+  /** Add `username` with `role`, or change their role. Owner only (403); on an
+   *  open project the first member must be an owner. The body is not read:
+   *  re-fetch `members` for the new state. */
+  setMemberRole: (id: string, username: string, role: ProjectRole) =>
+    http.put(`/projects/${id}/members/${encodeURIComponent(username)}`, { role }),
+  /** Owner only (403); 409 when it would remove the last owner. */
+  removeMember: (id: string, username: string) =>
+    http.delete(`/projects/${id}/members/${encodeURIComponent(username)}`),
 };
 
 /** How many rows matched in full, from `X-Total-Count`.

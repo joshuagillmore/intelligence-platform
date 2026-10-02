@@ -1,11 +1,15 @@
 'use client';
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import { projectsApi, watchlistApi, readWatchlist, type Project, type WatchedEntity } from '@/lib/api';
 import { useProject } from '@/lib/ProjectContext';
+import { useSession } from '@/lib/SessionContext';
 import { orderProjects, type SortDir, type SortKey } from '@/lib/projectOrder';
+import { isNoProjectAccess } from '@/lib/projectAccess';
+import { getErrorMessage } from '@/lib/errorMessages';
 import { useNotifications } from '@/components/NotificationProvider';
+import { OpenAccessBadge, RoleChip } from '@/components/ProjectAccessBadges';
 
 function useHydrated() {
   const [hydrated, setHydrated] = useState(false);
@@ -35,6 +39,13 @@ function formatDate(dateStr?: string): string {
 
 type ViewMode = 'grid' | 'list';
 
+/** Deleting is an owner's right. Hidden only when the backend says the
+ *  analyst is an editor or viewer: on an open project (no role) everyone has
+ *  full rights, and the backend refuses anything else with its own reason. */
+function mayDelete(project: Project): boolean {
+  return project.my_role !== 'editor' && project.my_role !== 'viewer';
+}
+
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -45,7 +56,8 @@ export default function ProjectsPage() {
   const [watchlistError, setWatchlistError] = useState(false);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [batchDeleting, setBatchDeleting] = useState(false);
-  const { activeProject, setActiveProject } = useProject();
+  const { activeProject, setActiveProject, dropProject } = useProject();
+  const { user } = useSession();
   const { addNotification } = useNotifications();
   const router = useRouter();
 
@@ -69,24 +81,27 @@ export default function ProjectsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const loadWatchedEntities = useCallback(async (projectId: string) => {
+    setWatchlistError(false);
+    try {
+      const res = await watchlistApi.list(projectId);
+      setWatchedEntities(readWatchlist(res.data));
+    } catch (e) {
+      setWatchedEntities([]);
+      // The active project refused us (no longer a member): stop offering it,
+      // rather than reporting a watchlist failure for a project we cannot open.
+      if (isNoProjectAccess(e)) dropProject(projectId);
+      else setWatchlistError(true);
+    }
+  }, [dropProject]);
+
   useEffect(() => {
     if (activeProject) {
       loadWatchedEntities(activeProject.id);
     } else {
       setWatchedEntities([]);
     }
-  }, [activeProject]);
-
-  async function loadWatchedEntities(projectId: string) {
-    setWatchlistError(false);
-    try {
-      const res = await watchlistApi.list(projectId);
-      setWatchedEntities(readWatchlist(res.data));
-    } catch {
-      setWatchedEntities([]);
-      setWatchlistError(true);
-    }
-  }
+  }, [activeProject, loadWatchedEntities]);
 
   useEffect(() => {
     if (toast) {
@@ -144,7 +159,9 @@ export default function ProjectsPage() {
       console.error('Failed to delete project', e);
       addNotification({
         title: 'Failed to delete project',
-        message: `"${project.name}" could not be deleted. Please try again.`,
+        // The backend's reason ("No access to this project" for a non-owner)
+        // says more than "try again", which cannot help with a 403.
+        message: `"${project.name}" could not be deleted: ${getErrorMessage(e)}`,
         type: 'error',
       });
     }
@@ -223,7 +240,22 @@ export default function ProjectsPage() {
       <Sidebar />
       <main className="md:ml-56 flex-1 p-4 pt-16 pb-24 md:p-8 md:pt-8 md:pb-8">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">Projects</h2>
+          <div>
+            <h2 className="text-2xl font-bold">Projects</h2>
+            {user && (
+              <p className="text-xs text-gray-500 mt-1">
+                Signed in as <span className="text-gray-300">{user.username}</span>
+                {' · '}
+                {user.role === 'admin' ? (
+                  <span className="text-accent-periwinkle" title="Admins are owners of every project">
+                    admin (owner of every project)
+                  </span>
+                ) : (
+                  <span className="text-gray-300">{user.role}</span>
+                )}
+              </p>
+            )}
+          </div>
           <div className="flex items-center gap-3">
             {checkedIds.size > 0 && (
               <button
@@ -365,7 +397,7 @@ export default function ProjectsPage() {
                       <span suppressHydrationWarning>Created: {hydrated ? formatDate(project.created_at) : '--'}</span>
                       <span suppressHydrationWarning>Modified: {hydrated ? formatDate(project.updated_at) : '--'}</span>
                     </div>
-                    <div className="flex gap-2 items-center">
+                    <div className="flex flex-wrap gap-2 items-center">
                       <span className={`text-xs px-2 py-0.5 rounded ${
                         project.priority === 'critical' ? 'bg-threat-critical/20 text-threat-critical' :
                         project.priority === 'high' ? 'bg-threat-high/20 text-threat-high' :
@@ -383,19 +415,23 @@ export default function ProjectsPage() {
                           {project.status}
                         </span>
                       )}
+                      <RoleChip role={project.my_role} />
+                      <OpenAccessBadge access={project.access} />
                       <button
                         onClick={() => selectProject(project)}
                         className="ml-auto bg-accent-blue hover:bg-blue-600 text-white px-3 py-1 rounded text-xs font-medium transition-colors"
                       >
                         Select
                       </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deleteProject(project); }}
-                        className="text-gray-500 hover:text-red-400 px-2 py-1 rounded text-xs transition-colors"
-                        title="Delete project"
-                      >
-                        &times;
-                      </button>
+                      {mayDelete(project) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteProject(project); }}
+                          className="text-gray-500 hover:text-red-400 px-2 py-1 rounded text-xs transition-colors"
+                          title="Delete project"
+                        >
+                          &times;
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -445,6 +481,9 @@ export default function ProjectsPage() {
                     </th>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
                       Status
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                      Access
                     </th>
                     <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
                       Entities
@@ -514,6 +553,12 @@ export default function ProjectsPage() {
                           <span className="text-[10px] text-gray-600">—</span>
                         )}
                       </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-1">
+                          <RoleChip role={project.my_role} />
+                          <OpenAccessBadge access={project.access} />
+                        </div>
+                      </td>
                       <td className="px-3 py-2 text-right text-xs text-gray-400">{project.entity_count}</td>
                       <td className="px-3 py-2 text-right text-xs text-gray-400">{project.relationship_count}</td>
                       <td className="px-3 py-2 text-right text-xs text-gray-400">{project.document_count}</td>
@@ -528,13 +573,15 @@ export default function ProjectsPage() {
                           >
                             View
                           </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); deleteProject(project); }}
-                            className="text-gray-500 hover:text-red-400 px-1.5 py-1 rounded text-xs transition-colors"
-                            title="Delete project"
-                          >
-                            &times;
-                          </button>
+                          {mayDelete(project) && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); deleteProject(project); }}
+                              className="text-gray-500 hover:text-red-400 px-1.5 py-1 rounded text-xs transition-colors"
+                              title="Delete project"
+                            >
+                              &times;
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
