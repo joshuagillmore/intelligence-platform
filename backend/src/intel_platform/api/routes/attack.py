@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 from neo4j import Driver
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from intel_platform.api.deps import get_neo4j_driver, require_admin, verify_api_key
+from intel_platform.api.deps import get_neo4j_driver, require_admin, require_project_access, verify_api_key
 from intel_platform.db.engine import get_db
 from intel_platform.services.attack import d3fend as attack_d3fend
 from intel_platform.services.attack import embeddings as attack_embeddings
@@ -99,7 +99,10 @@ async def ingest_vuln_chain(driver: Driver = Depends(get_neo4j_driver)):
     return {"cwes": result["cwes"], "edges": result["edges"]}
 
 
-@router.post("/attack/resolve-cve", response_model=CveResolutionResponse)
+@router.post(
+    "/attack/resolve-cve", response_model=CveResolutionResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def resolve_cve(
     project_id: str = Query(...),
     driver: Driver = Depends(get_neo4j_driver),
@@ -165,7 +168,10 @@ async def embed(
     return {"embedded": embedded}
 
 
-@router.post("/attack/map", response_model=AttackMapResponse, response_model_exclude_unset=True)
+@router.post(
+    "/attack/map", response_model=AttackMapResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def map_ttps(
     project_id: str = Query(...),
     remap: bool = Query(False, description="Also re-examine TTPs the LLM mapped before"),
@@ -190,7 +196,10 @@ async def map_ttps(
     return result
 
 
-@router.get("/attack/attribution", response_model=AttributionResponse)
+@router.get(
+    "/attack/attribution", response_model=AttributionResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def get_attribution(
     project_id: str = Query(...),
     driver: Driver = Depends(get_neo4j_driver),
@@ -202,7 +211,10 @@ async def get_attribution(
     return await asyncio.to_thread(graph_ops.get_attribution, driver, project_id)
 
 
-@router.post("/attack/resolve", response_model=AttackResolveResponse)
+@router.post(
+    "/attack/resolve", response_model=AttackResolveResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def resolve(
     project_id: str = Query(...),
     driver: Driver = Depends(get_neo4j_driver),
@@ -211,7 +223,10 @@ async def resolve(
     return await asyncio.to_thread(graph_ops.resolve_ttps, driver, project_id)
 
 
-@router.get("/attack/matrix", response_model=AttackMatrixResponse)
+@router.get(
+    "/attack/matrix", response_model=AttackMatrixResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def get_matrix(
     project_id: str = Query(...),
     driver: Driver = Depends(get_neo4j_driver),
@@ -220,7 +235,10 @@ async def get_matrix(
     return await asyncio.to_thread(graph_ops.get_matrix, driver, project_id)
 
 
-@router.get("/attack/technique/{tid}", response_model=AttackTechniqueResponse)
+@router.get(
+    "/attack/technique/{tid}", response_model=AttackTechniqueResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def get_technique(
     tid: str,
     project_id: str = Query(...),
@@ -249,7 +267,10 @@ async def get_d3fend(
     return await attack_d3fend.get_countermeasures(db, tid)
 
 
-@router.get("/attack/report", response_model=AttackReportResponse)
+@router.get(
+    "/attack/report", response_model=AttackReportResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def get_report(
     project_id: str = Query(...),
     driver: Driver = Depends(get_neo4j_driver),
@@ -267,7 +288,10 @@ async def get_report(
         raise HTTPException(status_code=500, detail="Failed to assemble the ATT&CK report")
 
 
-@router.get("/attack/navigator-layer", response_model=NavigatorLayerResponse)
+@router.get(
+    "/attack/navigator-layer", response_model=NavigatorLayerResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def get_navigator_layer(
     project_id: str = Query(...),
     driver: Driver = Depends(get_neo4j_driver),

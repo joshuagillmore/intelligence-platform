@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from intel_platform.api.access import visible_projects
+from intel_platform.api.deps import ProjectAccess, require_project_access
 from intel_platform.connectors.base import CONNECTOR_REGISTRY, get_connector
 from intel_platform.db.engine import get_db
 from intel_platform.db.models import CollectionPlan, CollectionSource, PlanStatus
@@ -160,7 +162,10 @@ def _source_to_dict(src: CollectionSource) -> dict:
 # Collection Plan CRUD
 # ---------------------------------------------------------------------------
 
-@router.post("/collection-plans", response_model=CollectionPlanResponse)
+@router.post(
+    "/collection-plans", response_model=CollectionPlanResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def create_plan(req: CreatePlanRequest, db: AsyncSession = Depends(get_db)):
     # Local import: the PIR routes import this module's _parse_uuid.
     from intel_platform.api.routes.pirs import get_or_create_pir
@@ -194,6 +199,7 @@ async def list_plans(
     project_id: str | None = None,
     status: str | None = None,
     db: AsyncSession = Depends(get_db),
+    access: ProjectAccess = Depends(require_project_access("viewer")),
 ):
     stmt = select(CollectionPlan).order_by(CollectionPlan.updated_at.desc())
     if project_id:
@@ -202,10 +208,17 @@ async def list_plans(
         stmt = stmt.where(CollectionPlan.status == status)
     result = await db.execute(stmt)
     plans = result.scalars().all()
+    if not project_id and not access.is_admin:
+        # Unscoped, this lists every project's plans: keep the readable ones.
+        visible = await visible_projects(access.user, {p.project_id for p in plans})
+        plans = [p for p in plans if p.project_id in visible]
     return [_plan_to_dict(p) for p in plans]
 
 
-@router.get("/collection-plans/{plan_id}", response_model=CollectionPlanResponse)
+@router.get(
+    "/collection-plans/{plan_id}", response_model=CollectionPlanResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def get_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -213,7 +226,10 @@ async def get_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     return _plan_to_dict(plan)
 
 
-@router.put("/collection-plans/{plan_id}", response_model=CollectionPlanResponse)
+@router.put(
+    "/collection-plans/{plan_id}", response_model=CollectionPlanResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def update_plan(plan_id: str, req: UpdatePlanRequest, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -235,7 +251,10 @@ async def update_plan(plan_id: str, req: UpdatePlanRequest, db: AsyncSession = D
     return _plan_to_dict(plan)
 
 
-@router.delete("/collection-plans/{plan_id}", response_model=DeletedResponse)
+@router.delete(
+    "/collection-plans/{plan_id}", response_model=DeletedResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def delete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -249,7 +268,10 @@ async def delete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
 # Plan status transitions
 # ---------------------------------------------------------------------------
 
-@router.post("/collection-plans/{plan_id}/activate", response_model=CollectionPlanResponse)
+@router.post(
+    "/collection-plans/{plan_id}/activate", response_model=CollectionPlanResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def activate_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -262,7 +284,10 @@ async def activate_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     return _plan_to_dict(plan)
 
 
-@router.post("/collection-plans/{plan_id}/pause", response_model=CollectionPlanResponse)
+@router.post(
+    "/collection-plans/{plan_id}/pause", response_model=CollectionPlanResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def pause_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -275,7 +300,10 @@ async def pause_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     return _plan_to_dict(plan)
 
 
-@router.post("/collection-plans/{plan_id}/complete", response_model=CollectionPlanResponse)
+@router.post(
+    "/collection-plans/{plan_id}/complete", response_model=CollectionPlanResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def complete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -289,7 +317,10 @@ async def complete_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     return _plan_to_dict(plan)
 
 
-@router.post("/collection-plans/{plan_id}/archive", response_model=CollectionPlanResponse)
+@router.post(
+    "/collection-plans/{plan_id}/archive", response_model=CollectionPlanResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def archive_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -304,7 +335,10 @@ async def archive_plan(plan_id: str, db: AsyncSession = Depends(get_db)):
 # Source assignment
 # ---------------------------------------------------------------------------
 
-@router.post("/collection-plans/{plan_id}/sources", response_model=CollectionSourceResponse)
+@router.post(
+    "/collection-plans/{plan_id}/sources", response_model=CollectionSourceResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def add_source(plan_id: str, req: AddSourceRequest, db: AsyncSession = Depends(get_db)):
     plan = await db.get(CollectionPlan, _parse_uuid(plan_id, "plan_id"))
     if not plan:
@@ -336,7 +370,10 @@ async def add_source(plan_id: str, req: AddSourceRequest, db: AsyncSession = Dep
     return _source_to_dict(source)
 
 
-@router.get("/collection-plans/{plan_id}/sources", response_model=list[CollectionSourceResponse])
+@router.get(
+    "/collection-plans/{plan_id}/sources", response_model=list[CollectionSourceResponse],
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def list_sources(plan_id: str, db: AsyncSession = Depends(get_db)):
     stmt = select(CollectionSource).where(
         CollectionSource.plan_id == _parse_uuid(plan_id, "plan_id")
@@ -345,7 +382,10 @@ async def list_sources(plan_id: str, db: AsyncSession = Depends(get_db)):
     return [_source_to_dict(s) for s in result.scalars().all()]
 
 
-@router.put("/collection-plans/{plan_id}/sources/{source_id}", response_model=CollectionSourceResponse)
+@router.put(
+    "/collection-plans/{plan_id}/sources/{source_id}", response_model=CollectionSourceResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def update_source(
     plan_id: str, source_id: str, req: UpdateSourceRequest, db: AsyncSession = Depends(get_db)
 ):
@@ -373,7 +413,10 @@ async def update_source(
     return _source_to_dict(source)
 
 
-@router.delete("/collection-plans/{plan_id}/sources/{source_id}", response_model=DeletedResponse)
+@router.delete(
+    "/collection-plans/{plan_id}/sources/{source_id}", response_model=DeletedResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def delete_source(plan_id: str, source_id: str, db: AsyncSession = Depends(get_db)):
     source = await db.get(CollectionSource, _parse_uuid(source_id, "source_id"))
     if not source or str(source.plan_id) != plan_id:

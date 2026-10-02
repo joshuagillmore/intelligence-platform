@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, require_project_access, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.responses import (
     SnapshotDetailResponse,
@@ -24,7 +24,7 @@ class CreateSnapshotRequest(BaseModel):
     description: str = ""
 
 
-@router.post("/snapshots", response_model=SnapshotResponse)
+@router.post("/snapshots", response_model=SnapshotResponse, dependencies=[Depends(require_project_access("editor"))])
 def create_snapshot(req: CreateSnapshotRequest, store: GraphStore = Depends(get_graph_store)):
     """Save a subgraph snapshot (bin) for later analysis."""
     snapshot_id = str(uuid.uuid4())
@@ -78,7 +78,10 @@ def create_snapshot(req: CreateSnapshotRequest, store: GraphStore = Depends(get_
     }
 
 
-@router.get("/snapshots", response_model=SnapshotListResponse, response_model_exclude_unset=True)
+@router.get(
+    "/snapshots", response_model=SnapshotListResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def list_snapshots(project_id: str, store: GraphStore = Depends(get_graph_store)):
     """List all snapshots for a project."""
     with store._driver.session() as session:
@@ -99,7 +102,10 @@ def list_snapshots(project_id: str, store: GraphStore = Depends(get_graph_store)
     return {"snapshots": snapshots, "count": len(snapshots)}
 
 
-@router.get("/snapshots/{snapshot_id}", response_model=SnapshotDetailResponse, response_model_exclude_unset=True)
+@router.get(
+    "/snapshots/{snapshot_id}", response_model=SnapshotDetailResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_snapshot(snapshot_id: str, store: GraphStore = Depends(get_graph_store)):
     """Get a snapshot with full entity and relationship data."""
     with store._driver.session() as session:
@@ -146,7 +152,10 @@ def get_snapshot(snapshot_id: str, store: GraphStore = Depends(get_graph_store))
     }
 
 
-@router.delete("/snapshots/{snapshot_id}", response_model=StatusResponse)
+@router.delete(
+    "/snapshots/{snapshot_id}", response_model=StatusResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 def delete_snapshot(snapshot_id: str, store: GraphStore = Depends(get_graph_store)):
     with store._driver.session() as session:
         result = session.run(

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from intel_platform.api.deps import require_project_access
 from intel_platform.api.routes.collection_plans.plans import _parse_uuid
 from intel_platform.connectors.base import CONNECTOR_REGISTRY
 from intel_platform.db.engine import get_db
@@ -63,7 +64,10 @@ def _catalog_to_dict(cat: DataCatalog) -> dict:
 # Acquisition log
 # ---------------------------------------------------------------------------
 
-@router.get("/collection-plans/{plan_id}/acquisitions", response_model=list[AcquisitionLogItem])
+@router.get(
+    "/collection-plans/{plan_id}/acquisitions", response_model=list[AcquisitionLogItem],
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def list_acquisitions(
     plan_id: str,
     limit: int = 50,
@@ -82,6 +86,7 @@ async def list_acquisitions(
 @router.get(
     "/collection-plans/{plan_id}/sources/{source_id}/acquisitions",
     response_model=list[AcquisitionLogItem],
+    dependencies=[Depends(require_project_access("viewer"))],
 )
 async def list_source_acquisitions(
     plan_id: str,
@@ -103,7 +108,10 @@ async def list_source_acquisitions(
 # Data catalog
 # ---------------------------------------------------------------------------
 
-@router.get("/collection-plans/{plan_id}/catalog", response_model=list[DataCatalogItem])
+@router.get(
+    "/collection-plans/{plan_id}/catalog", response_model=list[DataCatalogItem],
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def list_catalog(plan_id: str, db: AsyncSession = Depends(get_db)):
     stmt = (
         select(DataCatalog)
@@ -114,7 +122,10 @@ async def list_catalog(plan_id: str, db: AsyncSession = Depends(get_db)):
     return [_catalog_to_dict(c) for c in result.scalars().all()]
 
 
-@router.get("/data-catalog/{catalog_id}", response_model=DataCatalogItem)
+@router.get(
+    "/data-catalog/{catalog_id}", response_model=DataCatalogItem,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def get_catalog_entry(catalog_id: str, db: AsyncSession = Depends(get_db)):
     entry = await db.get(DataCatalog, _parse_uuid(catalog_id, "catalog_id"))
     if not entry:
@@ -122,7 +133,10 @@ async def get_catalog_entry(catalog_id: str, db: AsyncSession = Depends(get_db))
     return _catalog_to_dict(entry)
 
 
-@router.get("/data-catalog/{catalog_id}/preview", response_model=CatalogPreviewResponse)
+@router.get(
+    "/data-catalog/{catalog_id}/preview", response_model=CatalogPreviewResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def get_catalog_preview(
     catalog_id: str,
     offset: int = 0,
@@ -145,7 +159,10 @@ async def get_catalog_preview(
 # Collection dashboard — summary stats across all plans for a project
 # ---------------------------------------------------------------------------
 
-@router.get("/collection-dashboard", response_model=CollectionDashboardResponse)
+@router.get(
+    "/collection-dashboard", response_model=CollectionDashboardResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def collection_dashboard(project_id: str, db: AsyncSession = Depends(get_db)):
     """Dashboard summary: plan counts, recent acquisitions, source health."""
     # Plan counts by status

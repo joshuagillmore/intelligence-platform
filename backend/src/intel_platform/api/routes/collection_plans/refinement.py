@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from intel_platform.api.deps import require_project_access
 from intel_platform.api.routes.collection_plans.plans import _plan_to_dict
 from intel_platform.connectors.base import describe_collection_capabilities
 from intel_platform.db.engine import get_db
@@ -203,7 +204,10 @@ def _count_generation_failure(failure: str) -> None:
     reason = failure.split(" (")[0].strip().lower().replace(" ", "_")
     telemetry.record_degraded("collection", reason, detail=failure)
 
-@router.post("/collection-plans/from-pir", response_model=PlanFromPirResponse, response_model_exclude_unset=True)
+@router.post(
+    "/collection-plans/from-pir", response_model=PlanFromPirResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def create_plan_from_pir(req: SubmitPIRRequest, db: AsyncSession = Depends(get_db)):
     """Submit a PIR → LLM refines it, generates a collection plan with sources.
 

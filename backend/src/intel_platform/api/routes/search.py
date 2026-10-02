@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, require_project_access, verify_api_key
 from intel_platform.db.engine import get_db
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.responses import SearchResponse, SemanticSearchResponse
@@ -10,7 +10,10 @@ from intel_platform.models.responses import SearchResponse, SemanticSearchRespon
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
-@router.get("/search", response_model=SearchResponse, response_model_exclude_unset=True)
+@router.get(
+    "/search", response_model=SearchResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def global_search(
     q: str,
     project_id: str,
@@ -73,7 +76,10 @@ class SemanticSearchRequest(BaseModel):
     min_similarity: float = Field(default=0.15, ge=0.0, le=1.0)
 
 
-@router.post("/search/semantic", response_model=SemanticSearchResponse)
+@router.post(
+    "/search/semantic", response_model=SemanticSearchResponse,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 async def semantic_search(req: SemanticSearchRequest, session: AsyncSession = Depends(get_db)):
     """Semantic similarity search across document chunks using vector embeddings."""
     from intel_platform.services.vector_search import vector_search

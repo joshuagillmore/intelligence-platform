@@ -114,6 +114,10 @@ POSTGRES_PATHS = {
     "/api/pirs",
     "/api/pirs/{pir_id}",
     "/api/pirs/{pir_id}/requirements",
+    # The project routes report the caller's access, read from project_members.
+    "/api/projects",
+    "/api/projects/{project_id}",
+    "/api/projects/{project_id}/members",
 }
 
 # The routes that read the global ATT&CK catalogue (tests/neo4j_lock.py).
@@ -222,6 +226,7 @@ def _calls(s: SimpleNamespace) -> dict[str, list[tuple[dict, dict]]]:
         "/api/projects": [({}, {})],
         "/api/projects/{project_id}": [({"project_id": s.project}, {})],
         "/api/projects/{project_id}/activity": [({"project_id": s.project}, {})],
+        "/api/projects/{project_id}/members": [({"project_id": s.project}, {})],
         "/api/reports": [({}, p)],
         "/api/reports/{report_id}": [({"report_id": s.report_id}, {}), ({"report_id": s.report_id}, p)],
         "/api/search": [({}, {**p, "q": "a"})],

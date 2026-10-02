@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from intel_platform.api.deps import require_project_access
 from intel_platform.api.routes.collection_plans.plans import _parse_uuid
 from intel_platform.db.engine import get_db
 from intel_platform.db.models import (
@@ -176,7 +177,7 @@ async def get_or_create_pir(
 # CRUD
 # ---------------------------------------------------------------------------
 
-@router.post("/pirs", response_model=PirResponse)
+@router.post("/pirs", response_model=PirResponse, dependencies=[Depends(require_project_access("editor"))])
 async def create_pir(req: CreatePirRequest, db: AsyncSession = Depends(get_db)) -> PirResponse:
     text = (req.text or "").strip()
     if not text:
@@ -198,7 +199,7 @@ async def create_pir(req: CreatePirRequest, db: AsyncSession = Depends(get_db)) 
     return _pir_to_response(pir)
 
 
-@router.get("/pirs", response_model=list[PirResponse])
+@router.get("/pirs", response_model=list[PirResponse], dependencies=[Depends(require_project_access("viewer"))])
 async def list_pirs(
     project_id: str,
     status: str | None = None,
@@ -214,7 +215,7 @@ async def list_pirs(
     return [_pir_to_response(p, grouped.get(p.id, [])) for p in pirs]
 
 
-@router.get("/pirs/{pir_id}", response_model=PirResponse)
+@router.get("/pirs/{pir_id}", response_model=PirResponse, dependencies=[Depends(require_project_access("viewer"))])
 async def get_pir(pir_id: str, db: AsyncSession = Depends(get_db)) -> PirResponse:
     pir = await db.get(Pir, _parse_uuid(pir_id, "pir_id"))
     if not pir:
@@ -223,7 +224,7 @@ async def get_pir(pir_id: str, db: AsyncSession = Depends(get_db)) -> PirRespons
     return _pir_to_response(pir, grouped.get(pir.id, []))
 
 
-@router.put("/pirs/{pir_id}", response_model=PirResponse)
+@router.put("/pirs/{pir_id}", response_model=PirResponse, dependencies=[Depends(require_project_access("editor"))])
 async def update_pir(
     pir_id: str, req: UpdatePirRequest, db: AsyncSession = Depends(get_db)
 ) -> PirResponse:
@@ -256,7 +257,10 @@ async def update_pir(
     return _pir_to_response(pir, grouped.get(pir.id, []))
 
 
-@router.delete("/pirs/{pir_id}", response_model=DeletedResponse)
+@router.delete(
+    "/pirs/{pir_id}", response_model=DeletedResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 async def delete_pir(pir_id: str, db: AsyncSession = Depends(get_db)):
     """Delete a PIR. Plans raised against it survive, unlinked — the collected
     intelligence outlives the question that prompted it."""

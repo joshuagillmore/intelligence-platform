@@ -2,7 +2,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from intel_platform.api.deps import get_graph_store, verify_api_key
+from intel_platform.api.deps import get_graph_store, require_project_access, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.entities import Report
 from intel_platform.models.relationships import Relationship
@@ -19,7 +19,7 @@ class NoteRequest(BaseModel):
     note_type: Literal["observation", "hypothesis", "question", "conclusion"] = "observation"
 
 
-@router.post("/notebook", response_model=NoteCreatedResponse)
+@router.post("/notebook", response_model=NoteCreatedResponse, dependencies=[Depends(require_project_access("editor"))])
 def create_note(req: NoteRequest, store: GraphStore = Depends(get_graph_store)):
     note = Report(
         name=req.title,
@@ -62,7 +62,10 @@ def create_note(req: NoteRequest, store: GraphStore = Depends(get_graph_store)):
     }
 
 
-@router.get("/notebook", response_model=list[NoteResponse], response_model_exclude_unset=True)
+@router.get(
+    "/notebook", response_model=list[NoteResponse], response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def list_notes(project_id: str, store: GraphStore = Depends(get_graph_store)):
     # Filtered in the query. Fetching the first 100 Reports of every kind by
     # name and filtering here showed an empty notebook to any project with
@@ -79,7 +82,10 @@ def list_notes(project_id: str, store: GraphStore = Depends(get_graph_store)):
         return [dict(record["n"]) for record in result]
 
 
-@router.get("/notebook/{note_id}", response_model=NoteResponse, response_model_exclude_unset=True)
+@router.get(
+    "/notebook/{note_id}", response_model=NoteResponse, response_model_exclude_unset=True,
+    dependencies=[Depends(require_project_access("viewer"))],
+)
 def get_note(note_id: str, store: GraphStore = Depends(get_graph_store)):
     note = store.get_entity(note_id)
     if not note:
@@ -87,7 +93,10 @@ def get_note(note_id: str, store: GraphStore = Depends(get_graph_store)):
     return note
 
 
-@router.delete("/notebook/{note_id}", response_model=StatusResponse)
+@router.delete(
+    "/notebook/{note_id}", response_model=StatusResponse,
+    dependencies=[Depends(require_project_access("editor"))],
+)
 def delete_note(note_id: str, store: GraphStore = Depends(get_graph_store)):
     store.delete_entity(note_id)
     return {"status": "deleted"}
