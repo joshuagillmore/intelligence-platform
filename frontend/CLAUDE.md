@@ -61,9 +61,11 @@ assertions, in `tests/e2e/`; needs the stack up + `backend/scripts/seed_demo.py`
   `npm run gen:api`; never edit it by hand. `lib/apiTypes.ts` derives
   `ClientPath`, `BodyOf`, `QueryOf`, `ResponseOf` and `Model` from it, and
   `api.ts` uses them so every URL, request body and query string, and every
-  response the backend declares, is checked against the schema. Most routes
-  declare no response model yet; those keep a hand-written interface (or the
-  loose `Undeclared`) until the backend adds one. After a backend route change,
+  response the backend declares, is checked against the schema. Every route
+  declares a response model (`backend/tests/test_response_models.py` fails if
+  one is added without), so `api.ts` types each response with
+  `ResponseOf<...>`; optional fields are nullable in the generated types
+  because the backend sends only the keys a handler set. After a backend route change,
   re-export the schema, run `npm run gen:api` and commit both;
   `tests/unit/apiGenerated.test.ts` fails until you do.
 - **Visualization:** graph = d3 (`GraphVisualization`, `graphLayout.ts`); maps =
