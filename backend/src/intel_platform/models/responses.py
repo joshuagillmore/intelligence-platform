@@ -342,3 +342,25 @@ class VpnActionResponse(BaseModel):
     reachable: bool
     # The sidecar's answer ("running"/"stopped"); null when the request failed.
     outcome: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Personas
+# ---------------------------------------------------------------------------
+
+class PersonaResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    skills: list[str]
+    temperature: float
+    active: bool
+
+
+class PersonaListResponse(BaseModel):
+    personas: list[PersonaResponse]
+    active_persona: str
+
+
+class PersonaActivatedResponse(BaseModel):
+    active_persona: str
