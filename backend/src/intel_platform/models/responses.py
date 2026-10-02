@@ -477,3 +477,43 @@ class LlmQueryResponse(BaseModel):
     tokens_used: int
     # Stated by the model; present only for assessment skills that state one.
     probability: float | None = None
+
+
+# ---------------------------------------------------------------------------
+# Search
+# ---------------------------------------------------------------------------
+
+class SearchResultItem(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    entity_type: str
+    # Documents only.
+    reliability: str | None = None
+    # Documents and reports: the first 200 characters of the content.
+    preview: str | None = None
+    # Reports only.
+    report_type: str | None = None
+
+
+class SearchResponse(BaseModel):
+    entities: list[SearchResultItem]
+    documents: list[SearchResultItem]
+    reports: list[SearchResultItem]
+    # Every row of this page in order: the three lists above, interleaved.
+    results: list[SearchResultItem]
+    count: int
+    total: int
+    truncated: bool
+
+
+class SemanticSearchHit(BaseModel):
+    chunk_text: str
+    document_id: str
+    chunk_index: int
+    similarity: float
+    metadata: dict[str, Any]
+
+
+class SemanticSearchResponse(BaseModel):
+    results: list[SemanticSearchHit]
+    total: int
