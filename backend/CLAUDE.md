@@ -333,6 +333,28 @@ to a dedicated provider so it won't drain a rate-limited cloud key — see
   lower-level fetch helper — keep it that way, and route any new outbound
   fetch through it.
 
+## Extraction quality gate (CI)
+
+CI's "Extraction eval (replay)" job runs, for nlp, llm and hybrid:
+
+```bash
+uv run python tests/eval/check_against_committed.py --mode hybrid
+```
+
+It replays the corpus eval (`run_corpus_eval.py --replay-only`: model replies
+come from `tests/eval/llm_replies.json`, so no network and no billed call) and
+fails when any entity, typed-entity, typed-relationship or all-relationship F1,
+overall or per set, is more than 0.005 below the committed
+`tests/eval/corpus_eval_<mode>.json`. It also fails when a request had no
+recorded reply (a prompt changed without a re-recorded run) or a document newly
+degrades. The provider is pinned to the one the committed run recorded, with a
+placeholder key, so a local `.env` cannot change the result. There is no
+thresholds file: the committed results are the baseline. A change that moves
+extraction commits its new results in the same branch, plus the one live run's
+replies after a prompt change (`tests/eval/README.md`). Run the gate before
+pushing anything that touches extraction. The comparison itself is unit-tested
+in `tests/eval/test_check_against_committed.py` (default suite).
+
 ## Definition of done
 
 `uv run pytest` green **and** `uv run ruff check .` clean. No exceptions.
