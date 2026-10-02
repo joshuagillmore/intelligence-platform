@@ -34,10 +34,12 @@ class ExtractionResult(tuple):
       *type*, never its message, so it is safe to show an analyst.
     - ``skipped_items``: individual model entities/relationships dropped for
       being malformed, without discarding the rest of the reply.
-    - ``relationships_dropped_by_reason``: well-formed relationships the
-      extraction did not keep, by why: ``generic_on_typed_pair`` (an
-      ASSOCIATED_WITH on a pair a typed relation already links). The graph
-      build keeps its own count of what reaches it.
+    - ``relationships_dropped_by_reason``: well-formed model relationships the
+      extraction did not keep, by why: ``unlisted_endpoint`` (an endpoint that
+      is neither a listed entity nor one's alias), ``same_entity`` (both ends
+      resolve to one entity), ``generic_on_typed_pair`` (an ASSOCIATED_WITH on
+      a pair a typed relation already links). The graph build keeps its own
+      count of what reaches it.
     """
 
     method: str
@@ -833,6 +835,83 @@ def _normalize_rel_type(raw: str) -> str | None:
     if _REPORTING_REL.match(rt):
         return None
     return "ASSOCIATED_WITH"
+
+
+def _resolve_endpoints(
+    entities: list[dict], relationships: list[dict], *,
+    pool: list[dict] | None = None, renamed: dict[str, str] | None = None,
+) -> tuple[list[dict], dict[str, int], list[dict]]:
+    """Point every relationship at a listed entity, or drop it.
+
+    An endpoint resolves when it is an entity's name, or the same name or one
+    of its aliases written differently (``_merge_key``: case and surrounding
+    space, the rule the hybrid merge matches by). In hybrid, ``renamed`` maps
+    an NLP name to the model entity it merged into, and ``pool`` is the NLP
+    entities: an endpoint the model named without listing but NLP extracted is
+    that entity, which joins ``entities`` (and is returned) so the edge has
+    both ends. Anything else is a name the model never listed ("Ukrainian
+    forces", "31 larger amphibious ships"); the graph build used to drop those
+    edges as unknown endpoints, after the eval had counted them.
+
+    Returns the kept relationships, the drops by reason (``unlisted_endpoint``,
+    ``same_entity`` when both ends resolve to one entity) and the pool
+    entities added.
+    """
+    names = {e.get("name") for e in entities}
+    lookup: dict[str, str] = {}
+    for e in entities:
+        lookup.setdefault(_merge_key(e.get("name", "")), e["name"])
+    for e in entities:
+        for alias in e.get("aliases") or []:
+            if isinstance(alias, str) and alias.strip():
+                lookup.setdefault(_merge_key(alias), e["name"])
+    pool_by_key: dict[str, dict] = {}
+    for e in pool or []:
+        pool_by_key.setdefault(_merge_key(e.get("name", "")), e)
+    for e in pool or []:
+        for alias in e.get("aliases") or []:
+            if isinstance(alias, str) and alias.strip():
+                pool_by_key.setdefault(_merge_key(alias), e)
+    added: list[dict] = []
+
+    def resolve(name: str) -> str | None:
+        if name in names:
+            return name
+        if renamed and renamed.get(name) in names:
+            return renamed[name]
+        key = _merge_key(name)
+        if not key:
+            return None
+        if key in lookup:
+            return lookup[key]
+        found = pool_by_key.get(key)
+        if found is None:
+            return None
+        if found.get("name") not in names:
+            entities.append(found)
+            added.append(found)
+            names.add(found["name"])
+            lookup.setdefault(_merge_key(found["name"]), found["name"])
+        return found["name"]
+
+    kept: list[dict] = []
+    dropped = {"unlisted_endpoint": 0, "same_entity": 0}
+    for r in relationships:
+        src = resolve(r.get("source_name") or "")
+        tgt = resolve(r.get("target_name") or "")
+        if src is None or tgt is None:
+            dropped["unlisted_endpoint"] += 1
+            continue
+        if src == tgt:
+            dropped["same_entity"] += 1
+            continue
+        if (src, tgt) != (r.get("source_name"), r.get("target_name")):
+            r = {**r, "source_name": src, "target_name": tgt}
+        kept.append(r)
+    if dropped["unlisted_endpoint"]:
+        logger.info("Extraction dropped %d relationship(s) naming an entity that was not listed",
+                    dropped["unlisted_endpoint"])
+    return kept, dropped, added
 
 
 def _drop_generic_on_typed_pairs(relationships: list[dict]) -> tuple[list[dict], int]:
@@ -2348,11 +2427,15 @@ def _describe_failure(exc: BaseException) -> str:
     return f"provider error ({type(exc).__name__})"
 
 
-async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[dict], int, dict[str, int]]:
+async def _extract_with_llm(
+    text: str, doc_id: str, *, resolve_endpoints: bool = True,
+) -> tuple[list[dict], list[dict], int, dict[str, int]]:
     """The LLM half alone: (entities, relationships, skipped_items, relationships dropped by reason).
 
     Raises ``_LLMExtractionFailed`` with a reason when the model produced
-    nothing usable. The callers decide what the fallback is.
+    nothing usable. The callers decide what the fallback is. Hybrid passes
+    ``resolve_endpoints=False`` and resolves them after the merge, when the
+    NLP entities can resolve an endpoint too.
     """
     # Use the extraction-specific provider selection (routes to local Ollama
     # when extraction_llm_provider=ollama; respects runtime overrides otherwise).
@@ -2448,9 +2531,14 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
     entities, relationships = _drop_undatable_dates(entities, relationships)
     entities, relationships = _drop_abstract_types(entities, relationships)
     _apply_vessel_hints(_apply_type_hints(entities), text)
+    # Events named only in their date link are minted here, before endpoints
+    # are checked: the timeline depends on them.
     _link_event_dates(entities, relationships)
+    dropped = {"unlisted_endpoint": 0, "same_entity": 0}
+    if resolve_endpoints:
+        relationships, dropped, _ = _resolve_endpoints(entities, relationships)
     relationships, generic_dropped = _drop_generic_on_typed_pairs(relationships)
-    return entities, relationships, skipped, {"generic_on_typed_pair": generic_dropped}
+    return entities, relationships, skipped, {**dropped, "generic_on_typed_pair": generic_dropped}
 
 
 async def extract_entities_llm(text: str, doc_id: str) -> ExtractionResult:
@@ -2507,7 +2595,7 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
 
     nlp_entities, nlp_rels = extract_entities_nlp(text, doc_id)
     try:
-        llm_entities, llm_rels, skipped, dropped = await _extract_with_llm(text, doc_id)
+        llm_entities, llm_rels, skipped, dropped = await _extract_with_llm(text, doc_id, resolve_endpoints=False)
     except Exception as exc:
         reason = exc.reason if isinstance(exc, _LLMExtractionFailed) else f"extraction failed ({type(exc).__name__})"
         if not isinstance(exc, _LLMExtractionFailed):
@@ -2577,6 +2665,15 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
             kept_nlp_keys.add(key)
 
     # ── Relationships ─────────────────────────────────────────────────────
+    # A model edge must name listed entities: here a name of the merged set,
+    # one of their aliases, an NLP name that merged into a model entity, or an
+    # entity NLP extracted (which joins the merged set with it).
+    llm_rels, endpoint_dropped, added = _resolve_endpoints(
+        merged_entities, llm_rels, pool=nlp_entities, renamed=merged_into)
+    kept_nlp_keys.update(_merge_key(e.get("name", "")) for e in added)
+    for reason, n in endpoint_dropped.items():
+        dropped[reason] = dropped.get(reason, 0) + n
+
     # LLM relations are typed + evidence-backed — primary. From NLP keep only
     # TYPED relations (verb-derived, OCCURRED_ON, regex RESOLVES_TO) the LLM
     # missed; drop blanket ASSOCIATED_WITH co-occurrence entirely — the LLM now

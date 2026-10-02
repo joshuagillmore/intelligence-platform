@@ -898,3 +898,90 @@ async def test_the_models_generic_edge_beside_its_own_typed_edge_is_dropped():
     )
     result = await _llm_reply(reply, "Iran has sought to formalise its de facto control over the Strait of Hormuz.")
     assert [(r["source_name"], r["rel_type"]) for r in result[1]] == [("Iran", "TARGETS")]
+
+
+# ── Relationship endpoints must be listed entities ────────────────────────────
+# openrep: 66 of hybrid's 882 edges named something the model never listed
+# ("Ukrainian forces", "31 larger amphibious ships"); the graph build dropped
+# them as unknown endpoints. The parser now resolves an endpoint to a listed
+# entity by name or alias, and drops and counts the rest.
+
+CRS_IN12534 = (
+    "In 2026, Ukrainian forces have limited—and in some cases reversed—Russian gains and markedly expanded a "
+    "campaign of long-range attacks against Russian oil facilities and logistics infrastructure."
+)
+
+
+async def test_an_edge_naming_an_unlisted_endpoint_is_dropped_and_counted():
+    reply = (
+        '{"entities": [{"name": "Russia", "entity_type": "Country"}, {"name": "2026", "entity_type": "Date"}], '
+        '"relationships": [{"source_entity": "Ukrainian forces", "target_entity": "Russian oil facilities", '
+        '"relationship_type": "TARGETS"}, {"source_entity": "Ukrainian forces", "target_entity": "Russia", '
+        '"relationship_type": "TARGETS"}]}'
+    )
+    result = await _llm_reply(reply, CRS_IN12534)
+    assert result[1] == []
+    assert result.relationships_dropped_by_reason["unlisted_endpoint"] == 2
+    assert result.meta["relationships_dropped_by_reason"]["unlisted_endpoint"] == 2
+
+
+async def test_an_endpoint_named_by_an_alias_resolves_to_the_listed_entity():
+    # openrep crs-R47390_22: the model listed "Dorra/Arash gas field" and named
+    # it "Dorra Gas field" in an edge; the build dropped the edge.
+    text = (
+        "In September 2025, the Khafji Joint Operations Company, a joint company of Saudi Aramco Gulf Operations "
+        "Company and Kuwait Gulf Oil Company, issued tenders related to project management for the development of "
+        "the Dorra Gas field."
+    )
+    reply = (
+        '{"entities": [{"name": "Khafji Joint Operations Company", "entity_type": "Company"}, '
+        '{"name": "Dorra/Arash gas field", "entity_type": "Facility", "aliases": ["Dorra Gas field"]}], '
+        '"relationships": [{"source_entity": "khafji joint operations company", "target_entity": "Dorra Gas field", '
+        '"relationship_type": "LOCATED_AT"}]}'
+    )
+    result = await _llm_reply(reply, text)
+    assert [(r["source_name"], r["target_name"]) for r in result[1]] == [
+        ("Khafji Joint Operations Company", "Dorra/Arash gas field")]
+    assert result.relationships_dropped_by_reason["unlisted_endpoint"] == 0
+
+
+async def test_an_event_named_only_in_its_date_link_is_still_recovered():
+    # The timeline depends on it: the event is minted from the OCCURRED_ON edge
+    # (see _link_event_dates), so its edge has a listed endpoint.
+    reply = (
+        '{"entities": [{"name": "July 2025", "entity_type": "Date"}], "relationships": [{"source_entity": '
+        '"Copper tariff", "target_entity": "July 2025", "relationship_type": "OCCURRED_ON"}]}'
+    )
+    result = await _llm_reply(reply, "The copper tariff took effect in July 2025.")
+    assert [(r["source_name"], r["rel_type"]) for r in result[1]] == [("Copper tariff", "OCCURRED_ON")]
+    assert {e["name"] for e in result[0]} >= {"Copper tariff", "July 2025"}
+
+
+async def test_hybrid_resolves_a_model_endpoint_to_the_entity_nlp_extracted():
+    # openrep OPENREP-SUPINTREP-0021: the model's NATO DEPLOYED_AT Europe (a gold
+    # edge) named Europe without listing it; NLP extracted Europe.
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    text = ("NATO has responded by reorienting its strategic focus and defense posture, increasing its military "
+            "presence in Europe, and institutionalizing long-term support for Ukraine.")
+    reply = {"entities": [{"name": "NATO", "entity_type": "Organization"}, {"name": "Ukraine", "entity_type": "Country"}],
+             "relationships": [{"source_entity": "NATO", "target_entity": "Europe", "relationship_type": "DEPLOYED_AT"},
+                               {"source_entity": "NATO", "target_entity": "Allied capitals",
+                                "relationship_type": "LOCATED_AT"}]}
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        result = await extraction.extract_entities_hybrid(text, "doc-fix")
+    ents, rels = result
+    names = {e["name"] for e in ents}
+    assert ("NATO", "DEPLOYED_AT", "Europe") in {(r["source_name"], r["rel_type"], r["target_name"]) for r in rels}
+    assert "Europe" in names
+    assert all(r["source_name"] in names and r["target_name"] in names for r in rels)
+    assert result.relationships_dropped_by_reason["unlisted_endpoint"] == 1
