@@ -801,3 +801,120 @@ class InfluenceResponse(BaseModel):
     reach_ratio: float
     # Null when no seed was in the graph.
     total_nodes: int | None = None
+
+
+# ---------------------------------------------------------------------------
+# Geo
+# ---------------------------------------------------------------------------
+
+class GeoRelationshipItem(BaseModel):
+    target_name: str | None = None
+    rel_type: str | None = None
+    target_id: str | None = None
+    direction: str
+    confidence: float | None = None
+
+
+class GeoLocationItem(BaseModel):
+    id: str
+    name: str
+    entity_type: str
+    latitude: float | None = None
+    longitude: float | None = None
+    geocoded: bool
+    # Where the coordinate came from: persisted, geoip, nominatim, gazetteer ("" if none).
+    geo_source: str
+    geo_confidence: str
+    location_type: str
+    mgrs: str
+    # The node's stored properties, as stored.
+    properties: dict[str, Any]
+    # Set by /geo/locations only.
+    relationships: list[GeoRelationshipItem] | None = None
+    connection_count: int | None = None
+
+
+class GeoEdgeItem(BaseModel):
+    """Two places joined through the entities they share."""
+    source_id: str
+    target_id: str
+    source_name: str
+    target_name: str
+    weight: int
+    # Up to ten of the shared entities, by name.
+    shared_entities: list[str | None]
+    # [lat, lng], present when both places are geocoded.
+    source_coords: list[float] | None = None
+    target_coords: list[float] | None = None
+
+
+class GeoLocationsResponse(BaseModel):
+    locations: list[GeoLocationItem]
+    edges: list[GeoEdgeItem]
+    total: int
+    geocoded: int
+    edge_count: int
+
+
+class BoundingBoxItem(BaseModel):
+    min_lat: float
+    min_lng: float
+    max_lat: float
+    max_lng: float
+
+
+class GeoWithinResponse(BaseModel):
+    entities: list[GeoLocationItem]
+    count: int
+    bbox: BoundingBoxItem
+
+
+class GeoPointItem(BaseModel):
+    lat: float
+    lng: float
+
+
+class NearbyFeatureItem(BaseModel):
+    name: str
+    # airfield, military, port, power, infrastructure, government, emergency, neighbourhood, feature
+    category: str
+    lat: float
+    lon: float
+    # The OSM tags kept for display.
+    tags: dict[str, Any]
+
+
+class NearbyFeaturesResponse(BaseModel):
+    features: list[NearbyFeatureItem]
+    count: int
+    # Null, with `error`, when the entity has no coordinates.
+    center: GeoPointItem | None = None
+    radius: int | None = None
+    error: str | None = None
+
+
+class EntityTimelineEventItem(BaseModel):
+    date: str
+    # entity_created, event, relationship, event_date, document_ingested
+    type: str
+    label: str
+
+
+class DateCountItem(BaseModel):
+    date: str
+    count: int
+
+
+class DateRangeItem(BaseModel):
+    start: str
+    end: str
+
+
+class EntityTimelineResponse(BaseModel):
+    # Null when the entity is unknown (the lists are then empty).
+    entity_id: str | None = None
+    entity_name: str | None = None
+    events: list[EntityTimelineEventItem]
+    buckets: list[DateCountItem]
+    date_range: DateRangeItem | None = None
+    total_events: int | None = None
