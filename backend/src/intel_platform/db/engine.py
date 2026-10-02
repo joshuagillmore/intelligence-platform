@@ -25,12 +25,13 @@ MIGRATION_LOCK_KEY = 0x696E74656C6D6967
 def get_engine():
     global _engine
     if _engine is None:
-        _engine = create_async_engine(
-            get_settings().postgres_url,
-            echo=False,
-            pool_size=10,
-            max_overflow=20,
-        )
+        cfg = get_settings()
+        if cfg.postgres_null_pool:
+            from sqlalchemy.pool import NullPool
+
+            _engine = create_async_engine(cfg.postgres_url, echo=False, poolclass=NullPool)
+        else:
+            _engine = create_async_engine(cfg.postgres_url, echo=False, pool_size=10, max_overflow=20)
     return _engine
 
 

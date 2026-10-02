@@ -18,6 +18,9 @@ os.environ.setdefault("NEO4J_PASSWORD", "changeme")
 # very determinism this line exists to provide. A test guarantee that any
 # environment can revoke is not a guarantee.
 os.environ["API_KEY"] = "test-key"
+# One Postgres connection per checkout: the sync TestClient runs each request
+# on its own event loop and a pooled connection must never cross loops.
+os.environ["POSTGRES_NULL_POOL"] = "true"
 # Extraction defaults to hybrid (NLP + LLM) in production; force NLP for the
 # test suite so unit tests stay deterministic and never depend on a live LLM.
 os.environ["EXTRACTION_MODE"] = "nlp"
