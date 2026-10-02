@@ -1254,3 +1254,43 @@ class ParsedPlanItem(BaseModel):
 class ParsedPlanResponse(BaseModel):
     items: list[ParsedPlanItem]
     count: int
+
+
+# ---------------------------------------------------------------------------
+# Enrichment
+# ---------------------------------------------------------------------------
+
+class EnrichmentProviderItem(BaseModel):
+    name: str
+    supported_types: list[str]
+    requires_key: bool
+    has_key: bool
+    # Runs on ingest when auto-enrich is on.
+    auto: bool
+
+
+class EnrichmentProviderListResponse(BaseModel):
+    providers: list[EnrichmentProviderItem]
+
+
+class ProviderOutcomeItem(BaseModel):
+    # ok, cached, skipped, error or timeout
+    status: str
+    reason: str | None = None
+    # ok only: the properties the provider wrote, and how many related nodes it added.
+    properties: dict[str, Any] | None = None
+    related: int | None = None
+
+
+class EnrichmentRunResponse(BaseModel):
+    entity_id: str | None = None
+    observable: str | None = None
+    # Per provider that ran.
+    providers: dict[str, ProviderOutcomeItem]
+
+
+class CachedEnrichmentResponse(BaseModel):
+    entity_id: str
+    observable: str
+    # Provider name -> its cached payload; only providers with a cached entry appear.
+    cached: dict[str, dict[str, Any]]
