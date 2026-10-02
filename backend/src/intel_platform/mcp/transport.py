@@ -76,13 +76,18 @@ class AuthenticatedMCPApp:
             return
         if scope["type"] != "http":
             return
-        if authenticate(scope) is None:
+        user = authenticate(scope)
+        if user is None:
             response = JSONResponse(
                 {"detail": "Not authenticated"}, status_code=401,
                 headers={"WWW-Authenticate": "Bearer"},
             )
             await response(scope, receive, send)
             return
+        # The tools read the caller back out of the request scope (through the
+        # FastMCP Context) to apply the same per-project access rules as the
+        # REST routes; without this every analyst JWT could act on any project.
+        scope.setdefault("state", {})["user"] = user
         await self._server.session_manager.handle_request(scope, receive, send)
 
 

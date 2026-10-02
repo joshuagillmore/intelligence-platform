@@ -1,6 +1,6 @@
 'use client';
 import { createContext, useCallback, useContext, useState, useEffect, ReactNode } from 'react';
-import { projectsApi, type Project } from './api';
+import { projectsApi, PROJECT_ACCESS_DENIED_EVENT, type Project } from './api';
 import { isNoProjectAccess } from './projectAccess';
 
 interface ProjectContextType {
@@ -70,6 +70,16 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     });
     return () => { cancelled = true; };
   }, [dropProject]);
+
+  // Any view that meets the access refusal mid-session (an owner removed this
+  // analyst): drop the project once, the same way the load-time check does.
+  useEffect(() => {
+    const onDenied = () => {
+      setSelection((s) => (s.active ? { active: null, denied: s.active } : s));
+    };
+    window.addEventListener(PROJECT_ACCESS_DENIED_EVENT, onDenied);
+    return () => window.removeEventListener(PROJECT_ACCESS_DENIED_EVENT, onDenied);
+  }, []);
 
   useEffect(() => {
     if (!loaded) return; // don't wipe storage on the pre-load null
