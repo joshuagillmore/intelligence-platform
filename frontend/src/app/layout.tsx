@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { APP_TITLE, APP_TAGLINE } from '@/lib/branding';
 import { ProjectProvider } from '@/lib/ProjectContext';
@@ -12,17 +12,22 @@ import MobileHeader from '@/components/MobileHeader';
 import MobileBottomNav from '@/components/MobileBottomNav';
 import AssistantPanel from '@/components/AssistantPanel';
 
-// Self-hosted via next/font (no render-blocking Google CDN request). The
-// Material Symbols icon font is still loaded via <link> below — see globals.css.
-const inter = Inter({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700'],
+// Vendored font files (OFL; licences beside them in ./fonts). `next/font/google`
+// downloaded these from Google at build time, so a build failed whenever the
+// runner could not reach fonts.googleapis.com (seen in CI as a null parse in
+// next/font's loader). Local files make the build deterministic. The Material
+// Symbols icon font is still loaded via <link> below — see globals.css.
+const inter = localFont({
+  src: './fonts/InterVariable.woff2',
+  weight: '100 900',
   variable: '--font-inter',
   display: 'swap',
 });
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500'],
+const jetbrainsMono = localFont({
+  src: [
+    { path: './fonts/JetBrainsMono-Regular.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/JetBrainsMono-Medium.woff2', weight: '500', style: 'normal' },
+  ],
   variable: '--font-jetbrains-mono',
   display: 'swap',
 });
