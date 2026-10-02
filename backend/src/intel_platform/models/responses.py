@@ -1294,3 +1294,125 @@ class CachedEnrichmentResponse(BaseModel):
     observable: str
     # Provider name -> its cached payload; only providers with a cached entry appear.
     cached: dict[str, dict[str, Any]]
+
+
+# ---------------------------------------------------------------------------
+# Topics
+# ---------------------------------------------------------------------------
+
+class TopicNodeItem(BaseModel):
+    """One node of the topic tree: a branch, a topic cluster, a category, a
+    document or an entity leaf.
+
+    Open-ended (``extra="allow"``): each kind of node carries its own keys
+    (``keywords`` and ``doc_ids`` on clusters, ``reliability`` on documents,
+    ``connections`` on actors, ``user_created``/``edited`` after an analyst's
+    edit ...). A leaf has only ``id``, ``name`` and ``entity_type``.
+    """
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    name: str | None = None
+    entity_type: str | None = None
+    count: int | None = None
+    children: list[TopicNodeItem] | None = None
+
+
+class TopicCrossReferenceItem(BaseModel):
+    """A document that sits in more than one topic cluster."""
+    doc_id: str
+    doc_name: str
+    topic_ids: list[str]
+
+
+class TopicTreeResponse(BaseModel):
+    name: str
+    id: str
+    entity_count: int
+    document_count: int
+    children: list[TopicNodeItem]
+    # Whether topic names came from a model ("llm") or keyword extraction.
+    label_source: str | None = None
+    labels_refined: int | None = None
+    labels_failed: int | None = None
+    cross_references: list[TopicCrossReferenceItem] | None = None
+    # Set by an analyst's edit of the root.
+    description: str | None = None
+    edited: bool | None = None
+    # /topics only: how many stored edits applied, how many no longer match a
+    # node, and whether the edits could be read ("applied"/"unavailable").
+    edits_applied: int | None = None
+    edits_unmatched: int | None = None
+    edits_overlay: str | None = None
+
+
+class TopicContextEntityItem(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    entity_type: str | None = None
+
+
+class RelevantExcerptItem(BaseModel):
+    """A sentence that mentions a topic cluster's keywords."""
+    text: str
+    # How many of the keywords it mentions.
+    score: float
+    matched_keywords: list[str]
+
+
+class TopicDocumentItem(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    reliability_rating: str | None = None
+    content_preview: str
+    # Topic clusters only: passages matching the cluster's keywords.
+    relevant_excerpts: list[RelevantExcerptItem] | None = None
+    keyword_matches: dict[str, int] | None = None
+    relevance_score: int | None = None
+
+
+class DocumentExcerptItem(BaseModel):
+    name: str
+    content: str
+
+
+class TopicConnectedEntityItem(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    entity_type: str | None = None
+    rel_type: str | None = None
+    confidence: float | None = None
+
+
+class TopicContextResponse(BaseModel):
+    entity: TopicContextEntityItem
+    documents: list[TopicDocumentItem]
+    # The same list as `documents`, kept under both names.
+    source_documents: list[TopicDocumentItem]
+    document_excerpts: list[DocumentExcerptItem]
+    connected_entities: list[TopicConnectedEntityItem]
+    keywords: list[str]
+    document_count: int
+    # Entities only (not topic clusters).
+    relationship_count: int | None = None
+
+
+class ErrorMessageResponse(BaseModel):
+    """A 200 that carries only an error message, e.g. ``{"error": "Entity not found"}``."""
+    error: str
+
+
+class TopicNodeUpdatedResponse(BaseModel):
+    node_id: str
+    updated: bool
+
+
+class TopicChildCreatedResponse(BaseModel):
+    node_id: str
+    parent_id: str
+    name: str
+
+
+class TopicNodeDeletedResponse(BaseModel):
+    node_id: str
+    deleted: bool
