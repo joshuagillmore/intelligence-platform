@@ -12,6 +12,20 @@ from intel_platform.config import settings
 from intel_platform.crypto import decrypt, encrypt
 from intel_platform.db.engine import get_session_factory, on_schema_ready
 from intel_platform.db.models import ApiKey, AppSetting
+from intel_platform.models.responses import (
+    AdminConfigResponse,
+    ApiKeyActivatedResponse,
+    ApiKeyCreatedResponse,
+    ApiKeyListResponse,
+    DegradedResponse,
+    EnrichmentConfigResponse,
+    LlmModelListResponse,
+    LlmSelectionResponse,
+    ProxyConfigResponse,
+    StatusResponse,
+    VpnActionResponse,
+    VpnStatusResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +243,7 @@ async def _provider_has_active_key(provider: str) -> bool:
 # Config endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("/admin/config")
+@router.get("/admin/config", response_model=AdminConfigResponse)
 async def get_config():
     """Return non-sensitive configuration info."""
     provider = get_active_provider()
@@ -249,7 +263,7 @@ async def get_config():
     }
 
 
-@router.get("/admin/degraded")
+@router.get("/admin/degraded", response_model=DegradedResponse)
 def get_degraded():
     """Degraded outcomes since this process started (contract 1).
 
@@ -266,7 +280,7 @@ def get_degraded():
 # API Key management endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("/admin/api-keys")
+@router.get("/admin/api-keys", response_model=ApiKeyListResponse)
 async def list_api_keys():
     """List all stored API keys with masked values."""
     factory = get_session_factory()
@@ -290,7 +304,7 @@ async def list_api_keys():
         }
 
 
-@router.post("/admin/api-keys")
+@router.post("/admin/api-keys", response_model=ApiKeyCreatedResponse)
 async def add_api_key(req: ApiKeyCreateRequest):
     """Add a new API key for a provider."""
     factory = get_session_factory()
@@ -324,7 +338,7 @@ async def add_api_key(req: ApiKeyCreateRequest):
         }
 
 
-@router.put("/admin/api-keys/activate")
+@router.put("/admin/api-keys/activate", response_model=ApiKeyActivatedResponse)
 async def activate_api_key(req: ApiKeyActivateRequest):
     """Set a specific key as the active key for its provider.
 
@@ -361,7 +375,7 @@ async def activate_api_key(req: ApiKeyActivateRequest):
         return {"status": "ok", "active_key_id": req.key_id}
 
 
-@router.delete("/admin/api-keys/{key_id}")
+@router.delete("/admin/api-keys/{key_id}", response_model=StatusResponse)
 async def delete_api_key(key_id: str):
     """Delete an API key by ID."""
     factory = get_session_factory()
@@ -398,7 +412,7 @@ async def delete_api_key(key_id: str):
 # LLM model listing & selection
 # ---------------------------------------------------------------------------
 
-@router.get("/admin/llm/models")
+@router.get("/admin/llm/models", response_model=LlmModelListResponse)
 async def list_available_models():
     """List models available from all configured providers."""
     models: list[dict] = []
@@ -452,7 +466,7 @@ async def list_available_models():
     }
 
 
-@router.put("/admin/llm/select")
+@router.put("/admin/llm/select", response_model=LlmSelectionResponse)
 async def select_llm(req: LLMConfigRequest):
     """Switch the active LLM provider and model; persisted, so it survives a restart.
 
@@ -492,7 +506,7 @@ def _proxy_state(mode: str) -> dict:
     }
 
 
-@router.get("/admin/proxy")
+@router.get("/admin/proxy", response_model=ProxyConfigResponse)
 async def get_proxy_config():
     try:
         mode = await _read_proxy_mode()
@@ -501,7 +515,7 @@ async def get_proxy_config():
     return _proxy_state(mode)
 
 
-@router.put("/admin/proxy")
+@router.put("/admin/proxy", response_model=ProxyConfigResponse)
 async def update_proxy_config(req: ProxyConfigRequest):
     mode = req.mode
     factory = get_session_factory()
@@ -525,13 +539,13 @@ async def update_proxy_config(req: ProxyConfigRequest):
 # GET /api/enrichment/providers. On-demand Investigate is always available.
 # ---------------------------------------------------------------------------
 
-@router.get("/admin/enrichment")
+@router.get("/admin/enrichment", response_model=EnrichmentConfigResponse)
 async def get_enrichment_config():
     from intel_platform.enrichment.hook import auto_enrich_enabled
     return {"auto_enabled": await auto_enrich_enabled()}
 
 
-@router.put("/admin/enrichment")
+@router.put("/admin/enrichment", response_model=EnrichmentConfigResponse)
 async def update_enrichment_config(req: EnrichmentConfigRequest):
     from intel_platform.enrichment.hook import AUTO_ENABLED_KEY
 
@@ -563,7 +577,7 @@ def _gluetun_headers() -> dict:
     return {"X-API-Key": key} if key else {}
 
 
-@router.get("/admin/vpn/status")
+@router.get("/admin/vpn/status", response_model=VpnStatusResponse, response_model_exclude_unset=True)
 async def get_vpn_status():
     """Report gluetun VPN status + public IP. Never 500s on an unreachable VPN."""
     base = settings.gluetun_control_url.rstrip("/")
@@ -607,7 +621,7 @@ async def get_vpn_status():
     }
 
 
-@router.put("/admin/vpn/status")
+@router.put("/admin/vpn/status", response_model=VpnActionResponse, response_model_exclude_unset=True)
 async def set_vpn_status(req: VpnActionRequest):
     """Stop (kill-switch) or start the gluetun VPN tunnel."""
     base = settings.gluetun_control_url.rstrip("/")

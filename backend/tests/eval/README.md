@@ -108,6 +108,7 @@ cd backend
 uv run python tests/eval/run_corpus_eval.py --mode nlp
 uv run python tests/eval/run_corpus_eval.py --mode llm --build-neo4j bolt://localhost:7691
 uv run python tests/eval/run_corpus_eval.py --mode hybrid --sets openrep kestrel cyber legacy holdout
+uv run python tests/eval/run_corpus_eval.py --mode hybrid --replay-only   # recorded replies only, never billed
 uv run pytest -m eval tests/eval -v        # the same, as tests; excluded by default
 ```
 
@@ -137,41 +138,256 @@ Scores: entities match on name or alias (exact first, then Jaro-Winkler and
 substring); "typed F1" counts a match only when the type matches too; a
 relationship matches when both endpoints match and the type is equal.
 
+**Relationships are scored twice, `typed` and `all`.** `all` scores every
+predicted edge, as every run before 2026-10-01 did. `typed` leaves out two
+kinds of edge, on the prediction and the gold side alike:
+
+- **generic associations** (`ASSOCIATED_WITH`): an assertion that two things
+  are related without saying how, which the gold conventions do not label;
+- **date links**: `OCCURRED_ON`, or any edge with a `Date` endpoint. These are
+  legitimate: they are how an event gets its `event_datetime`, which is what
+  the timeline sorts by, and the graph build absorbs the date into the event
+  and retires the edge. The gold does not label them either.
+
+Against a gold that labels neither, both kinds counted only as false
+positives: of the model's 722 openrep edges, 230 were generic and 123 date
+links, so relationship precision said more about how often the model dates an
+event than about whether its typed relations are right. `typed` answers that
+question; `all` stays so the noise is still visible. The gold files are
+unchanged (none of the 96 gold edges is of either kind), and recall is the
+same in both figures. Each report also counts predicted edges by class
+(typed / generic / date link) and lists the edges the extraction itself
+dropped, by reason. `--replay-only` refuses to ask the model: a request with
+no recorded reply degrades its document, which the report lists, instead of
+being billed.
+
 ## Results (committed)
 
-`corpus_eval_{nlp,llm,hybrid}.{json,md}`, run at `719b9ca6` with
-`--build-neo4j --concurrency 2 --retries 3`:
+`corpus_eval_{nlp,llm,hybrid}.{json,md}`, run at `26704091` with
+`--build-neo4j` (llm and hybrid with `--replay-only`, replaying the live run
+recorded at `0fad4a12`). Relationship figures are `typed` and `all` (see
+above); "Gold edges" is typed TP / gold.
 
-| Mode | Set | Ent P | Ent R | Ent F1 | Typed F1 | Type acc | Rel P | Rel R | Rel F1 | Gold edges found |
-|---|---|---|---|---|---|---|---|---|---|---|
-| nlp | openrep | 0.652 | 0.947 | 0.772 | 0.710 | 0.919 | 0.055 | 0.507 | 0.099 | 37/73 |
-| nlp | kestrel | 0.896 | 0.925 | 0.910 | 0.656 | 0.721 | 0.039 | 0.200 | 0.066 | 2/10 |
-| nlp | cyber | 1.000 | 0.923 | 0.960 | 0.960 | 1.000 | 0.210 | 0.615 | 0.314 | 8/13 |
-| nlp | **combined** | 0.693 | 0.942 | 0.799 | 0.716 | 0.896 | 0.062 | 0.490 | 0.110 | 47/96 |
-| llm | openrep | 0.611 | 0.937 | 0.740 | 0.683 | 0.923 | 0.040 | 0.397 | 0.073 | 29/73 |
-| llm | kestrel | 0.762 | 1.000 | 0.865 | 0.772 | 0.892 | 0.051 | 0.400 | 0.091 | 4/10 |
-| llm | cyber | 0.949 | 0.949 | 0.949 | 0.949 | 1.000 | 0.344 | 0.846 | 0.489 | 11/13 |
-| llm | **combined** | 0.645 | 0.947 | 0.767 | 0.708 | 0.923 | 0.053 | 0.458 | 0.095 | 44/96 |
-| hybrid | openrep | 0.579 | 0.969 | 0.724 | 0.677 | 0.935 | 0.071 | 0.753 | 0.130 | 55/73 |
-| hybrid | kestrel | 0.756 | 1.000 | 0.861 | 0.768 | 0.892 | 0.051 | 0.400 | 0.091 | 4/10 |
-| hybrid | cyber | 0.925 | 0.949 | 0.937 | 0.937 | 1.000 | 0.333 | 0.846 | 0.478 | 11/13 |
-| hybrid | **combined** | 0.614 | 0.972 | 0.752 | 0.702 | 0.933 | 0.079 | 0.729 | 0.143 | 70/96 |
+| Mode | Set | Ent P | Ent R | Ent F1 | Typed F1 | Type acc | Rel typed P / R / F1 | Rel all P / R / F1 | Gold edges |
+|---|---|---|---|---|---|---|---|---|---|
+| nlp | openrep | 0.674 | 0.949 | 0.788 | 0.728 | 0.924 | 0.649 / 0.507 / 0.569 | 0.060 / 0.507 / 0.107 | 37/73 |
+| nlp | kestrel | 0.896 | 0.925 | 0.910 | 0.656 | 0.721 | 1.000 / 0.200 / 0.333 | 0.040 / 0.200 / 0.067 | 2/10 |
+| nlp | cyber | 1.000 | 0.923 | 0.960 | 0.960 | 1.000 | 1.000 / 0.615 / 0.762 | 0.210 / 0.615 / 0.314 | 8/13 |
+| nlp | **combined** | 0.713 | 0.944 | 0.812 | 0.731 | 0.899 | 0.702 / 0.490 / 0.577 | 0.067 / 0.490 / 0.117 | 47/96 |
+| llm | openrep | 0.632 | 0.949 | 0.759 | 0.707 | 0.932 | 0.091 / 0.397 / 0.149 | 0.044 / 0.397 / 0.080 | 29/73 |
+| llm | kestrel | 0.802 | 1.000 | 0.890 | 0.823 | 0.925 | 0.316 / 0.600 / 0.414 | 0.143 / 0.600 / 0.231 | 6/10 |
+| llm | cyber | 0.974 | 0.949 | 0.961 | 0.961 | 1.000 | 0.458 / 0.846 / 0.595 | 0.393 / 0.846 / 0.537 | 11/13 |
+| llm | **combined** | 0.667 | 0.956 | 0.786 | 0.735 | 0.935 | 0.128 / 0.479 / 0.202 | 0.064 / 0.479 / 0.113 | 46/96 |
+| hybrid | openrep | 0.602 | 0.971 | 0.743 | 0.700 | 0.941 | 0.145 / 0.726 / 0.241 | 0.076 / 0.726 / 0.138 | 53/73 |
+| hybrid | kestrel | 0.795 | 1.000 | 0.886 | 0.819 | 0.925 | 0.316 / 0.600 / 0.414 | 0.143 / 0.600 / 0.231 | 6/10 |
+| hybrid | cyber | 0.974 | 0.949 | 0.961 | 0.961 | 1.000 | 0.458 / 0.846 / 0.595 | 0.393 / 0.846 / 0.537 | 11/13 |
+| hybrid | **combined** | 0.640 | 0.974 | 0.772 | 0.728 | 0.942 | 0.171 / 0.729 / 0.277 | 0.091 / 0.729 / 0.162 | 70/96 |
 
-- **Same replies throughout.** `nlp` is deterministic. `llm` and `hybrid`
-  replay `llm_replies.json`. The 40 `openrep` replies were asked live of
-  Cohere `command-a-plus-05-2026` once, for the baseline (`f6369098`), and
-  `kestrel` and `cyber` replay phase 1's. No fix in this phase changed the
-  prompt, so no reply was asked for again and every row below compares the
-  same model output.
-- **`hybrid` replays the `llm` replies**, so its model half is the same
-  sample as `llm`'s. Phase 1's `hybrid` asked separately (`--no-cache`), so
-  its `kestrel` and `cyber` numbers are not these.
+- **One live run, then replay.** The `entity_extraction` prompt changed at
+  `0fad4a12`, so the recorded replies no longer applied. `llm` asked Cohere
+  `command-a-plus-05-2026` once for all 83 documents (`--concurrency 2
+  --retries 3`): 83 calls, no 429, no retry, no degraded document. Every
+  later run replays those replies; `hybrid` replays them too, so its model
+  half is the same sample as `llm`'s. The old-prompt replies stay in
+  `llm_replies.json` for the commits that replay them.
 - No document degraded and no graph build raised.
 - **Trial-key limits.** The repo-root key is a Cohere trial key: 20 calls a
   minute and 1,000 a month. Replaying is what makes a fix-by-fix record
-  affordable on it.
+  affordable on it; `--replay-only` makes sure a measuring run cannot spend
+  any of it.
+- The previous phase's committed results (at `719b9ca6`) are the step 0–1
+  row of each table below.
 
-## openrep: before and after, one fix at a time
+## Extraction precision (2026-10-01): one task at a time
+
+Plan: `docs/design/plans/2026-10-01-extraction-precision-and-response-models.md`,
+package WP-E. Each row is that commit's code on the three sets. Steps 0–3a
+replay the old-prompt replies (the previous phase's); step 3b changed the
+prompt and is the one live run; steps 4 and 5 replay the live run's replies,
+so step 3b to 5 compare identical model output, while 3a to 3b compares two
+samples as well as two prompts. *(unchanged)* means the step did not touch
+that mode. "Typed / generic / date" counts predicted edges by class;
+"Dropped" is model edges the extraction dropped for an unlisted endpoint, then
+edges the graph build dropped for an unknown endpoint (the
+`below_cooccurrence_min` drops, all of NLP's generic edges, are not in it);
+"Built" is edges the graph build wrote.
+
+#### nlp
+
+| Step | Ent F1 | Typed F1 | Rel typed P / R / F1 | Rel all P / R / F1 | Gold edges | Typed / generic / date | Dropped: unlisted / build unknown | Built | openrep typed F1 / all F1 |
+|---|---|---|---|---|---|---|---|---|---|
+| 0–1. baseline `c8aacd2a`, scored typed and all | 0.799 | 0.716 | 0.691 / 0.490 / 0.573 | 0.062 / 0.490 / 0.110 | 47/96 | 68 / 691 / 3 | 0 / 11 | 67 | 0.565 / 0.099 |
+| 2. generic associations | 0.799 | 0.716 | 0.691 / 0.490 / 0.573 | 0.065 / 0.490 / 0.115 | 47/96 | 68 / 648 / 3 | 0 / 4 | 67 | 0.565 / 0.105 |
+| 3a–3b. listed endpoints, prompt *(unchanged)* | 0.799 | 0.716 | 0.691 / 0.490 / 0.573 | 0.065 / 0.490 / 0.115 | 47/96 | 68 / 648 / 3 | 0 / 4 | 67 | 0.565 / 0.105 |
+| 4. government ↔ country | 0.806 | 0.722 | 0.691 / 0.490 / 0.573 | 0.066 / 0.490 / 0.116 | 47/96 | 68 / 641 / 3 | 0 / 4 | 67 | 0.565 / 0.106 |
+| 5. acronyms, headings | 0.812 | 0.731 | 0.702 / 0.490 / 0.577 | 0.067 / 0.490 / 0.117 | 47/96 | 67 / 635 / 3 | 0 / 0 | 67 | 0.569 / 0.107 |
+
+#### llm
+
+| Step | Ent F1 | Typed F1 | Rel typed P / R / F1 | Rel all P / R / F1 | Gold edges | Typed / generic / date | Dropped: unlisted / build unknown | Built | openrep typed F1 / all F1 |
+|---|---|---|---|---|---|---|---|---|---|
+| 0–1. baseline `c8aacd2a`, scored typed and all | 0.767 | 0.708 | 0.102 / 0.458 / 0.167 | 0.053 / 0.458 / 0.095 | 44/96 | 430 / 276 / 126 | 0 / 75 | 649 | 0.131 / 0.073 |
+| 2. generic associations | 0.767 | 0.708 | 0.102 / 0.458 / 0.167 | 0.053 / 0.458 / 0.095 | 44/96 | 430 / 271 / 126 | 0 / 75 | 644 | 0.131 / 0.073 |
+| 3a. listed endpoints (parser) | 0.767 | 0.708 | 0.104 / 0.438 / 0.168 | 0.056 / 0.438 / 0.099 | 42/96 | 403 / 234 / 120 | 68 / 4 | 645 | 0.130 / 0.075 |
+| 3b. prompt rules (live replies) | 0.782 | 0.707 | 0.127 / 0.479 / 0.201 | 0.063 / 0.479 / 0.112 | 46/96 | 362 / 232 / 131 | 66 / 3 | 592 | 0.148 / 0.080 |
+| 4. government ↔ country | 0.786 | 0.735 | 0.128 / 0.479 / 0.202 | 0.064 / 0.479 / 0.113 | 46/96 | 360 / 231 / 131 | 66 / 3 | 589 | 0.149 / 0.080 |
+| 5. acronyms, headings *(unchanged)* | 0.786 | 0.735 | 0.128 / 0.479 / 0.202 | 0.064 / 0.479 / 0.113 | 46/96 | 360 / 231 / 131 | 66 / 3 | 589 | 0.149 / 0.080 |
+
+#### hybrid
+
+| Step | Ent F1 | Typed F1 | Rel typed P / R / F1 | Rel all P / R / F1 | Gold edges | Typed / generic / date | Dropped: unlisted / build unknown | Built | openrep typed F1 / all F1 |
+|---|---|---|---|---|---|---|---|---|---|
+| 0–1. baseline `c8aacd2a`, scored typed and all | 0.752 | 0.702 | 0.146 / 0.729 / 0.244 | 0.079 / 0.729 / 0.143 | 70/96 | 478 / 276 / 128 | 0 / 71 | 696 | 0.225 / 0.130 |
+| 2. generic associations | 0.752 | 0.702 | 0.146 / 0.729 / 0.244 | 0.080 / 0.729 / 0.144 | 70/96 | 478 / 269 / 128 | 0 / 71 | 689 | 0.225 / 0.131 |
+| 3a. listed endpoints (parser) | 0.754 | 0.703 | 0.153 / 0.719 / 0.252 | 0.085 / 0.719 / 0.153 | 69/96 | 452 / 233 / 123 | 65 / 5 | 692 | 0.232 / 0.140 |
+| 3b. prompt rules (live replies) | 0.765 | 0.698 | 0.170 / 0.729 / 0.276 | 0.091 / 0.729 / 0.161 | 70/96 | 412 / 225 / 135 | 60 / 4 | 634 | 0.240 / 0.137 |
+| 4. government ↔ country | 0.772 | 0.727 | 0.171 / 0.729 / 0.277 | 0.091 / 0.729 / 0.162 | 70/96 | 410 / 223 / 135 | 60 / 4 | 630 | 0.241 / 0.138 |
+| 5. acronyms, headings | 0.772 | 0.728 | 0.171 / 0.729 / 0.277 | 0.091 / 0.729 / 0.162 | 70/96 | 409 / 223 / 135 | 60 / 3 | 630 | 0.241 / 0.138 |
+
+#### Per set, first row and last
+
+| Mode | Set | Ent F1 | Typed F1 | Rel typed P / R / F1 | Rel all P / R / F1 | Generic edges | Date links |
+|---|---|---|---|---|---|---|---|
+| nlp | openrep | 0.772 → 0.788 | 0.710 → 0.728 | 0.638 → 0.649 / 0.507 → 0.507 / 0.565 → 0.569 | 0.055 → 0.060 / 0.507 → 0.507 / 0.099 → 0.107 | 612 → 557 | 3 → 3 |
+| nlp | kestrel | 0.910 → 0.910 | 0.656 → 0.656 | 1.000 → 1.000 / 0.200 → 0.200 / 0.333 → 0.333 | 0.039 → 0.040 / 0.200 → 0.200 / 0.066 → 0.067 | 49 → 48 | 0 → 0 |
+| nlp | cyber | 0.960 → 0.960 | 0.960 → 0.960 | 1.000 → 1.000 / 0.615 → 0.615 / 0.762 → 0.762 | 0.210 → 0.210 / 0.615 → 0.615 / 0.314 → 0.314 | 30 → 30 | 0 → 0 |
+| nlp | **combined** | 0.799 → 0.812 | 0.716 → 0.731 | 0.691 → 0.702 / 0.490 → 0.490 / 0.573 → 0.577 | 0.062 → 0.067 / 0.490 → 0.490 / 0.110 → 0.117 | 691 → 635 | 3 → 3 |
+| llm | openrep | 0.740 → 0.759 | 0.683 → 0.707 | 0.079 → 0.091 / 0.397 → 0.397 / 0.131 → 0.149 | 0.040 → 0.044 / 0.397 → 0.397 / 0.073 → 0.080 | 230 → 207 | 123 → 128 |
+| llm | kestrel | 0.865 → 0.890 | 0.772 → 0.823 | 0.114 → 0.316 / 0.400 → 0.600 / 0.178 → 0.414 | 0.051 → 0.143 / 0.400 → 0.600 / 0.091 → 0.231 | 41 → 21 | 2 → 2 |
+| llm | cyber | 0.949 → 0.961 | 0.949 → 0.961 | 0.423 → 0.458 / 0.846 → 0.846 / 0.564 → 0.595 | 0.344 → 0.393 / 0.846 → 0.846 / 0.489 → 0.537 | 5 → 3 | 1 → 1 |
+| llm | **combined** | 0.767 → 0.786 | 0.708 → 0.735 | 0.102 → 0.128 / 0.458 → 0.479 / 0.167 → 0.202 | 0.053 → 0.064 / 0.458 → 0.479 / 0.095 → 0.113 | 276 → 231 | 126 → 131 |
+| hybrid | openrep | 0.724 → 0.743 | 0.677 → 0.700 | 0.132 → 0.145 / 0.753 → 0.726 / 0.225 → 0.241 | 0.071 → 0.076 / 0.753 → 0.726 / 0.130 → 0.138 | 230 → 199 | 125 → 132 |
+| hybrid | kestrel | 0.861 → 0.886 | 0.768 → 0.819 | 0.114 → 0.316 / 0.400 → 0.600 / 0.178 → 0.414 | 0.051 → 0.143 / 0.400 → 0.600 / 0.091 → 0.231 | 41 → 21 | 2 → 2 |
+| hybrid | cyber | 0.937 → 0.961 | 0.937 → 0.961 | 0.407 → 0.458 / 0.846 → 0.846 / 0.550 → 0.595 | 0.333 → 0.393 / 0.846 → 0.846 / 0.478 → 0.537 | 5 → 3 | 1 → 1 |
+| hybrid | **combined** | 0.752 → 0.772 | 0.702 → 0.728 | 0.146 → 0.171 / 0.729 → 0.729 / 0.244 → 0.277 | 0.079 → 0.091 / 0.729 → 0.729 / 0.143 → 0.162 | 276 → 223 | 128 → 135 |
+
+### The tasks
+
+1. **Typed and all** (`0c057b2d`). The scoring rule above. It moves no
+   prediction; it is what makes the rest measurable. On the baseline the
+   typed figures were already far above all (nlp typed P 0.691 against
+   0.062), because 691 of NLP's 762 edges are generic.
+2. **Generic associations only in a shared sentence, with nothing typed
+   between the pair** (`f422b676`, and the prompt half in `0fad4a12`). NLP
+   held each co-occurrence edge until the whole text had been read, so a pair
+   a later sentence (or the ship-of-unit pass) relates by type no longer keeps
+   a generic edge as well; and both ends must be named in one paragraph of
+   spaCy's sentence, which had joined headings to the text under them ("China"
+   over "In addition, South Korea ..."). The parser drops a model
+   `ASSOCIATED_WITH` on a pair an asserted typed edge links, in `llm` and
+   again after the hybrid merge (the model's Russia `ASSOCIATED_WITH` Ukraine
+   beside NLP's `TARGETS`), counted as `generic_on_typed_pair`. Generic edges
+   on the old replies: nlp 691 → 648, llm 276 → 271, hybrid 276 → 269; typed
+   recall did not move in any mode (0.490 / 0.458 / 0.729).
+3. **Endpoints must be listed entities** (`8a13960c` parser, `0fad4a12`
+   prompt). The parser resolves each model endpoint to a listed entity by
+   name or alias (case and spacing aside, the key the hybrid merge matches by)
+   and drops the rest, counted as `unlisted_endpoint` on the extraction result
+   (`ExtractionResult.relationships_dropped_by_reason`, also in `meta`). In
+   hybrid the check runs after the merge, so an endpoint only NLP extracted
+   resolves and that entity joins the merged set. Events named only in their
+   date link are still minted first. On the old replies llm dropped 68 edges
+   and the build's unknown-endpoint drops fell 75 → 4 (hybrid 71 → 5). Two
+   gold edges went with them, both of which the eval had counted and the build
+   had dropped: NATO `DEPLOYED_AT` Europe in `llm` (the model never listed
+   Europe; hybrid keeps it through NLP's Europe) and "Russian personnel"
+   `DEPLOYED_AT` Mali.
+
+   The prompt now states both relationship rules, with a negative example
+   for `ASSOCIATED_WITH` (names from no corpus; a test checks the openrep gold
+   too). Its geopolitical example broke both rules it states, dating a
+   "Mozdok deployment" it never listed on a date its text does not give, and
+   pointed `COMMANDED_BY` from the person to the unit; fixed, and a test
+   holds every example in the prompt to the rules. **The prompt moved the
+   model less than the parser does**: on the live replies the model still
+   named 66 unlisted endpoints (68 on the old prompt) and emitted 232 generic
+   edges (234), though kestrel's generic edges halved (39 → 21). Typed
+   precision rose in both model modes (llm 0.104 → 0.127, hybrid 0.153 →
+   0.170), but this row also changes the sample: gold edges were found in
+   one sample and not the other (lost, among others: the three E3 memberships,
+   Israel and the United States `TARGETS` Iran, Kaohsiung `LOCATED_AT`
+   Taiwan; found: Volt Typhoon `TARGETS` Guam, two kestrel berths, GCHQ
+   `BELONGS_TO` the United Kingdom, Ukraine `TARGETS` Russia).
+4. **Government ↔ country** (`9293337a`). `data/governments.yaml` lists 29
+   countries with their names, demonyms, extra forms (the Kremlin) and
+   capitals, and the templates that make government forms ("{adjective}
+   government", "government of {name}", "{name} regime", ...). Extraction
+   (NLP, llm, and the hybrid merge) puts every Location or Organization the
+   table resolves to one country into one entity, named as the text names the
+   country, with the other forms as aliases, typed Location as the gold types
+   countries; edges follow and a self-edge is counted as `same_entity`. A
+   capital joins only when the text uses it as the state more often than as a
+   place, read from the parse: "Tehran asserts ...", "Beijing's insistence",
+   "the regimes in Minsk and Moscow" against "discussions in Tehran", "two
+   secret visits to Beijing". `graph_builder` resolves a country name or
+   government form to the country's node under the table's name (and looks
+   the written name up too, for a node an earlier build made); a capital only
+   when it arrives typed as an organization, since the build has no text.
+   Location nodes carry no alias field (`models/entities.py`), so in the
+   graph the form is resolved, not stored. On identical replies: typed entity
+   F1 llm 0.707 → 0.735, hybrid 0.698 → 0.727 (the model had typed countries
+   Organization), entity F1 nlp 0.799 → 0.806; 13 NLP extras gone ("Tehran",
+   "Moscow", "Minsk", "Beijing", "Taipei", "China" beside "PRC"), and no gold
+   entity newly missed in any mode.
+5. **Acronyms and headings** (`26704091`). `known_entities.yaml` gains
+   `proper_name_acronyms` (treaties and acts, combatant commands, CFIUS,
+   MTCR), extracted wherever the text writes one as a word, typed from the
+   list, with the text's definition as alias; one already inside an extracted
+   name ("the FY2026 NDAA") is not extracted again. JCPOA is now found in all
+   three documents that name it. A heading is a line all in title case
+   without a closing full stop, or one that opens with an imperative; the
+   openrep products write their tasking as a run-in title after a dash
+   ("Prior product … — Assess Russian hybrid warfare …", which ends with a
+   full stop), so that counts too. A spaCy span on a heading that starts on
+   the imperative or begins or ends on a small word is dropped ("Assess
+   Russian", "Assess Arctic", "Assess", "Toward Taiwan", "PRC Influence
+   and"), and a span across a line break is never a name (eight openrep
+   spans such as "Neighbors\n\nKuwait"). NLP entity F1 0.806 → 0.812. Two
+   openrep gold entities are newly missed, USS Ponce and FREMM: the eval had
+   matched them by substring to "USS Ponce\n\nSource" and "Design Compared to
+   FREMM Design\n\nSource", names the graph build discards as junk.
+
+### Regression check on the older sets (NLP)
+
+| Step | legacy F1 (P / R) | legacy typed F1 | holdout F1 (P / R) | holdout typed F1 | rel all F1 legacy / holdout | rel typed F1 legacy / holdout |
+|---|---|---|---|---|---|---|
+| 0–1. baseline `c8aacd2a` | 0.546 (0.394 / 0.893) | 0.461 | 0.736 (0.632 / 0.882) | 0.515 | 0.018 / 0.013 | 0.061 / 0.046 |
+| 2. generic associations | 0.546 (0.394 / 0.893) | 0.461 | 0.736 (0.632 / 0.882) | 0.515 | 0.020 / 0.015 | 0.061 / 0.046 |
+| 4. government ↔ country | 0.547 (0.395 / 0.893) | 0.462 | 0.741 (0.638 / 0.882) | 0.518 | 0.020 / 0.015 | 0.061 / 0.046 |
+| 5. acronyms, headings | 0.548 (0.396 / 0.890) | 0.462 | 0.733 (0.634 / 0.868) | 0.522 | 0.020 / 0.015 | 0.061 / 0.046 |
+
+Step 5's holdout dip is one gold entity, GLACIER CIRCUIT, credited until now
+through the junk span "GLACIER CIRCUIT\n\nReport ID"; the all-capitals filter
+drops the name where the body writes it. Legacy lost Bank of East Asia the
+same way ("Financial Flows\n\nBank of East Asia"), shed four junk spans of
+that kind, and gained an extra (CENTCOM, which that gold omits). Step 4 resolved "the coordination between
+Moscow and Tehran" to Russia and Iran.
+
+### Still open after this phase
+
+- **The model does not follow the relationship rules.** On the live replies
+  it named 66 endpoints it never listed and emitted 231 generic edges (207
+  in openrep, 32% of its openrep edges). The parser enforces the endpoint
+  rule; for generic edges it enforces only "not beside a typed edge" (the
+  "same sentence" half is a prompt instruction for the model, enforced in
+  NLP only), because checking a model edge against sentences means matching
+  names to text, which coreference defeats ("the group", "the system").
+  Generic edges from the model carry its confidence, mostly above
+  `cooccurrence_confidence_min`, so they reach the graph.
+- **Date links still carry events the model writes as sentences** ("Japan
+  Tomahawk delivery delay", "OFAC wind-down of Iranian-origin carpets"), and
+  an event named only in its date link is still minted, so those edges are
+  kept by design (the timeline depends on them).
+- **A span across a line break is dropped, not split.** Splitting it would
+  recover Bank of East Asia but also keep "Source", "Report ID" and "Stage 1 -
+  Loader"; not done.
+- **Capitals in the graph build.** Without text, the build resolves a capital
+  only when it is typed as an organization; a capital extraction left as a
+  Location (a place, or a text it could not parse) stays one.
+- NLP's remaining extras are the previous phase's: administrations, "U.S.
+  forces", fiscal-year labels.
+
+## openrep phase (2026-09-30): before and after, one fix at a time
 
 Each row is that commit's extraction code re-measured with the final runner,
 scorer and gold on the same replayed replies. Step 0 is therefore not the
@@ -330,6 +546,12 @@ is unchanged in every mode. `cyber` NLP entity F1 rose (0.946 → 0.960, "ASUS"
 at step 3), and cyber hybrid moved only at step 9.
 
 ### Known remaining errors in openrep
+
+*As the openrep phase left them. The extraction-precision phase above addressed the generic
+associations, the unlisted endpoints, the country under two names and the NLP misses; see
+"Still open after this phase" there for what remains. The build has counted its
+below-threshold `ASSOCIATED_WITH` drops (`below_cooccurrence_min`) since the post-review
+hardening.*
 
 - **Relationship precision is low in every mode** (0.04–0.07). Of the
   model's 722 openrep edges, 230 are `ASSOCIATED_WITH` and 122 are

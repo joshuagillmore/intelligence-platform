@@ -48,11 +48,14 @@ vi.mock('@/lib/api', async (importOriginal) => {
     ...real,
     graphApi: {
       full: vi.fn(() => ok({ nodes, edges, truncated: false, project_exists: true })),
+      // GET /graph/statistics as the backend sends it.
       statistics: vi.fn(() => ok({
-        total_nodes: 2, total_edges: 1, density: 1, connected_components: 1,
-        entity_statistics: [
-          { entity: 'APT-X', type: 'ThreatActor', degree: 1, betweenness: 0, eigenvector: 0.7, pagerank: 0.5, closeness: 1 },
-          { entity: 'Loader', type: 'Malware', degree: 1, betweenness: 0, eigenvector: 0.7, pagerank: 0.5, closeness: 1 },
+        nodes: 2, edges: 1, density: 1, components: 1, truncated: false, project_exists: true,
+        entities: [
+          { id: 'a', name: 'APT-X', entity_type: 'ThreatActor', degree: 1, in_degree: 0, out_degree: 1,
+            betweenness: 0, eigenvector: 0.7, pagerank: 0.5, closeness: 1 },
+          { id: 'b', name: 'Loader', entity_type: 'Malware', degree: 1, in_degree: 1, out_degree: 0,
+            betweenness: 0, eigenvector: 0.7, pagerank: 0.5, closeness: 1 },
         ],
       })),
       communities: vi.fn(() => ok([])),

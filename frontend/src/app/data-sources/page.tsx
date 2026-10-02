@@ -11,57 +11,21 @@ import type { LayoutMode, ClusteringMethod, Granularity } from '@/components/Min
 import HighlightedExcerpt from '@/components/HighlightedExcerpt';
 import { useRouter } from 'next/navigation';
 import { useProject } from '@/lib/ProjectContext';
-import { topicsApi, queryApi } from '@/lib/api';
+import { topicsApi, queryApi, type TopicContext, type TopicNode } from '@/lib/api';
+import type { Model } from '@/lib/apiTypes';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { readRagAnswer } from '@/lib/assistantGrounding';
 import Markdown from '@/components/Markdown';
 
 /* -- Types ------------------------------------------------------------ */
 
-interface TreeNode {
-  name: string;
-  id: string;
-  entity_type?: string;
-  count?: number;
-  children?: TreeNode[];
-}
+type TreeNode = TopicNode;
 
-interface RelevantExcerpt {
-  text: string;
-  score: number;
-  matched_keywords: string[];
-}
+type RelevantExcerpt = Model<'RelevantExcerptItem'>;
 
-interface SourceDocument {
-  id: string;
-  name: string;
-  content?: string;
-  reliability?: string;
-  relevant_excerpts?: RelevantExcerpt[];
-  keyword_matches?: Record<string, number>;
-  relevance_score?: number;
-}
-
-interface ConnectedEntity {
-  id: string;
-  name: string;
-  entity_type: string;
-  rel_type: string;
-  confidence?: number;
-}
-
-interface DocumentExcerpt {
-  name: string;
-  content: string;
-}
-
-interface EntityContext {
-  entity: { id: string; name: string; entity_type: string; properties?: Record<string, unknown> };
-  connected_entities?: ConnectedEntity[];
-  source_documents?: SourceDocument[];
-  document_excerpts?: DocumentExcerpt[];
-  keywords?: string[];
-}
+/** What the context panel holds: a topic's or an entity's context, or after a
+ *  failed load only the node itself. */
+type EntityContext = Partial<TopicContext>;
 
 interface CrossReference {
   doc_id: string;
@@ -90,7 +54,7 @@ const reliabilityColor = (r?: string) => {
   }
 };
 
-const entityTypeColor = (type: string) => {
+const entityTypeColor = (type: string | null | undefined) => {
   const t = type?.toLowerCase() || '';
   if (t.includes('person') || t.includes('people')) return 'bg-purple-900/40 text-purple-300 border-purple-700/50';
   if (t.includes('org')) return 'bg-blue-900/40 text-blue-300 border-blue-700/50';
@@ -183,26 +147,9 @@ export default function DataSourcesPage() {
       setEditsUnmatched(
         data && typeof data === 'object' && typeof data.edits_unmatched === 'number' ? data.edits_unmatched : 0,
       );
-      if (data && typeof data === 'object' && !Array.isArray(data) && data.children) {
+      if (data && typeof data === 'object' && data.children) {
         setTopicTree(data);
         setCrossReferences(data.cross_references || []);
-      } else if (Array.isArray(data)) {
-        const grouped: Record<string, TreeNode[]> = {};
-        for (const entity of data) {
-          const type = entity.entity_type || 'Unknown';
-          if (!grouped[type]) grouped[type] = [];
-          grouped[type].push({ name: entity.name, id: entity.id, entity_type: entity.entity_type });
-        }
-        setTopicTree({
-          name: 'Knowledge Base',
-          id: 'root',
-          children: Object.entries(grouped).map(([type, entities]) => ({
-            name: type,
-            id: `branch-${type.toLowerCase().replace(/\s+/g, '-')}`,
-            count: entities.length,
-            children: entities,
-          })),
-        });
       } else {
         setTopicTree({ name: 'Knowledge Base', id: 'root', children: [] });
       }
@@ -264,7 +211,7 @@ export default function DataSourcesPage() {
 
     selectedRef.current = node.id;
     setSelectedNodeId(node.id);
-    setSelectedNodeName(node.name);
+    setSelectedNodeName(node.name ?? null);
     setEntityContext(null);
     setQueryInput('');
     setKeywords([]);
@@ -294,11 +241,9 @@ export default function DataSourcesPage() {
       const res = await topicsApi.context(node.id, activeProject.id);
       if (selectedRef.current !== node.id) return; // another topic is showing now
       const data = res.data;
-      if (data.documents && !data.source_documents) {
-        data.source_documents = data.documents;
-      }
-      setEntityContext(data);
-      setKeywords(data.keywords || []);
+      // An unknown entity is a 200 carrying {error}: a context with nothing in it.
+      setEntityContext('error' in data ? {} : data);
+      setKeywords('error' in data ? [] : data.keywords || []);
 
       // Summary is now generated on-demand via button, not auto-generated
     } catch (e) {
@@ -484,7 +429,10 @@ export default function DataSourcesPage() {
                 if (!activeProject) return;
                 try {
                   const res = await topicsApi.exportMindmap(activeProject.id, format);
-                  const content = format === 'json' ? JSON.stringify(res.data, null, 2) : (res.data?.content || JSON.stringify(res.data));
+                  const body = res.data;
+                  const content = format === 'json'
+                    ? JSON.stringify(body, null, 2)
+                    : ('content' in body ? body.content : '') || JSON.stringify(body);
                   const blob = new Blob([content], { type: 'text/plain' });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
@@ -674,7 +622,7 @@ export default function DataSourcesPage() {
                             className="flex items-center gap-1.5 bg-[#313849] px-2.5 py-1.5 rounded-sm border border-[#424754]/20 text-xs cursor-pointer hover:bg-[#3a4050] transition-colors"
                             onClick={() => {
                               // Search mind map for topics containing this entity
-                              setSearchQuery(ce.name);
+                              setSearchQuery(ce.name ?? '');
                             }}
                           >
                             <span className="font-bold text-accent-periwinkle">{ce.name}</span>

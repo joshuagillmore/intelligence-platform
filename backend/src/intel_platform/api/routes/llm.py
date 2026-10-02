@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from intel_platform.services.llm_output import labelled_probability
 from intel_platform.api.deps import verify_api_key
+from intel_platform.models.responses import LlmQueryResponse
 
 # Provider selection lives in intel_platform.llm.providers (single source of
 # truth). Re-exported here for backwards compatibility: existing call sites and
@@ -34,7 +35,7 @@ class SkillListResponse(BaseModel):
     skills: list[dict]
 
 
-@router.post("/llm/query")
+@router.post("/llm/query", response_model=LlmQueryResponse, response_model_exclude_unset=True)
 async def llm_query(req: LLMQueryRequest):
     from intel_platform.llm.skills.loader import SkillsLoader
     loader = SkillsLoader()

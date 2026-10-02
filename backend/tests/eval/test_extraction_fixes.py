@@ -412,13 +412,16 @@ def test_the_prompt_examples_are_not_taken_from_the_eval_corpus():
     prompt = _extraction_prompt()
     fixtures = Path(__file__).resolve().parents[1] / "fixtures"
     names = set()
-    for d in ("extraction_corpus", "extraction_corpus_cyber"):
+    for d in ("extraction_corpus", "extraction_corpus_cyber", "extraction_corpus_openrep"):
         for f in (fixtures / d).glob("*_expected.json"):
             for e in json.loads(f.read_text(encoding="utf-8"))["entities"]:
                 names.update(n for n in [e["name"], *e.get("aliases", [])] if len(n) > 4)
     # Names the prompt already used before the corpus existed (its cyber
-    # example's C2 address is also the one the live-run documents reused).
-    names -= {"China", "NATO", "Brussels", "T1059.001", "185.220.101.42"}
+    # example's C2 address is also the one the live-run documents reused; its
+    # polarity and coreference examples name the Houthis and Putin, and its
+    # geopolitical example a March 2026 date, before openrep was a set).
+    names -= {"China", "NATO", "Brussels", "T1059.001", "185.220.101.42",
+              "Ansar Allah", "Houthi", "Putin", "Vladimir Putin", "Russia", "March 2026", "February 2026"}
     leaked = sorted(n for n in names if n in prompt)
     assert not leaked, leaked
 
@@ -812,3 +815,370 @@ async def test_hybrid_keeps_the_nlp_entity_a_kept_nlp_edge_names():
     }
     assert "U.S. Space Force" in names
     assert all(r["source_name"] in names and r["target_name"] in names for r in rels)
+
+
+# ── Generic associations: a shared sentence and nothing typed between them ────
+# openrep: NLP emitted ASSOCIATED_WITH between entities spaCy's sentence joined
+# across a heading ("China" + "In addition, South Korea ..."), and on pairs a
+# typed relation linked later in the text; the model emitted it on pairs it
+# also related by type.
+
+KES_0173 = (
+    "1. Partner service reporting passed by liaison indicates that torvald (A-430) of 2nd Naval Auxiliary Group "
+    "loads at Nyhavn.\n\n2. Entities identified in this reporting: Torvald (A-430), 2nd Naval Auxiliary Group."
+)
+
+
+def _generic(rels) -> set[frozenset[str]]:
+    return {frozenset((r["source_name"], r["target_name"])) for r in rels if r["rel_type"] == "ASSOCIATED_WITH"}
+
+
+def test_no_generic_edge_on_a_pair_a_typed_relation_links_anywhere_in_the_text():
+    _, rels = extract_entities_nlp(KES_0173, "doc-fix")
+    assert ("Torvald", "BELONGS_TO", "2nd Naval Auxiliary Group") in {
+        (r["source_name"], r["rel_type"], r["target_name"]) for r in rels}
+    # The entity line in paragraph 2 co-mentions the pair; the typed edge is
+    # read from paragraph 1 after every sentence has been seen.
+    assert frozenset(("Torvald", "2nd Naval Auxiliary Group")) not in _generic(rels)
+
+
+def test_a_heading_line_does_not_share_a_sentence_with_the_text_below_it():
+    # openrep crs-R45811_29: spaCy reads the heading "China" and the first
+    # sentence under it as one sentence.
+    text = (
+        "China\n\nIn addition, South Korea reportedly has been developing a ground-launched Mach 6+ hypersonic "
+        "cruise missile, Hycore, since 2018."
+    )
+    _, rels = extract_entities_nlp(text, "doc-fix")
+    assert frozenset(("China", "South Korea")) not in _generic(rels)
+
+
+def test_entities_in_one_sentence_with_nothing_typed_between_them_keep_the_generic_edge():
+    _, rels = extract_entities_nlp(
+        "In addition, South Korea reportedly has been developing a ground-launched Mach 6+ hypersonic cruise "
+        "missile, Hycore, since 2018, and Japan is procuring the Tomahawk Weapon System.", "doc-fix")
+    assert _generic(rels), "co-occurrence still links what one sentence names together"
+
+
+async def test_the_models_generic_edge_on_a_pair_nlp_reads_as_typed_is_dropped():
+    # openrep OPENREP-SUPINTREP-0010: the model returned Russia ASSOCIATED_WITH
+    # Ukraine for "Russia's 2022 invasion of Ukraine", which NLP reads as
+    # TARGETS; hybrid kept both.
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    text = ("Some of these operations have been hampered by the expulsion of Russian diplomats from Europe and the "
+            "United States following Russia's 2022 invasion of Ukraine.")
+    reply = {
+        "entities": [{"name": "Russia", "entity_type": "Country"}, {"name": "Ukraine", "entity_type": "Country"},
+                     {"name": "Europe", "entity_type": "Region"}],
+        "relationships": [{"source_entity": "Russia", "target_entity": "Ukraine",
+                           "relationship_type": "ASSOCIATED_WITH", "evidence": "Russia's 2022 invasion of Ukraine"}],
+    }
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        _, rels = await extraction.extract_entities_hybrid(text, "doc-fix")
+    triples = {(r["source_name"], r["rel_type"], r["target_name"]) for r in rels}
+    assert ("Russia", "TARGETS", "Ukraine") in triples
+    assert frozenset(("Russia", "Ukraine")) not in _generic(rels)
+
+
+async def test_the_models_generic_edge_beside_its_own_typed_edge_is_dropped():
+    # openrep OPENREP-SUPINTREP-0042: Iran TARGETS, USES and ASSOCIATED_WITH
+    # the Strait of Hormuz, all from the model.
+    reply = (
+        '{"entities": [{"name": "Iran", "entity_type": "Country"}, {"name": "Strait of Hormuz", "entity_type": '
+        '"Strait"}], "relationships": [{"source_entity": "Iran", "target_entity": "Strait of Hormuz", '
+        '"relationship_type": "TARGETS"}, {"source_entity": "Strait of Hormuz", "target_entity": "Iran", '
+        '"relationship_type": "ASSOCIATED_WITH"}]}'
+    )
+    result = await _llm_reply(reply, "Iran has sought to formalise its de facto control over the Strait of Hormuz.")
+    assert [(r["source_name"], r["rel_type"]) for r in result[1]] == [("Iran", "TARGETS")]
+
+
+# ── Relationship endpoints must be listed entities ────────────────────────────
+# openrep: 66 of hybrid's 882 edges named something the model never listed
+# ("Ukrainian forces", "31 larger amphibious ships"); the graph build dropped
+# them as unknown endpoints. The parser now resolves an endpoint to a listed
+# entity by name or alias, and drops and counts the rest.
+
+CRS_IN12534 = (
+    "In 2026, Ukrainian forces have limited—and in some cases reversed—Russian gains and markedly expanded a "
+    "campaign of long-range attacks against Russian oil facilities and logistics infrastructure."
+)
+
+
+async def test_an_edge_naming_an_unlisted_endpoint_is_dropped_and_counted():
+    reply = (
+        '{"entities": [{"name": "Russia", "entity_type": "Country"}, {"name": "2026", "entity_type": "Date"}], '
+        '"relationships": [{"source_entity": "Ukrainian forces", "target_entity": "Russian oil facilities", '
+        '"relationship_type": "TARGETS"}, {"source_entity": "Ukrainian forces", "target_entity": "Russia", '
+        '"relationship_type": "TARGETS"}]}'
+    )
+    result = await _llm_reply(reply, CRS_IN12534)
+    assert result[1] == []
+    assert result.relationships_dropped_by_reason["unlisted_endpoint"] == 2
+    assert result.meta["relationships_dropped_by_reason"]["unlisted_endpoint"] == 2
+
+
+async def test_an_endpoint_named_by_an_alias_resolves_to_the_listed_entity():
+    # openrep crs-R47390_22: the model listed "Dorra/Arash gas field" and named
+    # it "Dorra Gas field" in an edge; the build dropped the edge.
+    text = (
+        "In September 2025, the Khafji Joint Operations Company, a joint company of Saudi Aramco Gulf Operations "
+        "Company and Kuwait Gulf Oil Company, issued tenders related to project management for the development of "
+        "the Dorra Gas field."
+    )
+    reply = (
+        '{"entities": [{"name": "Khafji Joint Operations Company", "entity_type": "Company"}, '
+        '{"name": "Dorra/Arash gas field", "entity_type": "Facility", "aliases": ["Dorra Gas field"]}], '
+        '"relationships": [{"source_entity": "khafji joint operations company", "target_entity": "Dorra Gas field", '
+        '"relationship_type": "LOCATED_AT"}]}'
+    )
+    result = await _llm_reply(reply, text)
+    assert [(r["source_name"], r["target_name"]) for r in result[1]] == [
+        ("Khafji Joint Operations Company", "Dorra/Arash gas field")]
+    assert result.relationships_dropped_by_reason["unlisted_endpoint"] == 0
+
+
+async def test_an_event_named_only_in_its_date_link_is_still_recovered():
+    # The timeline depends on it: the event is minted from the OCCURRED_ON edge
+    # (see _link_event_dates), so its edge has a listed endpoint.
+    reply = (
+        '{"entities": [{"name": "July 2025", "entity_type": "Date"}], "relationships": [{"source_entity": '
+        '"Copper tariff", "target_entity": "July 2025", "relationship_type": "OCCURRED_ON"}]}'
+    )
+    result = await _llm_reply(reply, "The copper tariff took effect in July 2025.")
+    assert [(r["source_name"], r["rel_type"]) for r in result[1]] == [("Copper tariff", "OCCURRED_ON")]
+    assert {e["name"] for e in result[0]} >= {"Copper tariff", "July 2025"}
+
+
+async def test_hybrid_resolves_a_model_endpoint_to_the_entity_nlp_extracted():
+    # openrep OPENREP-SUPINTREP-0021: the model's NATO DEPLOYED_AT Europe (a gold
+    # edge) named Europe without listing it; NLP extracted Europe.
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+    from intel_platform.services import extraction
+
+    text = ("NATO has responded by reorienting its strategic focus and defense posture, increasing its military "
+            "presence in Europe, and institutionalizing long-term support for Ukraine.")
+    reply = {"entities": [{"name": "NATO", "entity_type": "Organization"}, {"name": "Ukraine", "entity_type": "Country"}],
+             "relationships": [{"source_entity": "NATO", "target_entity": "Europe", "relationship_type": "DEPLOYED_AT"},
+                               {"source_entity": "NATO", "target_entity": "Allied capitals",
+                                "relationship_type": "LOCATED_AT"}]}
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    with patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply())):
+        result = await extraction.extract_entities_hybrid(text, "doc-fix")
+    ents, rels = result
+    names = {e["name"] for e in ents}
+    assert ("NATO", "DEPLOYED_AT", "Europe") in {(r["source_name"], r["rel_type"], r["target_name"]) for r in rels}
+    assert "Europe" in names
+    assert all(r["source_name"] in names and r["target_name"] in names for r in rels)
+    assert result.relationships_dropped_by_reason["unlisted_endpoint"] == 1
+
+
+# ── A country and its government are one entity ───────────────────────────────
+# openrep: the model named "PRC government" and NLP "China" and "PRC"; a
+# capital standing for the state ("Tehran asserts ...") was a city node. The
+# gold makes one node per state with the other names as aliases.
+
+def _llm_returning(reply: dict):
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    from intel_platform.llm.base import LLMResponse
+
+    class _Reply:
+        async def generate(self, **_kw):
+            return LLMResponse(content=json.dumps(reply), model="fake")
+
+    return patch("intel_platform.llm.providers._get_extraction_provider", new=AsyncMock(return_value=_Reply()))
+
+
+async def test_the_prc_government_and_china_are_one_entity():
+    # openrep crs-IF12640_5.
+    from intel_platform.services import extraction
+
+    text = ("The PRC government is also an indirect shareholder in some firms. China's anti-espionage, "
+            "cybersecurity, and data security laws compel firms to support PRC state security authorities.")
+    reply = {"entities": [{"name": "PRC government", "entity_type": "GovernmentAgency"},
+                          {"name": "China", "entity_type": "Country"},
+                          {"name": "ByteDance", "entity_type": "Company"}],
+             "relationships": [{"source_entity": "ByteDance", "target_entity": "PRC government",
+                                "relationship_type": "FUNDED_BY"},
+                               {"source_entity": "PRC government", "target_entity": "China",
+                                "relationship_type": "BELONGS_TO"}]}
+    with _llm_returning(reply):
+        result = await extraction.extract_entities_hybrid(text, "doc-fix")
+    ents, rels = result
+    states = [e for e in ents if e["name"] in ("China", "PRC", "PRC government")]
+    assert [e["name"] for e in states] == ["China"], [e["name"] for e in ents]
+    assert states[0]["entity_type"] == "Location"
+    assert "PRC government" in states[0]["aliases"]
+    assert [(r["source_name"], r["rel_type"], r["target_name"]) for r in rels] == [
+        ("ByteDance", "FUNDED_BY", "China")]
+    assert result.relationships_dropped_by_reason["same_entity"] == 1
+
+
+async def test_the_kremlin_is_russia():
+    # No corpus sentence names the Kremlin as an actor ("pro-Kremlin" is the
+    # only form in openrep); the form is the plan's example.
+    from intel_platform.services import extraction
+
+    text = "The Kremlin denied that Russia had supplied the drones to the militia."
+    reply = {"entities": [{"name": "the Kremlin", "entity_type": "GovernmentAgency"},
+                          {"name": "Russia", "entity_type": "Country"}], "relationships": []}
+    with _llm_returning(reply):
+        ents, _ = await extraction.extract_entities_llm(text, "doc-fix")
+    assert [(e["name"], e["entity_type"]) for e in ents] == [("Russia", "Location")]
+    assert "the Kremlin" in ents[0]["aliases"]
+
+
+def test_a_capital_acting_for_the_state_is_the_country():
+    # openrep OPENREP-SUPINTREP-0037: "Tehran asserts ..." is Iran asserting.
+    text = ("Highly likely that Iran halted its nuclear weapons program in late 2003 and has not reauthorized the "
+            "development of nuclear weapons. Tehran asserts its enrichment program is only meant to produce fuel for "
+            "peaceful nuclear applications.")
+    entities, _ = extract_entities_nlp(text, "doc-fix")
+    by_name = {e["name"]: e for e in entities}
+    assert "Tehran" not in by_name
+    assert by_name["Iran"]["entity_type"] == "Location"
+    assert "Tehran" in by_name["Iran"].get("aliases", [])
+
+
+def test_a_capital_used_as_a_place_stays_a_location():
+    # openrep crs-R40094_15.
+    text = ("Iran has not allowed the agency to service the cameras. [D]uring the discussions in Tehran as well as in "
+            "Vienna, it was clearly indicated that since that Tessa Karaj Complex is still under security and judicial "
+            "investigations, the equipment related to this Complex are not included for servicing.")
+    entities, _ = extract_entities_nlp(text, "doc-fix")
+    by_name = {e["name"]: e for e in entities}
+    assert by_name["Tehran"]["entity_type"] == "Location"
+    assert "Tehran" not in (by_name["Iran"].get("aliases") or [])
+
+
+def test_the_regimes_in_two_capitals_are_their_states():
+    # openrep crs-R45784_21: "the regimes in Minsk and Moscow".
+    from intel_platform.services.extraction import _capital_metonyms
+
+    text = ('Prime Minister Tusk has described these migration flows as "state-led operations involving the regimes '
+            'in Minsk and Moscow."')
+    assert _capital_metonyms(text) == {"Minsk", "Moscow"}
+    assert _capital_metonyms("Kissinger made two secret visits to Beijing in 1971.") == set()
+
+
+# ── Acronyms that are proper names; names cut out of headings ─────────────────
+# openrep NLP missed JCPOA in all three documents that name it (spaCy tags it
+# nothing), and cut "Assess Russian", "Assess Arctic", "Toward Taiwan" and "PRC
+# Influence and" out of headings, and names across a heading and the line under
+# it ("Neighbors\n\nKuwait").
+
+def test_a_proper_name_acronym_is_extracted_wherever_it_is_written():
+    # openrep crs-R43311_4 and crs-IF11583_0.
+    types = _types('On November 5, 2018, "the United States fully re-imposed the sanctions on Iran that had been lifted '
+                   'or waived under the JCPOA."')
+    assert types.get("JCPOA") == "Document"
+    entities, _ = extract_entities_nlp(
+        "On July 20, 2015, the UN Security Council adopted Resolution 2231 (2015) to implement the Joint "
+        "Comprehensive Plan of Action (JCPOA) and other provisions concerning Iran's nuclear program.", "doc-fix")
+    jcpoa = next(e for e in entities if e["name"] == "JCPOA")
+    assert "Joint Comprehensive Plan of Action" in jcpoa.get("aliases", [])
+    # openrep crs-R48477_18; INDOPACOM is in no corpus text, and spaCy tags it
+    # a place in one sentence and a plural noun in the next.
+    assert _types("The NDAA requires the Secretary of Defense to report on counter-UAS training.").get("NDAA") \
+        == "Document"
+    for text in ("INDOPACOM conducted the exercise with Japan.",
+                 "Admiral Paparo, commander of INDOPACOM, testified before Congress."):
+        assert _types(text).get("INDOPACOM") == "Organization", text
+
+
+def test_an_acronym_inside_a_longer_token_is_not_extracted():
+    types = _types("The JCPOA-era sanctions relief and the NDAAs of earlier years were debated in INDOPACOMS.")
+    assert "INDOPACOM" not in types
+
+
+def test_an_acronym_already_inside_an_extracted_name_is_not_extracted_again():
+    # openrep crs-IN12661_3: "the FY2026 NDAA" is the document; a second
+    # "NDAA" entity was an extra.
+    types = _types("Congress granted SLTT law enforcement and correctional agencies authority through the FY2026 NDAA "
+                   "to engage in actions to mitigate drone threats.")
+    assert types.get("FY2026 NDAA") == "Document"
+    assert "NDAA" not in types
+
+
+def test_no_name_is_cut_from_an_imperative_heading():
+    types = _types("Assess Russian hybrid warfare against European states\n\nRussia has expanded its campaign.")
+    assert "Assess Russian" not in types and "Assess" not in types
+    assert types.get("Russia") == "Location"
+    # As the openrep products write it: a run-in title after a dash.
+    types = _types("Prior product OPENREP-SUPINTREP-0006 — Assess Russian hybrid warfare against European states "
+                   "and the NATO response in the Baltic.")
+    assert not [n for n in types if n.startswith("Assess")]
+    assert "NATO" in types
+
+
+def test_no_fragment_is_cut_from_a_title_case_heading():
+    # openrep crs-IF12640_5 and crs-IF10275_4.
+    types = _types("PRC Influence and Control\n\nThe CPC requires all firms to house a Party committee that is "
+                   "empowered to attend board meetings and be part of decisionmaking.")
+    assert "PRC Influence and" not in types
+    assert "CPC" in types
+    types = _types("U.S. Policy Toward Taiwan\n\nWith some of his statements and actions related to Taiwan, "
+                   "President Donald J. Trump has fed longstanding anxieties in Taiwan about the durability of U.S. "
+                   "support.")
+    assert "Toward Taiwan" not in types
+    assert types.get("Taiwan") == "Location"
+
+
+def test_a_name_does_not_span_a_heading_and_the_line_under_it():
+    # openrep crs-R47390_22: spaCy tagged "Neighbors\n\nKuwait".
+    types = _types("Kuwait and its Neighbors\n\nKuwait's preference for multilateralism and diplomatic outreach has "
+                   "been evident in its officials' mediation efforts in the Middle East region and beyond since 2015.")
+    assert not [n for n in types if "\n" in n], types
+    assert "Kuwait" in types
+
+
+# ── What the prompt asks of relationships ─────────────────────────────────────
+
+def test_the_prompt_requires_both_ends_of_a_relationship_to_be_listed_entities():
+    prompt = _extraction_prompt()
+    assert "must each be the `name` of an entity in your `entities` list" in prompt
+
+
+def test_the_prompt_allows_a_generic_association_only_within_a_sentence_and_shows_one_it_must_not_make():
+    prompt = _extraction_prompt()
+    assert "same sentence names both entities" in prompt
+    assert "Do not emit ASSOCIATED_WITH" in prompt
+    assert "Negative example" in prompt
+
+
+def test_the_prompts_own_examples_follow_its_relationship_rules():
+    """Example 2 dated an event it never listed, on a date its text does not
+    give, and pointed COMMANDED_BY from the person to the unit."""
+    import json
+    import re
+
+    prompt = _extraction_prompt()
+    blocks = [json.loads(b) for b in re.findall(r"```json\n(\{.*?\})\n\s*```", prompt, re.S)
+              if '"source_entity": "string' not in b]
+    assert len(blocks) >= 2
+    for block in blocks:
+        names = {e["name"] for e in block["entities"]}
+        for r in block["relationships"]:
+            assert {r["source_entity"], r["target_entity"]} <= names, r
+            if r["relationship_type"] == "COMMANDED_BY":
+                commander = next(e for e in block["entities"] if e["name"] == r["target_entity"])
+                assert commander["entity_type"] in ("Person", "Commander"), r

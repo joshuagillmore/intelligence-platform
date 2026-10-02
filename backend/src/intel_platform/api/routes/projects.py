@@ -7,7 +7,12 @@ from pydantic import BaseModel
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
 from intel_platform.models.requests import CreateProjectRequest
-from intel_platform.models.responses import ProjectResponse
+from intel_platform.models.responses import (
+    ProjectActivityResponse,
+    ProjectBatchDeleteResponse,
+    ProjectDeleteResponse,
+    ProjectResponse,
+)
 from intel_platform.services.text_utils import normalize_datetime as _normalize_datetime
 
 logger = logging.getLogger(__name__)
@@ -53,7 +58,7 @@ _COUNT_QUERIES = {
 }
 
 
-@router.get("/projects")
+@router.get("/projects", response_model=list[ProjectResponse])
 def list_projects(store: GraphStore = Depends(get_graph_store)):
     with store._driver.session() as session:
         counts = {
@@ -220,7 +225,7 @@ async def _delete_projects(store: GraphStore, project_ids: list[str]) -> tuple[d
     return nodes, rows
 
 
-@router.post("/projects/batch-delete")
+@router.post("/projects/batch-delete", response_model=ProjectBatchDeleteResponse)
 async def batch_delete_projects(req: BatchDeleteRequest, store: GraphStore = Depends(get_graph_store)):
     project_ids = list(dict.fromkeys(req.project_ids))
     nodes, rows = await _delete_projects(store, project_ids)
@@ -228,13 +233,13 @@ async def batch_delete_projects(req: BatchDeleteRequest, store: GraphStore = Dep
     return {"deleted": sum(1 for n in nodes.values() if n), "relational_rows_removed": rows}
 
 
-@router.delete("/projects/{project_id}")
+@router.delete("/projects/{project_id}", response_model=ProjectDeleteResponse)
 async def delete_project(project_id: str, store: GraphStore = Depends(get_graph_store)):
     nodes, rows = await _delete_projects(store, [project_id])
     return {"status": "deleted", "entities_removed": nodes[project_id], "relational_rows_removed": rows}
 
 
-@router.get("/projects/{project_id}/activity")
+@router.get("/projects/{project_id}/activity", response_model=ProjectActivityResponse)
 def get_project_activity(
     project_id: str, limit: int = Query(20, ge=1, le=500), store: GraphStore = Depends(get_graph_store),
 ):

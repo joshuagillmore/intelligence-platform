@@ -3,6 +3,8 @@
  * components (split out of `page.tsx`; see `docs/design/plans/2026-09-30-
  * post-review-hardening.md`, WP-F step 5).
  */
+import type { EntityRecord, EntityRelationship } from '@/lib/api';
+import type { Model, ResponseOf } from '@/lib/apiTypes';
 
 export interface Entity {
   id: string;
@@ -12,22 +14,9 @@ export interface Entity {
   confidence?: number;
 }
 
-export interface Relationship {
-  id?: string;
-  source_id: string;
-  target_id: string;
-  rel_type: string;
-  confidence?: number;
-  source_name?: string;
-  target_name?: string;
-  evidence?: string;
-  // Provenance carried on the edge — see components/EvidenceChain.
-  source_doc_id?: string;
-  admiralty_rating?: string;
-  corroboration_count?: number;
-  corroboration_agreement?: string;
-  method?: string;
-}
+/** One edge touching the selected entity, with the provenance it carries
+ *  (see components/EvidenceChain). */
+export type Relationship = EntityRelationship;
 
 export interface GraphNode {
   id: string;
@@ -73,38 +62,15 @@ export interface GraphStats {
   entity_statistics: EntityStats[];
 }
 
-export interface StructuralHoleEntry {
-  id: string;
-  name: string;
-  entity_type: string;
-  constraint: number;
-  effective_size: number;
-  degree: number;
-  is_broker: boolean;
-}
+export type StructuralHoleEntry = Model<'StructuralHoleItem'>;
 
-export interface EgoNetworkData {
-  center: string;
-  hops: number;
-  node_count: number;
-  edge_count: number;
-  nodes: Array<{ id: string; name: string; entity_type: string; hop_distance: number; local_pagerank: number; local_betweenness: number }>;
-  edges: Array<{ source_id: string; target_id: string; rel_type: string; confidence: number; weight: number }>;
-}
+/** `node_count` and `edge_count` are absent when the entity is not in the graph. */
+export type EgoNetworkData = ResponseOf<'/api/graph/ego-network/{entity_id}', 'get'>;
 
-export interface InfluenceStep {
-  step: number;
-  newly_activated: Array<{ id: string; name: string; entity_type: string }>;
-  cumulative_count: number;
-}
+export type InfluenceStep = Model<'InfluenceStepItem'>;
 
-export interface InfluenceResult {
-  seeds: string[];
-  steps: InfluenceStep[];
-  total_activated: number;
-  reach_ratio: number;
-  total_nodes: number;
-}
+/** `total_nodes` is absent when no seed was in the graph. */
+export type InfluenceResult = ResponseOf<'/api/graph/influence', 'post'>;
 
 export type SortKey = 'entity' | 'type' | 'degree' | 'betweenness' | 'eigenvector' | 'pagerank' | 'closeness';
 
@@ -157,6 +123,12 @@ export function intensityClass(value: number, max: number): string {
   if (ratio > 0.4) return 'text-blue-400';
   if (ratio > 0.2) return 'text-blue-500';
   return 'text-gray-400';
+}
+
+/** An `/entities` row as the view's `Entity`. A node stored without a name or
+ *  type reads as '' (the view already shows those as blank / "Unknown"). */
+export function entityFromRecord(e: EntityRecord): Entity {
+  return { ...e, name: e.name ?? '', entity_type: e.entity_type ?? '' };
 }
 
 /** `{id, name, entity_type}` of a graph node, the shape selection works in. */

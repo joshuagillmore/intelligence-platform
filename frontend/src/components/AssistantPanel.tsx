@@ -29,14 +29,9 @@ import AssistantCitations from './AssistantCitations';
 import { useAssistant, type AssistantTab } from '@/lib/AssistantContext';
 import { useProject } from '@/lib/ProjectContext';
 import { useNotifications } from './NotificationProvider';
-import { notebookApi, reportsApi, type NoteType } from '@/lib/api';
+import { notebookApi, reportsApi, type Note, type NoteType } from '@/lib/api';
 
-interface NotebookEntry {
-  id: string;
-  name?: string;
-  content?: string;
-  note_type?: string;
-}
+type NotebookEntry = Pick<Note, 'id' | 'name' | 'content' | 'note_type'>;
 
 const NOTE_TYPES: NoteType[] = ['observation', 'hypothesis', 'question', 'conclusion'];
 

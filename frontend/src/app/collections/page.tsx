@@ -5,27 +5,23 @@ import Sidebar from '@/components/Sidebar';
 import SelectProjectPrompt from '@/components/SelectProjectPrompt';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { useProject } from '@/lib/ProjectContext';
-import { collectionsApi, collectionPlansApi, ingestApi, llmApi, pirsApi, isHttpStatus, CollectionPlan, CollectionActivityEntry, PlanExecutionStatus, Pir } from '@/lib/api';
+import {
+  collectionsApi, collectionPlansApi, ingestApi, llmApi, pirsApi, isHttpStatus,
+  type CollectionPlan, type CollectionActivityEntry, type LegacyCollection, type PlanExecutionStatus,
+  type PlanFromPirResult, type Pir,
+} from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { planTitle } from '@/lib/planTitle';
 import { executeNotice, isRunStopping } from '@/lib/planRun';
 import { CancelRunButton, PlanRunBadge, RunDetails } from '@/components/PlanRunStatus';
 import { extractRefinedPir } from '@/lib/refinedPir';
 
-interface Collection {
-  id: string;
-  pir: string;
-  refined_pir?: string;
-  refinement?: string;
-  plan?: PlanItem[];
-  status: string;
-  project_id: string;
-  documents_acquired?: number;
-  progress?: number;
-  created_at?: string;
-  updated_at?: string;
-  results?: unknown;
-}
+/** A legacy collection (`/collections`). The route returns its plan items as
+ *  they were stored, and this page stored them as `PlanItem`s. */
+type Collection = Pick<
+  LegacyCollection,
+  'id' | 'pir' | 'refined_pir' | 'refinement' | 'status' | 'documents_acquired' | 'progress' | 'created_at' | 'updated_at'
+> & { plan?: PlanItem[] };
 
 interface PlanItem {
   id: number;
@@ -37,6 +33,19 @@ interface PlanItem {
   source_type: string;
   status: string;
   approved: boolean;
+}
+
+/** A legacy collection's stored plan item. The route returns the items as they
+ *  were stored (open-ended); these are the fields the history shows. */
+function asPlanItem(item: Record<string, unknown>): PlanItem {
+  return {
+    id: Number(item.id),
+    source_id: typeof item.source_id === 'string' ? item.source_id : undefined,
+    description: typeof item.description === 'string' ? item.description : '',
+    source_type: typeof item.source_type === 'string' ? item.source_type : '',
+    status: typeof item.status === 'string' ? item.status : '',
+    approved: item.approved === true,
+  };
 }
 
 /** Delay between polls of a plan with a run in flight. */
@@ -110,7 +119,7 @@ function CollectionsWorkflow() {
   const [planError, setPlanError] = useState<string | null>(null);
   const [planItems, setPlanItems] = useState<PlanItem[]>([]);
   const [maxResultsPerSource, setMaxResultsPerSource] = useState(10);
-  const [activePlan, setActivePlan] = useState<CollectionPlan | null>(null);
+  const [activePlan, setActivePlan] = useState<PlanFromPirResult | null>(null);
   const [plans, setPlans] = useState<CollectionPlan[]>([]);
   const [, setPlansLoading] = useState(false);
 
@@ -141,7 +150,7 @@ function CollectionsWorkflow() {
     setCollectionsLoading(true);
     try {
       const res = await collectionsApi.list(activeProject.id);
-      setCollections(res.data);
+      setCollections(res.data.map(c => ({ ...c, plan: c.plan.map(asPlanItem) })));
     } catch (e) {
       console.error('Failed to load collections', e);
     } finally {
@@ -335,7 +344,7 @@ function CollectionsWorkflow() {
 PIR: ${pirText}` }],
         undefined
       );
-      const answer = res.data?.response || res.data?.answer || res.data?.content || JSON.stringify(res.data);
+      const answer = res.data?.content || JSON.stringify(res.data);
       setRefineAnalysis(answer);
 
       // The refined PIR is whatever follows a "Refined PIR"-style label, in

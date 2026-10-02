@@ -7,6 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.config import settings
 from intel_platform.graph.store import GraphStore
+from intel_platform.models.responses import (
+    BatchIngestResponse,
+    IngestResponse,
+)
 from intel_platform.models.entities import Document
 from intel_platform.services.ingestion import ingest_text, process_file
 from intel_platform.services.extraction import extract_entities_nlp
@@ -160,7 +164,7 @@ async def _ingest_chunks(
     }
 
 
-@router.post("/ingest")
+@router.post("/ingest", response_model=IngestResponse, response_model_exclude_unset=True)
 async def ingest_document(
     project_id: str = Form(...),
     content: str | None = Form(None),
@@ -189,7 +193,7 @@ async def ingest_document(
     return await _ingest_chunks(store, chunks, source_name, project_id, reliability_rating, extraction_mode)
 
 
-@router.post("/ingest/batch")
+@router.post("/ingest/batch", response_model=BatchIngestResponse, response_model_exclude_unset=True)
 async def ingest_batch(
     project_id: str = Form(...),
     files: list[UploadFile] = File(...),

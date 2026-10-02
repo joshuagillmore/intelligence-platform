@@ -20,10 +20,16 @@ def test_edge_count_is_the_number_of_edges_drawn(monkeypatch):
     from intel_platform.api.deps import get_graph_store
     from intel_platform.api.routes import geo as geo_routes
 
+    def place(lid, name, lat, lng):
+        # The shape geolocate_entities returns.
+        return {"id": lid, "name": name, "entity_type": "Location", "latitude": lat, "longitude": lng,
+                "geocoded": True, "geo_source": "persisted", "geo_confidence": "high",
+                "location_type": "city", "mgrs": "", "properties": {"id": lid, "name": name}}
+
     locations = [
-        {"id": "l1", "name": "Riga", "entity_type": "Location", "lat": 56.9, "lon": 24.1},
-        {"id": "l2", "name": "Tallinn", "entity_type": "Location", "lat": 59.4, "lon": 24.7},
-        {"id": "l3", "name": "Oslo", "entity_type": "Location", "lat": 59.9, "lon": 10.7},
+        place("l1", "Riga", 56.9, 24.1),
+        place("l2", "Tallinn", 59.4, 24.7),
+        place("l3", "Oslo", 59.9, 10.7),
     ]
     monkeypatch.setattr(geo_routes, "geolocate_entities", lambda store, pid: [dict(x) for x in locations])
 

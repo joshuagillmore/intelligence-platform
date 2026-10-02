@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { entitiesApi, totalFrom } from '@/lib/api';
 import { createRequestSequencer, useDebouncedValue } from '../graphFilters';
-import { ENTITY_PANEL_LIMIT, SEARCH_DEBOUNCE_MS, type Entity } from '../types';
+import { ENTITY_PANEL_LIMIT, SEARCH_DEBOUNCE_MS, entityFromRecord, type Entity } from '../types';
 
 /**
  * The browse panel's entity list: a (debounced) search and a type filter, and
@@ -30,7 +30,7 @@ export function useEntitySearch(activeProject: { id: string } | null) {
         ENTITY_PANEL_LIMIT,
       );
       if (!entitySeqRef.current.isCurrent(token)) return;
-      setEntities(res.data);
+      setEntities(res.data.map(entityFromRecord));
       // The panel groups what it received under type headings, and those counts
       // read as totals. On a 5,486-entity project it was grouping the first 50
       // and captioning them "Organization (6)" beside a graph holding 156.

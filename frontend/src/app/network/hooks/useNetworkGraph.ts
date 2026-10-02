@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { graphApi } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { normaliseGraphEdge } from '../graphFilters';
@@ -24,7 +24,6 @@ export function useNetworkGraph(activeProject: { id: string } | null) {
   const [stats, setStats] = useState<GraphStats | null>(null);
   const [communityMap, setCommunityMap] = useState<Record<string, number>>({});
   const [structuralHoles, setStructuralHoles] = useState<StructuralHoleEntry[]>([]);
-  const graphNodesRef = useRef<GraphNode[]>([]);
 
   const loadGraph = useCallback(async () => {
     if (!activeProject) return;
@@ -33,7 +32,6 @@ export function useNetworkGraph(activeProject: { id: string } | null) {
     try {
       const res = await graphApi.full(activeProject.id);
       const nodes = res.data.nodes || [];
-      graphNodesRef.current = nodes;
       setGraphNodes(nodes);
       // One edge shape for the page whichever keys the route sends, with
       // evidence / method / source_doc_id as text for the edge panel.
@@ -57,20 +55,20 @@ export function useNetworkGraph(activeProject: { id: string } | null) {
     try {
       const res = await graphApi.statistics(activeProject.id);
       const raw = res.data;
-      // Normalize backend field names to frontend interface
+      // The statistics table's own names for the backend's fields.
       const normalized: GraphStats = {
-        total_nodes: raw.total_nodes ?? raw.nodes ?? 0,
-        total_edges: raw.total_edges ?? raw.edges ?? 0,
-        density: raw.density ?? 0,
-        connected_components: raw.connected_components ?? raw.components ?? 0,
-        entity_statistics: (raw.entity_statistics ?? raw.entities ?? []).map((e: Record<string, unknown>) => ({
-          entity: (e.entity ?? e.name ?? '') as string,
-          type: (e.type ?? e.entity_type ?? '') as string,
-          degree: (e.degree ?? 0) as number,
-          betweenness: (e.betweenness ?? 0) as number,
-          eigenvector: (e.eigenvector ?? 0) as number,
-          pagerank: (e.pagerank ?? 0) as number,
-          closeness: (e.closeness ?? 0) as number,
+        total_nodes: raw.nodes,
+        total_edges: raw.edges,
+        density: raw.density,
+        connected_components: raw.components,
+        entity_statistics: raw.entities.map(e => ({
+          entity: e.name,
+          type: e.entity_type,
+          degree: e.degree,
+          betweenness: e.betweenness,
+          eigenvector: e.eigenvector,
+          pagerank: e.pagerank,
+          closeness: e.closeness,
         })),
       };
       setStats(normalized);
@@ -83,64 +81,12 @@ export function useNetworkGraph(activeProject: { id: string } | null) {
     if (!activeProject) return;
     try {
       const res = await graphApi.communities(activeProject.id);
-      const data = res.data;
+      // Each community lists its members: map every member to its community.
+      // The response was read as a flat {entity_id, community} list, which it
+      // never is, so the map came back empty and "Select Community" never showed.
       const map: Record<string, number> = {};
-
-      const extractFromItem = (item: Record<string, unknown>) => {
-        const entityId = item.entity_id || item.id || item.node_id;
-        const communityId = item.community ?? item.community_id ?? item.group;
-        if (entityId !== undefined && communityId !== undefined) {
-          map[String(entityId)] = Number(communityId);
-        }
-      };
-
-      if (Array.isArray(data)) {
-        for (const item of data) {
-          extractFromItem(item);
-        }
-      } else if (data && typeof data === 'object') {
-        // Could be { communities: [...] } or { nodes: [...] } or { members: { community_id: [entity_ids] } }
-        const arr = data.communities || data.nodes || data.results || [];
-        if (Array.isArray(arr) && arr.length > 0) {
-          for (const item of arr) {
-            // Handle nested format: { id: N, members: [{ id, name }] }
-            if (item.members && Array.isArray(item.members)) {
-              const cid = item.id ?? item.community_id ?? item.community;
-              for (const member of item.members) {
-                const eid = member.entity_id || member.id || member.node_id;
-                if (eid !== undefined && cid !== undefined) {
-                  map[String(eid)] = Number(cid);
-                }
-              }
-            } else {
-              extractFromItem(item);
-            }
-          }
-        } else if (!Array.isArray(arr) || arr.length === 0) {
-          // Try dict format: { entity_id_or_name: community_number }
-          for (const [key, value] of Object.entries(data)) {
-            if (key !== 'communities' && key !== 'nodes' && key !== 'results' && typeof value === 'number') {
-              map[key] = value;
-            }
-          }
-          // If keys are entity names, map them to IDs via graphNodes
-          if (Object.keys(map).length > 0 && graphNodesRef.current.length > 0) {
-            const nameToId: Record<string, string> = {};
-            for (const n of graphNodesRef.current) {
-              nameToId[n.name] = n.id;
-            }
-            const remapped: Record<string, number> = {};
-            for (const [key, val] of Object.entries(map)) {
-              if (nameToId[key]) {
-                remapped[nameToId[key]] = val;
-              } else {
-                remapped[key] = val; // already an ID
-              }
-            }
-            setCommunityMap(remapped);
-            return;
-          }
-        }
+      for (const community of res.data) {
+        for (const member of community.members) map[member.id] = community.community_id;
       }
       setCommunityMap(map);
     } catch (e) {

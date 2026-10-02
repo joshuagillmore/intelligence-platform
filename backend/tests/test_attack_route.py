@@ -44,7 +44,8 @@ def test_status_requires_auth(client):
 
 def test_status_shape(client, analyst_header):
     fake = {"ingested": False, "version": None,
-            "counts": {"tactics": 0, "techniques": 0, "groups": 0, "software": 0, "mitigations": 0}}
+            "counts": {"tactics": 0, "techniques": 0, "groups": 0, "software": 0, "mitigations": 0},
+            "vuln_chain": {"ingested": False, "cwes": 0}}
     with patch("intel_platform.services.attack.graph_ops.attack_status", return_value=fake):
         resp = client.get("/api/attack/status", headers=analyst_header)
     assert resp.status_code == 200
@@ -165,10 +166,10 @@ def test_embed_admin_returns_count(client, admin_header, _override_db):
 
 def test_map_returns_counts(client, analyst_header, _override_db):
     with patch("intel_platform.api.routes.attack.attack_mapping.map_project_ttps",
-               new=AsyncMock(return_value={"mapped": 3, "skipped": 2})):
+               new=AsyncMock(return_value={"mapped": 3, "skipped": 2, "skip_reasons": {"rejected": 2}})):
         resp = client.post("/api/attack/map", params={"project_id": "p1"}, headers=analyst_header)
     assert resp.status_code == 200
-    assert resp.json() == {"mapped": 3, "skipped": 2}
+    assert resp.json() == {"mapped": 3, "skipped": 2, "skip_reasons": {"rejected": 2}}
 
 
 def test_map_passes_remap_through(client, analyst_header, _override_db):

@@ -121,7 +121,7 @@ export default function LlmHubPage() {
         selectedSkill?.name || undefined,
         overrides
       );
-      setResult(res.data.content || res.data.response || JSON.stringify(res.data, null, 2));
+      setResult(res.data.content || JSON.stringify(res.data, null, 2));
     } catch {
       setResultError('Query failed. Check that the LLM provider is configured and reachable, then try again.');
     } finally {

@@ -14,7 +14,7 @@ interface GeoLocation {
   lng?: number | null;
   geocoded?: boolean;
   connections?: number;
-  connection_count?: number;
+  connection_count?: number | null;
   entity_type?: string;
   geo_source?: string;
   geo_confidence?: string;
@@ -29,7 +29,8 @@ interface ConnectionLine {
   to: [number, number];
   names: string;
   weight?: number;
-  shared_entities?: string[];
+  // An entity without a name arrives as null (drawn blank).
+  shared_entities?: (string | null)[];
 }
 
 interface GeoMapProps {
@@ -192,7 +193,7 @@ export default function GeoMap({ locations, connectionLines = [], onLocationClic
       }).addTo(map);
       // Tooltip showing shared entities
       const sharedText = line.shared_entities?.length
-        ? `<br><br>Shared entities:<br>${line.shared_entities.map((e: string) => `• ${esc(e)}`).join('<br>')}`
+        ? `<br><br>Shared entities:<br>${line.shared_entities.map((e: string | null) => `• ${esc(e)}`).join('<br>')}`
         : '';
       polyline.bindPopup(
         `<div style="font-size:12px"><b>${esc(line.names)}</b><br>Shared entities: ${w}${sharedText}</div>`

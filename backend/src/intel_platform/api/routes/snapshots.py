@@ -7,6 +7,12 @@ from pydantic import BaseModel
 
 from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.graph.store import GraphStore
+from intel_platform.models.responses import (
+    SnapshotDetailResponse,
+    SnapshotListResponse,
+    SnapshotResponse,
+    StatusResponse,
+)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
 
@@ -18,7 +24,7 @@ class CreateSnapshotRequest(BaseModel):
     description: str = ""
 
 
-@router.post("/snapshots")
+@router.post("/snapshots", response_model=SnapshotResponse)
 def create_snapshot(req: CreateSnapshotRequest, store: GraphStore = Depends(get_graph_store)):
     """Save a subgraph snapshot (bin) for later analysis."""
     snapshot_id = str(uuid.uuid4())
@@ -72,7 +78,7 @@ def create_snapshot(req: CreateSnapshotRequest, store: GraphStore = Depends(get_
     }
 
 
-@router.get("/snapshots")
+@router.get("/snapshots", response_model=SnapshotListResponse, response_model_exclude_unset=True)
 def list_snapshots(project_id: str, store: GraphStore = Depends(get_graph_store)):
     """List all snapshots for a project."""
     with store._driver.session() as session:
@@ -93,7 +99,7 @@ def list_snapshots(project_id: str, store: GraphStore = Depends(get_graph_store)
     return {"snapshots": snapshots, "count": len(snapshots)}
 
 
-@router.get("/snapshots/{snapshot_id}")
+@router.get("/snapshots/{snapshot_id}", response_model=SnapshotDetailResponse, response_model_exclude_unset=True)
 def get_snapshot(snapshot_id: str, store: GraphStore = Depends(get_graph_store)):
     """Get a snapshot with full entity and relationship data."""
     with store._driver.session() as session:
@@ -140,7 +146,7 @@ def get_snapshot(snapshot_id: str, store: GraphStore = Depends(get_graph_store))
     }
 
 
-@router.delete("/snapshots/{snapshot_id}")
+@router.delete("/snapshots/{snapshot_id}", response_model=StatusResponse)
 def delete_snapshot(snapshot_id: str, store: GraphStore = Depends(get_graph_store)):
     with store._driver.session() as session:
         result = session.run(

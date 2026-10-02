@@ -4,6 +4,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from pathlib import Path
 
 import spacy
 
@@ -34,20 +35,29 @@ class ExtractionResult(tuple):
       *type*, never its message, so it is safe to show an analyst.
     - ``skipped_items``: individual model entities/relationships dropped for
       being malformed, without discarding the rest of the reply.
+    - ``relationships_dropped_by_reason``: well-formed model relationships the
+      extraction did not keep, by why: ``unlisted_endpoint`` (an endpoint that
+      is neither a listed entity nor one's alias), ``same_entity`` (both ends
+      resolve to one entity), ``generic_on_typed_pair`` (an ASSOCIATED_WITH on
+      a pair a typed relation already links). The graph build keeps its own
+      count of what reaches it.
     """
 
     method: str
     degraded: bool
     reason: str
     skipped_items: int
+    relationships_dropped_by_reason: dict[str, int]
 
     def __new__(cls, entities: list[dict], relationships: list[dict], *, method: str,
-                degraded: bool = False, reason: str = "", skipped_items: int = 0):
+                degraded: bool = False, reason: str = "", skipped_items: int = 0,
+                relationships_dropped_by_reason: dict[str, int] | None = None):
         self = super().__new__(cls, (entities, relationships))
         self.method = method
         self.degraded = degraded
         self.reason = reason
         self.skipped_items = skipped_items
+        self.relationships_dropped_by_reason = dict(relationships_dropped_by_reason or {})
         return self
 
     def __getnewargs_ex__(self):
@@ -56,6 +66,7 @@ class ExtractionResult(tuple):
         return (self[0], self[1]), {
             "method": self.method, "degraded": self.degraded,
             "reason": self.reason, "skipped_items": self.skipped_items,
+            "relationships_dropped_by_reason": self.relationships_dropped_by_reason,
         }
 
     @property
@@ -65,6 +76,7 @@ class ExtractionResult(tuple):
             "degraded": self.degraded,
             "reason": self.reason,
             "skipped_items": self.skipped_items,
+            "relationships_dropped_by_reason": dict(self.relationships_dropped_by_reason),
         }
 
 
@@ -824,6 +836,293 @@ def _normalize_rel_type(raw: str) -> str | None:
     if _REPORTING_REL.match(rt):
         return None
     return "ASSOCIATED_WITH"
+
+
+def _resolve_endpoints(
+    entities: list[dict], relationships: list[dict], *,
+    pool: list[dict] | None = None, renamed: dict[str, str] | None = None,
+) -> tuple[list[dict], dict[str, int], list[dict]]:
+    """Point every relationship at a listed entity, or drop it.
+
+    An endpoint resolves when it is an entity's name, or the same name or one
+    of its aliases written differently (``_merge_key``: case and surrounding
+    space, the rule the hybrid merge matches by). In hybrid, ``renamed`` maps
+    an NLP name to the model entity it merged into, and ``pool`` is the NLP
+    entities: an endpoint the model named without listing but NLP extracted is
+    that entity, which joins ``entities`` (and is returned) so the edge has
+    both ends. Anything else is a name the model never listed ("Ukrainian
+    forces", "31 larger amphibious ships"); the graph build used to drop those
+    edges as unknown endpoints, after the eval had counted them.
+
+    Returns the kept relationships, the drops by reason (``unlisted_endpoint``,
+    ``same_entity`` when both ends resolve to one entity) and the pool
+    entities added.
+    """
+    names = {e.get("name") for e in entities}
+    lookup: dict[str, str] = {}
+    for e in entities:
+        lookup.setdefault(_merge_key(e.get("name", "")), e["name"])
+    for e in entities:
+        for alias in e.get("aliases") or []:
+            if isinstance(alias, str) and alias.strip():
+                lookup.setdefault(_merge_key(alias), e["name"])
+    pool_by_key: dict[str, dict] = {}
+    for e in pool or []:
+        pool_by_key.setdefault(_merge_key(e.get("name", "")), e)
+    for e in pool or []:
+        for alias in e.get("aliases") or []:
+            if isinstance(alias, str) and alias.strip():
+                pool_by_key.setdefault(_merge_key(alias), e)
+    added: list[dict] = []
+
+    def resolve(name: str) -> str | None:
+        if name in names:
+            return name
+        if renamed and renamed.get(name) in names:
+            return renamed[name]
+        key = _merge_key(name)
+        if not key:
+            return None
+        if key in lookup:
+            return lookup[key]
+        found = pool_by_key.get(key)
+        if found is None:
+            return None
+        if found.get("name") not in names:
+            entities.append(found)
+            added.append(found)
+            names.add(found["name"])
+            lookup.setdefault(_merge_key(found["name"]), found["name"])
+        return found["name"]
+
+    kept: list[dict] = []
+    dropped = {"unlisted_endpoint": 0, "same_entity": 0}
+    for r in relationships:
+        src = resolve(r.get("source_name") or "")
+        tgt = resolve(r.get("target_name") or "")
+        if src is None or tgt is None:
+            dropped["unlisted_endpoint"] += 1
+            continue
+        if src == tgt:
+            dropped["same_entity"] += 1
+            continue
+        if (src, tgt) != (r.get("source_name"), r.get("target_name")):
+            r = {**r, "source_name": src, "target_name": tgt}
+        kept.append(r)
+    if dropped["unlisted_endpoint"]:
+        logger.info("Extraction dropped %d relationship(s) naming an entity that was not listed",
+                    dropped["unlisted_endpoint"])
+    return kept, dropped, added
+
+
+# ── A country and its government are one entity ─────────────────────────────
+# data/governments.yaml lists each country's names, its government forms and
+# its capital. A capital stands for the state only where the text uses it as
+# an actor; these are the dependency positions that say which.
+
+# Nouns that make a capital in a phrase with them the state: "the regimes in
+# Minsk and Moscow", "the Tehran government".
+_GOVERNMENT_NOUNS = frozenset({
+    "government", "regime", "leadership", "authority", "official", "administration", "embassy",
+})
+# Nouns that make a capital possessing them a place: "Tehran's streets".
+_PLACE_NOUNS = frozenset({
+    "street", "airport", "resident", "population", "mayor", "outskirt", "suburb", "centre", "center",
+    "university", "bazaar", "district", "neighborhood", "neighbourhood", "metro", "skyline", "province",
+    "hotel", "port", "harbour", "harbor", "square", "skies", "sky", "residents",
+})
+# Prepositions whose object is somewhere ("talks in Tehran", "flew from
+# Beijing", "visits to Beijing") or someone ("talks with Tehran").
+_PLACE_PREPOSITIONS = frozenset({
+    "in", "at", "near", "from", "to", "into", "inside", "outside", "around", "across", "throughout", "via",
+    "through", "over", "within", "toward", "towards",
+})
+_ACTOR_PREPOSITIONS = frozenset({"with", "against", "between"})
+# Verbs whose object is a place: "visited Beijing", "struck Kyiv".
+_PLACE_VERBS = frozenset({
+    "visit", "leave", "reach", "enter", "tour", "flee", "evacuate", "arrive", "return", "fly", "travel",
+    "bomb", "strike", "shell", "capture", "besiege", "surround", "approach", "host",
+})
+
+
+def _capital_use(token, depth: int = 0) -> str:
+    """"actor", "place" or "" for one mention of a capital, from its parse."""
+    dep = token.dep_
+    head = token.head
+    if dep in ("nsubj", "nsubjpass", "agent", "csubj"):
+        return "actor"
+    if dep == "poss":
+        return "place" if head.lemma_.lower() in _PLACE_NOUNS else "actor"
+    if dep == "compound":
+        return "actor" if head.lemma_.lower() in _GOVERNMENT_NOUNS else "place"
+    if dep == "pobj":
+        prep = head.lower_
+        if head.head.lemma_.lower() in _GOVERNMENT_NOUNS:
+            return "actor"
+        if prep in _ACTOR_PREPOSITIONS:
+            return "actor"
+        if prep in _PLACE_PREPOSITIONS:
+            return "place"
+        return ""
+    if dep == "dobj":
+        return "place" if head.lemma_.lower() in _PLACE_VERBS else "actor"
+    if dep in ("conj", "appos") and depth < 3 and head is not token:
+        # "the regimes in Minsk and Moscow": Moscow is used as Minsk is.
+        return _capital_use(head, depth + 1)
+    return ""
+
+
+def _capital_metonyms(text: str, doc=None) -> set[str]:
+    """The table's capitals this text uses for their state more often than as a place.
+
+    "Tehran asserts its enrichment program ...", "Beijing's insistence on
+    unification" and "the regimes in Minsk and Moscow" are the state;
+    "discussions in Tehran" and "two secret visits to Beijing" are the city.
+    Counted over every mention, so a text that does both resolves to the use
+    it makes most; a tie stays a place. Parses the text when the caller has no
+    parse of it, and only when it names a capital.
+    """
+    from intel_platform.services.text_utils import capital_names
+
+    capitals = [c for c in capital_names() if re.search(r"(?<!\w)" + re.escape(c) + r"(?!\w)", text or "")]
+    if not capitals:
+        return set()
+    try:
+        if doc is None:
+            doc = _get_nlp()(text)
+    except Exception:
+        # Without a parse the capital stays a place: the safe reading.
+        logger.warning("Could not parse the text to read how it uses a capital", exc_info=True)
+        return set()
+    found: set[str] = set()
+    for capital in capitals:
+        uses = {"actor": 0, "place": 0}
+        for m in re.finditer(r"(?<!\w)" + re.escape(capital) + r"(?!\w)", doc.text):
+            span = doc.char_span(m.start(), m.end(), alignment_mode="expand")
+            use = _capital_use(span.root) if span is not None else ""
+            if use:
+                uses[use] += 1
+        if uses["actor"] > uses["place"]:
+            found.add(capital)
+    return found
+
+
+def _country_name_in_text(country: str, text: str) -> str:
+    """The name the text itself gives the country, else the table's."""
+    from intel_platform.services.text_utils import country_names
+
+    for name in country_names(country):
+        if re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", text or ""):
+            return name
+    return country
+
+
+def _add_alias(entity: dict, alias: str) -> None:
+    if not alias or alias == entity.get("name"):
+        return
+    aliases = list(entity.get("aliases") or [])
+    if alias not in aliases:
+        aliases.append(alias)
+    entity["aliases"] = aliases
+
+
+def _resolve_countries(
+    entities: list[dict], relationships: list[dict], text: str, doc=None,
+) -> tuple[list[dict], list[dict], int]:
+    """One entity per state: its names, its government forms and a capital acting for it.
+
+    The model named "PRC government" where NLP named "China" and "PRC"; the
+    graph got a node for each, and the gold makes them one. Every Location or
+    Organization entity the table resolves to a country joins that country's
+    entity: the first one named as the country itself, or, when only a form
+    is named, the first form, renamed to the country as the text names it.
+    The others become its aliases, the entity is a Location (as the gold
+    types countries), and edges follow it. A capital joins only when the text
+    uses it as the state (``_capital_metonyms``).
+
+    Returns the entities, the relationships, and how many edges were dropped
+    because both ends became the one entity.
+    """
+    from intel_platform.services.text_utils import country_of
+
+    metonyms: set[str] | None = None
+    groups: dict[str, list[tuple[dict, str]]] = {}
+    for e in entities:
+        _, parent = normalize_entity_type(e.get("entity_type") or "")
+        if parent not in ("Location", "Organization"):
+            continue
+        hit = country_of(e.get("name") or "")
+        if hit is None:
+            continue
+        country, kind = hit
+        if kind == "capital":
+            if metonyms is None:
+                metonyms = {c.lower() for c in _capital_metonyms(text, doc)}
+            if (e.get("name") or "").strip().lower() not in metonyms:
+                continue
+        groups.setdefault(country, []).append((e, kind))
+    if not groups:
+        return entities, relationships, 0
+
+    renamed: dict[str, str] = {}
+    gone: set[int] = set()
+    for country, members in groups.items():
+        named = [e for e, kind in members if kind == "name"]
+        keep = named[0] if named else members[0][0]
+        if not named:
+            written = keep["name"]
+            keep["name"] = _country_name_in_text(country, text)
+            _add_alias(keep, written)
+            renamed[written] = keep["name"]
+        keep["entity_type"] = "Location"
+        for e, _ in members:
+            if e is keep:
+                continue
+            for alias in [e.get("name", ""), *(e.get("aliases") or [])]:
+                if isinstance(alias, str):
+                    _add_alias(keep, alias)
+            keep["confidence"] = max(keep.get("confidence", 0) or 0, e.get("confidence", 0) or 0)
+            _merge_attributes(keep, e)
+            renamed[e.get("name", "")] = keep["name"]
+            gone.add(id(e))
+    if gone:
+        logger.debug("Resolved %d government form(s) and name(s) to their country", len(gone))
+    entities = [e for e in entities if id(e) not in gone]
+
+    kept: list[dict] = []
+    same = 0
+    for r in relationships:
+        src = renamed.get(r.get("source_name"), r.get("source_name"))
+        tgt = renamed.get(r.get("target_name"), r.get("target_name"))
+        if src == tgt:
+            same += 1
+            continue
+        if (src, tgt) != (r.get("source_name"), r.get("target_name")):
+            r = {**r, "source_name": src, "target_name": tgt}
+        kept.append(r)
+    return entities, kept, same
+
+
+def _drop_generic_on_typed_pairs(relationships: list[dict]) -> tuple[list[dict], int]:
+    """Drop each ASSOCIATED_WITH on a pair that an asserted typed relation links.
+
+    A generic association says two things are related without saying how; next
+    to an edge that says how, it adds nothing. The model returned Iran TARGETS
+    and ASSOCIATED_WITH the Strait of Hormuz; hybrid kept the model's Russia
+    ASSOCIATED_WITH Ukraine beside NLP's TARGETS for "Russia's 2022 invasion of
+    Ukraine". Direction does not matter; a denied typed relation does not rule
+    an association out. Returns the kept edges and how many were dropped.
+    """
+    typed = {
+        frozenset((r.get("source_name"), r.get("target_name"))) for r in relationships
+        if r.get("rel_type") != "ASSOCIATED_WITH" and r.get("polarity", "asserts") != "denies"
+    }
+    kept = [
+        r for r in relationships
+        if r.get("rel_type") != "ASSOCIATED_WITH"
+        or frozenset((r.get("source_name"), r.get("target_name"))) not in typed
+    ]
+    return kept, len(relationships) - len(kept)
 
 
 def _clean_evidence(sentence: str, name_a: str, name_b: str, pad: int = 45, max_len: int = 300) -> str:
@@ -1779,6 +2078,132 @@ def _phrase_relations(sent, spans, entities_by_name, resolve_anaphor) -> list[tu
             if s is not t and s["name"] != t["name"] and "Date" not in (s.get("entity_type"), t.get("entity_type"))]
 
 
+# ── Acronyms that are proper names ───────────────────────────────────────────
+
+@lru_cache(maxsize=1)
+def _proper_name_acronyms() -> dict[str, str]:
+    """Acronym -> entity type, from known_entities.yaml ``proper_name_acronyms``."""
+    import yaml
+
+    path = Path(__file__).resolve().parents[1] / "data" / "known_entities.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return {
+        str(acronym): entity_type
+        for entity_type, acronyms in (data.get("proper_name_acronyms") or {}).items()
+        for acronym in acronyms or []
+    }
+
+
+# The defined name right before "(ACR)": capitalised words and the small words
+# inside a name ("Joint Comprehensive Plan of Action (JCPOA)").
+_DEFINITION_WORD = r"(?:[A-Z][\w'’.&-]*|of|and|for|on|in|the|to)"
+
+
+def _acronym_definition(acronym: str, text: str) -> str:
+    """The name the text defines ``acronym`` as, or ""."""
+    m = re.search(rf"((?:{_DEFINITION_WORD}\s+)*{_DEFINITION_WORD})\s*\({re.escape(acronym)}\)", text)
+    if not m:
+        return ""
+    words = m.group(1).split()
+    # A definition starts and ends on a name word, not "the" or "of".
+    while words and not words[0][:1].isupper():
+        words.pop(0)
+    while words and not words[-1][:1].isupper():
+        words.pop()
+    return " ".join(words) if len(words) > 1 else ""
+
+
+def _extract_proper_acronyms(text: str, doc_id: str, seen: set[str]) -> list[dict]:
+    """The proper-name acronyms the text writes as a word, typed from the list.
+
+    spaCy never tags JCPOA (three openrep documents name it), and tags
+    INDOPACOM a place in one sentence and a plural noun in the next. Not
+    ``method: regex``: a definition spaCy did find ("Indo-Pacific Command
+    (INDOPACOM)") absorbs the acronym as its alias, as any bracketed acronym.
+    """
+    found = []
+    for acronym, entity_type in _proper_name_acronyms().items():
+        as_word = re.compile(rf"(?<![\w-]){re.escape(acronym)}(?![\w-])")
+        # "the FY2026 NDAA" is already the document; NDAA is not a second one.
+        if not as_word.search(text) or any(as_word.search(name) for name in seen):
+            continue
+        entity = {"name": acronym, "entity_type": entity_type, "source": doc_id, "method": "nlp",
+                  "confidence": 0.85}
+        definition = _acronym_definition(acronym, text)
+        if definition:
+            entity["aliases"] = [definition]
+        found.append(entity)
+    return found
+
+
+# ── Headings ─────────────────────────────────────────────────────────────────
+# spaCy reads a heading as a run of proper nouns and cuts names out of it:
+# "Assess Russian" from "Assess Russian hybrid warfare against European
+# states", "PRC Influence and" from "PRC Influence and Control", "Toward
+# Taiwan" from "U.S. Policy Toward Taiwan". A heading is a line written all in
+# title case without a closing full stop, or one (or the run-in title after a
+# dash or colon, "Prior product ... — Assess ...") that opens with an
+# imperative.
+
+_IMPERATIVES = frozenset({
+    "assess", "evaluate", "identify", "determine", "describe", "explain", "examine", "analyze", "analyse",
+    "estimate", "characterize", "characterise", "compare", "outline", "review", "summarize", "summarise",
+    "monitor", "track", "list", "provide", "consider", "discuss", "forecast", "investigate",
+})
+# Words a name never begins or ends with. Determiners are left to the
+# determiner strip ("The Hague").
+_EDGE_WORDS = frozenset({
+    "and", "or", "of", "in", "on", "for", "to", "with", "at", "by", "from", "toward", "towards", "during",
+    "against", "into", "under", "over", "between", "among", "after", "before", "via", "versus", "vs",
+})
+_TITLE_SMALL_WORDS = _EDGE_WORDS | {"a", "an", "the", "its", "their", "his", "her"}
+_RUN_IN_TITLE = re.compile(r"\s[—–:-]\s+")
+
+
+def _is_title_case(line: str) -> bool:
+    words = re.findall(r"[A-Za-z][\w'’.&-]*", line)
+    return bool(words) and all(w[0].isupper() or w.lower() in _TITLE_SMALL_WORDS for w in words)
+
+
+def _heading_segments(text: str) -> list[tuple[int, int, bool]]:
+    """(start, end, opens_with_imperative) for each heading or run-in title in the text."""
+    segments: list[tuple[int, int, bool]] = []
+    for line in re.finditer(r"[^\n]+", text or ""):
+        body = line.group().rstrip()
+        stripped = body.strip()
+        if not stripped:
+            continue
+        start = line.start() + (len(body) - len(body.lstrip()))
+        end = line.start() + len(body)
+        first = re.match(r"[A-Za-z]+", stripped)
+        imperative = bool(first) and first.group().lower() in _IMPERATIVES
+        if stripped[-1] not in ".!?" and (imperative or _is_title_case(stripped)):
+            segments.append((start, end, imperative))
+            continue
+        # A run-in title: "Prior product OPENREP-SUPINTREP-0006 — Assess ...".
+        for sep in _RUN_IN_TITLE.finditer(body):
+            rest = body[sep.end():]
+            word = re.match(r"[A-Za-z]+", rest)
+            if word and word.group().lower() in _IMPERATIVES:
+                segments.append((line.start() + sep.end(), end, True))
+                break
+    return segments
+
+
+def _cut_from_heading(start: int, end: int, name: str, segments: list[tuple[int, int, bool]]) -> bool:
+    """Whether the span [start, end) naming ``name`` is a fragment cut out of a heading."""
+    for seg_start, seg_end, imperative in segments:
+        if not (seg_start <= start < seg_end):
+            continue
+        words = name.split()
+        if not words:
+            return True
+        if imperative and start == seg_start:
+            return True  # "Assess Russian": the heading's verb is not a name
+        return words[0].lower() in _EDGE_WORDS or words[-1].lower() in _EDGE_WORDS | {"the", "a", "an"}
+    return False
+
+
 def _postprocess_entities(entities: list[dict]) -> list[dict]:
     """Fix common spaCy misclassifications for intelligence documents."""
     # Load from YAML (with fallback to hardcoded module constants)
@@ -1986,6 +2411,11 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
                 seen_names[name] = ent
                 entities.append(ent)
 
+    # Acronyms that are proper names, typed from the list rather than by spaCy.
+    for ent in _extract_proper_acronyms(text, doc_id, set(seen_names)):
+        seen_names[ent["name"]] = ent
+        entities.append(ent)
+
     # 2. Count entity mention frequency for confidence scoring
     name_freq: dict[str, int] = {}
     for ent in doc.ents:
@@ -2002,6 +2432,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
     _all_known = known_locs | known_orgs | known_pers
 
     hull_numbers = {hull for _, hull in _hull_numbers(text)}
+    headings = _heading_segments(text)
 
     # 3. Extract NLP entities with context-aware confidence
     for ent in doc.ents:
@@ -2010,6 +2441,11 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             continue
         name = ent.text.strip().strip("'\"")
         if not name or len(name) < 2:
+            continue
+        # A name does not run across a line break: "Neighbors\n\nKuwait" is
+        # a heading glued to the line under it. Nor is it a fragment of a
+        # heading ("Assess Russian", "Toward Taiwan", "PRC Influence and").
+        if "\n" in name or _cut_from_heading(ent.start_char, ent.end_char, name, headings):
             continue
         if name in noise:
             continue
@@ -2118,9 +2554,21 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         earlier = [e for start, e in actor_mentions if start < tok.idx]
         return earlier[-1] if earlier else None
 
+    # Generic co-occurrence edges wait until every sentence has been read: a
+    # typed relation stated later in the text still rules one out.
+    generic_candidates: list[tuple[str, str, str]] = []
+
     for sent in doc.sents:
         sent_text = sent.text
         sent_entities_list = []
+        # Which paragraphs of the sentence each entity is named in. spaCy joins
+        # a heading to the sentence under it ("China" over "In addition, South
+        # Korea ..."); a sentence never really crosses a paragraph break.
+        paragraphs: dict[int, set[int]] = {}
+        breaks = [m.start() for m in _PARAGRAPH_BREAK.finditer(sent_text)]
+
+        def _paragraph(offset: int) -> int:
+            return sum(1 for b in breaks if b < offset)
 
         # spaCy-detected entities in this sentence. Looked up by the name the
         # entity ended up with: postprocessing strips determiners and quotes,
@@ -2128,13 +2576,16 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
         for ent in sent.ents:
             name = ent.text.strip()
             match = seen_names.get(name) or seen_names.get(_strip_determiner(name.strip("'\"")))
-            if match is not None and match not in sent_entities_list:
-                sent_entities_list.append(match)
+            if match is not None:
+                paragraphs.setdefault(id(match), set()).add(_paragraph(ent.start_char - sent.start_char))
+                if match not in sent_entities_list:
+                    sent_entities_list.append(match)
 
         # Regex-extracted entities that appear in this sentence text
         for e in entities:
             if e.get("method") == "regex" and e["name"] in sent_text and e not in sent_entities_list:
                 sent_entities_list.append(e)
+                paragraphs[id(e)] = {_paragraph(m.start()) for m in re.finditer(re.escape(e["name"]), sent_text)}
 
         # The typed stage also sees entities spaCy did not tag in this sentence
         # but which were extracted elsewhere in the text: its NER is not
@@ -2199,10 +2650,11 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
                     continue
                 if e1_is_date and e2_is_date:
                     continue
-                # ASSOCIATED_WITH is noise — only emit within the window, and never
-                # on top of a pair a typed/pattern relation already links.
-                if (j - i) <= COOCCURRENCE_WINDOW and frozenset((e1["name"], e2["name"])) not in linked_pairs:
-                    _add_rel(e1["name"], e2["name"], "ASSOCIATED_WITH", 0.5, sent_text)
+                # ASSOCIATED_WITH is noise — only a candidate within the window,
+                # when both are named in one paragraph of the sentence, and
+                # emitted below only if no typed relation links the pair.
+                if (j - i) <= COOCCURRENCE_WINDOW and paragraphs.get(id(e1), {0}) & paragraphs.get(id(e2), {0}):
+                    generic_candidates.append((e1["name"], e2["name"], sent_text))
 
     # "torvald (A-430) of 2nd Naval Auxiliary Group": a vessel of a unit
     # belongs to it. Read off the text, since the parse attaches the unit to the
@@ -2219,11 +2671,25 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             if ship and unit:
                 _add_rel(ship, unit, "BELONGS_TO", 0.7, text[max(0, m.start() - 60):m.end() + len(unit) + 60])
 
+    # A generic association only where nothing typed links the pair anywhere
+    # in the text. Before, the check ran sentence by sentence, so a pair
+    # related later ("torvald (A-430) of 2nd Naval Auxiliary Group", read after
+    # the loop) kept the association from an earlier sentence as well.
+    for a_name, b_name, sentence in generic_candidates:
+        if frozenset((a_name, b_name)) not in linked_pairs:
+            _add_rel(a_name, b_name, "ASSOCIATED_WITH", 0.5, sentence)
+
+    entities, relationships, same_entity = _resolve_countries(entities, relationships, text, doc)
+
     # Resolve event_datetime on Event entities from their OCCURRED_ON Date links
     _link_event_dates(entities, relationships)
 
-    return ExtractionResult(entities, relationships, method="nlp")
+    return ExtractionResult(entities, relationships, method="nlp",
+                            relationships_dropped_by_reason={"same_entity": same_entity} if same_entity else None)
 
+
+# A blank line: the end of a paragraph or a heading, which no sentence crosses.
+_PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
 
 # "<name> (<hull>) of [the] " — what follows is checked against extracted units.
 _SHIP_OF_UNIT = re.compile(
@@ -2290,11 +2756,15 @@ def _describe_failure(exc: BaseException) -> str:
     return f"provider error ({type(exc).__name__})"
 
 
-async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[dict], int]:
-    """The LLM half alone: (entities, relationships, skipped_items).
+async def _extract_with_llm(
+    text: str, doc_id: str, *, resolve_endpoints: bool = True,
+) -> tuple[list[dict], list[dict], int, dict[str, int]]:
+    """The LLM half alone: (entities, relationships, skipped_items, relationships dropped by reason).
 
     Raises ``_LLMExtractionFailed`` with a reason when the model produced
-    nothing usable. The callers decide what the fallback is.
+    nothing usable. The callers decide what the fallback is. Hybrid passes
+    ``resolve_endpoints=False`` and resolves endpoints (and countries) after
+    the merge, when the NLP entities can resolve an endpoint too.
     """
     # Use the extraction-specific provider selection (routes to local Ollama
     # when extraction_llm_provider=ollama; respects runtime overrides otherwise).
@@ -2390,8 +2860,16 @@ async def _extract_with_llm(text: str, doc_id: str) -> tuple[list[dict], list[di
     entities, relationships = _drop_undatable_dates(entities, relationships)
     entities, relationships = _drop_abstract_types(entities, relationships)
     _apply_vessel_hints(_apply_type_hints(entities), text)
+    # Events named only in their date link are minted here, before endpoints
+    # are checked: the timeline depends on them.
     _link_event_dates(entities, relationships)
-    return entities, relationships, skipped
+    dropped = {"unlisted_endpoint": 0, "same_entity": 0}
+    if resolve_endpoints:
+        relationships, dropped, _ = _resolve_endpoints(entities, relationships)
+        entities, relationships, same_entity = _resolve_countries(entities, relationships, text)
+        dropped["same_entity"] += same_entity
+    relationships, generic_dropped = _drop_generic_on_typed_pairs(relationships)
+    return entities, relationships, skipped, {**dropped, "generic_on_typed_pair": generic_dropped}
 
 
 async def extract_entities_llm(text: str, doc_id: str) -> ExtractionResult:
@@ -2404,7 +2882,7 @@ async def extract_entities_llm(text: str, doc_id: str) -> ExtractionResult:
     the result rather than only in the log.
     """
     try:
-        entities, relationships, skipped = await _extract_with_llm(text, doc_id)
+        entities, relationships, skipped, dropped = await _extract_with_llm(text, doc_id)
     except Exception as exc:
         reason = exc.reason if isinstance(exc, _LLMExtractionFailed) else f"extraction failed ({type(exc).__name__})"
         if not isinstance(exc, _LLMExtractionFailed):
@@ -2412,7 +2890,8 @@ async def extract_entities_llm(text: str, doc_id: str) -> ExtractionResult:
         logger.warning("LLM extraction degraded to NLP for doc %s: %s", doc_id, reason)
         ents, rels = extract_entities_nlp(text, doc_id)
         return ExtractionResult(ents, rels, method="nlp", degraded=True, reason=reason)
-    return ExtractionResult(entities, relationships, method="llm", skipped_items=skipped)
+    return ExtractionResult(entities, relationships, method="llm", skipped_items=skipped,
+                            relationships_dropped_by_reason=dropped)
 
 
 # Indicator types that are only ever the same entity when the value is the same.
@@ -2447,7 +2926,7 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
 
     nlp_entities, nlp_rels = extract_entities_nlp(text, doc_id)
     try:
-        llm_entities, llm_rels, skipped = await _extract_with_llm(text, doc_id)
+        llm_entities, llm_rels, skipped, dropped = await _extract_with_llm(text, doc_id, resolve_endpoints=False)
     except Exception as exc:
         reason = exc.reason if isinstance(exc, _LLMExtractionFailed) else f"extraction failed ({type(exc).__name__})"
         if not isinstance(exc, _LLMExtractionFailed):
@@ -2517,6 +2996,15 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
             kept_nlp_keys.add(key)
 
     # ── Relationships ─────────────────────────────────────────────────────
+    # A model edge must name listed entities: here a name of the merged set,
+    # one of their aliases, an NLP name that merged into a model entity, or an
+    # entity NLP extracted (which joins the merged set with it).
+    llm_rels, endpoint_dropped, added = _resolve_endpoints(
+        merged_entities, llm_rels, pool=nlp_entities, renamed=merged_into)
+    kept_nlp_keys.update(_merge_key(e.get("name", "")) for e in added)
+    for reason, n in endpoint_dropped.items():
+        dropped[reason] = dropped.get(reason, 0) + n
+
     # LLM relations are typed + evidence-backed — primary. From NLP keep only
     # TYPED relations (verb-derived, OCCURRED_ON, regex RESOLVES_TO) the LLM
     # missed; drop blanket ASSOCIATED_WITH co-occurrence entirely — the LLM now
@@ -2550,6 +3038,16 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
                     merged_entities.append(nlp_by_name[end])
                     kept_nlp_keys.add(end_key)
 
+    # One entity per state, over both halves: the model's "PRC government"
+    # and NLP's "China" are the same node.
+    merged_entities, merged_rels, same_entity = _resolve_countries(merged_entities, merged_rels, text)
+    dropped["same_entity"] = dropped.get("same_entity", 0) + same_entity
+
+    # A model association on a pair NLP read a typed relation for goes here,
+    # once both halves are in.
+    merged_rels, generic_dropped = _drop_generic_on_typed_pairs(merged_rels)
+    dropped["generic_on_typed_pair"] = dropped.get("generic_on_typed_pair", 0) + generic_dropped
+
     # Re-resolve event_datetime over the merged set — catches cases where the
     # Event came from one method and its OCCURRED_ON Date from the other.
     _link_event_dates(merged_entities, merged_rels)
@@ -2559,4 +3057,5 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
     # same name could still carry the generic type into the merge.
     _apply_vessel_hints(_apply_type_hints(merged_entities), text)
 
-    return ExtractionResult(merged_entities, merged_rels, method="hybrid", skipped_items=skipped)
+    return ExtractionResult(merged_entities, merged_rels, method="hybrid", skipped_items=skipped,
+                            relationships_dropped_by_reason=dropped)

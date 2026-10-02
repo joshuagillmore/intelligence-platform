@@ -1,3 +1,5 @@
+import type { ResponseOf } from './apiTypes';
+
 /**
  * Wording for a `POST /attack/map` result.
  *
@@ -6,14 +8,7 @@
  * run with `remap`, and `reason`/`detail` when the whole batch could not run.
  * An unreachable LLM is a 503, handled by the caller as a failure, never here.
  */
-export interface AttackMapResult {
-  mapped: number;
-  skipped: number;
-  skip_reasons?: Record<string, number>;
-  stale_removed?: number;
-  reason?: string;
-  detail?: string;
-}
+export type AttackMapResult = ResponseOf<'/api/attack/map', 'post'>;
 
 export interface MapResultNote {
   text: string;

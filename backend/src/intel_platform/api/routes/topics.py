@@ -10,10 +10,25 @@ from intel_platform.api.deps import get_graph_store, verify_api_key
 from intel_platform.db.engine import get_db
 from intel_platform.graph.store import GraphStore
 from intel_platform.services.topics import TopicTreeService, apply_topic_edits
+from intel_platform.models.responses import (
+    ErrorMessageResponse,
+    TopicChildCreatedResponse,
+    TopicContextResponse,
+    TopicNodeDeletedResponse,
+    TopicNodeUpdatedResponse,
+    TopicTreeResponse,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(dependencies=[Depends(verify_api_key)])
+
+
+class _EventStream(StreamingResponse):
+    """Declares the summary stream's media type in the schema. The handler builds
+    its own StreamingResponse, which is what is sent."""
+
+    media_type = "text/event-stream"
 
 
 @cached(ttl=60)
@@ -43,7 +58,7 @@ async def _topic_edits(db: AsyncSession, project_id: str) -> list | None:
         return None
 
 
-@router.get("/topics")
+@router.get("/topics", response_model=TopicTreeResponse, response_model_exclude_unset=True)
 async def get_topic_tree(
     project_id: str,
     method: str = "tfidf",
@@ -68,7 +83,11 @@ async def get_topic_tree(
     return out
 
 
-@router.get("/topics/{entity_id}")
+# A 200 carrying {"error": ...} when the entity is unknown.
+@router.get(
+    "/topics/{entity_id}", response_model=TopicContextResponse | ErrorMessageResponse,
+    response_model_exclude_unset=True,
+)
 def get_topic_context(entity_id: str, project_id: str, store: GraphStore = Depends(get_graph_store)):
     svc = TopicTreeService(store)
     return svc.get_topic_context(entity_id, project_id)
@@ -80,7 +99,11 @@ class SummarizeRequest(BaseModel):
     conversation_history: list[dict] | None = None
 
 
-@router.post("/topics/{entity_id}/summarize")
+@router.post(
+    "/topics/{entity_id}/summarize", response_class=_EventStream,
+    response_description='Server-sent events: `data: {"text": ...}` frames, then `data: [DONE]`; '
+    'a failure is one `data: {"error": ...}` frame.',
+)
 async def summarize_topic(
     entity_id: str,
     body: SummarizeRequest,
@@ -118,7 +141,7 @@ class TopicCreateRequest(BaseModel):
     description: str = ""
 
 
-@router.put("/topics/{node_id}")
+@router.put("/topics/{node_id}", response_model=TopicNodeUpdatedResponse)
 async def update_topic_node(node_id: str, req: TopicEditRequest, db: AsyncSession = Depends(get_db)):
     """Rename or update a topic node."""
     from intel_platform.db.models import TopicEdit
@@ -152,7 +175,7 @@ async def update_topic_node(node_id: str, req: TopicEditRequest, db: AsyncSessio
     return {"node_id": node_id, "updated": True}
 
 
-@router.post("/topics/{node_id}/children")
+@router.post("/topics/{node_id}/children", response_model=TopicChildCreatedResponse)
 async def add_topic_child(node_id: str, req: TopicCreateRequest, db: AsyncSession = Depends(get_db)):
     """Add a user-created child node to a topic."""
     import uuid
@@ -172,7 +195,7 @@ async def add_topic_child(node_id: str, req: TopicCreateRequest, db: AsyncSessio
     return {"node_id": child_id, "parent_id": node_id, "name": req.name}
 
 
-@router.delete("/topics/{node_id}")
+@router.delete("/topics/{node_id}", response_model=TopicNodeDeletedResponse)
 async def delete_topic_node(node_id: str, project_id: str, db: AsyncSession = Depends(get_db)):
     """Mark a topic node as deleted (hidden from view)."""
     from intel_platform.db.models import TopicEdit

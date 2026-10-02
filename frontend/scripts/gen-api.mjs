@@ -36,7 +36,8 @@ const BANNER = `/**
 export async function generateApiTypes(specPath = SPEC_PATH) {
   const spec = JSON.parse(await readFile(specPath, 'utf8'));
   // A pydantic field with a default is optional on the way in, so request
-  // bodies must not demand it. Responses always carry every field; apiTypes'
+  // bodies must not demand it. Responses carry every non-nullable field; optional
+  // ones may be absent (the backend sends only the keys a handler set); apiTypes'
   // `Present` restores that for them.
   const ast = await openapiTS(spec, { alphabetize: true, defaultNonNullable: false });
   return `${BANNER}\n${astToString(ast)}`.replace(/\r\n/g, '\n');
