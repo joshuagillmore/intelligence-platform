@@ -83,6 +83,48 @@ jobs:
       - name: Test (pytest)
         run: uv run pytest -q
 
+  eval:
+    # Extraction quality may not regress: each mode is re-scored against the
+    # gold corpus by replaying the recorded model replies (llm_replies.json),
+    # and every F1 figure, overall and per set, must stay within 0.005 of the
+    # committed tests/eval/corpus_eval_<mode>.json. A prompt change without a
+    # re-recorded run fails here (a request with no recorded reply), as does a
+    # newly degraded document. No databases, no network after install, and no
+    # model call: the gate pins the provider to the recorded one with a
+    # placeholder key, and replay mode never asks the model.
+    name: Extraction eval (replay)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      COHERE_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python (version from backend/.python-version)
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --locked --extra dev
+
+      - name: Install spaCy model (en_core_web_sm, matches spacy 3.8)
+        run: uv pip install "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+
+      - name: Replay nlp, llm and hybrid against the committed results
+        # All three run even when one fails, so one CI run reports every mode.
+        run: |
+          status=0
+          for mode in nlp llm hybrid; do
+            uv run python tests/eval/check_against_committed.py --mode "$mode" || status=1
+          done
+          exit $status
+
   frontend:
     name: Frontend (lint + build)
     runs-on: ubuntu-latest
