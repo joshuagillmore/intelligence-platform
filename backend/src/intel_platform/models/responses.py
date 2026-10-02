@@ -1899,3 +1899,83 @@ class CollectionDashboardResponse(BaseModel):
 class ConnectorTypeItem(BaseModel):
     source_type: str
     description: str
+
+
+# ---------------------------------------------------------------------------
+# PIRs
+# ---------------------------------------------------------------------------
+
+class RequirementElementItem(BaseModel):
+    ordinal: int
+    text: str
+    # pending (still open), satisfied, or unmet (tried and given up on).
+    status: str
+    attempts: int
+    queries_tried: list[str]
+    # What the assessor said is still absent.
+    missing: str
+    confidence: str
+
+
+class PirRequirementsResponse(BaseModel):
+    pir_id: str
+    project_id: str
+    total: int
+    # Element status -> count; pending, satisfied and unmet are always present.
+    counts: dict[str, int]
+    elements: list[RequirementElementItem]
+
+
+class EeiAssessmentItem(BaseModel):
+    index: int
+    eei: str
+    # SATISFIED, PARTIAL, UNMET or UNASSESSED.
+    verdict: str
+    justification: str
+
+
+class UnmetCriterionItem(BaseModel):
+    eei: str
+    verdict: str
+    why: str
+
+
+class PirEvidenceItem(BaseModel):
+    """What the verdicts were judged from."""
+    # "graph+passages" or "graph-only".
+    substrate: str
+    dated_entities: int
+    passages_retrieved: int
+    elements_with_passages: list[int]
+    elements_without_passages: list[int]
+    retrieval_failed_for: list[int]
+    budget_starved_elements: list[int]
+    embedding_fallback: bool
+    embedding_failed: bool
+    embedding_dim_mismatch: bool
+    retrieval_unavailable: bool
+    retrieval_degraded: bool
+
+
+class PirAssessmentResponse(BaseModel):
+    pir_id: str
+    # The stored status after the assessment.
+    status: str
+    # What this assessment concluded; null when nothing was judged.
+    assessed_status: str | None = None
+    eeis_total: int
+    eeis_satisfied: int
+    assessments: list[EeiAssessmentItem]
+    unmet_criteria: list[UnmetCriterionItem]
+    entities_considered: int
+    entities_total: int
+    evidence: PirEvidenceItem
+    # Succeeded sources in the latest plan, and in every plan for the PIR.
+    sources_used: int
+    sources_used_all_plans: int
+    sources_configured: int
+    source_limit: int | None = None
+    stopped_on_source_limit: bool
+    recommendation: str
+    model: str
+    narrative: str

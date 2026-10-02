@@ -21,7 +21,7 @@ from intel_platform.db.models import (
     PirStatus,
 )
 from intel_platform.models.requests import CreatePirRequest, UpdatePirRequest
-from intel_platform.models.responses import PirPlanLink, PirResponse
+from intel_platform.models.responses import DeletedResponse, PirPlanLink, PirResponse
 
 # Mounted by the package router, which carries the API-key dependency.
 router = APIRouter()
@@ -256,7 +256,7 @@ async def update_pir(
     return _pir_to_response(pir, grouped.get(pir.id, []))
 
 
-@router.delete("/pirs/{pir_id}")
+@router.delete("/pirs/{pir_id}", response_model=DeletedResponse)
 async def delete_pir(pir_id: str, db: AsyncSession = Depends(get_db)):
     """Delete a PIR. Plans raised against it survive, unlinked — the collected
     intelligence outlives the question that prompted it."""

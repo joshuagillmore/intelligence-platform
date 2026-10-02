@@ -20,6 +20,7 @@ from intel_platform.api.deps import get_graph_store
 from intel_platform.api.routes.collection_plans.plans import _parse_uuid
 from intel_platform.db.engine import get_db
 from intel_platform.db.models import CollectionPlan, Pir, PirStatus
+from intel_platform.models.responses import PirAssessmentResponse
 from intel_platform.services import pir_judge
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ class AssessPirRequest(BaseModel):
     source_limit: int | None = Field(default=None, ge=1)
 
 
-@router.post("/pirs/{pir_id}/assess")
+@router.post("/pirs/{pir_id}/assess", response_model=PirAssessmentResponse)
 async def assess_pir(
     pir_id: str,
     req: AssessPirRequest | None = None,
