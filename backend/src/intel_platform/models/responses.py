@@ -971,3 +971,23 @@ class GeneratedReportResponse(BaseModel):
     # Assessment skills only: the stated probability, and whether one was stated.
     probability: float | None = None
     probability_parsed: bool | None = None
+
+
+# ---------------------------------------------------------------------------
+# Graph-RAG query
+# ---------------------------------------------------------------------------
+
+class GraphRagQueryResponse(BaseModel):
+    query: str
+    # Empty when no model answered; `llm_error` then says why.
+    answer: str
+    model: str
+    tokens_used: int
+    llm_error: str | None = None
+    context: str
+    context_nodes: int
+    context_edges: int
+    # "hybrid" (graph + vector) or "graph".
+    retrieval_mode: str
+    # Hybrid mode only: how many document passages vector search contributed.
+    vector_results: int | None = None
