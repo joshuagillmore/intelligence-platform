@@ -1393,6 +1393,29 @@ def _drop_repeated(relationships: list[dict]) -> tuple[list[dict], int]:
     return kept, len(relationships) - len(kept)
 
 
+def _refanged_to_original(original: str, refanged: str):
+    """A function mapping a (start, end) span of ``refanged`` to the same span of ``original``.
+
+    Refanging makes small local replacements ("[.]" -> ".", "hxxp" ->
+    "http"), so the two texts align character by character outside them; a
+    span edge inside a replacement moves to the replacement's edge in the
+    original. Built once per chunk, and only for a chunk refanging changed.
+    """
+    import difflib
+
+    blocks = difflib.SequenceMatcher(None, refanged, original, autojunk=False).get_opcodes()
+
+    def at(pos: int, is_end: bool) -> int:
+        for tag, i1, i2, j1, j2 in blocks:
+            if (i1 < pos <= i2) if is_end else (i1 <= pos < i2):
+                if tag == "equal":
+                    return j1 + (pos - i1)
+                return j2 if is_end else j1
+        return len(original) if is_end else 0
+
+    return lambda start, end: (at(start, False), at(end, True))
+
+
 def _trim_span(text: str, start: int, end: int) -> tuple[int, int]:
     while start < end and text[start].isspace():
         start += 1
@@ -2822,10 +2845,9 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
     linked_pairs: set[frozenset[str]] = set()
 
     # Offsets are into the chunk as given. spaCy read the refanged text, so
-    # where refanging changed it the span is looked up in the original, and
-    # one the original does not contain as written keeps offset -1.
-    refanged = raw_text != text
-    raw_folded = _folded(raw_text) if refanged else None
+    # where refanging changed it the span is mapped back to the original,
+    # defanged as written there ("evil-c2[.]com").
+    to_original = _refanged_to_original(raw_text, text) if raw_text != text else None
 
     def _evidence(src_name: str, tgt_name: str, span: tuple[int, int] | None) -> tuple[str, int]:
         if span is None:
@@ -2835,10 +2857,10 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             return [n, *((seen_names.get(n) or {}).get("aliases") or [])]
 
         start, end = _sentence_evidence(text, span[0], span[1], names(src_name), names(tgt_name))
-        if not refanged:
+        if to_original is None:
             return text[start:end], start
-        found = _locate_evidence(raw_text, text[start:end], raw_folded)
-        return (raw_text[found[0]:found[1]], found[0]) if found else (text[start:end], -1)
+        start, end = to_original(start, end)
+        return raw_text[start:end], start
 
     def _add_rel(src_name: str, tgt_name: str, rel_type: str, confidence: float,
                  span: tuple[int, int] | None = None) -> None:

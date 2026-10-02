@@ -277,12 +277,17 @@ def test_a_heading_glued_to_a_sentence_is_left_out_of_the_evidence():
 
 
 def test_a_defanged_chunk_keeps_offsets_into_the_original_text():
-    text = "Intro line.\n\nThe actor Volt Typhoon used evil-c2[.]com for command and control."
+    """spaCy reads the refanged text; the span is the original's, defanged as written."""
+    text = ("Intro line.\n\nTraffic was routed through 185.220.101[.]42 and the domain evil-c2[.]com. "
+            "Later hxxp://evil-c2[.]com/a served a payload.")
     _, rels = extract_entities_nlp(text, "doc-nlp-4")
+    pair = _edge(rels, "185.220.101.42", "evil-c2.com", "ASSOCIATED_WITH")
+    assert pair is not None, rels
+    assert pair["evidence"] == "Traffic was routed through 185.220.101[.]42 and the domain evil-c2[.]com."
     for r in rels:
         off = r["evidence_offset"]
-        if off >= 0:
-            assert text[off:off + len(r["evidence"])] == r["evidence"], r
+        assert off >= 0, r
+        assert text[off:off + len(r["evidence"])] == r["evidence"], r
 
 
 @pytest.mark.parametrize("bad", [None, 7, ["a", "b"]])
