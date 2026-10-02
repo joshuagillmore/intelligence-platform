@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, RootModel
 
 
 class ProjectResponse(BaseModel):
@@ -237,3 +237,108 @@ class ProjectActivityResponse(BaseModel):
 class PasswordChangedResponse(BaseModel):
     status: str
     username: str
+
+
+# ---------------------------------------------------------------------------
+# Admin
+# ---------------------------------------------------------------------------
+
+class ProxyModeItem(BaseModel):
+    mode: str
+
+
+class AdminConfigResponse(BaseModel):
+    llm_provider: str
+    llm_model: str
+    extraction_mode: str
+    chunk_size: int
+    chunk_overlap: int
+    # Host and port only; the credentials part of the URI is never sent.
+    neo4j_uri: str
+    proxy: ProxyModeItem
+
+
+class DegradedResponse(RootModel[dict[str, dict[str, int] | str]]):
+    """``{"since": iso8601, <subsystem>: {<reason>: count}}``: degraded outcomes
+    since the process started. Only subsystems that degraded at least once appear."""
+
+
+class ApiKeyItem(BaseModel):
+    id: str
+    provider: str
+    label: str
+    # The last four characters, or "(unreadable)" when the key cannot be decrypted.
+    key_preview: str
+    is_active: bool
+    created_at: str | None = None
+
+
+class ApiKeyListResponse(BaseModel):
+    keys: list[ApiKeyItem]
+
+
+class ApiKeyCreatedResponse(BaseModel):
+    id: str
+    provider: str
+    label: str
+    key_preview: str
+    is_active: bool
+    status: str
+
+
+class ApiKeyActivatedResponse(BaseModel):
+    status: str
+    active_key_id: str
+
+
+class LlmModelItem(BaseModel):
+    provider: str
+    model: str
+    # Ollama's reported parameter size and quantization; empty for cloud models.
+    params: str | None = None
+    quantization: str | None = None
+    size_gb: float
+    # Whether the provider has a key (cloud) or is reachable (Ollama).
+    configured: bool
+
+
+class LlmModelListResponse(BaseModel):
+    models: list[LlmModelItem]
+    active_provider: str
+    active_model: str
+
+
+class LlmSelectionResponse(BaseModel):
+    active_provider: str
+    active_model: str
+    status: str
+
+
+class ProxyConfigResponse(BaseModel):
+    mode: str
+    vpn_http_proxy: str
+    tor_socks_proxy: str
+
+
+class EnrichmentConfigResponse(BaseModel):
+    auto_enabled: bool
+
+
+class VpnStatusResponse(BaseModel):
+    """The VPN sidecar's state. When it cannot be reached only ``reachable`` and
+    ``running`` (both false) are known, and the rest are null."""
+    reachable: bool
+    running: bool
+    status: str | None = None
+    public_ip: str | None = None
+    country: str | None = None
+    region: str | None = None
+    city: str | None = None
+    mode: str | None = None
+
+
+class VpnActionResponse(BaseModel):
+    ok: bool
+    reachable: bool
+    # The sidecar's answer ("running"/"stopped"); null when the request failed.
+    outcome: str | None = None
