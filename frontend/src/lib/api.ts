@@ -179,11 +179,14 @@ export const authApi = {
 
 /** `owner`: everything, including members and deleting the project; `editor`:
  *  read and write project data; `viewer`: read only. An admin is an implicit
- *  owner of every project and is never listed as a member. */
+ *  owner of every project, listed as a member only of the projects they
+ *  created or claimed. */
 export type ProjectRole = Model<'ProjectMemberItem'>['role'];
 
 /** `open`: the project has no members, so every signed-in analyst can read and
- *  write it, until the first member (an owner) is added, which restricts it. */
+ *  write it, until the first member (an owner) is added, which restricts it.
+ *  New projects start restricted (their creator owns them); the open ones were
+ *  made before that, and an admin can claim them. */
 export type ProjectAccess = Model<'ProjectResponse'>['access'];
 
 /** `my_role` is null when the analyst holds no role (an open project they are
@@ -220,6 +223,11 @@ export const projectsApi = {
     http.delete<ResponseOf<'/api/projects/{project_id}/members/{username}', 'delete'>>(
       `/projects/${id}/members/${encodeURIComponent(username)}`,
     ),
+  /** Make the signed-in admin the owner of an open project, which restricts
+   *  it. Admin only (403); 409 when the project already has members; 404 when
+   *  it does not exist. Answers the new member row. */
+  claim: (id: string) =>
+    http.post<ResponseOf<'/api/projects/{project_id}/claim', 'post'>>(`/projects/${id}/claim`),
 };
 
 /** How many rows matched in full, from `X-Total-Count`.

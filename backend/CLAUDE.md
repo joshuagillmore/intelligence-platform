@@ -135,16 +135,20 @@ without them rather than run with an unmigrated schema.
 Projects have members (`project_members` in Postgres; `db/members.py`), each
 with the role **viewer** (read), **editor** (write project data) or **owner**
 (manage members, delete the project). Admins (session `role == "admin"`, which
-includes the API key) are implicit owners everywhere, are never listed as
-members, and are never checked. `SECURITY.md` ("Project access") has the
+includes the API key) are implicit owners everywhere and are never checked;
+they are listed as members only of projects they created or claimed. `SECURITY.md` ("Project access") has the
 operator's view.
 
 - **Open vs restricted.** A project with no members is *open*: every
   authenticated user may do anything on it, which is how every project made
   before membership behaves. The first member must be an owner, and adding
   them makes the project *restricted*. Neither removal nor demotion may take
-  away the last owner (409). Analyst-created projects get their creator as
-  owner; admin-created ones start open.
+  away the last owner (409). Every creator becomes owner of the project they
+  create (admins and the API key included), so new projects start restricted;
+  open projects are legacy rows. An admin restricts one with
+  `POST /projects/{id}/claim` (`db/members.claim_open_project`: the open check
+  and the owner insert in one transaction under the project's advisory lock;
+  409 once it has members).
 - **Every project-scoped route declares the dependency**, choosing the role:
   `dependencies=[Depends(require_project_access("viewer"))]` for reads,
   `"editor"` for writes, and `"owner"` for project deletion and members. Declare
