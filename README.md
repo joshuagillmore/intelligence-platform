@@ -238,7 +238,8 @@ datastore containers and the backend's connection settings.
 >   (`DEFAULT_ADMIN_PASSWORD`), and an `ENCRYPTION_KEY`.
 > - **Set `REQUIRE_SECURE_AUTH=true`.** It turns the checks below from boot
 >   warnings into a refusal to start, so an insecure instance fails loudly
->   instead of going live quietly.
+>   instead of going live quietly. The production image (root `Dockerfile`)
+>   sets it already; local `docker compose` defaults it to `false`.
 > - **Change every default datastore credential** (Neo4j, Postgres) from the
 >   compose/dev values.
 > - Keep the shared SSRF guard (`backend/src/intel_platform/collection/url_guard.py`)

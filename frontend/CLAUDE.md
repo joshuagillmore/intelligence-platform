@@ -22,6 +22,20 @@ Tests: **`npm run test`** (Vitest + RTL component/logic tests in `tests/unit/`) 
 assertions, in `tests/e2e/`; needs the stack up + `backend/scripts/seed_demo.py`).
 `lint` + `build` remain part of the gate.
 
+**API-level e2e specs** live in `tests/e2e/api/` and run with the rest of
+`npm run e2e` (and in CI's E2E job). They call the backend through Playwright
+request contexts, not a browser: project access with two analysts the admin
+registers per run (`access.spec.ts`), a collection run the `worker` service
+claims and a cancel ends (`worker-run.spec.ts`, so the stack must run the
+worker), evidence passages for an ingested document (`evidence.spec.ts`), and
+degraded counts (`degraded.spec.ts`). They need no model; where a flow would,
+they assert the honest failure shape. `helpers.ts` signs each caller in through
+`/api/auth/login` in a context of its own, created with an empty
+`storageState`: inside a test, `request.newContext()` otherwise inherits the
+admin session global-setup saved. `llm.spec.ts` (tag `@llm`) needs a live model
+and skips unless `E2E_LLM=1`; CI runs it only in the manually dispatched
+e2e-llm job, which needs the `COHERE_API_KEY` repository secret.
+
 ## Layout (`src/`)
 
 | Path | What |

@@ -36,9 +36,22 @@ are especially valuable:
 ## Deploying safely
 
 This project ships with **default development credentials** and a placeholder
-`JWT_SECRET`. Before exposing any instance beyond `localhost`:
+`JWT_SECRET`.
 
-- set `REQUIRE_SECURE_AUTH=true` (see exactly what it checks below),
+**The production image fails closed.** The root `Dockerfile` (the image that
+gets deployed) sets `REQUIRE_SECURE_AUTH=true`. Started without the secrets
+below, it exits non-zero at boot with the reason in its log instead of serving
+on the defaults, and CI proves that on every build. The local `docker compose`
+stack builds `backend/Dockerfile` instead and defaults the flag to `false`, so
+development runs on the dev credentials. Compose reads `REQUIRE_SECURE_AUTH`
+from `.env`, so a compose stack reachable beyond `localhost` sets it to `true`
+there. Running the production image on the dev credentials, for a local test
+only, takes an explicit `REQUIRE_SECURE_AUTH=false`.
+
+Before exposing any instance beyond `localhost`:
+
+- keep `REQUIRE_SECURE_AUTH=true`: the production image's default, and set it
+  yourself anywhere else (see exactly what it checks below),
 - set a real, high-entropy `JWT_SECRET` (at least 32 bytes),
 - set `DEFAULT_ADMIN_PASSWORD` to a strong value, and an `ENCRYPTION_KEY`
   (a Fernet key; `Fernet.generate_key()`),
