@@ -638,6 +638,38 @@ class ProjectMember(Base):
     )
 
 
+class DegradedEvent(Base):
+    """Degraded outcomes one process counted over one flush window.
+
+    ``services.telemetry`` counts in memory, per process, and each process (the
+    API and the collection worker) flushes what it counted since its last flush
+    here: one row per (subsystem, reason). ``GET /api/admin/degraded`` sums the
+    rows of the last 24 hours, so an outage only the worker saw still reaches
+    the admin card.
+    """
+
+    __tablename__ = "degraded_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    process: Mapped[str] = mapped_column(String(16), nullable=False,
+        comment="api | worker")
+    host: Mapped[str] = mapped_column(Text, nullable=False, default="",
+        comment="Hostname of the process that counted these")
+    subsystem: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    count: Mapped[int] = mapped_column(Integer, nullable=False)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+        comment="When counting for this flush began (the previous flush, or process start)")
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+        comment="When this flush took the counts")
+
+    __table_args__ = (
+        Index("ix_degraded_events_window_end", "window_end"),
+        CheckConstraint("process IN ('api', 'worker')", name="ck_degraded_events_process"),
+        CheckConstraint("count > 0", name="ck_degraded_events_count"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Collection jobs live in db/jobs.py. Imported here so the table is in
 # Base.metadata wherever the models are, which is what Alembic autogenerate

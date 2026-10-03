@@ -138,6 +138,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("PostgreSQL collection management tables initialized")
     async with contextlib.AsyncExitStack() as stack:
+        # Degraded-outcome counts go to Postgres every minute and at shutdown,
+        # where GET /admin/degraded sums them with the worker's. Entered first,
+        # so it exits last, before the engine is disposed below.
+        from intel_platform.services import telemetry
+        await stack.enter_async_context(telemetry.flushing(telemetry.API))
         # A mounted MCP app's own lifespan never runs, so its session manager is
         # started here, for the lifetime of this app.
         if settings.mcp_enabled:

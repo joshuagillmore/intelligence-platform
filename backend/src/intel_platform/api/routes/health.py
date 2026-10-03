@@ -18,7 +18,8 @@ class HealthStatus(HealthResponse):
 
     # Degraded outcomes since this process started, per subsystem. Not part of
     # `status`: the service is up; this says how much of its work came out
-    # worse than asked. The breakdown by reason is GET /api/admin/degraded.
+    # worse than asked. GET /api/admin/degraded has the breakdown by reason,
+    # over 24 hours and across the API and the collection worker.
     degraded: dict[str, int] = Field(default_factory=dict)
 
 

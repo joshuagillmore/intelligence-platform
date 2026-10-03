@@ -105,11 +105,12 @@ export interface paths {
         };
         /**
          * Get Degraded
-         * @description Degraded outcomes since this process started (contract 1).
+         * @description Degraded outcomes over the last 24 hours, from every process.
          *
-         *     ``{"since": iso8601, <subsystem>: {<reason>: count}}`` — only subsystems
-         *     that degraded at least once appear. Per process: the collection worker
-         *     counts its own.
+         *     ``{since, processes: {api: {...}, worker: {...}}, total: {...},
+         *     history_available}``, each count map ``{<subsystem>: {<reason>: count}}``:
+         *     the rows the API and the collection worker flushed to ``degraded_events``,
+         *     plus this process's counts not flushed yet. ``/health`` stays per process.
          */
         get: operations["get_degraded_api_admin_degraded_get"];
         put?: never;
@@ -3686,14 +3687,34 @@ export interface components {
             start: string;
         };
         /**
-         * DegradedResponse
-         * @description ``{"since": iso8601, <subsystem>: {<reason>: count}}``: degraded outcomes
-         *     since the process started. Only subsystems that degraded at least once appear.
+         * DegradedCounts
+         * @description ``{<subsystem>: {<reason>: count}}``. Only subsystems that degraded at
+         *     least once appear, so ``{}`` means nothing degraded.
          */
-        DegradedResponse: {
+        DegradedCounts: {
             [key: string]: {
                 [key: string]: number;
-            } | string;
+            };
+        };
+        /**
+         * DegradedProcesses
+         * @description The counts of each process that flushes them (services/telemetry.py).
+         */
+        DegradedProcesses: {
+            api: components["schemas"]["DegradedCounts"];
+            worker: components["schemas"]["DegradedCounts"];
+        };
+        /**
+         * DegradedResponse
+         * @description Degraded outcomes over the last 24 hours, per process and combined.
+         */
+        DegradedResponse: {
+            /** History Available */
+            history_available: boolean;
+            processes: components["schemas"]["DegradedProcesses"];
+            /** Since */
+            since: string;
+            total: components["schemas"]["DegradedCounts"];
         };
         /**
          * DeletedResponse

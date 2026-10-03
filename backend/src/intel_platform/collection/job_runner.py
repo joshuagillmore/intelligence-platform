@@ -103,8 +103,9 @@ def seconds_since(moment: datetime | None, now: datetime | None) -> int | None:
 # The counts for the run executing in this context: {subsystem: {reason: n}}.
 # run_job sets a fresh dict before it starts the run's task, which copies the
 # context, so everything the run does (including tasks and threads it starts)
-# adds to that one dict. services.telemetry counts per process, so without
-# this a worker's counts would never reach the API.
+# adds to that one dict. services.telemetry counts per process and per flush
+# window, not per run, so the job row is where one run's own counts are read
+# back (/execution-status).
 _run_degraded: contextvars.ContextVar[dict | None] = contextvars.ContextVar("collection_run_degraded", default=None)
 
 
