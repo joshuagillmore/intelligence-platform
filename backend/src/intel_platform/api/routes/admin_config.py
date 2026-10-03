@@ -264,16 +264,17 @@ async def get_config():
 
 
 @router.get("/admin/degraded", response_model=DegradedResponse)
-def get_degraded():
-    """Degraded outcomes since this process started (contract 1).
+async def get_degraded():
+    """Degraded outcomes over the last 24 hours, from every process.
 
-    ``{"since": iso8601, <subsystem>: {<reason>: count}}`` — only subsystems
-    that degraded at least once appear. Per process: the collection worker
-    counts its own.
+    ``{since, processes: {api: {...}, worker: {...}}, total: {...},
+    history_available}``, each count map ``{<subsystem>: {<reason>: count}}``:
+    the rows the API and the collection worker flushed to ``degraded_events``,
+    plus this process's counts not flushed yet. ``/health`` stays per process.
     """
-    from intel_platform.services.telemetry import snapshot
+    from intel_platform.services import telemetry
 
-    return snapshot()
+    return await telemetry.recent()
 
 
 # ---------------------------------------------------------------------------

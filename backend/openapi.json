@@ -2403,21 +2403,58 @@
         "title": "DateRangeItem",
         "type": "object"
       },
-      "DegradedResponse": {
+      "DegradedCounts": {
         "additionalProperties": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "type": "integer"
-              },
-              "type": "object"
-            },
-            {
-              "type": "string"
-            }
-          ]
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
         },
-        "description": "``{\"since\": iso8601, <subsystem>: {<reason>: count}}``: degraded outcomes\nsince the process started. Only subsystems that degraded at least once appear.",
+        "description": "``{<subsystem>: {<reason>: count}}``. Only subsystems that degraded at\nleast once appear, so ``{}`` means nothing degraded.",
+        "title": "DegradedCounts",
+        "type": "object"
+      },
+      "DegradedProcesses": {
+        "description": "The counts of each process that flushes them (services/telemetry.py).",
+        "properties": {
+          "api": {
+            "$ref": "#/components/schemas/DegradedCounts"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/DegradedCounts"
+          }
+        },
+        "required": [
+          "api",
+          "worker"
+        ],
+        "title": "DegradedProcesses",
+        "type": "object"
+      },
+      "DegradedResponse": {
+        "description": "Degraded outcomes over the last 24 hours, per process and combined.",
+        "properties": {
+          "history_available": {
+            "title": "History Available",
+            "type": "boolean"
+          },
+          "processes": {
+            "$ref": "#/components/schemas/DegradedProcesses"
+          },
+          "since": {
+            "title": "Since",
+            "type": "string"
+          },
+          "total": {
+            "$ref": "#/components/schemas/DegradedCounts"
+          }
+        },
+        "required": [
+          "since",
+          "processes",
+          "total",
+          "history_available"
+        ],
         "title": "DegradedResponse",
         "type": "object"
       },
@@ -11320,7 +11357,7 @@
     },
     "/api/admin/degraded": {
       "get": {
-        "description": "Degraded outcomes since this process started (contract 1).\n\n``{\"since\": iso8601, <subsystem>: {<reason>: count}}`` — only subsystems\nthat degraded at least once appear. Per process: the collection worker\ncounts its own.",
+        "description": "Degraded outcomes over the last 24 hours, from every process.\n\n``{since, processes: {api: {...}, worker: {...}}, total: {...},\nhistory_available}``, each count map ``{<subsystem>: {<reason>: count}}``:\nthe rows the API and the collection worker flushed to ``degraded_events``,\nplus this process's counts not flushed yet. ``/health`` stays per process.",
         "operationId": "get_degraded_api_admin_degraded_get",
         "responses": {
           "200": {
