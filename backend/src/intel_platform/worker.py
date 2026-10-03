@@ -14,6 +14,10 @@ At start it runs ``init_db`` (migrations, and the hook that loads persisted
 settings), and before each job it re-reads the settings an admin can change at
 runtime, so the worker selects the same LLM provider and persona the API would.
 
+Degraded outcomes it counts (``services/telemetry.py``) go to Postgres
+``degraded_events`` as ``worker``: every minute, after each job, and once more
+at shutdown, so ``GET /api/admin/degraded`` shows them next to the API's.
+
 One job at a time per process; run more processes for more parallelism. On
 SIGTERM/SIGINT it stops claiming, cancels the job in hand (recorded ``failed``:
 "the worker stopped") and exits 0. A worker that dies without that leaves its
@@ -33,12 +37,16 @@ import sys
 
 from intel_platform.collection import job_runner
 from intel_platform.db import jobs
+from intel_platform.services import telemetry
 
 logger = logging.getLogger("intel_platform.worker")
 
 _POLL_SECONDS = 2.0
 # Backoff ceiling while the database is unreachable or not yet migrated.
 _MAX_BACKOFF_SECONDS = 30.0
+# The degraded-count flush after a job must not hold up the next claim, or a
+# stop, on a database that has stopped answering.
+_JOB_FLUSH_SECONDS = 10.0
 
 _sequence = itertools.count(1)
 
@@ -74,6 +82,19 @@ async def refresh_persisted_settings() -> None:
             await result
     except Exception:
         logger.warning("Could not refresh persisted settings; the job runs with the last ones read", exc_info=True)
+
+
+async def flush_degraded(db_factory=None) -> None:
+    """Write this process's degraded counts to ``degraded_events`` now, as ``worker``.
+
+    Called after each job, whose own counts ``run_job`` has just stored on its
+    row. Bounded by :data:`_JOB_FLUSH_SECONDS`; a flush that fails or times out
+    keeps its counts for the next one (``telemetry.flush`` never raises).
+    """
+    try:
+        await asyncio.wait_for(telemetry.flush(telemetry.WORKER, db_factory=db_factory), timeout=_JOB_FLUSH_SECONDS)
+    except asyncio.TimeoutError:
+        logger.warning("Flushing degraded counts after a job timed out; the next flush retries them")
 
 
 async def prepare_schema(stop: asyncio.Event, *, init=None, retry_seconds: float = _POLL_SECONDS) -> bool:
@@ -170,6 +191,7 @@ async def run_worker(
                 # run_job records its own failures; anything escaping it is a
                 # bug, and must not take the worker down with it.
                 logger.exception("Collection job %s escaped its runner", job_id)
+        await flush_degraded(db_factory)
         ran += 1
         if once:
             break
@@ -197,8 +219,11 @@ async def _main(args: argparse.Namespace) -> int:
     driver = get_neo4j_driver()
     store = GraphStore(driver)
     try:
-        if await prepare_schema(stop, retry_seconds=args.poll_seconds):
-            await run_worker(stop=stop, get_store=lambda: store, poll_seconds=args.poll_seconds, once=args.once)
+        # Flushes degraded counts every minute and once more on the way out,
+        # before the engine is disposed below.
+        async with telemetry.flushing(telemetry.WORKER):
+            if await prepare_schema(stop, retry_seconds=args.poll_seconds):
+                await run_worker(stop=stop, get_store=lambda: store, poll_seconds=args.poll_seconds, once=args.once)
     finally:
         driver.close()
         await get_engine().dispose()

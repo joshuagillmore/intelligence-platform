@@ -359,6 +359,36 @@ class TestAgainstPostgres:
         assert body["total"] == {"extraction": {"nlp_fallback": 3}, "embeddings": {"embed_failed": 1}}
         assert body["history_available"] is True
 
+    async def test_the_worker_flushes_at_the_end_of_each_job(self, pg_engine, monkeypatch):  # noqa: F811
+        from intel_platform import worker
+        from intel_platform.collection import agentic
+        from intel_platform.db import jobs
+        from tests.pg import PROJECT, make_plan
+
+        factory = await _migrated(pg_engine)
+        plan_id = await make_plan(factory)
+        async with factory() as db:
+            job_id = await jobs.insert_job(db, plan_id=plan_id, project_id=PROJECT, kind=jobs.KIND_AGENTIC)
+            await db.commit()
+
+        async def loop(**kw):
+            agentic._record_degraded("collection", "source_failed", detail="RuntimeError")
+            agentic._record_degraded("extraction", "nlp_fallback")
+
+        monkeypatch.setattr(agentic, "run_agentic_loop", loop)
+        ran = await asyncio.wait_for(worker.run_worker(
+            stop=asyncio.Event(), db_factory=factory, get_store=lambda: None,
+            worker_id="worker:test:telemetry", poll_seconds=0.05, once=True, heartbeat_seconds=0.05,
+        ), 30)
+
+        assert ran == 1
+        async with factory() as db:
+            assert (await db.get(jobs.CollectionJob, job_id)).status == jobs.SUCCEEDED
+        assert _summed(await _rows(factory)) == {
+            "worker": {"collection": {"source_failed": 1}, "extraction": {"nlp_fallback": 1}},
+        }
+        assert telemetry.pending() == {}
+
     async def test_a_database_at_the_previous_head_gains_the_table(self, pg_engine):  # noqa: F811
         from alembic import command
         from alembic.script import ScriptDirectory

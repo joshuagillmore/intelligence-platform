@@ -193,10 +193,19 @@ they are also **counted**: `services/telemetry.py`.
   `attack_mapping`, `collection`. Extraction itself does not record — it returns
   `ExtractionResult.degraded`/`reason`, and the caller (ingest, the agentic
   loop) records it.
-- `snapshot()` → `{"since": iso8601, subsystem: {reason: count}}`, served at
-  `GET /api/admin/degraded` (admin); `/health` carries `degraded: {subsystem: total}`.
-- Counts are in-process and reset on restart; the collection worker process
-  keeps its own and they do not reach the API's endpoints.
+- `/health` carries `degraded: {subsystem: total}` for the process that
+  answered, since it started (`totals()`); those counts reset on restart.
+- Each process also flushes what it counted since its last flush to Postgres
+  `degraded_events` (one row per subsystem and reason, stamped `api` or
+  `worker`, the host and the window): every 60 s and at shutdown
+  (`telemetry.flushing`, entered by the API lifespan and the worker
+  entrypoint), and the worker after each job. A failed flush keeps its counts
+  for the next one; rows older than 7 days are pruned.
+- `GET /api/admin/degraded` (admin) returns `{since, processes: {api, worker},
+  total, history_available}`, each count map `{subsystem: {reason: count}}`:
+  the last 24 h of rows per process plus the API's unflushed counts.
+  `history_available: false` means the table could not be read, so the
+  figures are the API process's own only.
 
 ## Collecting against a requirement
 
