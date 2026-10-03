@@ -8,10 +8,14 @@ Roles, weakest first: ``viewer`` (read), ``editor`` (read and write project
 data), ``owner`` (also manage members and delete the project).
 
 - **Admin** (``role == "admin"`` on the session, which includes the API key)
-  is an implicit owner of every project and is never checked or listed.
+  is an implicit owner of every project and is never checked. An admin is
+  listed as a member only of the projects they created or claimed, as their
+  owner, so those are restricted like any other.
 - **Open project**: one with no members, which is every project created before
-  membership existed. Every authenticated user has full use of it, as before.
-  The first member added must be an owner, which closes it.
+  membership existed (and before admins owned what they create). Every
+  authenticated user has full use of it, as before. The first member added
+  must be an owner, which closes it; an admin can claim it outright
+  (``POST /projects/{id}/claim``).
 - **Restricted project**: one with members. A member needs a role at least
   ``min_role``; anyone else is refused 403 ``"No access to this project"``.
 

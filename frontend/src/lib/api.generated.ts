@@ -2191,8 +2191,10 @@ export interface paths {
          * Create Project
          * @description Create a project. Its creator becomes its owner, which makes it restricted.
          *
-         *     An admin is an implicit owner of every project and is never listed as a
-         *     member, so a project an admin creates starts open.
+         *     That includes an admin. An admin is an implicit owner of every project
+         *     anyway, but a project with no members is open to every signed-in user, so
+         *     an admin's project is given its owner row like anyone else's (the API key's
+         *     identity, ``api_key_user``, when it is the creator).
          */
         post: operations["create_project_api_projects_post"];
         delete?: never;
@@ -2234,6 +2236,32 @@ export interface paths {
         get: operations["get_project_activity_api_projects__project_id__activity_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim Project
+         * @description Make the calling admin the owner of an open project, which restricts it (admins only).
+         *
+         *     For projects still open: those made before membership existed, and those
+         *     an admin made before admins became the owners of what they create. 404 for
+         *     an unknown project; 409 when it already has members (add yourself through
+         *     the members route instead). Checking that it is open and adding the owner
+         *     are one transaction, so two admins cannot both claim it.
+         */
+        post: operations["claim_project_api_projects__project_id__claim_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -10801,6 +10829,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectActivityResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claim_project_api_projects__project_id__claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectMemberItem"];
                 };
             };
             /** @description Validation Error */

@@ -10,6 +10,7 @@ import { isNoProjectAccess } from '@/lib/projectAccess';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { useNotifications } from '@/components/NotificationProvider';
 import { OpenAccessBadge, RoleChip } from '@/components/ProjectAccessBadges';
+import { ClaimProjectButton, OpenProjectsBanner, mayClaim } from '@/components/ProjectClaim';
 
 function useHydrated() {
   const [hydrated, setHydrated] = useState(false);
@@ -220,6 +221,11 @@ export default function ProjectsPage() {
     [projects, sortBy, sortDir, sortChosen, justCreatedId],
   );
 
+  // Open projects (no members) are usable by everyone signed in; only an
+  // admin is told about them, and offered the claim that restricts them.
+  const isAdmin = user?.role === 'admin';
+  const openCount = isAdmin ? projects.filter((p) => p.access === 'open').length : 0;
+
   function handleColumnSort(key: SortKey) {
     setSortChosen(true);
     if (sortBy === key) {
@@ -274,6 +280,8 @@ export default function ProjectsPage() {
             </button>
           </div>
         </div>
+
+        {isAdmin && <OpenProjectsBanner count={openCount} />}
 
         {showCreate && (
           <div
@@ -417,6 +425,9 @@ export default function ProjectsPage() {
                       )}
                       <RoleChip role={project.my_role} />
                       <OpenAccessBadge access={project.access} />
+                      {mayClaim(project, user?.role) && (
+                        <ClaimProjectButton project={project} onClaimed={loadProjects} />
+                      )}
                       <button
                         onClick={() => selectProject(project)}
                         className="ml-auto bg-accent-blue hover:bg-blue-600 text-white px-3 py-1 rounded text-xs font-medium transition-colors"
@@ -567,6 +578,9 @@ export default function ProjectsPage() {
                       <td className="px-3 py-2 text-[10px] text-gray-500 whitespace-nowrap" suppressHydrationWarning>{hydrated ? formatDate(project.updated_at) : '--'}</td>
                       <td className="px-3 py-2 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {mayClaim(project, user?.role) && (
+                            <ClaimProjectButton project={project} onClaimed={loadProjects} compact />
+                          )}
                           <button
                             onClick={() => selectProject(project)}
                             className="bg-accent-blue hover:bg-blue-600 text-white px-2.5 py-1 rounded text-[10px] font-medium transition-colors"

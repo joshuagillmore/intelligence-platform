@@ -143,6 +143,17 @@ def test_register_request_invalid_input_raises_validation_error():
         RegisterRequest(username="alice", password="longenough", role="root")  # bad role
 
 
+def test_the_api_key_identity_cannot_be_registered():
+    """The API key acts as ``api_key_user`` and owns the projects it creates, so
+    a registered account by that name would sign in as their owner."""
+    from pydantic import ValidationError
+
+    from intel_platform.api.routes.auth import RegisterRequest
+
+    with pytest.raises(ValidationError, match="reserved"):
+        RegisterRequest(username="api_key_user", password="longenough")
+
+
 def test_register_request_accepts_valid_input():
     from intel_platform.api.routes.auth import RegisterRequest
 

@@ -11,6 +11,7 @@ from intel_platform.api.deps import (
     get_current_user,
     get_graph_store,
     project_exists,
+    require_admin,
     require_project_access,
     verify_api_key,
 )
@@ -157,28 +158,27 @@ async def create_project(
 ):
     """Create a project. Its creator becomes its owner, which makes it restricted.
 
-    An admin is an implicit owner of every project and is never listed as a
-    member, so a project an admin creates starts open.
+    That includes an admin. An admin is an implicit owner of every project
+    anyway, but a project with no members is open to every signed-in user, so
+    an admin's project is given its owner row like anyone else's (the API key's
+    identity, ``api_key_user``, when it is the creator).
     """
+    from intel_platform.db import members
+
     project = await asyncio.to_thread(
         store.create_project,
         name=req.name, description=req.description,
         classification_level=req.classification_level, priority=req.priority,
     )
-    if is_admin(user):
-        grant = Grant(role=OWNER, access=OPEN)
-    else:
-        from intel_platform.db import members
-
-        try:
-            await members.add_owner(project["id"], user["username"])
-        except Exception:
-            # Without its owner row the project would be open to everyone, so
-            # it is not kept.
-            logger.exception("Recording the owner of new project %s failed; removing it", project["id"])
-            await asyncio.to_thread(_delete_project_node, store, project["id"])
-            raise HTTPException(status_code=503, detail="The project could not be created. Try again.")
-        grant = Grant(role=OWNER, access=RESTRICTED)
+    try:
+        await members.add_owner(project["id"], user["username"])
+    except Exception:
+        # Without its owner row the project would be open to everyone, so it
+        # is not kept.
+        logger.exception("Recording the owner of new project %s failed; removing it", project["id"])
+        await asyncio.to_thread(_delete_project_node, store, project["id"])
+        raise HTTPException(status_code=503, detail="The project could not be created. Try again.")
+    grant = Grant(role=OWNER, access=RESTRICTED)
     stats = await asyncio.to_thread(store.get_project_stats, project["id"])
     return _project_response(project, stats, grant)
 
@@ -451,6 +451,35 @@ async def put_project_member(
         raise HTTPException(status_code=404, detail="No such user")
     try:
         row = await members.put_member(project_id, username, req.role, added_by=access.username)
+    except members.MembershipRuleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except Exception:
+        raise _membership_unavailable() from None
+    return _member_item(row)
+
+
+@router.post(
+    "/projects/{project_id}/claim", response_model=ProjectMemberItem,
+    dependencies=[Depends(require_admin)],
+)
+async def claim_project(
+    project_id: str,
+    store: GraphStore = Depends(get_graph_store),
+    access: ProjectAccess = Depends(require_project_access("owner")),
+):
+    """Make the calling admin the owner of an open project, which restricts it (admins only).
+
+    For projects still open: those made before membership existed, and those
+    an admin made before admins became the owners of what they create. 404 for
+    an unknown project; 409 when it already has members (add yourself through
+    the members route instead). Checking that it is open and adding the owner
+    are one transaction, so two admins cannot both claim it.
+    """
+    from intel_platform.db import members
+
+    await _require_project(store, project_id)
+    try:
+        row = await members.claim_open_project(project_id, access.username)
     except members.MembershipRuleError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
     except Exception:

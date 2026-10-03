@@ -17189,7 +17189,7 @@
         ]
       },
       "post": {
-        "description": "Create a project. Its creator becomes its owner, which makes it restricted.\n\nAn admin is an implicit owner of every project and is never listed as a\nmember, so a project an admin creates starts open.",
+        "description": "Create a project. Its creator becomes its owner, which makes it restricted.\n\nThat includes an admin. An admin is an implicit owner of every project\nanyway, but a project with no members is open to every signed-in user, so\nan admin's project is given its owner row like anyone else's (the API key's\nidentity, ``api_key_user``, when it is the creator).",
         "operationId": "create_project_api_projects_post",
         "requestBody": {
           "content": {
@@ -17482,6 +17482,54 @@
           }
         ],
         "summary": "Get Project Activity",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/projects/{project_id}/claim": {
+      "post": {
+        "description": "Make the calling admin the owner of an open project, which restricts it (admins only).\n\nFor projects still open: those made before membership existed, and those\nan admin made before admins became the owners of what they create. 404 for\nan unknown project; 409 when it already has members (add yourself through\nthe members route instead). Checking that it is open and adding the owner\nare one transaction, so two admins cannot both claim it.",
+        "operationId": "claim_project_api_projects__project_id__claim_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMemberItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Claim Project",
         "tags": [
           "projects"
         ]

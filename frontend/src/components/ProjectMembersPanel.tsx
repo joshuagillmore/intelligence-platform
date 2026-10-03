@@ -49,10 +49,11 @@ const ADDING = Symbol('adding');
  * Who can open a project, and (for its owners) the controls to change that:
  * add an analyst by username with a role, change a member's role, remove one.
  *
- * Owner-only controls are hidden from editors and viewers. On an open project
- * (no members yet) every analyst has full rights, so anyone may add the first
- * member, who must be an owner; the panel says so before the first add and
- * offers no other role. The backend enforces all of it: a refused change
+ * Owner-only controls are hidden from editors and viewers. A new project
+ * starts with its creator as owner, so only older projects are open (no
+ * members yet). There every analyst has full rights, so anyone may add the
+ * first member, who must be an owner; the panel says so before the first add
+ * and offers no other role. The backend enforces all of it: a refused change
  * (403, the 409 for removing or demoting the last owner, "No such user")
  * reports the backend's own reason through a notification, and the list is
  * re-read after every change rather than patched optimistically.
@@ -189,7 +190,7 @@ export default function ProjectMembersPanel({ projectId, onAccessChange, onNoAcc
           : access === 'restricted'
             ? `Only members can open this project (${members.length} ${members.length === 1 ? 'member' : 'members'}).`
             : 'Who can open this project.'}{' '}
-        Admins are owners of every project and are not listed.
+        Admins are owners of every project; one is listed only where they created or claimed it.
       </p>
 
       {loading && <p className="text-xs text-gray-500">Loading members...</p>}

@@ -7,9 +7,9 @@ client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
 
 def test_save_and_list_reports():
-    # Create project first
-    proj = client.post("/api/projects", json={"name": "Report Test"}, headers=headers).json()
-    pid = proj["id"]
+    # A run-prefixed project id: reports need no Project node, and the suite's
+    # teardown removes what this run wrote under its prefix.
+    pid = tp("reports-route")
 
     # Save report
     resp = client.post("/api/reports", json={
@@ -21,9 +21,6 @@ def test_save_and_list_reports():
     # List reports
     resp = client.get("/api/reports", params={"project_id": pid}, headers=headers)
     assert resp.status_code == 200
-
-    # Cleanup
-    client.delete(f"/api/projects/{pid}", headers=headers)
 
 def test_report_not_found():
     resp = client.get("/api/reports/nonexistent", headers=headers)
