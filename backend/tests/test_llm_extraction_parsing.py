@@ -33,7 +33,7 @@ GOOD = {
     ],
     "relationships": [
         {"source_entity": "APT29", "target_entity": "SUNBURST",
-         "relationship_type": "USES", "confidence": 0.9},
+         "relationship_type": "USES", "confidence": 0.9, "evidence": TEXT},
     ],
 }
 
@@ -142,7 +142,7 @@ async def test_a_string_confidence_skips_that_entity_only():
     reply = json.loads(json.dumps(GOOD))
     reply["entities"][1]["confidence"] = "high"
     reply["relationships"].append({"source_entity": "APT29", "target_entity": "SolarWinds",
-                                   "relationship_type": "TARGETS", "confidence": 0.9})
+                                   "relationship_type": "TARGETS", "confidence": 0.9, "evidence": TEXT})
     result = await _llm(json.dumps(reply))
     ents, rels = result
     assert result.degraded is False and result.method == "llm"
@@ -168,7 +168,8 @@ async def test_a_bad_relationship_is_skipped_alone():
     reply = json.loads(json.dumps(GOOD))
     reply["relationships"].append("APT29 -> SolarWinds")  # a string, not an object
     reply["relationships"].append({"source_entity": "APT29", "target_entity": "SolarWinds",
-                                   "relationship_type": "TARGETS", "confidence": "very"})
+                                   "relationship_type": "TARGETS", "confidence": "very",
+                                   "evidence": TEXT})
     result = await _llm(json.dumps(reply))
     assert result.degraded is False
     assert result.skipped_items == 2

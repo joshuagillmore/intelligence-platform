@@ -105,11 +105,12 @@ export interface paths {
         };
         /**
          * Get Degraded
-         * @description Degraded outcomes since this process started (contract 1).
+         * @description Degraded outcomes over the last 24 hours, from every process.
          *
-         *     ``{"since": iso8601, <subsystem>: {<reason>: count}}`` — only subsystems
-         *     that degraded at least once appear. Per process: the collection worker
-         *     counts its own.
+         *     ``{since, processes: {api: {...}, worker: {...}}, total: {...},
+         *     history_available}``, each count map ``{<subsystem>: {<reason>: count}}``:
+         *     the rows the API and the collection worker flushed to ``degraded_events``,
+         *     plus this process's counts not flushed yet. ``/health`` stays per process.
          */
         get: operations["get_degraded_api_admin_degraded_get"];
         put?: never;
@@ -2191,8 +2192,10 @@ export interface paths {
          * Create Project
          * @description Create a project. Its creator becomes its owner, which makes it restricted.
          *
-         *     An admin is an implicit owner of every project and is never listed as a
-         *     member, so a project an admin creates starts open.
+         *     That includes an admin. An admin is an implicit owner of every project
+         *     anyway, but a project with no members is open to every signed-in user, so
+         *     an admin's project is given its owner row like anyone else's (the API key's
+         *     identity, ``api_key_user``, when it is the creator).
          */
         post: operations["create_project_api_projects_post"];
         delete?: never;
@@ -2234,6 +2237,32 @@ export interface paths {
         get: operations["get_project_activity_api_projects__project_id__activity_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim Project
+         * @description Make the calling admin the owner of an open project, which restricts it (admins only).
+         *
+         *     For projects still open: those made before membership existed, and those
+         *     an admin made before admins became the owners of what they create. 404 for
+         *     an unknown project; 409 when it already has members (add yourself through
+         *     the members route instead). Checking that it is open and adding the owner
+         *     are one transaction, so two admins cannot both claim it.
+         */
+        post: operations["claim_project_api_projects__project_id__claim_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3658,14 +3687,34 @@ export interface components {
             start: string;
         };
         /**
-         * DegradedResponse
-         * @description ``{"since": iso8601, <subsystem>: {<reason>: count}}``: degraded outcomes
-         *     since the process started. Only subsystems that degraded at least once appear.
+         * DegradedCounts
+         * @description ``{<subsystem>: {<reason>: count}}``. Only subsystems that degraded at
+         *     least once appear, so ``{}`` means nothing degraded.
          */
-        DegradedResponse: {
+        DegradedCounts: {
             [key: string]: {
                 [key: string]: number;
-            } | string;
+            };
+        };
+        /**
+         * DegradedProcesses
+         * @description The counts of each process that flushes them (services/telemetry.py).
+         */
+        DegradedProcesses: {
+            api: components["schemas"]["DegradedCounts"];
+            worker: components["schemas"]["DegradedCounts"];
+        };
+        /**
+         * DegradedResponse
+         * @description Degraded outcomes over the last 24 hours, per process and combined.
+         */
+        DegradedResponse: {
+            /** History Available */
+            history_available: boolean;
+            processes: components["schemas"]["DegradedProcesses"];
+            /** Since */
+            since: string;
+            total: components["schemas"]["DegradedCounts"];
         };
         /**
          * DeletedResponse
@@ -10801,6 +10850,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectActivityResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claim_project_api_projects__project_id__claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectMemberItem"];
                 };
             };
             /** @description Validation Error */

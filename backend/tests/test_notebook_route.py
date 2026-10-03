@@ -7,9 +7,9 @@ client = TestClient(app)
 headers = {"Authorization": f"Bearer {settings.api_key}"}
 
 def test_create_and_list_notes():
-    # Create project
-    proj = client.post("/api/projects", json={"name": "Notebook Test"}, headers=headers).json()
-    pid = proj["id"]
+    # A run-prefixed project id: notes need no Project node, and the suite's
+    # teardown removes what this run wrote under its prefix.
+    pid = tp("notebook-route")
 
     # Create note
     resp = client.post("/api/notebook", json={
@@ -17,9 +17,6 @@ def test_create_and_list_notes():
     }, headers=headers)
     assert resp.status_code == 200
     assert resp.json()["title"] == "Test Note"
-
-    # Cleanup
-    client.delete(f"/api/projects/{pid}", headers=headers)
 
 
 # ---------------------------------------------------------------------------

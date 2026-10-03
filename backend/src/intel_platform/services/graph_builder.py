@@ -462,6 +462,14 @@ def _validated_attributes(cls: type, attrs, entity_name: str) -> tuple[dict, int
     return accepted, dropped
 
 
+def _evidence_offset(rel_data: dict) -> int:
+    """The edge's evidence offset in its chunk; -1 when there is none to give."""
+    offset = rel_data.get("evidence_offset", -1)
+    if not rel_data.get("evidence") or isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+        return -1
+    return offset
+
+
 def build_graph_from_extractions(
     store: GraphStore, entities: list[dict], relationships: list[dict], project_id: str,
     source_doc_id: str = "", auto_enrich_loop=None,
@@ -776,8 +784,10 @@ def build_graph_from_extractions(
             confidence=confidence,
             source=rel_data.get("source", ""), method=rel_data.get("method", ""),
             # Carry the source-sentence evidence through to the edge (was dropped
-            # here before, so "Show Evidence" had no real per-edge reference).
-            evidence=rel_data.get("evidence", ""),
+            # here before, so "Show Evidence" had no real per-edge reference),
+            # with where it starts in its chunk.
+            evidence=rel_data.get("evidence", "") or "",
+            evidence_offset=_evidence_offset(rel_data),
             # ...and the document it came from, so the evidence chain can end at
             # a real source instead of an unattributed quotation.
             source_doc_id=rel_data.get("source_doc_id", "") or source_doc_id,

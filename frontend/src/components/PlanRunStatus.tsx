@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { collectionPlansApi, type PlanCancelResult, type PlanExecutionStatus } from '@/lib/api';
-import { readDegraded, subsystemLabel } from '@/lib/degraded';
+import { readDegradedCounts, subsystemLabel } from '@/lib/degraded';
 import { getErrorMessage } from '@/lib/errorMessages';
 import { canCancelRun, runBadge, type RunTone } from '@/lib/planRun';
 
@@ -71,9 +71,7 @@ export function CancelRunButton({ planId, run, onCancelled, onError }: CancelRun
 /** The run's own degraded outcomes and, for a failed run, why it failed. */
 export function RunDetails({ run }: { run: PlanExecutionStatus | null | undefined }) {
   if (!run) return null;
-  const degraded = run.degraded && Object.keys(run.degraded).length > 0
-    ? readDegraded({ ...run.degraded }).subsystems
-    : [];
+  const degraded = readDegradedCounts(run.degraded);
   const failure = run.status === 'failed' ? (run.error || run.message || '') : '';
   if (degraded.length === 0 && !failure) return null;
   return (

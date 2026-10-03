@@ -323,6 +323,77 @@ class TestTheWorkerLoop:
         assert len(attempts) >= 2
 
 
+class TestDegradedCountFlushing:
+    """The worker's degraded counts reach degraded_events as `worker`: every
+    minute and at shutdown from the entrypoint, and after each job from the
+    loop (tests/test_telemetry_flush.py checks the rows that job writes)."""
+
+    async def test_the_entrypoint_runs_inside_the_worker_flusher(self, monkeypatch):
+        import argparse
+        import contextlib
+
+        from intel_platform.api import deps
+        from intel_platform.db import engine as engine_module
+        from intel_platform.services import telemetry
+
+        events: list = []
+
+        @contextlib.asynccontextmanager
+        async def flushing(process, **kw):
+            events.append(("flushing", process))
+            yield
+            events.append(("flushed", process))
+
+        async def prepare(stop, **kw):
+            events.append("prepare")
+            return True
+
+        async def run(**kw):
+            events.append("run")
+            return 0
+
+        class _Driver:
+            def close(self):
+                events.append("driver closed")
+
+        class _Engine:
+            async def dispose(self):
+                events.append("engine disposed")
+
+        monkeypatch.setattr(telemetry, "flushing", flushing)
+        monkeypatch.setattr(worker, "prepare_schema", prepare)
+        monkeypatch.setattr(worker, "run_worker", run)
+        monkeypatch.setattr(worker, "_install_signal_handlers", lambda stop: None)
+        monkeypatch.setattr(deps, "get_neo4j_driver", lambda: _Driver())
+        monkeypatch.setattr(engine_module, "get_engine", lambda: _Engine())
+
+        assert await worker._main(argparse.Namespace(poll_seconds=0.1, once=True)) == 0
+        assert events == [
+            ("flushing", "worker"), "prepare", "run", ("flushed", "worker"), "driver closed", "engine disposed",
+        ]
+
+    async def test_a_hung_flush_after_a_job_does_not_stall_the_worker(self, pg_factory, monkeypatch):
+        from intel_platform.services import telemetry
+
+        flushed: list = []
+
+        async def hung(process, *, db_factory=None):
+            flushed.append(process)
+            await asyncio.Event().wait()
+
+        monkeypatch.setattr(telemetry, "flush", hung)
+        monkeypatch.setattr(worker, "_JOB_FLUSH_SECONDS", 0.05)
+        loop = _Loop()
+        loop.release.set()
+        monkeypatch.setattr(agentic, "run_agentic_loop", loop)
+        job_id = await _queue(pg_factory, await make_plan(pg_factory))
+
+        _stop, task = _start_worker(pg_factory, once=True)
+        assert await asyncio.wait_for(task, 10) == 1
+        assert flushed == [telemetry.WORKER]
+        assert (await _row(pg_factory, job_id)).status == jobs.SUCCEEDED
+
+
 @requires_postgres
 class TestTheEntrypoint:
     async def test_python_dash_m_runs_a_job_and_exits(self, pg_factory):

@@ -74,13 +74,16 @@ READ_ONLY_POSTS = {
     "POST /api/topics/{entity_id}/summarize": "streams a summary; writes nothing",
 }
 
-# The operations that need owner.
+# The operations that need owner. Claiming is also admin-only (require_admin,
+# checked below); for an admin the project check passes unread.
 OWNER_OPERATIONS = {
     "DELETE /api/projects/{project_id}",
     "POST /api/projects/batch-delete",
     "PUT /api/projects/{project_id}/members/{username}",
     "DELETE /api/projects/{project_id}/members/{username}",
+    "POST /api/projects/{project_id}/claim",
 }
+ADMIN_GUARDED = {"POST /api/projects/{project_id}/claim"}
 
 
 def _route(method: str, path: str) -> APIRoute:
@@ -151,7 +154,7 @@ def test_every_unguarded_operation_is_accounted_for():
 def test_admin_operations_require_admin():
     admin_only = [
         (key, method, path) for key, method, path, _ in OPERATIONS
-        if path.startswith(ADMIN_PREFIX) or UNGUARDED.get(key, "").startswith("ADMIN")
+        if path.startswith(ADMIN_PREFIX) or UNGUARDED.get(key, "").startswith("ADMIN") or key in ADMIN_GUARDED
     ]
     assert admin_only
     not_admin = [key for key, method, path in admin_only if require_admin not in _calls(_route(method, path).dependant)]
@@ -161,7 +164,7 @@ def test_admin_operations_require_admin():
 def test_the_allowlist_has_no_stale_entries():
     keys = {key for key, *_ in OPERATIONS}
     assert set(UNGUARDED) <= keys, f"no such operation: {sorted(set(UNGUARDED) - keys)}"
-    assert set(READ_ONLY_POSTS) <= keys and OWNER_OPERATIONS <= keys
+    assert set(READ_ONLY_POSTS) <= keys and OWNER_OPERATIONS <= keys and ADMIN_GUARDED <= keys
     guarded_but_listed = sorted(k for k in UNGUARDED if GUARDED[k])
     assert not guarded_but_listed, f"listed as unguarded but guarded: {guarded_but_listed}"
 

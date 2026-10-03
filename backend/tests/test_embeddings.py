@@ -229,7 +229,14 @@ class TestEmbeddingColumnDimension:
 
     def test_follows_a_changed_setting(self, monkeypatch):
         """Re-importing under EMBEDDING_DIMENSIONS=768 (Ollama) must give 768-d
-        columns. Reloaded twice so the rest of the suite sees the original."""
+        columns.
+
+        The module's namespace is put back afterwards rather than reloaded a
+        second time: a reload binds a new `Base`, and the tables other modules
+        registered on the original one (`collection_jobs`, from db/jobs.py)
+        would be missing from `Base.metadata` for the rest of the suite, so
+        `alembic check` would report the database as having an extra table.
+        """
         import importlib
 
         from intel_platform.config import get_settings
@@ -238,6 +245,7 @@ class TestEmbeddingColumnDimension:
         if not hasattr(models.ChunkEmbedding.__table__.c.embedding.type, "dim"):
             return  # pgvector not installed — Text fallback has no dimension
 
+        original = dict(models.__dict__)
         monkeypatch.setenv("EMBEDDING_DIMENSIONS", "768")
         get_settings.cache_clear()
         try:
@@ -246,7 +254,8 @@ class TestEmbeddingColumnDimension:
         finally:
             monkeypatch.undo()
             get_settings.cache_clear()
-            importlib.reload(models)
+            models.__dict__.clear()
+            models.__dict__.update(original)
 
 
 # ---------------------------------------------------------------------------

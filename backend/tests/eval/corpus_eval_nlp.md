@@ -1,6 +1,6 @@
 # Corpus extraction eval — `nlp`
 
-Generated 2026-10-02T01:10:18+00:00 at `26704091`; spaCy `en_core_web_sm`.
+Generated 2026-10-02T12:35:51+00:00 at `9e862798`; spaCy `en_core_web_sm`.
 
 No document degraded: every score below is the requested mode's own.
 
@@ -20,7 +20,7 @@ Relationships are scored twice. **typed** leaves out generic associations (`ASSO
 | Relationships (typed) | 0.702 | 0.490 | 0.577 | 47 | 67 | 96 |
 | Relationships (all) | 0.067 | 0.490 | 0.117 | 47 | 705 | 96 |
 
-Type accuracy on matched entities: **0.899** (parent category: 0.901). Gold relationship pairs connected by any edge: 77 of 96. Predicted edges: 67 typed, 635 generic, 3 date links (ASSOCIATED_WITH share 90.1%). Dropped by the extraction: same_entity 7.
+Type accuracy on matched entities: **0.899** (parent category: 0.901). Gold relationship pairs connected by any edge: 77 of 96. Predicted edges: 67 typed, 635 generic, 3 date links (ASSOCIATED_WITH share 90.1%). Dropped by the extraction: same_entity 7. Evidence spans: 704 located at their offset, 1 without one, 0 mismatched.
 
 ## Per type (name + type must match)
 

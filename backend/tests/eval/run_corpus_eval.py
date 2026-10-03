@@ -312,12 +312,29 @@ def score_document(predicted: list[dict], rels: list[dict], gold: dict) -> dict:
     }
 
 
+def evidence_spans(text: str, rels: list[dict]) -> dict:
+    """Each edge's evidence span against the chunk: ``located`` when the chunk's
+    text at ``evidence_offset`` is the evidence, ``unlocated`` with no evidence
+    or offset, ``mismatched`` when the offset points elsewhere (a bug)."""
+    counts = {"located": 0, "unlocated": 0, "mismatched": 0}
+    for r in rels:
+        off, ev = r.get("evidence_offset", -1), r.get("evidence") or ""
+        if not isinstance(off, int) or off < 0 or not ev:
+            counts["unlocated"] += 1
+        elif text[off:off + len(ev)] == ev:
+            counts["located"] += 1
+        else:
+            counts["mismatched"] += 1
+    return counts
+
+
 def aggregate(docs: list[dict]) -> dict:
     ent = Counter()
     rel = Counter()
     rel_typed = Counter()
     rel_classes = Counter()
     dropped = Counter()
+    spans = Counter()
     per_type: dict[str, Counter] = defaultdict(Counter)
     confusion: Counter = Counter()
     rel_types: Counter = Counter()
@@ -329,6 +346,7 @@ def aggregate(docs: list[dict]) -> dict:
         rel_typed.update(s["relationships_typed"])
         rel_classes.update(s["relationship_classes"])
         dropped.update(d.get("relationships_dropped_by_reason") or {})
+        spans.update(d.get("evidence_spans") or {})
         for t, v in s["per_type"].items():
             per_type[t].update(v)
         confusion.update(s["confusion"])
@@ -352,8 +370,11 @@ def aggregate(docs: list[dict]) -> dict:
         "relationship": _prf(rel["tp"], rel["pred"], rel["exp"]),
         "relationship_typed": _prf(rel_typed["tp"], rel_typed["pred"], rel_typed["exp"]),
         "relationship_classes_predicted": {k: rel_classes.get(k, 0) for k in ("typed", "generic", "date_link")},
-        # Model edges the extraction itself dropped, by reason (unlisted_endpoint).
+        # Model edges the extraction itself dropped, by reason (unlisted_endpoint,
+        # evidence_not_verbatim, evidence_missing_endpoint, ...).
         "relationships_dropped_by_reason": dict(sorted(dropped.items())),
+        # Predicted edges whose evidence is the chunk's text at their offset.
+        "evidence_spans": {k: spans.get(k, 0) for k in ("located", "unlocated", "mismatched")},
         # Gold pairs some predicted edge connects, in either direction, of any type.
         "relationship_pairs_found": rel["pair_found"],
         "relationship_types_predicted": dict(rel_types.most_common()),
@@ -552,6 +573,7 @@ async def run(mode: str, sets: list[str], concurrency: int, retries: int, limit:
             "reason": getattr(result, "reason", ""),
             "seconds": round(elapsed, 2),
             "relationships_dropped_by_reason": dict(getattr(result, "relationships_dropped_by_reason", None) or {}),
+            "evidence_spans": evidence_spans(text, rels),
             "score": score_document(entities, rels, gold),
         }
         if driver is not None:
@@ -669,6 +691,7 @@ def markdown(report: dict) -> str:
         )
     classes = o["relationship_classes_predicted"]
     dropped = o.get("relationships_dropped_by_reason") or {}
+    spans = o.get("evidence_spans") or {"located": 0, "unlocated": 0, "mismatched": 0}
     lines += [
         "",
         "| Combined metric | P | R | F1 | TP | Pred | Gold |",
@@ -686,7 +709,9 @@ def markdown(report: dict) -> str:
         f"{o['relationship']['expected']}. Predicted edges: {classes['typed']} typed, {classes['generic']} "
         f"generic, {classes['date_link']} date links (ASSOCIATED_WITH share {o['associated_with_share']:.1%}). "
         "Dropped by the extraction: "
-        + (", ".join(f"{k} {v}" for k, v in dropped.items()) or "none") + ".",
+        + (", ".join(f"{k} {v}" for k, v in dropped.items()) or "none") + ". "
+        f"Evidence spans: {spans['located']} located at their offset, {spans['unlocated']} without one, "
+        f"{spans['mismatched']} mismatched.",
         "",
         "## Per type (name + type must match)",
         "",

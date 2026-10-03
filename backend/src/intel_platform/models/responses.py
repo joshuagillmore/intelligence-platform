@@ -273,9 +273,32 @@ class AdminConfigResponse(BaseModel):
     proxy: ProxyModeItem
 
 
-class DegradedResponse(RootModel[dict[str, dict[str, int] | str]]):
-    """``{"since": iso8601, <subsystem>: {<reason>: count}}``: degraded outcomes
-    since the process started. Only subsystems that degraded at least once appear."""
+class DegradedCounts(RootModel[dict[str, dict[str, int]]]):
+    """``{<subsystem>: {<reason>: count}}``. Only subsystems that degraded at
+    least once appear, so ``{}`` means nothing degraded."""
+
+
+class DegradedProcesses(BaseModel):
+    """The counts of each process that flushes them (services/telemetry.py)."""
+
+    # The API process: its stored rows plus what it counted since its last flush.
+    api: DegradedCounts
+    # The collection worker(s): stored rows only, flushed every minute, at the
+    # end of each job and at shutdown.
+    worker: DegradedCounts
+
+
+class DegradedResponse(BaseModel):
+    """Degraded outcomes over the last 24 hours, per process and combined."""
+
+    # Start of the window (ISO-8601, UTC): now minus 24 hours.
+    since: str
+    processes: DegradedProcesses
+    # The sum of every process's counts.
+    total: DegradedCounts
+    # False when the stored counts could not be read: the figures are then the
+    # API process's unflushed counts only, not evidence that nothing degraded.
+    history_available: bool
 
 
 class ApiKeyItem(BaseModel):

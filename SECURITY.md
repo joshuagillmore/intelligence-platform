@@ -36,9 +36,22 @@ are especially valuable:
 ## Deploying safely
 
 This project ships with **default development credentials** and a placeholder
-`JWT_SECRET`. Before exposing any instance beyond `localhost`:
+`JWT_SECRET`.
 
-- set `REQUIRE_SECURE_AUTH=true` (see exactly what it checks below),
+**The production image fails closed.** The root `Dockerfile` (the image that
+gets deployed) sets `REQUIRE_SECURE_AUTH=true`. Started without the secrets
+below, it exits non-zero at boot with the reason in its log instead of serving
+on the defaults, and CI proves that on every build. The local `docker compose`
+stack builds `backend/Dockerfile` instead and defaults the flag to `false`, so
+development runs on the dev credentials. Compose reads `REQUIRE_SECURE_AUTH`
+from `.env`, so a compose stack reachable beyond `localhost` sets it to `true`
+there. Running the production image on the dev credentials, for a local test
+only, takes an explicit `REQUIRE_SECURE_AUTH=false`.
+
+Before exposing any instance beyond `localhost`:
+
+- keep `REQUIRE_SECURE_AUTH=true`: the production image's default, and set it
+  yourself anywhere else (see exactly what it checks below),
 - set a real, high-entropy `JWT_SECRET` (at least 32 bytes),
 - set `DEFAULT_ADMIN_PASSWORD` to a strong value, and an `ENCRYPTION_KEY`
   (a Fernet key; `Fernet.generate_key()`),
@@ -103,22 +116,27 @@ Each project has members, held in Postgres (`project_members`), with one of
 three roles: **viewer** (read), **editor** (read and write project data) and
 **owner** (also manage members and delete the project). An admin (`role` admin
 on the session, which includes the `API_KEY`) is an implicit owner of every
-project and is never listed.
+project; they are listed only on projects they created or claimed.
 
 - **Open projects.** A project with no members is usable by every signed-in
-  user. Every project created before membership existed is open, so a
-  single-analyst deployment works as before. Any signed-in user may add the
-  first member of an open project, and that member must be an owner. Adding the
-  first member restricts the project. On a shared deployment, have an admin or
-  the right analyst add owners to every existing project, because until that
-  happens anyone can do it.
+  user. Only projects created before membership existed are open (every new
+  project is owned from birth, see below), so a single-analyst deployment
+  works as before. Any signed-in user may add the first member of an open
+  project, and that member must be an owner. Adding the first member restricts
+  the project. On a shared deployment, an admin should **claim** every open
+  project (`POST /api/projects/{id}/claim`, or the "Claim" control the projects
+  page shows admins next to each open project): the admin becomes its owner
+  and it is restricted. Until that happens anyone signed in can add themselves
+  as its first owner.
 - **Restricted projects.** Only members can use a restricted project, each up to
   their role. Anyone else gets **403** `No access to this project`. A member
   whose role is too low gets a 403 that names the role required. **404** means
   only that the project does not exist. So a 403 does confirm that a project id
   exists, but project ids are random UUIDs.
-- **New projects.** When an analyst creates a project, they become its owner,
-  so the project starts restricted. A project an admin creates starts open.
+- **New projects.** Whoever creates a project becomes its owner, admins and
+  the `API_KEY` caller (`api_key_user`) included, so every new project starts
+  restricted. If the owner row cannot be written the project is not created
+  (503).
 - **Owners.** The members of a restricted project always include at least one
   owner. The API refuses (409) to remove or demote the last one.
 - **What is checked.** Every project-scoped API operation declares

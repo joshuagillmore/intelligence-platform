@@ -39,8 +39,15 @@ class ExtractionResult(tuple):
       extraction did not keep, by why: ``unlisted_endpoint`` (an endpoint that
       is neither a listed entity nor one's alias), ``same_entity`` (both ends
       resolve to one entity), ``generic_on_typed_pair`` (an ASSOCIATED_WITH on
-      a pair a typed relation already links). The graph build keeps its own
-      count of what reaches it.
+      a pair a typed relation already links), ``evidence_not_verbatim`` (no
+      evidence, or a quote the chunk does not contain),
+      ``evidence_missing_endpoint`` (a quote that does not name both ends) and
+      ``repeated`` (an edge the reply already gave).
+      The graph build keeps its own count of what reaches it.
+
+    Every relationship carries ``evidence`` (the chunk's own text it was read
+    from, empty when none) and ``evidence_offset`` (where that text starts in
+    the chunk, -1 when unknown).
     """
 
     method: str
@@ -1125,26 +1132,346 @@ def _drop_generic_on_typed_pairs(relationships: list[dict]) -> tuple[list[dict],
     return kept, len(relationships) - len(kept)
 
 
-def _clean_evidence(sentence: str, name_a: str, name_b: str, pad: int = 45, max_len: int = 300) -> str:
-    """Tighten a relationship's source text to the in-context span linking the pair.
+# ── Evidence spans ──────────────────────────────────────────────────────────
+# A relationship's evidence is a span of the chunk it was extracted from: the
+# sentence that states it, stored as the chunk's own characters (`evidence`)
+# with the offset they start at (`evidence_offset`, -1 when unknown), so
+# chunk[offset:offset + len(evidence)] is the evidence. A model relationship is
+# kept only when its quote is such a span and names both ends
+# (`_verify_evidence`); an NLP relationship is read from a sentence and
+# records it (`_sentence_evidence`).
 
-    spaCy sentence boundaries are noisy on intelligence docs (headers without
-    terminal punctuation get glued onto the first real sentence), so the raw
-    `sent.text` is often a multi-line boilerplate blob. Collapse whitespace and,
-    when both entity names are present, clip to a window around them so "Show
-    Evidence" surfaces the actual related reference, not a page of preamble.
+# Typographic characters a model writes as their plain forms. One character
+# for one, so a position in the folded text is a position in the original.
+_TYPOGRAPHIC = str.maketrans({
+    "‘": "'", "’": "'", "‚": "'", "‛": "'", "′": "'",
+    "“": '"', "”": '"', "„": '"', "‟": '"', "″": '"',
+    "‐": "-", "‑": "-", "‒": "-", "–": "-", "—": "-", "―": "-", "−": "-",
+})
+# "The group", "this actor": a threat actor named earlier (_ACTOR_ANAPHORS).
+_ACTOR_ANAPHOR = re.compile(r"\b(?:the|this|that)\s+(?:group|actor|attacker|adversary|operator|intruder)s?\b",
+                            re.IGNORECASE)
+# An ellipsis the model puts at either end of a partial quote.
+_EDGE_ELLIPSIS = re.compile(r"^(?:\.\.\.|\u2026)\s*|\s*(?:\.\.\.|\u2026)$")
+# Quotation marks a model wraps a quote in.
+_QUOTE_MARKS = "\"'`‘’“”"
+# NLP evidence longer than this is clipped to the words around the pair.
+_EVIDENCE_MAX = 400
+_EVIDENCE_PAD = 60
+
+
+def _folded(text: str) -> tuple[str, list[int]]:
+    """``text`` folded for matching, with each folded character's offset in ``text``.
+
+    A run of whitespace is one space and the ends are stripped; case and
+    typographic quotes and dashes do not matter. A character whose lower case
+    is longer than one character is left as it is, so the mapping stays one
+    to one.
     """
-    s = re.sub(r"\s+", " ", sentence or "").strip()
-    if not s:
-        return ""
-    lo = s.lower()
-    ia, ib = lo.find(name_a.lower()), lo.find(name_b.lower())
-    if ia != -1 and ib != -1:
-        start = max(0, min(ia, ib) - pad)
-        end = min(len(s), max(ia + len(name_a), ib + len(name_b)) + pad)
-        clip = ("..." if start > 0 else "") + s[start:end] + ("..." if end < len(s) else "")
-        return clip
-    return s if len(s) <= max_len else s[:max_len] + "..."
+    chars: list[str] = []
+    offsets: list[int] = []
+    space_at = -1
+    for i, ch in enumerate(text):
+        if ch.isspace():
+            if chars and space_at < 0:
+                space_at = i
+            continue
+        if space_at >= 0:
+            chars.append(" ")
+            offsets.append(space_at)
+            space_at = -1
+        low = ch.translate(_TYPOGRAPHIC).lower()
+        chars.append(low if len(low) == 1 else ch)
+        offsets.append(i)
+    return "".join(chars), offsets
+
+
+def _locate_evidence(text: str, quote, folded: tuple[str, list[int]] | None = None) -> tuple[int, int] | None:
+    """Where ``quote`` is in ``text``, as (start, end), or None.
+
+    Whitespace-normalised and case-insensitive, typographic quotes and dashes
+    read as their plain forms; a quote wrapped in quotation marks is unwrapped,
+    and an ellipsis at either end (a partial quote) and a closing full stop the
+    text does not have are let go. A paraphrase, an elision inside the quote
+    ("Kallas... stated"), or a sentence from another text is not found.
+    ``folded`` is ``_folded(text)``, for a caller locating many quotes in one
+    text.
+    """
+    if not isinstance(quote, str) or not text:
+        return None
+    q = quote.strip()
+    candidates = [q]
+    if len(q) > 2 and q[0] in _QUOTE_MARKS and q[-1] in _QUOTE_MARKS:
+        candidates.append(q[1:-1].strip())
+    candidates += [bare for c in list(candidates) if (bare := _EDGE_ELLIPSIS.sub("", c).strip()) != c]
+    candidates += [c[:-1].rstrip() for c in list(candidates) if c.endswith(".")]
+    haystack, offsets = folded or _folded(text)
+    for candidate in candidates:
+        needle, _ = _folded(candidate)
+        if not needle:
+            continue
+        k = haystack.find(needle)
+        if k != -1:
+            return offsets[k], offsets[k + len(needle) - 1] + 1
+    return None
+
+
+def _endpoint_forms(name: str, entity: dict | None) -> list[str]:
+    """The words a sentence can name a relationship endpoint by.
+
+    The name the edge gives, the listed entity's name and aliases, every form
+    of a country (its names, demonym, government forms and capital: "the
+    Kremlin supplied ..." names Russia), and a person's surname ("Lund then
+    moved ...").
+    """
+    from intel_platform.services.text_utils import country_forms, country_of
+
+    forms = [name]
+    if entity is not None:
+        forms += [entity.get("name") or "", *(a for a in entity.get("aliases") or [] if isinstance(a, str))]
+    for form in list(forms):
+        hit = country_of(form) if form else None
+        if hit is not None:
+            forms += country_forms(hit[0])
+            break
+    if entity is not None and normalize_entity_type(entity.get("entity_type") or "")[1] == "Person":
+        words = (entity.get("name") or "").split()
+        if len(words) > 1 and len(words[-1]) >= 3 and words[-1][0].isupper():
+            forms.append(words[-1])
+    return [f for f in dict.fromkeys(forms) if f and f.strip()]
+
+
+def _quote_names(quote: str, forms: list[str]) -> bool:
+    """Whether ``quote`` names one of ``forms``.
+
+    As a whole word, a plural and a possessive allowed; case aside from four
+    letters up (``_name_pattern``); whitespace and typographic quotes aside;
+    defanged or not.
+    """
+    plain = re.sub(r"\s+", " ", quote.translate(_TYPOGRAPHIC))
+    texts = {plain, re.sub(r"\s+", " ", refang(quote).translate(_TYPOGRAPHIC))}
+    for form in forms:
+        f = _strip_determiner(re.sub(r"\s+", " ", form.translate(_TYPOGRAPHIC)).strip())
+        if not f:
+            continue
+        if any(_name_pattern(f).search(t) or _name_pattern(f + "s").search(t) for t in texts):
+            return True
+    return False
+
+
+def _verify_evidence(
+    entities: list[dict], relationships: list[dict], text: str,
+) -> tuple[list[dict], dict[str, int]]:
+    """Keep each model relationship whose evidence is a span of ``text`` naming both ends.
+
+    The model asserted relationships its text does not state, and once
+    carried the prompt's own example into a document naming neither end.
+    Each relationship's ``evidence`` must be found in ``text``
+    (``_locate_evidence``) and name both endpoints (``_endpoint_forms``); a
+    threat actor is also named by "the group" or "the actor" when it is the
+    last one the text named before them, the rule NLP reads them by. A
+    date link (OCCURRED_ON, or an edge to a Date) needs only its date named:
+    the event is usually a name the model gave it ("Kalvik radar delivery"),
+    which no text contains. A verbatim part of a sentence ("led by General
+    Guetlein") is read in its whole sentence (``_sentences_around``): the
+    rule is that the sentence the evidence is in names both ends. A kept
+    edge's ``evidence`` becomes the text's own span (that sentence, for a
+    fragment) and ``evidence_offset`` its offset.
+
+    Returns the kept relationships and the drops by reason:
+    ``evidence_not_verbatim`` (no evidence, or none the text contains) and
+    ``evidence_missing_endpoint`` (verbatim, but an end is not named in it).
+    """
+    by_key: dict[str, dict] = {}
+    for e in entities:
+        by_key.setdefault(_merge_key(e.get("name", "")), e)
+    for e in entities:
+        for alias in e.get("aliases") or []:
+            if isinstance(alias, str) and alias.strip():
+                by_key.setdefault(_merge_key(alias), e)
+    folded = _folded(text) if text else None
+    actor_mentions: list[tuple[int, dict]] | None = None
+
+    def referred_back(ent: dict | None, quote_start: int, quote: str) -> bool:
+        nonlocal actor_mentions
+        if ent is None or ent.get("entity_type") != "ThreatActor":
+            return False
+        anaphors = [m.start() for m in _ACTOR_ANAPHOR.finditer(quote)]
+        if not anaphors:
+            return False
+        if actor_mentions is None:
+            actor_mentions = sorted(
+                ((m.start(), e) for e in entities if e.get("entity_type") == "ThreatActor"
+                 for n in [e.get("name") or "", *(e.get("aliases") or [])] if isinstance(n, str) and n
+                 for m in _name_pattern(n).finditer(text)),
+                key=lambda pair: pair[0],
+            )
+        for at in anaphors:
+            earlier = [e for start, e in actor_mentions if start < quote_start + at]
+            if earlier and earlier[-1] is ent:
+                return True
+        return False
+
+    parsed_lines: dict[int, object] = {}
+    kept: list[dict] = []
+    dropped = {"evidence_not_verbatim": 0, "evidence_missing_endpoint": 0}
+    for r in relationships:
+        label = f"{r.get('source_name')} -{r.get('rel_type')}-> {r.get('target_name')}"
+        span = _locate_evidence(text, r.get("evidence"), folded) if folded else None
+        if span is None:
+            dropped["evidence_not_verbatim"] += 1
+            logger.debug("Dropped %s: its evidence is not in the text: %.160r", label, r.get("evidence"))
+            continue
+        quote = text[span[0]:span[1]]
+        ends = [(r.get(side) or "", by_key.get(_merge_key(r.get(side) or "")))
+                for side in ("source_name", "target_name")]
+        dates = [end for end in ends if end[1] is not None and end[1].get("entity_type") == "Date"]
+        required = dates if dates and (r.get("rel_type") == "OCCURRED_ON" or len(dates) == 1) else ends
+
+        def unnamed(at: int, quote: str) -> list[str]:
+            return [name for name, ent in required
+                    if not _quote_names(quote, _endpoint_forms(name, ent)) and not referred_back(ent, at, quote)]
+
+        missing = unnamed(span[0], quote)
+        if missing:
+            wide = _sentences_around(text, span[0], span[1], parsed_lines)
+            if wide != span and not unnamed(wide[0], text[wide[0]:wide[1]]):
+                span, quote, missing = wide, text[wide[0]:wide[1]], []
+        if missing:
+            dropped["evidence_missing_endpoint"] += 1
+            logger.debug("Dropped %s: its evidence does not name %s: %.160r", label, missing, quote)
+            continue
+        kept.append({**r, "evidence": quote, "evidence_offset": span[0]})
+    if any(dropped.values()):
+        logger.debug("Kept %d of %d model relationship(s) on their evidence: %s",
+                     len(kept), len(relationships), dropped)
+    return kept, dropped
+
+
+def _sentences_around(text: str, start: int, end: int, parsed: dict[int, object]) -> tuple[int, int]:
+    """The sentences of ``text`` that ``text[start:end]`` is part of, as (start, end).
+
+    Read within the quote's own lines, so a heading or list item on another
+    line is never taken into the sentence (no eval text wraps a sentence
+    across lines). The lines are parsed once per chunk (``parsed``, by line
+    start); without a parse the quote stays as it is.
+    """
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    line_end = len(text) if line_end == -1 else line_end
+    doc = parsed.get(line_start)
+    if doc is None:
+        try:
+            doc = parsed[line_start] = _get_nlp()(text[line_start:line_end])
+        except Exception:
+            logger.warning("Could not parse a line to find the sentence a quote is in", exc_info=True)
+            return start, end
+    lo, hi = start, end
+    for sent in doc.sents:
+        a, b = line_start + sent.start_char, line_start + sent.end_char
+        if a < end and start < b:
+            lo, hi = min(lo, a), max(hi, b)
+    return _trim_span(text, lo, hi)
+
+
+def _drop_repeated(relationships: list[dict]) -> tuple[list[dict], int]:
+    """One edge per source, type, target and polarity: the first, with its evidence.
+
+    A reply that loops repeats one relationship until the token limit (a live
+    reply named TikTok BELONGS_TO ByteDance 108 times, the quote drifting as it
+    went). The graph build merges the repeats into one edge, so the
+    extraction keeps one too, and the eval no longer counts each repeat as a
+    prediction. Returns the kept relationships and how many repeats went.
+    """
+    seen: set[tuple] = set()
+    kept: list[dict] = []
+    for r in relationships:
+        key = (r.get("source_name"), r.get("rel_type"), r.get("target_name"), r.get("polarity", "asserts"))
+        if key not in seen:
+            seen.add(key)
+            kept.append(r)
+    return kept, len(relationships) - len(kept)
+
+
+def _refanged_to_original(original: str, refanged: str):
+    """A function mapping a (start, end) span of ``refanged`` to the same span of ``original``.
+
+    Refanging makes small local replacements ("[.]" -> ".", "hxxp" ->
+    "http"), so the two texts align character by character outside them; a
+    span edge inside a replacement moves to the replacement's edge in the
+    original. Built once per chunk, and only for a chunk refanging changed.
+    """
+    import difflib
+
+    blocks = difflib.SequenceMatcher(None, refanged, original, autojunk=False).get_opcodes()
+
+    def at(pos: int, is_end: bool) -> int:
+        for tag, i1, i2, j1, j2 in blocks:
+            if (i1 < pos <= i2) if is_end else (i1 <= pos < i2):
+                if tag == "equal":
+                    return j1 + (pos - i1)
+                return j2 if is_end else j1
+        return len(original) if is_end else 0
+
+    return lambda start, end: (at(start, False), at(end, True))
+
+
+def _trim_span(text: str, start: int, end: int) -> tuple[int, int]:
+    while start < end and text[start].isspace():
+        start += 1
+    while end > start and text[end - 1].isspace():
+        end -= 1
+    return start, end
+
+
+def _sentence_evidence(text: str, start: int, end: int, names_a: list[str], names_b: list[str]) -> tuple[int, int]:
+    """The span of ``text`` an NLP relationship was read from, as (start, end).
+
+    The sentence ``text[start:end]`` without its surrounding whitespace.
+    spaCy's sentence boundaries are noisy on intelligence documents (a heading
+    without a full stop is glued to the sentence under it), so a sentence
+    crossing a blank line is cut to the paragraphs that name the pair, and one
+    longer than ``_EVIDENCE_MAX`` to the words around the pair. Always the
+    text's own characters, never re-spaced or marked with an ellipsis, so the
+    offset locates it. ``names_a``/``names_b`` are each end's name and aliases.
+    """
+    start, end = _trim_span(text, start, end)
+    seg = text[start:end]
+
+    def mentions(names: list[str]) -> list[tuple[int, int]]:
+        return [m.span() for n in names if n for m in _name_pattern(n).finditer(seg)]
+
+    # One mention of each end: in one paragraph if any pair is, then the
+    # closest. A heading glued on top ("Russia\n\nIran transferred missiles
+    # to Russia") names an end again, across a blank line.
+    breaks = [m.span() for m in _PARAGRAPH_BREAK.finditer(seg)]
+    pairs = [(min(a[0], b[0]), max(a[1], b[1])) for a in mentions(names_a) for b in mentions(names_b)]
+    if not pairs:
+        # An end named by an anaphor ("the group"): the sentence, from its start.
+        if end - start <= _EVIDENCE_MAX:
+            return start, end
+        cut = seg.rfind(" ", 0, _EVIDENCE_MAX)
+        return _trim_span(text, start, start + (cut if cut > 0 else _EVIDENCE_MAX))
+    lo, hi = min(pairs, key=lambda p: (any(p[0] <= b0 and b1 <= p[1] for b0, b1 in breaks), p[1] - p[0], p[0]))
+    lo, hi = start + lo, start + hi
+    base = start
+    for b0, b1 in breaks:
+        if base + b1 <= lo:
+            start = base + b1
+        elif base + b0 >= hi:
+            end = base + b0
+            break
+    start, end = _trim_span(text, start, end)
+    if end - start <= _EVIDENCE_MAX:
+        return start, end
+    w_start, w_end = max(start, lo - _EVIDENCE_PAD), min(end, hi + _EVIDENCE_PAD)
+    if w_start > start and not text[w_start - 1].isspace():
+        gap = re.search(r"\s", text[w_start:lo])
+        w_start = w_start + gap.end() if gap else lo
+    if w_end < end and not text[w_end].isspace():
+        gaps = [m.start() for m in re.finditer(r"\s", text[hi:w_end])]
+        w_end = hi + gaps[-1] if gaps else hi
+    return _trim_span(text, w_start, w_end)
 
 # Known intelligence-domain locations that spaCy commonly misclassifies
 KNOWN_LOCATIONS = {
@@ -2517,17 +2844,38 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
     # ASSOCIATED_WITH on top of a pair a typed/pattern relation already links.
     linked_pairs: set[frozenset[str]] = set()
 
-    def _add_rel(src_name: str, tgt_name: str, rel_type: str, confidence: float, evidence: str = "") -> None:
+    # Offsets are into the chunk as given. spaCy read the refanged text, so
+    # where refanging changed it the span is mapped back to the original,
+    # defanged as written there ("evil-c2[.]com").
+    to_original = _refanged_to_original(raw_text, text) if raw_text != text else None
+
+    def _evidence(src_name: str, tgt_name: str, span: tuple[int, int] | None) -> tuple[str, int]:
+        if span is None:
+            return "", -1
+
+        def names(n: str) -> list[str]:
+            return [n, *((seen_names.get(n) or {}).get("aliases") or [])]
+
+        start, end = _sentence_evidence(text, span[0], span[1], names(src_name), names(tgt_name))
+        if to_original is None:
+            return text[start:end], start
+        start, end = to_original(start, end)
+        return raw_text[start:end], start
+
+    def _add_rel(src_name: str, tgt_name: str, rel_type: str, confidence: float,
+                 span: tuple[int, int] | None = None) -> None:
         key = (src_name, tgt_name, rel_type)
         if key not in seen_rel_keys:
             seen_rel_keys.add(key)
             linked_pairs.add(frozenset((src_name, tgt_name)))
+            # The sentence this relation was read from (``span`` in the
+            # text), surfaced as its evidence, and where it starts.
+            evidence, offset = _evidence(src_name, tgt_name, span)
             relationships.append({
                 "source_name": src_name, "target_name": tgt_name,
                 "rel_type": rel_type, "confidence": confidence,
                 "source": doc_id, "method": "nlp",
-                # The in-context span this relation was read from — surfaced as evidence.
-                "evidence": _clean_evidence(evidence, src_name, tgt_name),
+                "evidence": evidence, "evidence_offset": offset,
             })
 
     # Where each threat actor is named, so "the group" can be read as the last
@@ -2556,10 +2904,11 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
 
     # Generic co-occurrence edges wait until every sentence has been read: a
     # typed relation stated later in the text still rules one out.
-    generic_candidates: list[tuple[str, str, str]] = []
+    generic_candidates: list[tuple[str, str, tuple[int, int]]] = []
 
     for sent in doc.sents:
         sent_text = sent.text
+        sent_span = (sent.start_char, sent.end_char)
         sent_entities_list = []
         # Which paragraphs of the sentence each entity is named in. spaCy joins
         # a heading to the sentence under it ("China" over "In addition, South
@@ -2615,11 +2964,11 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
                     # A date is when, not what: it is never a node to point at.
                     continue
                 _add_rel(src_ent["name"], tgt_ent["name"],
-                         _refine_rel_type(rel_type_from_verb, tgt_ent), 0.7, sent_text)
+                         _refine_rel_type(rel_type_from_verb, tgt_ent), 0.7, sent_span)
 
         # ── Stage A2: relations stated as a possessive, a title or an action noun ──
         for src_ent, rel_type, tgt_ent in _phrase_relations(sent, mention_spans, entities_by_name, _resolve_anaphor):
-            _add_rel(src_ent["name"], tgt_ent["name"], rel_type, 0.7, sent_text)
+            _add_rel(src_ent["name"], tgt_ent["name"], rel_type, 0.7, sent_span)
 
         # ── Stage B: Co-occurrence relationships (fallback) ──
         # Bounded to nearby entities (COOCCURRENCE_WINDOW), not the full
@@ -2641,7 +2990,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
                     date_ent, other = (e1, e2) if e1_is_date else (e2, e1)
                     _, parent_category = normalize_entity_type(other.get("entity_type", ""))
                     if parent_category == "Event":
-                        _add_rel(other["name"], date_ent["name"], "OCCURRED_ON", 0.7, sent_text)
+                        _add_rel(other["name"], date_ent["name"], "OCCURRED_ON", 0.7, sent_span)
                     # Otherwise no edge at all. Dates are not graph nodes, so a
                     # generic edge to one is dropped at build and counted as a
                     # loss: five of the six edges the live run built from one
@@ -2654,7 +3003,7 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
                 # when both are named in one paragraph of the sentence, and
                 # emitted below only if no typed relation links the pair.
                 if (j - i) <= COOCCURRENCE_WINDOW and paragraphs.get(id(e1), {0}) & paragraphs.get(id(e2), {0}):
-                    generic_candidates.append((e1["name"], e2["name"], sent_text))
+                    generic_candidates.append((e1["name"], e2["name"], sent_span))
 
     # "torvald (A-430) of 2nd Naval Auxiliary Group": a vessel of a unit
     # belongs to it. Read off the text, since the parse attaches the unit to the
@@ -2669,15 +3018,20 @@ def extract_entities_nlp(text: str, doc_id: str) -> ExtractionResult:
             after = text[m.end():].lower()
             unit = next((o for o in orgs if after.startswith(o.lower())), None)
             if ship and unit:
-                _add_rel(ship, unit, "BELONGS_TO", 0.7, text[max(0, m.start() - 60):m.end() + len(unit) + 60])
+                # The sentence the phrase is in; a window round it if the
+                # parse cannot place it.
+                where = doc.char_span(m.start(), m.end(), alignment_mode="expand")
+                span = ((where.sent.start_char, where.sent.end_char) if where is not None
+                        else (max(0, m.start() - 60), min(len(text), m.end() + len(unit) + 60)))
+                _add_rel(ship, unit, "BELONGS_TO", 0.7, span)
 
     # A generic association only where nothing typed links the pair anywhere
     # in the text. Before, the check ran sentence by sentence, so a pair
     # related later ("torvald (A-430) of 2nd Naval Auxiliary Group", read after
     # the loop) kept the association from an earlier sentence as well.
-    for a_name, b_name, sentence in generic_candidates:
+    for a_name, b_name, span in generic_candidates:
         if frozenset((a_name, b_name)) not in linked_pairs:
-            _add_rel(a_name, b_name, "ASSOCIATED_WITH", 0.5, sentence)
+            _add_rel(a_name, b_name, "ASSOCIATED_WITH", 0.5, span)
 
     entities, relationships, same_entity = _resolve_countries(entities, relationships, text, doc)
 
@@ -2738,7 +3092,10 @@ def _llm_relationship(r, doc_id: str) -> dict:
         "confidence": _confidence(r.get("confidence"), 0.7),
         "source": doc_id,
         "method": "llm",
-        "evidence": _clean_evidence(r.get("evidence", ""), src_name, tgt_name),
+        # The model's quote as it gave it; _verify_evidence keeps the edge
+        # only if the text contains it, and replaces it with the text's own span.
+        "evidence": r.get("evidence"),
+        "evidence_offset": -1,
         # Carry the model's polarity through. Without this a denial is
         # indistinguishable from an assertion by the time it reaches the
         # graph, and contradicting reporting counts as corroboration.
@@ -2860,16 +3217,22 @@ async def _extract_with_llm(
     entities, relationships = _drop_undatable_dates(entities, relationships)
     entities, relationships = _drop_abstract_types(entities, relationships)
     _apply_vessel_hints(_apply_type_hints(entities), text)
+    # A relationship stands on a sentence of this text that names both ends.
+    # Checked before events are dated, so an unverified date link dates nothing.
+    relationships, evidence_dropped = _verify_evidence(entities, relationships, text)
     # Events named only in their date link are minted here, before endpoints
     # are checked: the timeline depends on them.
     _link_event_dates(entities, relationships)
-    dropped = {"unlisted_endpoint": 0, "same_entity": 0}
+    dropped = {"unlisted_endpoint": 0, "same_entity": 0, **evidence_dropped}
     if resolve_endpoints:
-        relationships, dropped, _ = _resolve_endpoints(entities, relationships)
+        relationships, endpoint_dropped, _ = _resolve_endpoints(entities, relationships)
+        dropped.update(endpoint_dropped)
         entities, relationships, same_entity = _resolve_countries(entities, relationships, text)
         dropped["same_entity"] += same_entity
     relationships, generic_dropped = _drop_generic_on_typed_pairs(relationships)
-    return entities, relationships, skipped, {**dropped, "generic_on_typed_pair": generic_dropped}
+    relationships, repeated = _drop_repeated(relationships)
+    return entities, relationships, skipped, {**dropped, "generic_on_typed_pair": generic_dropped,
+                                              "repeated": repeated}
 
 
 async def extract_entities_llm(text: str, doc_id: str) -> ExtractionResult:
@@ -3047,6 +3410,9 @@ async def extract_entities_hybrid(text: str, doc_id: str) -> ExtractionResult:
     # once both halves are in.
     merged_rels, generic_dropped = _drop_generic_on_typed_pairs(merged_rels)
     dropped["generic_on_typed_pair"] = dropped.get("generic_on_typed_pair", 0) + generic_dropped
+    # Names the merge and the country table resolved can repeat an edge.
+    merged_rels, repeated = _drop_repeated(merged_rels)
+    dropped["repeated"] = dropped.get("repeated", 0) + repeated
 
     # Re-resolve event_datetime over the merged set — catches cases where the
     # Event came from one method and its OCCURRED_ON Date from the other.

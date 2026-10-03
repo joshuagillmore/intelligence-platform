@@ -102,6 +102,20 @@ remediation were executed per `docs/design/plans/2026-09-30-post-review-hardenin
 | Found on the way | Fixed | The source-acquisitions route never checked that the source belonged to the plan; `GET /collection-plans` and `GET /collections` without a project returned every project's rows. |
 | Still open | | Typed relationship precision in the model modes. Projects created by an admin stay open until a member is added (by design; `SECURITY.md` says an admin should claim existing projects before analysts do). |
 
+## Sixth round (2026-10-03, branch `feat/verification-evidence-telemetry-ownership`)
+
+Plan: `docs/design/plans/2026-10-02-verification-evidence-telemetry-ownership.md`.
+
+| Item | Status | Note |
+|---|---|---|
+| Extraction eval gate | Done | `tests/eval/check_against_committed.py` replays nlp, llm and hybrid against the committed `corpus_eval_*.json` and fails on a drop over 0.005 in entity, typed-entity or typed-relationship F1, or on a replay miss; a CI job runs all three on every push. |
+| API-level e2e specs | Done | `frontend/tests/e2e/api/`: access rules (open→restricted, 403 not 404, viewer refused through a form body, admin bypass, last-owner 409, filtered list), a worker-executed run (queued → claimed → cancelled, thin plan says why), the evidence chain, degraded counts. 12 pass against the compose stack with no model; one `@llm` spec is opt-in behind `workflow_dispatch` with the Cohere secret. |
+| Fail closed in the image | Done | Root `Dockerfile` sets `REQUIRE_SECURE_AUTH=true`; CI boots the image with no secrets and asserts a non-zero exit with the refusal logged (verified locally: exit 3). Compose defaults the flag to false for local use. |
+| Evidence spans | Done | A model relationship is kept only when its `evidence` is a verbatim span of the chunk whose sentence names both ends; the span and `evidence_offset` are stored on the edge, NLP edges record their sentence the same way. One live Cohere run (83 replies): typed relationship precision 0.128 → 0.184 (llm) and 0.171 → 0.246 (hybrid); typed recall 0.479 → 0.448 and 0.729 → 0.719; entity F1 fell about 0.02 in both model modes, which a no-rule control attributes to the new sample. `tests/eval/README.md` has the step-by-step tables. |
+| Degraded counts across processes | Done | `degraded_events` table (Alembic `1cb6b0d273f5`); API and worker flush pending counts every minute, at shutdown and (worker) after each job; `GET /admin/degraded` returns `{since, processes: {api, worker}, total, history_available}` over 24 h; the admin card shows the combined view with a per-process breakdown. Verified live: the worker's `resolution_failed` appears beside the API's counts. |
+| Admin-created projects | Done | Every creator becomes owner (admins and the API key included); `POST /projects/{id}/claim` lets an admin take an open project (409 once it has members, one transaction under the membership lock); the projects page shows admins a banner and a Claim control for open projects. |
+| Still open | | Typed precision is 0.18–0.25 against a strict gold: a sentence naming both ends need not state the relation, and ends named only by a description ("the country") are dropped. The graph view route does not return `evidence_offset` yet. Admins must claim pre-existing open projects by hand. |
+
 ## Check results
 
 | Check | Result |

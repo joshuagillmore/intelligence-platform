@@ -3,10 +3,12 @@ access check needs.
 
 Reads: ``memberships`` (how many members each project has, and the caller's
 role in it) and ``owning_projects`` (which project a plan, source, catalog
-entry or PIR belongs to). Writes: ``put_member`` and ``remove_member``, which
-enforce the two membership rules — the first member of a project is an owner,
-and a project never loses its last owner — under a per-project lock, so two
-concurrent changes cannot each see an owner the other is removing.
+entry or PIR belongs to). Writes: ``put_member``, ``remove_member`` and
+``claim_open_project``, which enforce the membership rules — the first member
+of a project is an owner, a project never loses its last owner, and only an
+open project can be claimed — under a per-project lock, so two concurrent
+changes cannot each see an owner the other is removing, or each claim the same
+open project.
 
 What a role allows is decided in ``api/access.py``; this module only reads and
 writes rows. Every function opens its own session from ``get_session_factory``
@@ -40,6 +42,7 @@ _MEMBERSHIP_LOCK_CLASS = 0x6D6272
 FIRST_MEMBER_MUST_BE_OWNER = "The first member of a project must be an owner"
 LAST_OWNER = "A project must keep at least one owner"
 CONCURRENT_CHANGE = "The project's members changed while this was being saved; try again"
+ALREADY_RESTRICTED = "This project already has members, so it cannot be claimed"
 
 
 class MembershipRuleError(Exception):
@@ -195,6 +198,29 @@ async def put_member(project_id: str, username: str, role: str, added_by: str) -
 async def add_owner(project_id: str, username: str) -> ProjectMember:
     """Make ``username`` the owner of a project that was just created."""
     return await put_member(project_id, username, OWNER, added_by=username)
+
+
+async def claim_open_project(project_id: str, username: str) -> ProjectMember:
+    """Make ``username`` the first owner of an open project, which restricts it.
+
+    The check that the project has no members and the insert are one
+    transaction under the project's membership lock, so of two concurrent
+    claims exactly one succeeds. Raises MembershipRuleError when the project
+    already has members.
+    """
+    try:
+        async with _session_factory()() as db:
+            async with db.begin():
+                if await _locked_members(db, project_id):
+                    raise MembershipRuleError(ALREADY_RESTRICTED)
+                owner = ProjectMember(
+                    project_id=project_id, username=username, role=OWNER,
+                    added_by=username, added_at=datetime.now(timezone.utc),
+                )
+                db.add(owner)
+            return owner
+    except IntegrityError as exc:
+        raise MembershipRuleError(CONCURRENT_CHANGE) from exc
 
 
 async def remove_member(project_id: str, username: str) -> None:

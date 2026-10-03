@@ -68,3 +68,18 @@ def test_the_aggregate_and_report_carry_both_figures():
     md = rce.markdown(report)
     assert "Rel typed P / R / F1" in md and "Rel all P / R / F1" in md
     assert "Relationships (typed)" in md and "Relationships (all)" in md
+
+
+def test_evidence_spans_are_counted_against_the_chunk():
+    text = "Intro.\n\nIran transferred missiles to Russia."
+    sentence = "Iran transferred missiles to Russia."
+    rels = [
+        {"evidence": sentence, "evidence_offset": text.index(sentence)},
+        {"evidence": sentence, "evidence_offset": 0},
+        {"evidence": "", "evidence_offset": -1},
+        {"evidence": sentence},
+    ]
+    assert rce.evidence_spans(text, rels) == {"located": 1, "unlocated": 2, "mismatched": 1}
+    docs = [{"score": rce.score_document([], [], {"entities": [], "relationships": []}),
+             "evidence_spans": rce.evidence_spans(text, rels)}]
+    assert rce.aggregate(docs)["evidence_spans"] == {"located": 1, "unlocated": 2, "mismatched": 1}

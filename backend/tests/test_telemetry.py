@@ -3,7 +3,8 @@
 Each call site already logged its degraded outcome; nothing counted them, so a
 quiet provider outage read as results that were merely thinner than usual.
 `services.telemetry` counts them per subsystem and reason; `/health` reports
-totals and `GET /api/admin/degraded` the breakdown.
+this process's totals and `GET /api/admin/degraded` the breakdown across
+processes (flushing is tested in tests/test_telemetry_flush.py).
 """
 from __future__ import annotations
 
@@ -100,13 +101,49 @@ class TestEndpoints:
     def test_health_reports_nothing_degraded_as_empty(self):
         assert client.get("/health").json()["degraded"] == {}
 
-    def test_admin_gets_the_breakdown(self):
+    def test_admin_gets_the_breakdown_by_process(self, monkeypatch):
+        """Stored rows by process, plus the API's counts not flushed yet; the
+        total is their sum. The table is faked here (tests/test_telemetry_flush.py
+        reads a real one)."""
+        from datetime import datetime, timedelta, timezone
+
+        async def stored(since, db_factory):
+            return {"worker": {"collection": {"source_failed": 2}}, "api": {"enrichment": {"rdap: http 503": 4}}}
+
+        monkeypatch.setattr(telemetry, "_stored", stored)
         telemetry.record_degraded("enrichment", "rdap: http 503")
         resp = client.get("/api/admin/degraded", headers=headers)
         assert resp.status_code == 200
         body = resp.json()
-        assert body["enrichment"] == {"rdap: http 503": 1}
-        assert "since" in body
+        assert body["processes"] == {
+            "api": {"enrichment": {"rdap: http 503": 5}},
+            "worker": {"collection": {"source_failed": 2}},
+        }
+        assert body["total"] == {"enrichment": {"rdap: http 503": 5}, "collection": {"source_failed": 2}}
+        assert body["history_available"] is True
+        since = datetime.fromisoformat(body["since"])
+        assert abs(datetime.now(timezone.utc) - timedelta(hours=24) - since) < timedelta(minutes=1)
+
+    def test_unreadable_history_is_said_not_shown_as_nothing(self, monkeypatch):
+        async def stored(since, db_factory):
+            raise OSError("connection refused")
+
+        monkeypatch.setattr(telemetry, "_stored", stored)
+        telemetry.record_degraded("llm", "report_call_failed")
+        body = client.get("/api/admin/degraded", headers=headers).json()
+        assert body["history_available"] is False
+        assert body["processes"] == {"api": {"llm": {"report_call_failed": 1}}, "worker": {}}
+        assert body["total"] == {"llm": {"report_call_failed": 1}}
+
+    def test_nothing_degraded_is_empty_maps(self, monkeypatch):
+        async def stored(since, db_factory):
+            return {}
+
+        monkeypatch.setattr(telemetry, "_stored", stored)
+        body = client.get("/api/admin/degraded", headers=headers).json()
+        assert body["processes"] == {"api": {}, "worker": {}}
+        assert body["total"] == {}
+        assert body["history_available"] is True
 
     def test_an_analyst_cannot_read_it(self):
         from intel_platform.api.auth import create_access_token

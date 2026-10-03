@@ -80,6 +80,16 @@ USER app
 # never uses undetected mode.
 RUN CRAWL4AI_MODE=api crawl4ai-setup
 
+# Fail closed. This image is what gets deployed, so it refuses to start unless
+# the secrets are real: a non-default JWT_SECRET of at least 32 bytes, an
+# API_KEY that is blank or at least 16 bytes, a Fernet ENCRYPTION_KEY, no admin
+# still on the password `admin`, and MCP off (SECURITY.md lists the rules). A
+# deploy that forgot them exits non-zero at boot instead of going live on the
+# development defaults. Opt out explicitly with REQUIRE_SECURE_AUTH=false (CI's
+# boot checks do). The local docker compose stack builds backend/Dockerfile,
+# not this one, and defaults the flag to false there.
+ENV REQUIRE_SECURE_AUTH=true
+
 EXPOSE 8000
 
 # Liveness: /health answers 200 whenever uvicorn is serving (its body reports
