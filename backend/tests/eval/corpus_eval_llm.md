@@ -1,6 +1,6 @@
 # Corpus extraction eval — `llm`
 
-Generated 2026-10-02T01:10:25+00:00 at `26704091`; spaCy `en_core_web_sm`; LLM `CohereProvider` / `command-a-plus-05-2026` (0 live replies, 83 replayed).
+Generated 2026-10-02T12:36:02+00:00 at `9e862798`; spaCy `en_core_web_sm`; LLM `CohereProvider` / `command-a-plus-05-2026` (0 live replies, 83 replayed).
 
 No document degraded: every score below is the requested mode's own.
 
@@ -8,145 +8,141 @@ Relationships are scored twice. **typed** leaves out generic associations (`ASSO
 
 | Set | Docs | Entity P / R / F1 | Typed F1 | Type acc | Rel typed P / R / F1 | Typed TP / Pred / Gold | Rel all P / R / F1 | All TP / Pred / Gold |
 |---|---|---|---|---|---|---|---|---|
-| openrep | 40 | 0.632 / 0.949 / 0.759 | 0.707 | 0.932 | 0.091 / 0.397 / 0.149 | 29 / 317 / 73 | 0.044 / 0.397 / 0.080 | 29 / 652 / 73 |
-| kestrel | 40 | 0.802 / 1.000 / 0.890 | 0.823 | 0.925 | 0.316 / 0.600 / 0.414 | 6 / 19 / 10 | 0.143 / 0.600 / 0.231 | 6 / 42 / 10 |
-| cyber | 3 | 0.974 / 0.949 / 0.961 | 0.961 | 1.000 | 0.458 / 0.846 / 0.595 | 11 / 24 / 13 | 0.393 / 0.846 / 0.537 | 11 / 28 / 13 |
-| **combined** | 83 | 0.667 / 0.956 / 0.786 | 0.735 | 0.935 | 0.128 / 0.479 / 0.202 | 46 / 360 / 96 | 0.064 / 0.479 / 0.113 | 46 / 722 / 96 |
+| openrep | 40 | 0.611 / 0.925 / 0.736 | 0.692 | 0.941 | 0.140 / 0.384 / 0.205 | 28 / 200 / 73 | 0.063 / 0.384 / 0.108 | 28 / 443 / 73 |
+| kestrel | 40 | 0.816 / 1.000 / 0.899 | 0.831 | 0.925 | 0.389 / 0.700 / 0.500 | 7 / 18 / 10 | 0.159 / 0.700 / 0.259 | 7 / 44 / 10 |
+| cyber | 3 | 0.897 / 0.897 / 0.897 | 0.897 | 1.000 | 0.500 / 0.615 / 0.552 | 8 / 16 / 13 | 0.471 / 0.615 / 0.533 | 8 / 17 / 13 |
+| **combined** | 83 | 0.648 / 0.935 / 0.765 | 0.721 | 0.942 | 0.184 / 0.448 / 0.261 | 43 / 234 / 96 | 0.085 / 0.448 / 0.143 | 43 / 504 / 96 |
 
 | Combined metric | P | R | F1 | TP | Pred | Gold |
 |---|---|---|---|---|---|---|
-| Entities (name) | 0.667 | 0.956 | 0.786 | 614 | 920 | 642 |
-| Entities (name + type) | 0.624 | 0.894 | 0.735 | 574 | 920 | 642 |
-| Relationships (typed) | 0.128 | 0.479 | 0.202 | 46 | 360 | 96 |
-| Relationships (all) | 0.064 | 0.479 | 0.113 | 46 | 722 | 96 |
+| Entities (name) | 0.648 | 0.935 | 0.765 | 600 | 926 | 642 |
+| Entities (name + type) | 0.610 | 0.880 | 0.721 | 565 | 926 | 642 |
+| Relationships (typed) | 0.184 | 0.448 | 0.261 | 43 | 234 | 96 |
+| Relationships (all) | 0.085 | 0.448 | 0.143 | 43 | 504 | 96 |
 
-Type accuracy on matched entities: **0.935** (parent category: 0.935). Gold relationship pairs connected by any edge: 69 of 96. Predicted edges: 360 typed, 231 generic, 131 date links (ASSOCIATED_WITH share 32.0%). Dropped by the extraction: generic_on_typed_pair 11, same_entity 2, unlisted_endpoint 66.
+Type accuracy on matched entities: **0.942** (parent category: 0.942). Gold relationship pairs connected by any edge: 58 of 96. Predicted edges: 234 typed, 182 generic, 88 date links (ASSOCIATED_WITH share 36.1%). Dropped by the extraction: evidence_missing_endpoint 180, evidence_not_verbatim 119, generic_on_typed_pair 7, repeated 110, same_entity 5, unlisted_endpoint 44. Evidence spans: 504 located at their offset, 0 without one, 0 mismatched.
 
 ## Per type (name + type must match)
 
 | Type | P | R | F1 | TP | Pred | Gold |
 |---|---|---|---|---|---|---|
-| Agreement | 0.000 | 0.000 | 0.000 | 0 | 1 | 0 |
 | Aircraft | 0.000 | 0.000 | 0.000 | 0 | 2 | 0 |
-| Campaign | 0.000 | 0.000 | 0.000 | 0 | 8 | 0 |
-| Count | 0.000 | 0.000 | 0.000 | 0 | 1 | 0 |
-| Date | 0.748 | 0.897 | 0.816 | 113 | 151 | 126 |
-| Document | 0.324 | 0.676 | 0.438 | 23 | 71 | 34 |
+| Campaign | 0.000 | 0.000 | 0.000 | 0 | 11 | 0 |
+| Commodity | 0.000 | 0.000 | 0.000 | 0 | 7 | 0 |
+| Currency | 0.000 | 0.000 | 0.000 | 0 | 1 | 0 |
+| Date | 0.764 | 0.873 | 0.815 | 110 | 144 | 126 |
+| Document | 0.388 | 0.765 | 0.515 | 26 | 67 | 34 |
 | Domain | 1.000 | 1.000 | 1.000 | 1 | 1 | 1 |
-| Drone | 0.250 | 1.000 | 0.400 | 1 | 4 | 1 |
-| Equipment | 0.000 | 0.000 | 0.000 | 0 | 9 | 0 |
-| Event | 0.120 | 0.833 | 0.210 | 10 | 83 | 12 |
-| Financial | 0.000 | 0.000 | 0.000 | 0 | 19 | 0 |
+| Drone | 0.333 | 1.000 | 0.500 | 1 | 3 | 1 |
+| Economic | 0.000 | 0.000 | 0.000 | 0 | 2 | 0 |
+| Equipment | 0.000 | 0.000 | 0.000 | 0 | 5 | 0 |
+| Event | 0.120 | 0.917 | 0.211 | 11 | 92 | 12 |
+| Financial | 0.000 | 0.000 | 0.000 | 0 | 5 | 0 |
+| Fund | 0.000 | 0.000 | 0.000 | 0 | 3 | 0 |
 | Hardware | 1.000 | 1.000 | 1.000 | 2 | 2 | 2 |
 | IPAddress | 1.000 | 1.000 | 1.000 | 2 | 2 | 2 |
-| Infrastructure | 0.000 | 0.000 | 0.000 | 0 | 2 | 0 |
-| LegalCitation | 0.000 | 0.000 | 0.000 | 0 | 1 | 0 |
-| LegalDocument | 0.000 | 0.000 | 0.000 | 0 | 2 | 0 |
-| LegalProvision | 0.000 | 0.000 | 0.000 | 0 | 1 | 0 |
-| Location | 0.838 | 0.897 | 0.867 | 166 | 198 | 185 |
-| Organization | 0.744 | 0.925 | 0.825 | 160 | 215 | 173 |
-| Person | 0.791 | 1.000 | 0.883 | 34 | 43 | 34 |
-| Product | 0.000 | 0.000 | 0.000 | 0 | 15 | 0 |
-| Ship | 0.933 | 0.840 | 0.884 | 42 | 45 | 50 |
-| Software | 0.400 | 1.000 | 0.571 | 4 | 10 | 4 |
-| System | 0.000 | 0.000 | 0.000 | 0 | 1 | 0 |
+| Infrastructure | 0.000 | 0.000 | 0.000 | 0 | 3 | 0 |
+| Location | 0.832 | 0.908 | 0.868 | 168 | 202 | 185 |
+| Organization | 0.714 | 0.907 | 0.799 | 157 | 220 | 173 |
+| Person | 0.702 | 0.971 | 0.815 | 33 | 47 | 34 |
+| Policy | 0.000 | 0.000 | 0.000 | 0 | 5 | 0 |
+| Product | 0.000 | 0.000 | 0.000 | 0 | 2 | 0 |
+| Project | 0.000 | 0.000 | 0.000 | 0 | 2 | 0 |
+| Sector | 0.000 | 0.000 | 0.000 | 0 | 4 | 0 |
+| Service | 0.000 | 0.000 | 0.000 | 0 | 1 | 0 |
+| Ship | 0.861 | 0.740 | 0.796 | 37 | 43 | 50 |
+| Software | 0.375 | 0.750 | 0.500 | 3 | 8 | 4 |
+| System | 0.000 | 0.000 | 0.000 | 0 | 9 | 0 |
 | TTP | 0.000 | 0.000 | 0.000 | 0 | 4 | 0 |
-| Technology | 0.250 | 0.333 | 0.286 | 1 | 4 | 3 |
-| Threat | 0.000 | 0.000 | 0.000 | 0 | 1 | 0 |
-| ThreatActor | 0.500 | 1.000 | 0.667 | 3 | 6 | 3 |
-| Time | 0.000 | 0.000 | 0.000 | 0 | 1 | 0 |
-| TimePeriod | 0.000 | 0.000 | 0.000 | 0 | 1 | 0 |
+| Technology | 0.143 | 0.333 | 0.200 | 1 | 7 | 3 |
+| ThreatActor | 0.750 | 1.000 | 0.857 | 3 | 4 | 3 |
 | Treaty | 0.000 | 0.000 | 0.000 | 0 | 1 | 0 |
 | Vulnerability | 1.000 | 1.000 | 1.000 | 2 | 2 | 2 |
-| Weapon | 0.769 | 1.000 | 0.870 | 10 | 13 | 10 |
+| Weapon | 0.533 | 0.800 | 0.640 | 8 | 15 | 10 |
 
 ## Type confusion (gold -> predicted)
 
-- Document -> Event: 6
-- Ship -> Organization: 4
+- Ship -> Organization: 5
 - Organization -> Software: 4
+- Document -> Event: 4
 - Location -> Organization: 3
-- Date -> Document: 3
-- Ship -> Location: 2
+- Date -> Event: 3
 - Ship -> Person: 2
-- Organization -> ThreatActor: 2
-- Location -> TTP: 1
-- Location -> Campaign: 1
-- Location -> ThreatActor: 1
+- Date -> Document: 2
+- Weapon -> System: 2
+- Ship -> Location: 1
 - Technology -> Campaign: 1
-- Document -> Financial: 1
-- Date -> Event: 1
+- Person -> Organization: 1
+- Document -> Organization: 1
+- Organization -> Event: 1
 - Document -> Treaty: 1
-- Document -> Agreement: 1
-- Document -> LegalDocument: 1
+- Document -> Campaign: 1
 - Technology -> Organization: 1
-- Event -> Campaign: 1
-- Location -> Person: 1
-- Organization -> Location: 1
+- Ship -> Equipment: 1
 - Location -> Event: 1
 
 ## Relationships
 
-Predicted types: ASSOCIATED_WITH 231, OCCURRED_ON 131, TARGETS 103, BELONGS_TO 61, LOCATED_AT 49, USES 42, DEPLOYED_AT 29, SUPPLIED_BY 17, ATTRIBUTED_TO 14, MENTIONED_IN 13, COMMUNICATES_WITH 9, FUNDED_BY 7, EXPLOITS 5, COMMANDED_BY 4, ASSESSES 3, RELATED_TO 2, RESOLVES_TO 1, SUPPORTED_BY 1.
+Predicted types: ASSOCIATED_WITH 182, OCCURRED_ON 88, TARGETS 64, BELONGS_TO 56, USES 30, LOCATED_AT 27, SUPPLIED_BY 22, DEPLOYED_AT 14, ATTRIBUTED_TO 5, MENTIONED_IN 5, COMMUNICATES_WITH 4, EXPLOITS 3, COMMANDED_BY 3, FUNDED_BY 1.
 
 | Gold type | Found | Gold |
 |---|---|---|
 | ATTRIBUTED_TO | 2 | 2 |
-| BELONGS_TO | 11 | 36 |
-| COMMANDED_BY | 0 | 3 |
-| DEPLOYED_AT | 5 | 6 |
+| BELONGS_TO | 12 | 36 |
+| COMMANDED_BY | 1 | 3 |
+| DEPLOYED_AT | 2 | 6 |
 | EXPLOITS | 1 | 1 |
 | FUNDED_BY | 0 | 1 |
-| LOCATED_AT | 6 | 13 |
+| LOCATED_AT | 7 | 13 |
 | SUPPLIED_BY | 0 | 5 |
-| TARGETS | 17 | 23 |
-| USES | 4 | 6 |
+| TARGETS | 15 | 23 |
+| USES | 3 | 6 |
 
 ## Graph build (real `build_graph_from_extractions`, throwaway projects)
 
-Relationships created 589, retired 130, dropped 3 {'ASSOCIATED_WITH': 3} {'below_cooccurrence_min': 0, 'unknown_endpoint': 3}; entities created 755, filtered 0, dates orphaned 108.
+Relationships created 404, retired 88, dropped 12 {'ASSOCIATED_WITH': 12} {'below_cooccurrence_min': 0, 'unknown_endpoint': 12}; entities created 769, filtered 0, dates orphaned 112.
 
 ## Cyber documents in full
 
 ### volt_typhoon_1
 
 - mistyped: none
-- missed: 2023 [Date]
-- extra: joint advisory [Document]
-- edges: CISA -ASSOCIATED_WITH-> joint advisory; CVE-2023-27997 -TARGETS-> Fortinet; NSA -ASSOCIATED_WITH-> joint advisory; Volt Typhoon -ATTRIBUTED_TO-> China; Volt Typhoon -COMMUNICATES_WITH-> 185.220.101.42; Volt Typhoon -COMMUNICATES_WITH-> evil-c2.com; Volt Typhoon -EXPLOITS-> CVE-2023-27997; Volt Typhoon -TARGETS-> Guam; joint advisory -OCCURRED_ON-> 24 May 2023
-- gold edges missed: none
-- build: created 8, dropped 0 {}
+- missed: 2023 [Date], Guam [Location]
+- extra: CISA-NSA joint advisory [Event], living-off-the-land [TTP]
+- edges: CISA-NSA joint advisory -OCCURRED_ON-> 24 May 2023; Fortinet -TARGETS-> CVE-2023-27997; Volt Typhoon -ATTRIBUTED_TO-> China; Volt Typhoon -EXPLOITS-> CVE-2023-27997; Volt Typhoon -USES-> living-off-the-land
+- gold edges missed: Volt Typhoon -TARGETS-> Guam
+- build: created 4, dropped 0 {}
 
 ### volt_typhoon_2
 
 - mistyped: none
 - missed: CISA [Organization]
 - extra: none
-- edges: ASUS -SUPPLIED_BY-> Volt Typhoon; CISA Advisory AA23-144a -MENTIONED_IN-> Volt Typhoon; Cisco -SUPPLIED_BY-> Volt Typhoon; Fortinet FortiGuard -ASSOCIATED_WITH-> Volt Typhoon; Fortinet FortiGuard -EXPLOITS-> CVE-2023-27997; Netgear -SUPPLIED_BY-> Volt Typhoon; Volt Typhoon -ATTRIBUTED_TO-> People's Republic of China; Volt Typhoon -TARGETS-> Guam; Volt Typhoon -TARGETS-> United States; Volt Typhoon -USES-> netsh; Volt Typhoon -USES-> ntdsutil; Volt Typhoon -USES-> wmic
+- edges: Fortinet FortiGuard -EXPLOITS-> CVE-2023-27997; Volt Typhoon -ATTRIBUTED_TO-> People's Republic of China; Volt Typhoon -TARGETS-> Guam; Volt Typhoon -TARGETS-> United States; Volt Typhoon -USES-> netsh; Volt Typhoon -USES-> ntdsutil; Volt Typhoon -USES-> wmic
 - gold edges missed: none
-- build: created 12, dropped 0 {}
+- build: created 7, dropped 0 {}
 
 ### volt_typhoon_3
 
 - mistyped: none
-- missed: none
-- extra: none
-- edges: Microsoft -ATTRIBUTED_TO-> Volt Typhoon; Netgear ProSAFE router -RESOLVES_TO-> 45.83.12.7; Volt Typhoon -DEPLOYED_AT-> Kaohsiung; Volt Typhoon -DEPLOYED_AT-> Manila; Volt Typhoon -LOCATED_AT-> Guam; Volt Typhoon -TARGETS-> Naval Base Guam; Volt Typhoon -USES-> Windows
-- gold edges missed: Kaohsiung -LOCATED_AT-> Taiwan; Volt Typhoon -TARGETS-> Naval Base Guam
-- build: created 7, dropped 0 {}
+- missed: Windows [Software]
+- extra: Volt Typhoon pre-positioning campaign [Event], earlier intrusions against Naval Base Guam [Event]
+- edges: Netgear ProSAFE router -LOCATED_AT-> 45.83.12.7; Volt Typhoon -ATTRIBUTED_TO-> NSA; Volt Typhoon -DEPLOYED_AT-> Kaohsiung; Volt Typhoon -DEPLOYED_AT-> Manila; earlier intrusions against Naval Base Guam -TARGETS-> Naval Base Guam
+- gold edges missed: Kaohsiung -LOCATED_AT-> Taiwan; Volt Typhoon -TARGETS-> Guam; Volt Typhoon -TARGETS-> Naval Base Guam; Volt Typhoon -USES-> Windows
+- build: created 5, dropped 0 {}
 
 ## openrep: most frequent misses, extras and mistypes
 
-Missed: United States [Location] x3, European Commission [Organization] x1, Poland [Location] x1, Taiwan Strait [Location] x1, 2003 [Date] x1, 2022 [Date] x1, Beijing [Location] x1, 1992 [Date] x1, 2017 [Date] x1, Department of Defense Appropriations Act, 2026 [Document] x1, Asia [Location] x1, Penghu [Location] x1, Seventh Fleet [Organization] x1, UN General Assembly [Organization] x1, 2025 [Date] x1.
+Missed: 2022 [Date] x3, United States [Location] x3, Congress [Organization] x3, Europe [Location] x2, U.S. Space Force [Organization] x2, European Commission [Organization] x1, Ukraine [Location] x1, Eurasia [Location] x1, Taiwan Strait [Location] x1, February 28 [Date] x1, Beijing [Location] x1, 2017 [Date] x1, March 2018 [Date] x1, August 2020 [Date] x1, Asia [Location] x1.
 
-Extra: U.S. [Location] x7, Trump Administration [Organization] x6, 2023 [Date] x3, United States [Location] x3, Russian intelligence services [Organization] x2, Israel [Location] x2, U.S.-Israeli airstrikes [Event] x2, CRS [Organization] x2, Navy Office of Legislative Affairs [Organization] x2, 2021 [Date] x2, OPENREP-SUPINTREP-0004 [Document] x1, crs-IF11797 [Document] x1, crs-IN12602 [Document] x1, crs-R48978 [Document] x1, General Alexus G. Grynkewich March 2026 congressional testimony [Event] x1.
+Extra: U.S. [Location] x6, Trump Administration [Organization] x5, Israel [Location] x3, United States [Location] x3, U.S.-Israeli airstrikes [Event] x2, P.L. 119-60 [Document] x2, CRS [Organization] x2, Navy Office of Legislative Affairs [Organization] x2, 2021 [Date] x2, OPENREP-SUPINTREP-0004 [Event] x1, crs-IF11797 [Event] x1, crs-IN12602 [Event] x1, crs-R48978 [Event] x1, Baltic region [Location] x1, OPENREP-SUPINTREP-0006 [Document] x1.
 
-Mistyped (gold -> predicted): Document -> Event x6, Organization -> Software x4, Location -> Organization x3, Date -> Document x3, Organization -> ThreatActor x2, Location -> TTP x1, Location -> Campaign x1, Location -> ThreatActor x1, Ship -> Organization x1, Document -> Financial x1.
+Mistyped (gold -> predicted): Document -> Event x4, Organization -> Software x4, Location -> Organization x3, Date -> Event x3, Date -> Document x2, Weapon -> System x2, Ship -> Organization x1, Technology -> Campaign x1, Person -> Organization x1, Organization -> Event x1.
 
 ## kestrel: most frequent misses, extras and mistypes
 
 Missed: none.
 
-Extra: EXERCISE — FICTIONAL [Document] x2, E03 [Document] x1, Cancelled port calls at Torvik [Event] x1, GNSS [Technology] x1, Collection against the Meran Strait [Event] x1, Interference correlation activity [Event] x1, Traffic transmission event [Event] x1, Ravenskan hydrographic survey transit [Event] x1, 0251Z [Time] x1, 2316Z to 0025Z [TimePeriod] x1, 3 affected sailings [Count] x1, AIS [Software] x1, Publicly available shipping and schedule data [Document] x1, Stellar Vane AIS transmission cessation [Event] x1, Partner [Organization] x1.
+Extra: Valdorian [Location] x2, quay 4 [Location] x1, E03 [Document] x1, NIIRS [System] x1, GNSS [Technology] x1, central strait [Location] x1, Ravenskan [Ship] x1, Ravenskan hydrographic survey transit [Event] x1, callsign activity [Event] x1, interference cessation [Event] x1, AIS [Technology] x1, Synthetic aperture imagery [Technology] x1, transponder failure [Event] x1, publicised national exercise [Event] x1, Voice communications jamming incident [Event] x1.
 
-Mistyped (gold -> predicted): Ship -> Organization x3, Ship -> Location x2, Ship -> Person x2.
+Mistyped (gold -> predicted): Ship -> Organization x4, Ship -> Person x2, Ship -> Location x1.
