@@ -52,6 +52,8 @@ system_prompt: |
 
   ## Rules for every relationship
 
+  **Quote the sentence that states it.** `evidence` is the exact sentence (verbatim, copied from the text) that states the relationship: the same words, spelling and punctuation, not shortened, paraphrased, joined with "...", or corrected. That sentence must name both ends by a name or alias you listed (a threat actor may be "the group" or "the actor" in a sentence after the one that names it); for OCCURRED_ON it must give the date. If you cannot quote a sentence of the text that states the relationship, omit the relationship: one whose evidence is not in the text, or whose sentence does not name both ends, is discarded.
+
   **Both ends must be listed entities.** `source_entity` and `target_entity` must each be the `name` of an entity in your `entities` list, written exactly as you listed it (or one of its listed `aliases`). A relationship naming anything you did not list is discarded: a group or role described rather than named ("the regional militias", "allied naval forces"), a quantity ("40 patrol boats"), an activity or a policy. If the thing is a named entity, list it; if it is not, leave the relationship out.
 
   **ASSOCIATED_WITH is a last resort.** Emit it only when the same sentence names both entities, states that they are connected, and no type above says how. Do not emit ASSOCIATED_WITH:
@@ -95,7 +97,7 @@ system_prompt: |
         "target_entity": "string — name of target entity",
         "relationship_type": "string — one of the types above",
         "confidence": 0.0-1.0,
-        "evidence": "string — brief quote or paraphrase from the text",
+        "evidence": "string — the exact sentence (verbatim, copied from the text) that states this relationship",
         "polarity": "asserts | denies"
       }
     ]
@@ -150,12 +152,12 @@ system_prompt: |
       {"name": "darkcloud.example.com", "entity_type": "Domain", "aliases": [], "confidence": 0.95, "attributes": {}}
     ],
     "relationships": [
-      {"source_entity": "APT-29", "target_entity": "CVE-2023-42793", "relationship_type": "EXPLOITS", "confidence": 0.95, "evidence": "APT-29 exploited CVE-2023-42793"},
-      {"source_entity": "APT-29", "target_entity": "GraphicalProton", "relationship_type": "USES", "confidence": 0.90, "evidence": "deploy the GraphicalProton backdoor"},
-      {"source_entity": "APT-29", "target_entity": "T1190", "relationship_type": "USES", "confidence": 0.90, "evidence": "used T1190"},
-      {"source_entity": "APT-29", "target_entity": "185.220.101.42", "relationship_type": "COMMUNICATES_WITH", "confidence": 0.85, "evidence": "communicated with C2 servers at 185.220.101.42"},
-      {"source_entity": "APT-29", "target_entity": "darkcloud.example.com", "relationship_type": "COMMUNICATES_WITH", "confidence": 0.85, "evidence": "communicated with C2 servers at darkcloud.example.com"},
-      {"source_entity": "CVE-2023-42793", "target_entity": "JetBrains TeamCity", "relationship_type": "TARGETS", "confidence": 0.90, "evidence": "CVE-2023-42793 in JetBrains TeamCity"}
+      {"source_entity": "APT-29", "target_entity": "CVE-2023-42793", "relationship_type": "EXPLOITS", "confidence": 0.95, "evidence": "APT-29, also known as Cozy Bear, exploited CVE-2023-42793 in JetBrains TeamCity to deploy the GraphicalProton backdoor."},
+      {"source_entity": "APT-29", "target_entity": "GraphicalProton", "relationship_type": "USES", "confidence": 0.90, "evidence": "APT-29, also known as Cozy Bear, exploited CVE-2023-42793 in JetBrains TeamCity to deploy the GraphicalProton backdoor."},
+      {"source_entity": "APT-29", "target_entity": "T1190", "relationship_type": "USES", "confidence": 0.90, "evidence": "The group used T1190 (Exploit Public-Facing Application) and communicated with C2 servers at 185.220.101.42 and darkcloud.example.com."},
+      {"source_entity": "APT-29", "target_entity": "185.220.101.42", "relationship_type": "COMMUNICATES_WITH", "confidence": 0.85, "evidence": "The group used T1190 (Exploit Public-Facing Application) and communicated with C2 servers at 185.220.101.42 and darkcloud.example.com."},
+      {"source_entity": "APT-29", "target_entity": "darkcloud.example.com", "relationship_type": "COMMUNICATES_WITH", "confidence": 0.85, "evidence": "The group used T1190 (Exploit Public-Facing Application) and communicated with C2 servers at 185.220.101.42 and darkcloud.example.com."},
+      {"source_entity": "CVE-2023-42793", "target_entity": "JetBrains TeamCity", "relationship_type": "TARGETS", "confidence": 0.90, "evidence": "APT-29, also known as Cozy Bear, exploited CVE-2023-42793 in JetBrains TeamCity to deploy the GraphicalProton backdoor."}
     ]
   }
   ```
@@ -179,11 +181,11 @@ system_prompt: |
       {"name": "Mozdok deployment", "entity_type": "Event", "aliases": [], "confidence": 0.85, "attributes": {}}
     ],
     "relationships": [
-      {"source_entity": "76th Guards Air Assault Division", "target_entity": "Valery Gerasimov", "relationship_type": "COMMANDED_BY", "confidence": 0.85, "evidence": "General Valery Gerasimov ordered the deployment of the 76th Guards Air Assault Division"},
-      {"source_entity": "76th Guards Air Assault Division", "target_entity": "Mozdok Airbase", "relationship_type": "DEPLOYED_AT", "confidence": 0.90, "evidence": "deployment to the Mozdok Airbase"},
-      {"source_entity": "Mozdok Airbase", "target_entity": "North Ossetia", "relationship_type": "LOCATED_AT", "confidence": 0.90, "evidence": "Mozdok Airbase in North Ossetia"},
-      {"source_entity": "Jens Stoltenberg", "target_entity": "NATO", "relationship_type": "BELONGS_TO", "confidence": 0.95, "evidence": "NATO Secretary General Jens Stoltenberg"},
-      {"source_entity": "Mozdok deployment", "target_entity": "15 March 2026", "relationship_type": "OCCURRED_ON", "confidence": 0.90, "evidence": "On 15 March 2026, General Valery Gerasimov ordered the deployment"}
+      {"source_entity": "76th Guards Air Assault Division", "target_entity": "Valery Gerasimov", "relationship_type": "COMMANDED_BY", "confidence": 0.85, "evidence": "On 15 March 2026, General Valery Gerasimov ordered the deployment of the 76th Guards Air Assault Division to the Mozdok Airbase in North Ossetia."},
+      {"source_entity": "76th Guards Air Assault Division", "target_entity": "Mozdok Airbase", "relationship_type": "DEPLOYED_AT", "confidence": 0.90, "evidence": "On 15 March 2026, General Valery Gerasimov ordered the deployment of the 76th Guards Air Assault Division to the Mozdok Airbase in North Ossetia."},
+      {"source_entity": "Mozdok Airbase", "target_entity": "North Ossetia", "relationship_type": "LOCATED_AT", "confidence": 0.90, "evidence": "On 15 March 2026, General Valery Gerasimov ordered the deployment of the 76th Guards Air Assault Division to the Mozdok Airbase in North Ossetia."},
+      {"source_entity": "Jens Stoltenberg", "target_entity": "NATO", "relationship_type": "BELONGS_TO", "confidence": 0.95, "evidence": "NATO Secretary General Jens Stoltenberg convened an emergency meeting in Brussels."},
+      {"source_entity": "Mozdok deployment", "target_entity": "15 March 2026", "relationship_type": "OCCURRED_ON", "confidence": 0.90, "evidence": "On 15 March 2026, General Valery Gerasimov ordered the deployment of the 76th Guards Air Assault Division to the Mozdok Airbase in North Ossetia."}
     ]
   }
   ```
@@ -207,7 +209,7 @@ system_prompt: |
   relationships: {"source_entity": "MV Northern Star strike",
                   "target_entity": "12 March 2026",
                   "relationship_type": "OCCURRED_ON", "confidence": 0.95,
-                  "evidence": "struck the MV Northern Star on 12 March 2026"}
+                  "evidence": "Houthi forces struck the MV Northern Star on 12 March 2026."}
   ```
 
   Use the most precise date the text gives ("March 2026" and "2024" are both
@@ -225,7 +227,7 @@ system_prompt: |
   2. Use the most specific entity type available (e.g., "Commander" not "Person", "Airbase" not "Location")
   3. Always include aliases when entities have multiple names
   4. Extract relationships between entities, not just co-occurrence — identify the nature of the relationship; both ends must be listed entities, and ASSOCIATED_WITH only within one sentence and only when no other type fits
-  5. Provide evidence snippets for each relationship
+  5. Give every relationship its evidence: the exact sentence (verbatim, copied from the text) that states it. Omit a relationship you cannot quote that way
   5a. Link every Event to its date with OCCURRED_ON when the text gives one
   6. Resolve coreferences — do not create duplicate entities for the same real-world entity
   7. Return ONLY valid JSON — no additional text or explanation

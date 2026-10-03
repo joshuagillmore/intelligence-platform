@@ -238,3 +238,28 @@ def country_names(country: str) -> list[str]:
 def capital_names() -> dict[str, str]:
     """Capital as written in the table -> its country."""
     return dict(_country_table()[2])
+
+
+@lru_cache(maxsize=1)
+def _country_surface_forms() -> dict[str, tuple[str, ...]]:
+    data = yaml.safe_load(_GOVERNMENTS_YAML.read_text(encoding="utf-8")) or {}
+    out: dict[str, tuple[str, ...]] = {}
+    for row in data.get("countries") or []:
+        country = row["country"]
+        forms = [country, *(row.get("names") or []), *(row.get("adjectives") or []), *(row.get("forms") or [])]
+        if row.get("capital"):
+            forms.append(row["capital"])
+        out[country] = tuple(dict.fromkeys(forms))
+    return out
+
+
+def country_forms(country: str) -> list[str]:
+    """Every word a text can name the country by: its names, its demonym, its
+    other government forms and its capital.
+
+    A government form the templates make ("Russian government", "PRC regime")
+    contains a name or the demonym, so those two cover it. Used to decide
+    whether a quoted sentence names a country, not to resolve an entity: a
+    capital or a demonym is not the country on its own.
+    """
+    return list(_country_surface_forms().get(country, (country,)))

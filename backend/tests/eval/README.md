@@ -163,10 +163,10 @@ being billed.
 
 ## Results (committed)
 
-`corpus_eval_{nlp,llm,hybrid}.{json,md}`, run at `26704091` with
-`--build-neo4j` (llm and hybrid with `--replay-only`, replaying the live run
-recorded at `0fad4a12`). Relationship figures are `typed` and `all` (see
-above); "Gold edges" is typed TP / gold.
+`corpus_eval_{nlp,llm,hybrid}.{json,md}`, run at `9e862798` with
+`--build-neo4j`, llm and hybrid with `--replay-only`, replaying the live run
+made with the evidence-spans prompt of `698b0f5e`. Relationship figures are
+`typed` and `all` (see above); "Gold edges" is typed TP / gold.
 
 | Mode | Set | Ent P | Ent R | Ent F1 | Typed F1 | Type acc | Rel typed P / R / F1 | Rel all P / R / F1 | Gold edges |
 |---|---|---|---|---|---|---|---|---|---|
@@ -174,29 +174,196 @@ above); "Gold edges" is typed TP / gold.
 | nlp | kestrel | 0.896 | 0.925 | 0.910 | 0.656 | 0.721 | 1.000 / 0.200 / 0.333 | 0.040 / 0.200 / 0.067 | 2/10 |
 | nlp | cyber | 1.000 | 0.923 | 0.960 | 0.960 | 1.000 | 1.000 / 0.615 / 0.762 | 0.210 / 0.615 / 0.314 | 8/13 |
 | nlp | **combined** | 0.713 | 0.944 | 0.812 | 0.731 | 0.899 | 0.702 / 0.490 / 0.577 | 0.067 / 0.490 / 0.117 | 47/96 |
-| llm | openrep | 0.632 | 0.949 | 0.759 | 0.707 | 0.932 | 0.091 / 0.397 / 0.149 | 0.044 / 0.397 / 0.080 | 29/73 |
-| llm | kestrel | 0.802 | 1.000 | 0.890 | 0.823 | 0.925 | 0.316 / 0.600 / 0.414 | 0.143 / 0.600 / 0.231 | 6/10 |
-| llm | cyber | 0.974 | 0.949 | 0.961 | 0.961 | 1.000 | 0.458 / 0.846 / 0.595 | 0.393 / 0.846 / 0.537 | 11/13 |
-| llm | **combined** | 0.667 | 0.956 | 0.786 | 0.735 | 0.935 | 0.128 / 0.479 / 0.202 | 0.064 / 0.479 / 0.113 | 46/96 |
-| hybrid | openrep | 0.602 | 0.971 | 0.743 | 0.700 | 0.941 | 0.145 / 0.726 / 0.241 | 0.076 / 0.726 / 0.138 | 53/73 |
-| hybrid | kestrel | 0.795 | 1.000 | 0.886 | 0.819 | 0.925 | 0.316 / 0.600 / 0.414 | 0.143 / 0.600 / 0.231 | 6/10 |
-| hybrid | cyber | 0.974 | 0.949 | 0.961 | 0.961 | 1.000 | 0.458 / 0.846 / 0.595 | 0.393 / 0.846 / 0.537 | 11/13 |
-| hybrid | **combined** | 0.640 | 0.974 | 0.772 | 0.728 | 0.942 | 0.171 / 0.729 / 0.277 | 0.091 / 0.729 / 0.162 | 70/96 |
+| llm | openrep | 0.611 | 0.925 | 0.736 | 0.692 | 0.941 | 0.140 / 0.384 / 0.205 | 0.063 / 0.384 / 0.108 | 28/73 |
+| llm | kestrel | 0.816 | 1.000 | 0.899 | 0.831 | 0.925 | 0.389 / 0.700 / 0.500 | 0.159 / 0.700 / 0.259 | 7/10 |
+| llm | cyber | 0.897 | 0.897 | 0.897 | 0.897 | 1.000 | 0.500 / 0.615 / 0.552 | 0.471 / 0.615 / 0.533 | 8/13 |
+| llm | **combined** | 0.648 | 0.935 | 0.765 | 0.721 | 0.942 | 0.184 / 0.448 / 0.261 | 0.085 / 0.448 / 0.143 | 43/96 |
+| hybrid | openrep | 0.585 | 0.961 | 0.727 | 0.693 | 0.953 | 0.213 / 0.712 / 0.328 | 0.107 / 0.712 / 0.186 | 52/73 |
+| hybrid | kestrel | 0.809 | 1.000 | 0.894 | 0.827 | 0.925 | 0.389 / 0.700 / 0.500 | 0.159 / 0.700 / 0.259 | 7/10 |
+| hybrid | cyber | 0.902 | 0.949 | 0.925 | 0.925 | 1.000 | 0.556 / 0.769 / 0.645 | 0.526 / 0.769 / 0.625 | 10/13 |
+| hybrid | **combined** | 0.624 | 0.966 | 0.758 | 0.721 | 0.952 | 0.246 / 0.719 / 0.367 | 0.126 / 0.719 / 0.214 | 69/96 |
 
 - **One live run, then replay.** The `entity_extraction` prompt changed at
-  `0fad4a12`, so the recorded replies no longer applied. `llm` asked Cohere
+  `698b0f5e`, so the recorded replies no longer applied. `llm` asked Cohere
   `command-a-plus-05-2026` once for all 83 documents (`--concurrency 2
   --retries 3`): 83 calls, no 429, no retry, no degraded document. Every
   later run replays those replies; `hybrid` replays them too, so its model
-  half is the same sample as `llm`'s. The old-prompt replies stay in
+  half is the same sample as `llm`'s. The earlier prompts' replies stay in
   `llm_replies.json` for the commits that replay them.
 - No document degraded and no graph build raised.
+- **Reproducible.** `--replay-only` at `9e862798` reproduces each committed
+  JSON exactly, with or without `--build-neo4j`, apart from `generated_at`,
+  `git_commit` and the per-document `seconds`.
 - **Trial-key limits.** The repo-root key is a Cohere trial key: 20 calls a
   minute and 1,000 a month. Replaying is what makes a fix-by-fix record
   affordable on it; `--replay-only` makes sure a measuring run cannot spend
   any of it.
-- The previous phase's committed results (at `719b9ca6`) are the step 0–1
-  row of each table below.
+- The previous phase's committed results (run at `26704091`) are the
+  "before" row of each table below.
+
+## Evidence spans (2026-10-02)
+
+Plan: `docs/design/plans/2026-10-02-verification-evidence-telemetry-ownership.md`,
+package WP-E (contract 2). Typed relationship precision in the model modes was
+0.13–0.17 because the model asserts relationships its text does not state. One
+recorded reply on the old prompt even carried the prompt's own
+Gerasimov/Mozdok example into a document that names neither.
+
+**The rule.** A model relationship is kept only when its `evidence` is a span
+of the chunk and the sentence it is in names both ends
+(`services/extraction._verify_evidence`).
+
+- **Verbatim.** The quote must be a substring of the chunk, whitespace-normalised
+  and case-insensitive. Typographic quotes and dashes match their plain forms,
+  and quotation marks around the quote and an ellipsis at either end are let
+  go. A paraphrase, an elision inside the quote ("Kaja Kallas... stated") or a
+  sentence from another text fails: `evidence_not_verbatim`.
+- **Names both ends.** An end is named by the edge's name, the listed entity's
+  name or an alias, any form of a country in `data/governments.yaml` (name,
+  demonym, government form, capital: "The Kremlin supplied ..." names Russia),
+  a person's surname, or "the group" / "the actor" for the last threat actor
+  named before it (the rule NLP reads them by). A verbatim fragment that leaves
+  an end out ("led by Senate-confirmed U.S. Space Force General Michael A.
+  Guetlein") is read in its whole sentence, found by spaCy within the quote's
+  own lines, so a heading on another line never supplies a name. A date link
+  needs only its date named: the event is a name the model gives it. Otherwise
+  `evidence_missing_endpoint`.
+- **Before dating.** The check runs before events are dated, so an unverified
+  date link dates nothing.
+- **A repeated edge is one edge** (`repeated`). Two of the 83 live replies
+  looped until the token limit, repeating TikTok BELONGS_TO ByteDance 108
+  times and Iran TARGETS Israel 68 times with a drifting quote. The graph build
+  merges repeats, but the eval had scored each one as a prediction.
+- **The span is stored.** A kept edge's `evidence` is the chunk's own text (the
+  whole sentence, for a fragment) and `evidence_offset` is where it starts, so
+  `chunk[offset:offset + len(evidence)]` is the evidence. `graph_builder` writes
+  both onto the edge, and corroboration keeps the offset with the evidence it
+  locates. NLP edges record their sentence the same way: cut to the paragraph
+  naming the pair when spaCy glued a heading on, and clipped to the words
+  around the pair past 400 characters.
+- **Counted in each report.** "Evidence spans" counts edges whose evidence is
+  the chunk's text at their offset. That is every model edge, and every NLP
+  edge but one. The exception is in a defanged cyber document, whose refanged
+  sentence the original does not contain as written, so it has offset -1.
+
+**The prompt** asks for "the exact sentence (verbatim, copied from the text)
+that states this relationship". It says that sentence must name both ends and
+tells the model to omit a relationship it cannot quote. Every example's
+evidence is now a sentence of its input, and a test runs the examples through
+the parser's own check.
+
+### Before and after
+
+Rows are cumulative.
+
+- **before:** the committed results this phase started from.
+- **1. parser:** the rule on the old prompt's replies.
+- **2. prompt:** the one live run.
+- **no rule:** the live replies with the evidence rule and the repeat merge
+  switched off, the previous parser on the new sample (a scratch run).
+- **3. ellipses, repeats:** both fixes, on the live replies.
+- **4. fragments in their sentence:** the committed results.
+
+"Evidence drops" are model edges the rule dropped, as not verbatim / missing
+an end / repeated. "Built" is edges the graph build wrote; "–" means the step
+was not built.
+
+#### nlp
+
+| Step | Ent F1 | Typed F1 | Rel typed P / R / F1 | Rel all P / R / F1 | Gold edges | Typed / generic / date | Evidence drops | Built |
+|---|---|---|---|---|---|---|---|---|
+| before | 0.812 | 0.731 | 0.702 / 0.490 / 0.577 | 0.067 / 0.490 / 0.117 | 47/96 | 67 / 635 / 3 | – | 67 |
+| 4. committed (sentence spans) | 0.812 | 0.731 | 0.702 / 0.490 / 0.577 | 0.067 / 0.490 / 0.117 | 47/96 | 67 / 635 / 3 | – | 67 |
+
+NLP scores do not move: only the evidence it records changed (704 of 705
+edges located at their offset).
+
+#### llm
+
+| Step | Ent F1 | Typed F1 | Rel typed P / R / F1 | Rel all P / R / F1 | Gold edges | Typed / generic / date | Evidence drops | Built |
+|---|---|---|---|---|---|---|---|---|
+| before | 0.786 | 0.735 | 0.128 / 0.479 / 0.202 | 0.064 / 0.479 / 0.113 | 46/96 | 360 / 231 / 131 | – | 589 |
+| 1. parser (old replies) | 0.788 | 0.737 | 0.182 / 0.208 / 0.194 | 0.073 / 0.208 / 0.108 | 20/96 | 110 / 73 / 90 | 249 / 261 / – | 182 |
+| 2. prompt (live replies) | 0.766 | 0.721 | 0.125 / 0.396 / 0.190 | 0.068 / 0.396 / 0.116 | 38/96 | 305 / 174 / 78 | 181 / 182 / – | 469 |
+| no rule (live replies) | 0.765 | 0.721 | 0.099 / 0.469 / 0.163 | 0.055 / 0.469 / 0.099 | 45/96 | 456 / 260 / 100 | – | – |
+| 3. ellipses, repeats | 0.765 | 0.721 | 0.191 / 0.438 / 0.266 | 0.086 / 0.438 / 0.144 | 42/96 | 220 / 180 / 88 | 119 / 203 / 108 | – |
+| 4. fragments in their sentence | 0.765 | 0.721 | 0.184 / 0.448 / 0.261 | 0.085 / 0.448 / 0.143 | 43/96 | 234 / 182 / 88 | 119 / 180 / 110 | 404 |
+
+#### hybrid
+
+| Step | Ent F1 | Typed F1 | Rel typed P / R / F1 | Rel all P / R / F1 | Gold edges | Typed / generic / date | Evidence drops | Built |
+|---|---|---|---|---|---|---|---|---|
+| before | 0.772 | 0.728 | 0.171 / 0.729 / 0.277 | 0.091 / 0.729 / 0.162 | 70/96 | 409 / 223 / 135 | – | 630 |
+| 1. parser (old replies) | 0.772 | 0.728 | 0.331 / 0.573 / 0.420 | 0.169 / 0.573 / 0.261 | 55/96 | 166 / 67 / 92 | 249 / 261 / – | 232 |
+| 2. prompt (live replies) | 0.758 | 0.722 | 0.185 / 0.677 / 0.290 | 0.108 / 0.677 / 0.186 | 65/96 | 352 / 170 / 80 | 181 / 182 / – | 512 |
+| no rule (live replies) | 0.758 | 0.721 | 0.141 / 0.740 / 0.237 | 0.083 / 0.740 / 0.148 | 71/96 | 502 / 256 / 102 | – | – |
+| 3. ellipses, repeats | 0.758 | 0.721 | 0.256 / 0.708 / 0.376 | 0.128 / 0.708 / 0.217 | 68/96 | 266 / 176 / 90 | 119 / 203 / 113 | – |
+| 4. fragments in their sentence | 0.758 | 0.721 | 0.246 / 0.719 / 0.367 | 0.126 / 0.719 / 0.214 | 69/96 | 280 / 178 / 90 | 119 / 180 / 115 | 446 |
+
+#### Per set, before and committed
+
+| Mode | Set | Ent F1 | Rel typed P / R / F1 |
+|---|---|---|---|
+| llm | openrep | 0.759 → 0.736 | 0.091 / 0.397 / 0.149 → 0.140 / 0.384 / 0.205 |
+| llm | kestrel | 0.890 → 0.899 | 0.316 / 0.600 / 0.414 → 0.389 / 0.700 / 0.500 |
+| llm | cyber | 0.961 → 0.897 | 0.458 / 0.846 / 0.595 → 0.500 / 0.615 / 0.552 |
+| llm | **combined** | 0.786 → 0.765 | 0.128 / 0.479 / 0.202 → 0.184 / 0.448 / 0.261 |
+| hybrid | openrep | 0.743 → 0.727 | 0.145 / 0.726 / 0.241 → 0.213 / 0.712 / 0.328 |
+| hybrid | kestrel | 0.886 → 0.894 | 0.316 / 0.600 / 0.414 → 0.389 / 0.700 / 0.500 |
+| hybrid | cyber | 0.961 → 0.925 | 0.458 / 0.846 / 0.595 → 0.556 / 0.769 / 0.645 |
+| hybrid | **combined** | 0.772 → 0.758 | 0.171 / 0.729 / 0.277 → 0.246 / 0.719 / 0.367 |
+
+nlp is unchanged in every set.
+
+### What the numbers say
+
+- **Typed precision rose in both model modes.** llm went from 0.128 to 0.184
+  and hybrid from 0.171 to 0.246; typed F1 went from 0.202 to 0.261 and from
+  0.277 to 0.367. On identical replies the rule nearly doubles precision: the
+  no-rule row is 0.099 and 0.141.
+- **Recall met the 0.02 bound in hybrid only.** Hybrid moved from 0.729 to
+  0.719. **llm moved from 0.479 to 0.448, missing the bound by 0.011.** On
+  identical replies the rule costs two gold edges in each mode. The first is
+  Ekhaven LOCATED_AT Ostrand Peninsula, whose quote the model garbled ("...
+  fishing vessel Ekh1"). The second is Africa Initiative LOCATED_AT Burkina
+  Faso, which the text states as "has an office in the country". The rest of
+  the llm gap is the new sample: without the rule it recalls 0.469, against
+  0.479 for the old one. Russia TARGETS Ukraine, for example, is missed in
+  three documents because the new replies never relate those two ends. The
+  new sample instead finds TikTok BELONGS_TO ByteDance, Israel TARGETS Iran
+  and two kestrel berths.
+- **The parser alone was not enough.** The old prompt asked for "a brief quote
+  or paraphrase". 69% of its quotes were verbatim, and its fragments ("used
+  T1190", "deployment to the Mozdok Airbase") rarely name both ends, so step 1
+  cut recall to 0.208 and 0.573. With the new prompt 89% of quotes are
+  verbatim.
+- **Entity F1 fell in llm and hybrid** (0.786 to 0.765, 0.772 to 0.758). The new
+  replies list fewer gold entities: recall went from 0.956 to 0.935, losing
+  dates, Ukraine, Europe and U.S. Space Force. The parser is not the cause,
+  because the no-rule run gives the same 0.765. One sample cannot separate
+  the prompt from sampling noise; two samples of one prompt differed by 0.018
+  in phase 1. The CI gate takes these results as its baseline.
+- **The graph build** wrote 404 (llm) and 446 (hybrid) edges, against 589 and
+  630. Its unknown-endpoint drops rose from 3 to 12, all ASSOCIATED_WITH, and
+  were already 10 at step 2, so they come with the new sample.
+
+### Still open
+
+- **An end named only by a description** ("the country", "the office", "it")
+  is not named, so the edge is dropped. Africa Initiative is one such gold edge.
+  Only threat actors are read through "the group".
+- **The model misquotes.** It wrote "are not routine" where the text says "are
+  routine", garbled "Ekhaven" into "Ekh1", and corrected "fora" to "for a". The
+  rule drops those edges, which is the point, but the relationship itself may
+  have been right.
+- **A sentence that names both ends but does not state the relation still
+  passes.** Typed precision is still 0.18–0.25 against a strict gold.
+- **Two of 83 replies looped** until the token limit. Their repeats are merged,
+  but whatever they would have extracted after the loop is lost.
+- **The offset is into the chunk.** An edge carries `source_doc_id`, not the
+  chunk, so a reader finds the chunk by its evidence text. The graph view route
+  does not return `evidence_offset` yet. Corroborating evidence
+  (`evidence_all`) carries no offsets.
 
 ## Extraction precision (2026-10-01): one task at a time
 
