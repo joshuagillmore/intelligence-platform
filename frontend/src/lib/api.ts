@@ -840,8 +840,9 @@ export type StoredApiKey = Model<'ApiKeyItem'>;
 
 export const adminApi = {
   config: () => http.get<ResponseOf<'/api/admin/config', 'get'>>('/admin/config'),
-  /** Degraded outcomes since the API process started, by subsystem and
-   *  reason. Read the body with `readDegraded` (lib/degraded). */
+  /** Degraded outcomes over the last 24 hours, by subsystem and reason, per
+   *  process (API, worker) and combined. Read the body with `readDegraded`
+   *  (lib/degraded). */
   degraded: () => http.get<ResponseOf<'/api/admin/degraded', 'get'>>('/admin/degraded'),
   getProxy: () => http.get<ResponseOf<'/api/admin/proxy', 'get'>>('/admin/proxy'),
   updateProxy: (data: BodyOf<'/api/admin/proxy', 'put'> & { mode: 'direct' | 'vpn' | 'tor' }) =>
