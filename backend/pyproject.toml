@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "AI-powered intelligence analyst workbench"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi~=0.136.3",
+    "fastapi>=0.136.3,<0.143.0",
     "uvicorn[standard]~=0.54.0",
     "neo4j~=5.0",
     "pydantic~=2.5",
